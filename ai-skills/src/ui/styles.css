@@ -24,7 +24,7 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--fg); }
 
-.app { display: flex; flex-direction: column; height: 100%; }
+.app { display: flex; flex-direction: column; height: 100%; position: relative; }
 
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
@@ -130,6 +130,56 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .skill-edit button { margin-top: 4px; }
 .skills-editor-actions { display: flex; justify-content: space-between; }
+
+/* Transient skill notifications (separate from the chat) */
+.toast-stack {
+  position: absolute; top: 58px; left: 8px; right: 8px; z-index: 50;
+  display: flex; flex-direction: column; gap: 6px; pointer-events: none;
+}
+.toast {
+  pointer-events: auto; position: relative; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--warn); border-radius: 10px;
+  padding: 8px 10px 10px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+  animation: toast-in 160ms ease-out;
+}
+.toast.enf-enforced { border-color: var(--danger); }
+@keyframes toast-in { from { transform: translateY(-6px); opacity: 0; } }
+.toast-head { display: flex; justify-content: space-between; align-items: center; }
+.toast-title { font-weight: 700; font-family: ui-monospace, monospace; font-size: 12px; color: var(--warn); }
+.toast.enf-enforced .toast-title { color: var(--danger); }
+.toast-close { border: none; background: none; font-size: 14px; padding: 0 2px; color: var(--fg-soft); }
+.toast-body { font-size: 12px; margin: 4px 0 6px; }
+.toast-actions { display: flex; gap: 6px; }
+.toast-progress {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+  background: var(--warn); transform-origin: left;
+  animation-name: toast-progress; animation-timing-function: linear; animation-fill-mode: forwards;
+}
+.toast.enf-enforced .toast-progress { background: var(--danger); }
+@keyframes toast-progress { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* Scope tabs (skills management) */
+.scope-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.scope-tabs button { font-size: 11px; }
+.scope-tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Tokens panel */
+.tokens-panel { overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 16px; }
+.tokens-panel h3 { margin: 0 0 2px; font-size: 13px; }
+.tokens-panel section { display: flex; flex-direction: column; gap: 6px; }
+.token-row { display: flex; align-items: center; gap: 6px; }
+.token-row .swatch {
+  width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--border); flex: none;
+}
+.token-name { font-family: ui-monospace, monospace; font-size: 11px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.token-row input {
+  background: var(--bg-soft); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 6px; font: inherit; font-size: 11px; min-width: 0;
+}
+.token-row.new input:first-child { flex: 1; }
+.token-value { width: 72px; font-family: ui-monospace, monospace; }
+.token-value-static { font-family: ui-monospace, monospace; font-size: 11px; color: var(--fg-soft); }
+.token-set { width: 52px; }
 
 /* Settings */
 .settings { padding: 12px; display: flex; flex-direction: column; gap: 12px; }

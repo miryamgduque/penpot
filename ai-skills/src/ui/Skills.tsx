@@ -1,7 +1,9 @@
 import { useState } from "react";
 import * as bridge from "./bridge";
 import type { SkillsPayload } from "./bridge";
-import type { EffectiveSkill } from "../skills/types";
+import type { EffectiveSkill, Scope } from "../skills/types";
+
+const EDITABLE_SCOPES: Scope[] = ["org", "project", "file"];
 
 export function SkillsPanel({
   skills,
@@ -10,20 +12,39 @@ export function SkillsPanel({
   skills: SkillsPayload;
   onSkillsChanged: (s: SkillsPayload) => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editingScope, setEditingScope] = useState<Scope | null>(null);
 
   return (
     <div className="skills-panel">
       <div className="skills-head">
         <span className="hint">
-          platform → org → project → file, cascade-resolved. File skills live in this design file.
+          platform → org → project → file, cascade-resolved. Each level is manageable; platform is
+          curated.
         </span>
-        <button onClick={() => setEditing(!editing)}>{editing ? "Done" : "Edit file skills"}</button>
       </div>
-      {editing ? (
-        <FileSkillsEditor skills={skills} onSkillsChanged={onSkillsChanged} />
-      ) : (
+      <div className="scope-tabs">
+        <button className={!editingScope ? "active" : ""} onClick={() => setEditingScope(null)}>
+          Effective
+        </button>
+        {(["platform", "org", "project", "file"] as Scope[]).map((s) => (
+          <button
+            key={s}
+            className={`scope-${s} ${editingScope === s ? "active" : ""}`}
+            onClick={() => setEditingScope(s)}
+          >
+            {s} ({skills.scopes[s].length}){s === "platform" ? " 🔒" : ""}
+          </button>
+        ))}
+      </div>
+      {editingScope === null ? (
         skills.effective.map((s) => <SkillCard key={s.name} skill={s} />)
+      ) : (
+        <ScopeEditor
+          scope={editingScope}
+          sources={skills.scopes[editingScope]}
+          readOnly={!EDITABLE_SCOPES.includes(editingScope)}
+          onSkillsChanged={onSkillsChanged}
+        />
       )}
     </div>
   );
@@ -57,14 +78,18 @@ function SkillCard({ skill }: { skill: EffectiveSkill }) {
   );
 }
 
-function FileSkillsEditor({
-  skills,
+function ScopeEditor({
+  scope,
+  sources: initial,
+  readOnly,
   onSkillsChanged,
 }: {
-  skills: SkillsPayload;
+  scope: Scope;
+  sources: string[];
+  readOnly: boolean;
   onSkillsChanged: (s: SkillsPayload) => void;
 }) {
-  const [sources, setSources] = useState<string[]>(skills.fileSkillSources);
+  const [sources, setSources] = useState<string[]>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -72,11 +97,12 @@ function FileSkillsEditor({
     setSaving(true);
     setError("");
     try {
-      const next = await bridge.call<SkillsPayload>("save-file-skills", {
+      const next = await bridge.call<SkillsPayload>("save-scope-skills", {
+        scope,
         sources: sources.filter((s) => s.trim()),
       });
       onSkillsChanged(next);
-      setSources(next.fileSkillSources);
+      setSources(next.scopes[scope]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -84,8 +110,29 @@ function FileSkillsEditor({
     }
   };
 
+  if (readOnly) {
+    return (
+      <div className="skills-editor">
+        <p className="hint">
+          Platform skills are curated centrally (approval process in the full vision) — read-only
+          here.
+        </p>
+        {sources.map((src, i) => (
+          <pre className="skill-body" key={i}>
+            {src}
+          </pre>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="skills-editor">
+      <p className="hint">
+        {scope === "file"
+          ? "Stored inside this design file — versioned and shared with it."
+          : `Stored at ${scope} level (cross-file store in this prototype).`}
+      </p>
       {sources.map((src, i) => (
         <div className="skill-edit" key={i}>
           <textarea
@@ -103,14 +150,14 @@ function FileSkillsEditor({
           onClick={() =>
             setSources([
               ...sources,
-              "---\nname: my-skill\nscope: file\nenforcement: advisory\ndescription: …\n---\n\nWrite the convention here.",
+              `---\nname: my-skill\nscope: ${scope}\nenforcement: advisory\ndescription: …\n---\n\nWrite the convention here.`,
             ])
           }
         >
           + Add skill
         </button>
         <button className="primary" disabled={saving} onClick={() => void save()}>
-          {saving ? "Saving…" : "Save to file"}
+          {saving ? "Saving…" : `Save ${scope} skills`}
         </button>
       </div>
       {error && <div className="msg error">{error}</div>}

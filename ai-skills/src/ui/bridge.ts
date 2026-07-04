@@ -6,9 +6,22 @@
 
 import type { EffectiveSkill } from "../skills/types";
 
+export interface ScopeSources {
+  platform: string[];
+  org: string[];
+  project: string[];
+  file: string[];
+}
+
 export interface SkillsPayload {
   fileSkillSources: string[];
+  scopes: ScopeSources;
   effective: EffectiveSkill[];
+}
+
+export interface PaletteEntry {
+  name: string;
+  value: string;
 }
 
 export interface DesignContext {

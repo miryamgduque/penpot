@@ -32,6 +32,13 @@ penpot.ui.open("Penpot Skills", `?theme=${penpot.theme}`, { width: 400, height: 
 
 /* ------------------------------------------------------------------ */
 /* Skills storage & cascade                                            */
+/*                                                                     */
+/* Every scope except platform is manageable:                          */
+/*  - platform: curated set bundled with the runtime (read-only here)  */
+/*  - org / project: penpot.localStorage — the plugin's cross-file     */
+/*    store, standing in for backend org/project storage in this       */
+/*    prototype (seeded from the builtin defaults on first run)        */
+/*  - file: shared pluginData inside the design file itself            */
 /* ------------------------------------------------------------------ */
 
 function loadFileSkillSources(): string[] {
@@ -54,12 +61,57 @@ function saveFileSkillSources(sources: string[]): void {
   penpot.currentFile?.setSharedPluginData(NAMESPACE, SKILLS_KEY, JSON.stringify(sources));
 }
 
+const SCOPE_DEFAULTS: Record<"org" | "project", string[]> = {
+  org: ORG_SKILLS,
+  project: PROJECT_SKILLS,
+};
+
+function loadStoredScope(scope: "org" | "project"): string[] {
+  const raw = penpot.localStorage.getItem(`skills.${scope}`);
+  if (!raw) {
+    penpot.localStorage.setItem(`skills.${scope}`, JSON.stringify(SCOPE_DEFAULTS[scope]));
+    return [...SCOPE_DEFAULTS[scope]];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredScope(scope: "org" | "project", sources: string[]): void {
+  penpot.localStorage.setItem(`skills.${scope}`, JSON.stringify(sources));
+}
+
+function loadScopeSources(scope: "platform" | "org" | "project" | "file"): string[] {
+  switch (scope) {
+    case "platform":
+      return [...PLATFORM_SKILLS];
+    case "org":
+    case "project":
+      return loadStoredScope(scope);
+    case "file":
+      return loadFileSkillSources();
+  }
+}
+
+function allScopeSources() {
+  return {
+    platform: loadScopeSources("platform"),
+    org: loadScopeSources("org"),
+    project: loadScopeSources("project"),
+    file: loadScopeSources("file"),
+  };
+}
+
 function effectiveSkills(): EffectiveSkill[] {
+  const scopes = allScopeSources();
   return resolveCascade([
-    ...parseSkills(PLATFORM_SKILLS, "platform"),
-    ...parseSkills(ORG_SKILLS, "org"),
-    ...parseSkills(PROJECT_SKILLS, "project"),
-    ...parseSkills(loadFileSkillSources(), "file"),
+    ...parseSkills(scopes.platform, "platform"),
+    ...parseSkills(scopes.org, "org"),
+    ...parseSkills(scopes.project, "project"),
+    ...parseSkills(scopes.file, "file"),
   ]);
 }
 
@@ -242,6 +294,74 @@ function createColorToken(args: { name: string; value: string; set?: string }) {
   return { ok: true, token: { name: token.name, value: token.resolvedValueString, set: set.name } };
 }
 
+/* ------------------------------------------------------------------ */
+/* Token management                                                    */
+/*                                                                     */
+/* File tokens live in the file's token catalog. The "org palette" is  */
+/* a cross-file color palette in penpot.localStorage (user/org-level   */
+/* store in this prototype) that can be synced into any file.          */
+/* ------------------------------------------------------------------ */
+
+interface PaletteEntry {
+  name: string;
+  value: string;
+}
+
+function loadOrgPalette(): PaletteEntry[] {
+  try {
+    const parsed = JSON.parse(penpot.localStorage.getItem("tokens.org") ?? "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function updateColorToken(args: { set: string; name: string; value?: string; newName?: string }) {
+  const set = penpot.library.local.tokens.sets.find((s) => s.name === args.set);
+  if (!set) throw new Error(`No token set named "${args.set}"`);
+  const token = set.tokens.find(
+    (t) => t.name === args.name && (t as { type?: string }).type === "color",
+  );
+  if (!token) throw new Error(`No color token "${args.name}" in set "${args.set}"`);
+  if (args.value) (token as { value: string }).value = normalizeHex(args.value);
+  if (args.newName) token.name = args.newName;
+  return { ok: true, token: { name: token.name, value: token.resolvedValueString, set: set.name } };
+}
+
+function deleteColorToken(args: { set: string; name: string }) {
+  const set = penpot.library.local.tokens.sets.find((s) => s.name === args.set);
+  if (!set) throw new Error(`No token set named "${args.set}"`);
+  const token = set.tokens.find(
+    (t) => t.name === args.name && (t as { type?: string }).type === "color",
+  );
+  if (!token) throw new Error(`No color token "${args.name}" in set "${args.set}"`);
+  token.remove();
+  return { ok: true };
+}
+
+/** Creates/updates file tokens from the org palette (set "org"). */
+function applyOrgPalette() {
+  const palette = loadOrgPalette();
+  if (palette.length === 0) return { ok: true, applied: 0 };
+  const lib = penpot.library.local;
+  let set = lib.tokens.sets.find((s) => s.name === "org");
+  if (!set) set = lib.tokens.addSet({ name: "org", active: true });
+  if (!set.active) set.active = true;
+  let applied = 0;
+  for (const entry of palette) {
+    const existing = set.tokens.find(
+      (t) => t.name === entry.name && (t as { type?: string }).type === "color",
+    );
+    if (existing) {
+      (existing as { value: string }).value = normalizeHex(entry.value);
+    } else {
+      set.addToken({ type: "color", name: entry.name, value: normalizeHex(entry.value) });
+    }
+    applied++;
+  }
+  return { ok: true, applied };
+}
+
 /**
  * MCP-style arbitrary code execution, gated by the same guard.
  *
@@ -387,17 +507,37 @@ type RpcMessage = { source: "ui"; id: number; op: string; payload?: Record<strin
 const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
   "get-skills": () => ({
     fileSkillSources: loadFileSkillSources(),
+    scopes: allScopeSources(),
     effective: effectiveSkills(),
   }),
   "save-file-skills": (p: { sources: string[] }) => {
     saveFileSkillSources(p.sources);
-    return { fileSkillSources: loadFileSkillSources(), effective: effectiveSkills() };
+    return { fileSkillSources: loadFileSkillSources(), scopes: allScopeSources(), effective: effectiveSkills() };
+  },
+  "save-scope-skills": (p: { scope: "org" | "project" | "file"; sources: string[] }) => {
+    if (p.scope === "file") saveFileSkillSources(p.sources);
+    else if (p.scope === "org" || p.scope === "project") saveStoredScope(p.scope, p.sources);
+    else throw new Error(`Scope not editable: ${p.scope}`);
+    return { fileSkillSources: loadFileSkillSources(), scopes: allScopeSources(), effective: effectiveSkills() };
   },
   "get-design-context": () => designContext(),
   "get-color-tokens": () => colorTokens(),
   "set-fill": (p) => setFill(p),
   "create-shape": (p) => createShape(p),
   "create-color-token": (p) => createColorToken(p),
+  "update-color-token": (p) => updateColorToken(p),
+  "delete-color-token": (p) => deleteColorToken(p),
+  "get-org-palette": () => ({ palette: loadOrgPalette() }),
+  "save-org-palette": (p: { palette: PaletteEntry[] }) => {
+    penpot.localStorage.setItem("tokens.org", JSON.stringify(p.palette ?? []));
+    return { palette: loadOrgPalette() };
+  },
+  "apply-org-palette": () => applyOrgPalette(),
+  "select-shape": (p: { shapeId: string }) => {
+    const shape = getShapeOrThrow(p.shapeId);
+    penpot.selection = [shape];
+    return { ok: true, selected: shape.name };
+  },
   "rename-shape": (p: { shapeId: string; name: string }) => {
     const shape = getShapeOrThrow(p.shapeId);
     shape.name = p.name;
@@ -415,7 +555,7 @@ penpot.ui.onMessage(async (message: unknown) => {
       type: "init",
       theme: penpot.theme,
       context: designContext(),
-      skills: { fileSkillSources: loadFileSkillSources(), effective: effectiveSkills() },
+      skills: { fileSkillSources: loadFileSkillSources(), scopes: allScopeSources(), effective: effectiveSkills() },
     });
     return;
   }

@@ -1,0 +1,28 @@
+{
+  "name": "penpot-ai-skills",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Penpot Skills prototype: in-file design skills, cascade resolver, skills panel and embedded chat agent",
+  "scripts": {
+    "build:plugin": "esbuild src/plugin.ts --bundle --format=iife --target=es2022 --outfile=dist/plugin.js",
+    "serve": "vite preview",
+    "start": "npm run build && vite preview",
+    "build": "tsc --noEmit && vite build && npm run build:plugin",
+    "test": "node --experimental-strip-types --test src/skills/*.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@penpot/plugin-types": "file:../plugins/libs/plugin-types",
+    "@types/node": "^26.1.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

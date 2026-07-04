@@ -1,6 +1,7 @@
 import { Task, TaskHandler } from "../TaskHandler";
 import { ExecuteCodeTaskParams, ExecuteCodeTaskResultData } from "../../../common/src";
 import { PenpotUtils } from "../PenpotUtils.ts";
+import { guardPenpot } from "../SkillsGuard.ts";
 
 /**
  * Console implementation that captures all log output for code execution.
@@ -175,9 +176,12 @@ export class ExecuteCodeTaskHandler extends TaskHandler<ExecuteCodeTaskParams> {
     constructor() {
         super();
 
-        // initialize context, making penpot, penpotUtils, storage and the custom console available
+        // initialize context, making penpot, penpotUtils, storage and the custom console available.
+        // penpot is wrapped by the skills guard: writes that violate skills the current file
+        // declares as enforced (e.g. token-only-colors) are rejected at this boundary,
+        // regardless of which model authored the code.
         this.context = {
-            penpot: penpot,
+            penpot: guardPenpot(penpot),
             storage: {},
             console: new ExecuteCodeTaskConsole(),
             penpotUtils: PenpotUtils,

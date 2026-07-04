@@ -40,6 +40,18 @@ npm install && npm start
 cd ../mcp && pnpm install && pnpm run bootstrap
 ```
 
+To render the plugin as an **integrated side panel** (docked full-height on the
+right, collapsible via the ⛨ edge tab) instead of a floating window, install the
+dock layer into the running frontend container (idempotent; rerun after the
+container is recreated):
+
+```bash
+./scripts/install-dock.sh   # patches penpot-penpot-frontend-1
+```
+
+(The dock layer is a prototype device for the prebuilt docker images — the
+production path is a native sidebar panel in the frontend.)
+
 In Penpot, open a file → Plugins manager (⌘⌥P) → install
 `http://localhost:4500/manifest.json` (and `http://localhost:4400/manifest.json`
 for the MCP bridge). Opening the Skills plugin seeds the file with two skills:

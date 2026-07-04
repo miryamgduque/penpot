@@ -40,17 +40,21 @@ npm install && npm start
 cd ../mcp && pnpm install && pnpm run bootstrap
 ```
 
-To render the plugin as an **integrated side panel** (docked full-height on the
-right, collapsible via the ⛨ edge tab) instead of a floating window, install the
-dock layer into the running frontend container (idempotent; rerun after the
-container is recreated):
+### Integrated side panel (instead of a floating plugin window)
+
+**Native (frontend built from source, e.g. the devenv):** the workspace now has
+a plugin dock column (`frontend/src/app/main/ui/workspace.cljs` +
+`workspace.scss`), and the plugins runtime supports a `dock: true` option on
+`penpot.ui.open` (`plugins/libs/plugins-runtime`). This plugin requests it, so
+on a source build it renders docked full-height on the right and the canvas
+reflows around it. Hosts without the dock fall back to the floating window.
+
+**Prebuilt docker images:** the same effect via the injected dock layer
+(idempotent; rerun after the container is recreated):
 
 ```bash
 ./scripts/install-dock.sh   # patches penpot-penpot-frontend-1
 ```
-
-(The dock layer is a prototype device for the prebuilt docker images — the
-production path is a native sidebar panel in the frontend.)
 
 In Penpot, open a file → Plugins manager (⌘⌥P) → install
 `http://localhost:4500/manifest.json` (and `http://localhost:4400/manifest.json`

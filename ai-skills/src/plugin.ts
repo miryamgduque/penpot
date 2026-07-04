@@ -28,7 +28,14 @@ const NAMESPACE = "penpot-skills";
 const SKILLS_KEY = "skills";
 const DEFAULT_NAME_RE = /^(rectangle|ellipse|board|text|path|group|frame|circle|image|svg)\s*\d*$/i;
 
-penpot.ui.open("Penpot Skills", `?theme=${penpot.theme}`, { width: 400, height: 620 });
+// dock:true renders the plugin as an integrated workspace side panel on hosts
+// that provide the plugin dock (see plugins-runtime create-modal.ts); other
+// hosts fall back to the regular floating plugin window.
+penpot.ui.open("Penpot Skills", `?theme=${penpot.theme}`, {
+  width: 400,
+  height: 620,
+  dock: true,
+} as { width: number; height: number });
 
 /* ------------------------------------------------------------------ */
 /* Skills storage & cascade                                            */

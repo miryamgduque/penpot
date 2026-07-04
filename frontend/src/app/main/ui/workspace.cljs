@@ -123,7 +123,14 @@
                      :file file
                      :selected selected
                      :section options-mode
-                     :drawing-tool (get drawing :tool)}])]))
+                     :drawing-tool (get drawing :tool)}])
+
+     ;; Host container for plugins opened with the `dock` option (see
+     ;; @penpot/plugins-runtime create-modal): the plugins runtime mounts the
+     ;; plugin-modal element here, turning it into an integrated side panel.
+     (when-not hide-ui?
+       [:aside {:id "plugin-dock"
+                :class (stl/css :plugin-dock)}])]))
 
 (mf/defc workspace-loader*
   {::mf/private true}

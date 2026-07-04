@@ -1,29 +1,34 @@
 import { useEffect, useRef, useState } from "react";
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 import type { Settings } from "./App";
-import type { SkillsPayload, DesignContext, TriggeredSkillEvent } from "./bridge";
+import type { SkillsPayload, DesignContext } from "./bridge";
 import { buildSystemPrompt, runTurn, type ToolEvent } from "./agent";
 import * as bridge from "./bridge";
 
 interface ChatItem {
-  kind: "user" | "assistant" | "tool" | "watch" | "error";
+  kind: "user" | "assistant" | "tool" | "error";
   text: string;
   tool?: ToolEvent;
-  watch?: TriggeredSkillEvent;
 }
 
+/**
+ * The embedded chat panel. Talks to the provider directly (no MCP server in
+ * the loop); design tools execute in Penpot via the plugin bridge. Triggered
+ * skills arrive here only when the user (or auto-apply) forwards them from the
+ * notification layer via `pendingAsk`.
+ */
 export function Chat({
   settings,
   skills,
   context,
-  triggered,
-  onTriggeredHandled,
+  pendingAsk,
+  onPendingAskHandled,
 }: {
   settings: Settings;
   skills: SkillsPayload | null;
   context: DesignContext | null;
-  triggered: TriggeredSkillEvent | null;
-  onTriggeredHandled: () => void;
+  pendingAsk: string | null;
+  onPendingAskHandled: () => void;
 }) {
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
@@ -37,20 +42,13 @@ export function Chat({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [items, streamText]);
 
-  // Triggered skills arriving from the change watcher
+  // A triggered skill handed over from the notification layer
   useEffect(() => {
-    if (!triggered) return;
-    const text = `Triggered skill "${triggered.skill.name}": ${triggered.reason}`;
-    setItems((prev) => [...prev, { kind: "watch", text, watch: triggered }]);
-    onTriggeredHandled();
-    if (settings.autoApplyTriggered && !busyRef.current && settings.apiKey) {
-      void send(
-        `[Penpot change watcher] ${text}\nApply this skill now if appropriate; otherwise explain briefly.`,
-        false,
-      );
-    }
+    if (!pendingAsk) return;
+    onPendingAskHandled();
+    if (!busyRef.current) void send(pendingAsk);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [triggered]);
+  }, [pendingAsk]);
 
   async function send(message: string, echoUser = true) {
     if (!message.trim() || busyRef.current) return;
@@ -120,7 +118,7 @@ export function Chat({
         {items.length === 0 && (
           <div className="empty">
             <p>
-              Chat with your design. The agent inherits{" "}
+              Chat with your design — no MCP required. The agent inherits{" "}
               <b>{skills?.effective.length ?? 0} skills</b> from this file
               {context?.fileName ? ` (${context.fileName})` : ""} — conventions as context, rules
               enforced at the write path.
@@ -129,7 +127,7 @@ export function Chat({
           </div>
         )}
         {items.map((item, i) => (
-          <Item key={i} item={item} onAsk={(t) => void send(t)} />
+          <Item key={i} item={item} />
         ))}
         {streamText && <div className="msg assistant">{streamText}</div>}
         {busy && !streamText && <div className="msg assistant thinking">…</div>}
@@ -155,11 +153,10 @@ export function Chat({
   );
 }
 
-function Item({ item, onAsk }: { item: ChatItem; onAsk: (text: string) => void }) {
+function Item({ item }: { item: ChatItem }) {
   if (item.kind === "tool" && item.tool) {
     const t = item.tool;
-    const cls =
-      t.status === "rejected" ? "rejected" : t.status === "error" ? "error" : t.status;
+    const cls = t.status === "rejected" ? "rejected" : t.status === "error" ? "error" : t.status;
     return (
       <div className={`toolchip ${cls}`}>
         <span className="tool-name">
@@ -171,24 +168,6 @@ function Item({ item, onAsk }: { item: ChatItem; onAsk: (text: string) => void }
           </span>
         )}
         {t.status === "error" && <span className="tool-detail">{t.detail}</span>}
-      </div>
-    );
-  }
-  if (item.kind === "watch" && item.watch) {
-    return (
-      <div className="watchchip">
-        <span>
-          👁 <b>{item.watch.skill.name}</b> · {item.watch.reason}
-        </span>
-        <button
-          onClick={() =>
-            onAsk(
-              `[Penpot change watcher] Triggered skill "${item.watch!.skill.name}": ${item.watch!.reason}\nApply this skill now.`,
-            )
-          }
-        >
-          Ask agent to apply
-        </button>
       </div>
     );
   }

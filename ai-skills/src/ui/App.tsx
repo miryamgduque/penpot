@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as bridge from "./bridge";
-import type { SkillsPayload, DesignContext, TriggeredSkillEvent } from "./bridge";
+import type { SkillsPayload, DesignContext } from "./bridge";
 import { Chat } from "./Chat";
 import { SkillsPanel } from "./Skills";
+import { TokensPanel } from "./Tokens";
+import { NotificationStack, NOTIFICATION_TTL_MS, type SkillNotification } from "./Notifications";
 
-type Tab = "chat" | "skills" | "settings";
+type Tab = "chat" | "skills" | "tokens" | "settings";
 
 export interface Settings {
   apiKey: string;
@@ -29,7 +31,13 @@ export function App() {
   const [skills, setSkills] = useState<SkillsPayload | null>(null);
   const [context, setContext] = useState<DesignContext | null>(null);
   const [settings, setSettings] = useState<Settings>(loadSettings);
-  const [triggered, setTriggered] = useState<TriggeredSkillEvent | null>(null);
+  const [notifications, setNotifications] = useState<SkillNotification[]>([]);
+  const [pendingAsk, setPendingAsk] = useState<string | null>(null);
+  const notifId = useRef(1);
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   useEffect(() => {
     const off = bridge.onPluginEvent((e) => {
@@ -40,12 +48,38 @@ export function App() {
       } else if (e.type === "theme-change") {
         document.documentElement.dataset.theme = e.theme;
       } else if (e.type === "skill-triggered") {
-        setTriggered(e);
+        // transient notification layer — separate from the chat
+        setNotifications((prev) => [
+          ...prev.slice(-3),
+          { ...e, id: notifId.current++, expiresAt: Date.now() + NOTIFICATION_TTL_MS },
+        ]);
+        if (settingsRef.current.autoApplyTriggered && settingsRef.current.apiKey) {
+          setPendingAsk(
+            `[Penpot change watcher] Triggered skill "${e.skill.name}": ${e.reason}` +
+              (e.shape ? ` (shape "${e.shape.name}", id ${e.shape.id})` : "") +
+              `\nApply this skill now if appropriate; otherwise explain briefly.`,
+          );
+        }
       }
     });
     bridge.announceReady();
     return off;
   }, []);
+
+  const dismiss = useCallback(
+    (id: number) => setNotifications((prev) => prev.filter((n) => n.id !== id)),
+    [],
+  );
+
+  const askAgent = (n: SkillNotification) => {
+    dismiss(n.id);
+    setTab("chat");
+    setPendingAsk(
+      `[Penpot change watcher] Triggered skill "${n.skill.name}": ${n.reason}` +
+        (n.shape ? ` (shape "${n.shape.name}", id ${n.shape.id})` : "") +
+        `\nApply this skill now.`,
+    );
+  };
 
   const saveSettings = (next: Settings) => {
     setSettings(next);
@@ -65,6 +99,9 @@ export function App() {
           <button className={tab === "skills" ? "active" : ""} onClick={() => setTab("skills")}>
             Skills{skills ? ` (${skills.effective.length})` : ""}
           </button>
+          <button className={tab === "tokens" ? "active" : ""} onClick={() => setTab("tokens")}>
+            Tokens
+          </button>
           <button
             className={tab === "settings" ? "active" : ""}
             onClick={() => setTab("settings")}
@@ -81,22 +118,21 @@ export function App() {
         </div>
       )}
 
+      <NotificationStack notifications={notifications} onDismiss={dismiss} onAskAgent={askAgent} />
+
       <main className="content">
         <div style={{ display: tab === "chat" ? "contents" : "none" }}>
           <Chat
             settings={settings}
             skills={skills}
             context={context}
-            triggered={triggered}
-            onTriggeredHandled={() => setTriggered(null)}
+            pendingAsk={pendingAsk}
+            onPendingAskHandled={() => setPendingAsk(null)}
           />
         </div>
-        {tab === "skills" && skills && (
-          <SkillsPanel skills={skills} onSkillsChanged={setSkills} />
-        )}
-        {tab === "settings" && (
-          <SettingsPanel settings={settings} onSave={saveSettings} />
-        )}
+        {tab === "skills" && skills && <SkillsPanel skills={skills} onSkillsChanged={setSkills} />}
+        {tab === "tokens" && <TokensPanel />}
+        {tab === "settings" && <SettingsPanel settings={settings} onSave={saveSettings} />}
       </main>
     </div>
   );
@@ -141,8 +177,8 @@ function SettingsPanel({
         Save
       </button>
       <p className="hint">
-        The chat calls your provider directly from this panel; skills and enforcement live in
-        Penpot, so any provider gets the same rules.
+        The chat calls your provider directly from this panel — no MCP server required; skills and
+        enforcement live in Penpot, so any provider gets the same rules.
       </p>
     </div>
   );

@@ -69,17 +69,28 @@ window.addEventListener("message", (event) => {
   for (const listener of eventListeners) listener(msg as PluginEvent);
 });
 
-export function call<T = unknown>(op: string, payload?: Record<string, unknown>): Promise<T> {
+export function call<T = unknown>(
+  op: string,
+  payload?: Record<string, unknown>,
+  opts?: { timeoutMs?: number },
+): Promise<T> {
   const id = nextId++;
+  const timeoutMs = opts?.timeoutMs ?? 30_000;
   return new Promise<T>((resolve, reject) => {
     pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
     window.parent.postMessage({ source: "ui", id, op, payload }, "*");
     setTimeout(() => {
       if (pending.has(id)) {
         pending.delete(id);
-        reject(new Error(`Plugin call timed out: ${op}`));
+        reject(
+          new Error(
+            `Plugin call timed out after ${Math.round(timeoutMs / 1000)}s: ${op}. ` +
+              `NOTE: the operation may still have completed in Penpot — read the current ` +
+              `state before retrying, or you may duplicate work.`,
+          ),
+        );
       }
-    }, 30_000);
+    }, timeoutMs);
   });
 }
 

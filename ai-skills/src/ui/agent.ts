@@ -113,7 +113,8 @@ export const TOOLS: Tool[] = [
   {
     name: "execute_code",
     description:
-      "Executes JavaScript against the Penpot plugin API (variable `penpot`, plus `console`). Use for anything the structured tools don't cover. Writes are gated by the file's enforced skills — a rejected write throws citing the rule. Return a JSON-serializable value.",
+      "Executes JavaScript against the Penpot plugin API (variable `penpot`, plus `console`). Use for anything the structured tools don't cover. Writes are gated by the file's enforced skills — a rejected write throws citing the rule. Return a JSON-serializable value. " +
+      "API gotchas: shape.width/height are READ-ONLY — use shape.resize(w, h); nest shapes with board.appendChild(shape); components are created with penpot.library.local.createComponent([shapes]); prefer several smaller code blocks over one huge one (each call has a time budget) and re-read state instead of assuming a failed call did nothing.",
     input_schema: {
       type: "object",
       properties: { code: { type: "string" } },
@@ -149,7 +150,9 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   }
   const op = OP_BY_TOOL[name];
   if (!op) throw new Error(`Unknown tool: ${name}`);
-  return bridge.call(op, input);
+  // canvas-building code can legitimately run for minutes; reads stay snappy
+  const timeoutMs = name === "execute_code" || name === "create_shape" ? 180_000 : 30_000;
+  return bridge.call(op, input, { timeoutMs });
 }
 
 export function buildSystemPrompt(skills: SkillsPayload, context: unknown): string {

@@ -134,6 +134,7 @@ export function guardPenpot<T extends object>(root: T): T {
     const unwrapMap = new WeakMap<object, object>();
 
     const unwrap = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.map(unwrap);
         if (value !== null && typeof value === "object" && unwrapMap.has(value)) {
             return unwrapMap.get(value);
         }
@@ -142,7 +143,9 @@ export function guardPenpot<T extends object>(root: T): T {
 
     const wrap = (obj: unknown): unknown => {
         if (obj === null || (typeof obj !== "object" && typeof obj !== "function")) return obj;
-        if (Array.isArray(obj)) return obj;
+        // Arrays (selection, findShapes results…) must have their ELEMENTS
+        // wrapped, or shapes obtained through them would escape the guard.
+        if (Array.isArray(obj)) return obj.map(wrap);
         const target = obj as object;
         if (cache.has(target)) return cache.get(target);
 
@@ -160,7 +163,17 @@ export function guardPenpot<T extends object>(root: T): T {
                 if (prop === "fills" && isSkillEnforced("token-only-colors")) {
                     assertFillsAllowed(value);
                 }
-                return Reflect.set(t, prop, unwrap(value), t);
+                if (!Reflect.set(t, prop, unwrap(value), t)) {
+                    // a bare "proxy set returned false" is useless to an agent —
+                    // name the property and point at the right API
+                    throw new TypeError(
+                        `Property "${String(prop)}" is read-only in the Penpot plugin API` +
+                            (prop === "width" || prop === "height"
+                                ? " — use shape.resize(width, height) instead"
+                                : "")
+                    );
+                }
+                return true;
             },
         });
         cache.set(target, proxy);

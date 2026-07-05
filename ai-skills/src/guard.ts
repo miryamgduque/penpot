@@ -94,15 +94,18 @@ export function guardPenpot<T extends object>(root: T, isRuleActive: () => boole
   const cache = new WeakMap<object, unknown>();
   const unwrapMap = new WeakMap<object, object>();
 
-  const unwrap = (value: unknown): unknown =>
-    value !== null && typeof value === "object" && unwrapMap.has(value)
+  const unwrap = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(unwrap);
+    return value !== null && typeof value === "object" && unwrapMap.has(value)
       ? unwrapMap.get(value)
       : value;
+  };
 
   const wrap = (obj: unknown): unknown => {
     if (obj === null || (typeof obj !== "object" && typeof obj !== "function")) return obj;
-    // Never wrap plain data (arrays, fills, etc.) — only API objects with methods.
-    if (Array.isArray(obj)) return obj;
+    // Arrays (selection, findShapes results…) must have their ELEMENTS
+    // wrapped, or shapes obtained through them would escape the guard.
+    if (Array.isArray(obj)) return obj.map(wrap);
     const target = obj as object;
     if (cache.has(target)) return cache.get(target);
 
@@ -120,7 +123,17 @@ export function guardPenpot<T extends object>(root: T, isRuleActive: () => boole
         if (prop === "fills" && isRuleActive()) {
           assertFillsAllowed(value, collectAllowedColors());
         }
-        return Reflect.set(t, prop, unwrap(value), t);
+        if (!Reflect.set(t, prop, unwrap(value), t)) {
+          // a bare "proxy set returned false" is useless to an agent —
+          // name the property and point at the right API
+          throw new TypeError(
+            `Property "${String(prop)}" is read-only in the Penpot plugin API` +
+              (prop === "width" || prop === "height"
+                ? " — use shape.resize(width, height) instead"
+                : ""),
+          );
+        }
+        return true;
       },
     });
     cache.set(target, proxy);

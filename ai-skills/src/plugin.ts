@@ -512,6 +512,14 @@ penpot.on("themechange", (theme) => {
 type RpcMessage = { source: "ui"; id: number; op: string; payload?: Record<string, unknown> };
 
 const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
+  // UI settings (API key, model, toggles) live in the plugin's own storage:
+  // the iframe's window.localStorage is unreliable when embedded cross-origin
+  // (third-party storage partitioning), penpot.localStorage is not.
+  "get-settings": () => ({ settings: penpot.localStorage.getItem("ui.settings") }),
+  "save-settings": (p: { settings: string }) => {
+    penpot.localStorage.setItem("ui.settings", p.settings ?? "");
+    return { ok: true };
+  },
   "get-skills": () => ({
     fileSkillSources: loadFileSkillSources(),
     scopes: allScopeSources(),

@@ -504,3 +504,11 @@ button.danger {
   align-items: center;
   gap: var(--spacing-8);
 }
+
+.key-status {
+  font-size: var(--font-size-xs);
+  color: var(--fg-soft);
+}
+.key-status.ok {
+  color: var(--ok);
+}

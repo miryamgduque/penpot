@@ -37,6 +37,12 @@ export function Chat({
   const historyRef = useRef<MessageParam[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // the panel iframe doesn't get focus automatically when docked
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -132,8 +138,12 @@ export function Chat({
         {streamText && <div className="msg assistant">{streamText}</div>}
         {busy && !streamText && <div className="msg assistant thinking">…</div>}
       </div>
-      <form className="composer" onSubmit={onSubmit}>
+      {!settings.apiKey && (
+        <div className="composer-hint">No API key saved — add yours in ⚙ Settings to chat.</div>
+      )}
+      <form className="composer" onSubmit={onSubmit} onClick={() => inputRef.current?.focus()}>
         <textarea
+          ref={inputRef}
           className="input"
           value={input}
           rows={2}
@@ -146,7 +156,12 @@ export function Chat({
             }
           }}
         />
-        <button data-appearance="primary" disabled={busy || !input.trim()} type="submit">
+        <button
+          data-appearance="primary"
+          disabled={busy || !input.trim()}
+          title={busy ? "Working…" : input.trim() ? "Send" : "Type a message first"}
+          type="submit"
+        >
           ➤
         </button>
       </form>

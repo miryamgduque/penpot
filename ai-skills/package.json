@@ -12,7 +12,7 @@
     "test": "node --experimental-strip-types --test src/skills/*.test.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.2",
+    "@anthropic-ai/sdk": "^0.110.0",
     "@penpot/plugin-styles": "^1.4.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

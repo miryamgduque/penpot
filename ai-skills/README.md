@@ -49,6 +49,13 @@ a plugin dock column (`frontend/src/app/main/ui/workspace.cljs` +
 on a source build it renders docked full-height on the right and the canvas
 reflows around it. Hosts without the dock fall back to the floating window.
 
+On source builds the panel is also **fully native**: a header button (next to
+comments) toggles it with no plugin installation — the frontend starts it from
+a bundled manifest like the integrated MCP plugin
+(`frontend/src/app/main/data/workspace/skills.cljs`; panel host overridable via
+the `penpotSkillsPluginHost` global, default `http://localhost:4500/`). The
+plugin manager route below is only needed on prebuilt images.
+
 **Prebuilt docker images:** the same effect via the injected dock layer
 (idempotent; rerun after the container is recreated):
 

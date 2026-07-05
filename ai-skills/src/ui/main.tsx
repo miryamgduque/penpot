@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import "@penpot/plugin-styles/styles.css";
 import "./styles.css";
 
 const params = new URLSearchParams(window.location.search);

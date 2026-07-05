@@ -23,12 +23,17 @@ export function SkillsPanel({
         </span>
       </div>
       <div className="scope-tabs">
-        <button className={!editingScope ? "active" : ""} onClick={() => setEditingScope(null)}>
+        <button
+          data-appearance={!editingScope ? "primary" : "secondary"}
+          className={!editingScope ? "active" : ""}
+          onClick={() => setEditingScope(null)}
+        >
           Effective
         </button>
         {(["platform", "org", "project", "file"] as Scope[]).map((s) => (
           <button
             key={s}
+            data-appearance={editingScope === s ? "primary" : "secondary"}
             className={`scope-${s} ${editingScope === s ? "active" : ""}`}
             onClick={() => setEditingScope(s)}
           >
@@ -136,6 +141,7 @@ function ScopeEditor({
       {sources.map((src, i) => (
         <div className="skill-edit" key={i}>
           <textarea
+            className="input"
             value={src}
             rows={10}
             onChange={(e) => setSources(sources.map((s, j) => (j === i ? e.target.value : s)))}
@@ -147,6 +153,7 @@ function ScopeEditor({
       ))}
       <div className="skills-editor-actions">
         <button
+          data-appearance="secondary"
           onClick={() =>
             setSources([
               ...sources,
@@ -156,7 +163,7 @@ function ScopeEditor({
         >
           + Add skill
         </button>
-        <button className="primary" disabled={saving} onClick={() => void save()}>
+        <button data-appearance="primary" disabled={saving} onClick={() => void save()}>
           {saving ? "Saving…" : `Save ${scope} skills`}
         </button>
       </div>

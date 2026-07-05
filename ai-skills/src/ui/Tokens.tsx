@@ -62,7 +62,7 @@ export function TokensPanel() {
             <span className="swatch" style={{ background: t.value }} />
             <span className="token-name">{t.name}</span>
             <input
-              className="token-value"
+              className="input token-value"
               defaultValue={t.value}
               onBlur={(e) => {
                 if (e.target.value !== t.value)
@@ -86,22 +86,23 @@ export function TokensPanel() {
         ))}
         <div className="token-row new">
           <input
+            className="input"
             placeholder="color.brand.primary"
             value={newToken.name}
             onChange={(e) => setNewToken({ ...newToken, name: e.target.value })}
           />
           <input
-            className="token-value"
+            className="input token-value"
             value={newToken.value}
             onChange={(e) => setNewToken({ ...newToken, value: e.target.value })}
           />
           <input
-            className="token-set"
+            className="input token-set"
             value={newToken.set}
             onChange={(e) => setNewToken({ ...newToken, set: e.target.value })}
           />
           <button
-            className="primary"
+            data-appearance="primary"
             disabled={!newToken.name || !/^#[0-9a-fA-F]{3,6}$/.test(newToken.value)}
             onClick={() =>
               run(async () => {
@@ -140,17 +141,18 @@ export function TokensPanel() {
         ))}
         <div className="token-row new">
           <input
+            className="input"
             placeholder="color.org.surface"
             value={newPalette.name}
             onChange={(e) => setNewPalette({ ...newPalette, name: e.target.value })}
           />
           <input
-            className="token-value"
+            className="input token-value"
             value={newPalette.value}
             onChange={(e) => setNewPalette({ ...newPalette, value: e.target.value })}
           />
           <button
-            className="primary"
+            data-appearance="primary"
             disabled={!newPalette.name || !/^#[0-9a-fA-F]{3,6}$/.test(newPalette.value)}
             onClick={() =>
               run(async () => {
@@ -163,6 +165,7 @@ export function TokensPanel() {
           </button>
         </div>
         <button
+          data-appearance="secondary"
           disabled={palette.length === 0}
           onClick={() => run(() => bridge.call("apply-org-palette", {}))}
         >

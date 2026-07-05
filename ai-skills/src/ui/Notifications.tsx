@@ -54,6 +54,7 @@ export function NotificationStack({
           <div className="toast-actions">
             {n.shape && (
               <button
+                data-appearance="secondary"
                 onClick={() => {
                   void bridge.call("select-shape", { shapeId: n.shape!.id }).catch(() => {});
                 }}
@@ -61,7 +62,7 @@ export function NotificationStack({
                 ⌖ Show {n.shape.name ? `"${n.shape.name}"` : "shape"}
               </button>
             )}
-            <button className="primary" onClick={() => onAskAgent(n)}>
+            <button data-appearance="primary" onClick={() => onAskAgent(n)}>
               Ask agent
             </button>
           </div>

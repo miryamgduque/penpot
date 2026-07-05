@@ -134,6 +134,7 @@ export function Chat({
       </div>
       <form className="composer" onSubmit={onSubmit}>
         <textarea
+          className="input"
           value={input}
           rows={2}
           placeholder="Ask the agent…"
@@ -145,7 +146,7 @@ export function Chat({
             }
           }}
         />
-        <button className="primary" disabled={busy || !input.trim()} type="submit">
+        <button data-appearance="primary" disabled={busy || !input.trim()} type="submit">
           ➤
         </button>
       </form>

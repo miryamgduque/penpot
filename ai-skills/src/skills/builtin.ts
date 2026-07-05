@@ -1,13 +1,16 @@
 /**
  * Platform / org / project scope skills.
  *
- * In the full vision these come from a curated platform set (with approval
- * process), the organization, and the project — here they are stubs bundled
- * with the runtime, exactly as the prototype spec calls for. File-scope
- * skills are the real thing: they live in the design file's pluginData.
+ * The platform scope is the curated set: the official penpot-ai-kit skills
+ * (imported by scripts/import-aikit.mjs) plus baseline floors. Org/project
+ * are editable stores seeded from the stubs below. File-scope skills live in
+ * the design file's pluginData.
  */
 
+import { AIKIT_PLATFORM_SKILLS } from "./aikit.gen";
+
 export const PLATFORM_SKILLS: string[] = [
+  ...AIKIT_PLATFORM_SKILLS,
   `---
 name: a11y-contrast
 scope: platform

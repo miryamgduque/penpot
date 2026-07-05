@@ -156,8 +156,19 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
 }
 
 export function buildSystemPrompt(skills: SkillsPayload, context: unknown): string {
-  const manifest = skillManifest(skills.effective);
-  const advisoryBodies = skills.effective
+  // Platform skills (the curated penpot-ai-kit set) are listed as a routing
+  // manifest and fetched on demand — inlining their bodies would consume the
+  // whole context. Org/project/file skills are small and user-authored, so
+  // their advisory bodies ride along in full.
+  const platform = skills.effective.filter((s) => s.definedAt === "platform");
+  const local = skills.effective.filter((s) => s.definedAt !== "platform");
+
+  const platformIndex = platform
+    .map((s) => `- **${s.name}**${s.mandatory ? " (mandatory)" : ""}: ${s.description}`)
+    .join("\n");
+
+  const localManifest = skillManifest(local);
+  const localAdvisoryBodies = local
     .filter((s) => s.enforcement === "advisory")
     .map((s) => `### ${s.name} (${s.definedAt})\n${s.body}`)
     .join("\n\n");
@@ -165,14 +176,23 @@ export function buildSystemPrompt(skills: SkillsPayload, context: unknown): stri
   return [
     "You are the design agent embedded in Penpot (open-source design tool), working on the user's current file through design tools.",
     "",
-    "## Design skills for this file",
-    "This file carries a layered skill set (platform → org → project → file, cascade-resolved). It is your single source of design conventions — you inherited it from the file, not from any vendor:",
+    "## Skill routing (platform scope — the curated penpot-ai-kit set)",
+    "These skills are your playbooks. Do NOT guess their content: before starting a task that matches one, fetch its full body with get_design_skills({name}) and follow it. Fetch `penpot-plugin-api-gotchas` before your FIRST canvas-mutating execute_code of the session — it prevents the most common API mistakes.",
+    platformIndex,
+    "",
+    "## Operating modes (governance, distilled from penpot-operating-modes)",
+    "- Suggest: audits/reviews propose changes as a report; touch nothing.",
+    "- Apply-with-review (default for generative work): make the change, then summarize what changed and pause for direction on large next steps.",
+    "- Auto-fix without asking ONLY for the safe set: renaming auto-named layers, loss-less raw-value→token swaps, adding documentation/metadata.",
+    "- Never without explicit approval: deleting/restructuring components or shared assets, detach() on instances, large destructive geometry changes.",
+    "",
+    "## Skills local to this org/project/file",
     "```json",
-    JSON.stringify(manifest, null, 2),
+    JSON.stringify(localManifest, null, 2),
     "```",
     "",
-    "Advisory skills (full text, follow them as context):",
-    advisoryBodies,
+    "Advisory local skills (full text, follow them as context):",
+    localAdvisoryBodies,
     "",
     "Rules marked `enforced` are gated structurally in Penpot's write path: violating writes are rejected with an error citing the rule, regardless of what you intend. If a write is rejected, read the error, use get_color_tokens / get_design_skills, and self-correct.",
     "Rules marked `triggered` are surfaced by Penpot when the relevant change happens; when the user forwards one, apply it.",

@@ -92,9 +92,28 @@ colors. Allowed colors: color.brand.primary (#6366f1), color.accent (#f59e0b) �
 The check runs in Penpot's plugin runtime — not in the model's head — so a local
 model is gated identically to a frontier one. The guarantee is structural.
 
+## The platform scope: official penpot-ai-kit
+
+The platform scope carries the full official
+[penpot-ai-kit](https://github.com/penpot/penpot-ai-kit): all 11 skills
+(foundations, component-factory, build-screen, audits, migrate, …) plus the
+load-bearing shared docs (`plugin-api-gotchas`, `naming-conventions`,
+`operating-modes`, `mcp-tool-reference`), converted to this skill format by
+`scripts/import-aikit.mjs` (regenerate with
+`node scripts/import-aikit.mjs <path-to-kit-checkout>` — output is committed).
+
+The chat agent consumes them through a **router meta-prompt**: the system
+prompt carries only the platform index (name + when-to-use) plus the distilled
+operating-modes governance, and instructs the agent to fetch full bodies on
+demand via `get_design_skills({name})` — `penpot-plugin-api-gotchas` before the
+first mutating `execute_code`. External agents get the identical set through
+the MCP `get_design_skills` tool. Org/project/file skills stay small and are
+inlined in full.
+
 ## Notes / prototype simplifications
 
-- Platform/org/project skills are bundled stubs; only file scope is live data.
+- Org/project skills are cross-file stores seeded from stubs; only file scope
+  lives in the design file itself.
 - The parser/resolver is intentionally duplicated in
   `../mcp/packages/server/src/skills/SkillsCascade.ts` (separate workspaces) —
   keep them in sync.

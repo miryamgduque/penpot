@@ -15,22 +15,37 @@ export interface Settings {
 }
 
 const SETTINGS_KEY = "penpot-skills.settings";
+const DEFAULT_SETTINGS: Settings = {
+  apiKey: "",
+  model: "claude-sonnet-5",
+  autoApplyTriggered: false,
+};
 
-function loadSettings(): Settings {
+function parseSettings(raw: string | null | undefined): Settings | null {
+  if (!raw) return null;
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw) return { autoApplyTriggered: false, ...JSON.parse(raw) };
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
   } catch {
-    /* fresh start */
+    return null;
   }
-  return { apiKey: "", model: "claude-sonnet-5", autoApplyTriggered: false };
+}
+
+// window.localStorage is only a fast path — embedded cross-origin iframes may
+// have partitioned or blocked storage, so the source of truth is the plugin's
+// penpot.localStorage, loaded through the bridge after mount.
+function loadLocalSettings(): Settings {
+  try {
+    return parseSettings(localStorage.getItem(SETTINGS_KEY)) ?? DEFAULT_SETTINGS;
+  } catch {
+    return DEFAULT_SETTINGS;
+  }
 }
 
 export function App() {
   const [tab, setTab] = useState<Tab>("chat");
   const [skills, setSkills] = useState<SkillsPayload | null>(null);
   const [context, setContext] = useState<DesignContext | null>(null);
-  const [settings, setSettings] = useState<Settings>(loadSettings);
+  const [settings, setSettings] = useState<Settings>(loadLocalSettings);
   const [notifications, setNotifications] = useState<SkillNotification[]>([]);
   const [pendingAsk, setPendingAsk] = useState<string | null>(null);
   const notifId = useRef(1);
@@ -63,6 +78,14 @@ export function App() {
       }
     });
     bridge.announceReady();
+    // hydrate settings from the plugin's storage (authoritative)
+    void bridge
+      .call<{ settings: string | null }>("get-settings")
+      .then((r) => {
+        const stored = parseSettings(r.settings);
+        if (stored) setSettings(stored);
+      })
+      .catch(() => {});
     return off;
   }, []);
 
@@ -81,9 +104,15 @@ export function App() {
     );
   };
 
-  const saveSettings = (next: Settings) => {
+  const saveSettings = async (next: Settings) => {
     setSettings(next);
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    const raw = JSON.stringify(next);
+    try {
+      localStorage.setItem(SETTINGS_KEY, raw);
+    } catch {
+      /* partitioned/blocked iframe storage — the bridge save below is the one that matters */
+    }
+    await bridge.call("save-settings", { settings: raw });
   };
 
   const enforcedCount = skills?.effective.filter((s) => s.enforcement === "enforced").length ?? 0;
@@ -156,13 +185,31 @@ function SettingsPanel({
   onSave,
 }: {
   settings: Settings;
-  onSave: (s: Settings) => void;
+  onSave: (s: Settings) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(settings);
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  // re-sync when the authoritative settings arrive from the plugin storage
+  useEffect(() => {
+    setDraft(settings);
+  }, [settings]);
+
+  const save = async () => {
+    setStatus("saving");
+    try {
+      await onSave(draft);
+      setStatus("saved");
+      setTimeout(() => setStatus("idle"), 2500);
+    } catch {
+      setStatus("error");
+    }
+  };
+
   return (
     <div className="settings">
       <label>
-        Anthropic API key (stays in this browser — bring your own provider)
+        Anthropic API key (stored in this plugin, never sent anywhere but your provider)
         <input
           className="input"
           type="password"
@@ -171,6 +218,11 @@ function SettingsPanel({
           onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })}
         />
       </label>
+      <span className={`key-status ${settings.apiKey ? "ok" : ""}`}>
+        {settings.apiKey
+          ? `✓ Key saved (…${settings.apiKey.slice(-4)}) — the chat is ready`
+          : "No key saved yet — the chat needs one"}
+      </span>
       <label>
         Model
         <select
@@ -193,9 +245,12 @@ function SettingsPanel({
         />
         <label htmlFor="auto-apply">Auto-send triggered skills to the agent</label>
       </div>
-      <button data-appearance="primary" onClick={() => onSave(draft)}>
-        Save
+      <button data-appearance="primary" disabled={status === "saving"} onClick={() => void save()}>
+        {status === "saving" ? "Saving…" : status === "saved" ? "Saved ✓" : "Save"}
       </button>
+      {status === "error" && (
+        <div className="msg error">Could not save settings — is the plugin still connected?</div>
+      )}
       <p className="hint">
         The chat calls your provider directly from this panel — no MCP server required; skills and
         enforcement live in Penpot, so any provider gets the same rules.

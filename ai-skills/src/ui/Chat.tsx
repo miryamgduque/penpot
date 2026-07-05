@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
 import type { Settings } from "./App";
 import type { SkillsPayload, DesignContext } from "./bridge";
-import { buildSystemPrompt, runTurn, type ToolEvent } from "./agent";
+import {
+  buildSystemPrompt,
+  runTurn,
+  estimateCostUSD,
+  EMPTY_USAGE,
+  type ToolEvent,
+  type UsageTotals,
+} from "./agent";
 import * as bridge from "./bridge";
 
 interface ChatItem {
@@ -34,6 +41,7 @@ export function Chat({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [streamText, setStreamText] = useState("");
+  const [usage, setUsage] = useState<UsageTotals>(EMPTY_USAGE);
   const historyRef = useRef<MessageParam[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
@@ -100,6 +108,14 @@ export function Chat({
               return [...prev, item];
             });
           },
+          onUsage: (u) =>
+            setUsage((prev) => ({
+              inputTokens: prev.inputTokens + u.inputTokens,
+              outputTokens: prev.outputTokens + u.outputTokens,
+              cacheReadTokens: prev.cacheReadTokens + u.cacheReadTokens,
+              cacheWriteTokens: prev.cacheWriteTokens + u.cacheWriteTokens,
+              requests: prev.requests + u.requests,
+            })),
         },
       );
     } catch (e) {
@@ -138,6 +154,7 @@ export function Chat({
         {streamText && <div className="msg assistant">{streamText}</div>}
         {busy && !streamText && <div className="msg assistant thinking">…</div>}
       </div>
+      {usage.requests > 0 && <UsageMeter usage={usage} model={settings.model} />}
       {!settings.apiKey && (
         <div className="composer-hint">No API key saved — add yours in ⚙ Settings to chat.</div>
       )}
@@ -165,6 +182,28 @@ export function Chat({
           ➤
         </button>
       </form>
+    </div>
+  );
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function UsageMeter({ usage, model }: { usage: UsageTotals; model: string }) {
+  const promptTokens = usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens;
+  const cachedShare = promptTokens > 0 ? Math.round((usage.cacheReadTokens / promptTokens) * 100) : 0;
+  const cost = estimateCostUSD(model, usage);
+  return (
+    <div
+      className="usage-meter"
+      title="Session token usage across all API calls from this panel. Cost is an estimate at standard list prices — the Anthropic Console has the authoritative numbers."
+    >
+      {usage.requests} calls · {formatTokens(promptTokens)} in ({cachedShare}% cached) ·{" "}
+      {formatTokens(usage.outputTokens)} out
+      {cost !== null && <> · ~${cost.toFixed(2)}</>}
     </div>
   );
 }

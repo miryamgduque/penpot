@@ -28,6 +28,41 @@ export interface ToolEvent {
   rule?: string;
 }
 
+export interface UsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  requests: number;
+}
+
+export const EMPTY_USAGE: UsageTotals = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  requests: 0,
+};
+
+/** $ per million tokens (standard list price; cache read ≈ 0.1×, write ≈ 1.25×). */
+const PRICING: Record<string, { input: number; output: number }> = {
+  "claude-sonnet-5": { input: 3, output: 15 },
+  "claude-opus-4-8": { input: 5, output: 25 },
+  "claude-haiku-4-5-20251001": { input: 1, output: 5 },
+};
+
+export function estimateCostUSD(model: string, u: UsageTotals): number | null {
+  const p = PRICING[model];
+  if (!p) return null;
+  return (
+    (u.inputTokens * p.input +
+      u.cacheReadTokens * p.input * 0.1 +
+      u.cacheWriteTokens * p.input * 1.25 +
+      u.outputTokens * p.output) /
+    1_000_000
+  );
+}
+
 export const TOOLS: Tool[] = [
   {
     name: "get_design_context",
@@ -211,6 +246,8 @@ export interface AgentCallbacks {
   onTextDelta: (text: string) => void;
   onToolEvent: (e: ToolEvent) => void;
   onAssistantDone: (fullText: string) => void;
+  /** Fired after every API round with that round's token usage. */
+  onUsage?: (usage: UsageTotals) => void;
 }
 
 export interface AgentSettings {
@@ -239,7 +276,12 @@ export async function runTurn(
       // reasoning before any visible output — a small budget can be consumed
       // entirely by thinking, yielding an empty (and silent) reply
       max_tokens: 32000,
-      system,
+      // Prompt caching: the system block marker caches tools+system; the
+      // top-level marker auto-caches the last message block, so each round of
+      // a multi-round turn re-reads the whole prior prefix at ~0.1× price
+      // instead of re-paying full input price for the growing history.
+      cache_control: { type: "ephemeral" },
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       tools: TOOLS,
       messages,
     });
@@ -249,6 +291,13 @@ export async function runTurn(
       cb.onTextDelta(delta);
     });
     const final = await stream.finalMessage();
+    cb.onUsage?.({
+      inputTokens: final.usage.input_tokens ?? 0,
+      outputTokens: final.usage.output_tokens ?? 0,
+      cacheReadTokens: final.usage.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: final.usage.cache_creation_input_tokens ?? 0,
+      requests: 1,
+    });
     if (turnText) cb.onAssistantDone(turnText);
     messages.push({ role: "assistant", content: final.content });
 

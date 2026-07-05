@@ -93,16 +93,29 @@ export function App() {
       <header className="topbar">
         <span className="brand">⛨ Penpot Skills</span>
         <nav>
-          <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}>
+          <button
+            data-appearance={tab === "chat" ? "primary" : "secondary"}
+            className={tab === "chat" ? "active" : ""}
+            onClick={() => setTab("chat")}
+          >
             Chat
           </button>
-          <button className={tab === "skills" ? "active" : ""} onClick={() => setTab("skills")}>
+          <button
+            data-appearance={tab === "skills" ? "primary" : "secondary"}
+            className={tab === "skills" ? "active" : ""}
+            onClick={() => setTab("skills")}
+          >
             Skills{skills ? ` (${skills.effective.length})` : ""}
           </button>
-          <button className={tab === "tokens" ? "active" : ""} onClick={() => setTab("tokens")}>
+          <button
+            data-appearance={tab === "tokens" ? "primary" : "secondary"}
+            className={tab === "tokens" ? "active" : ""}
+            onClick={() => setTab("tokens")}
+          >
             Tokens
           </button>
           <button
+            data-appearance={tab === "settings" ? "primary" : "secondary"}
             className={tab === "settings" ? "active" : ""}
             onClick={() => setTab("settings")}
             title="Settings"
@@ -151,6 +164,7 @@ function SettingsPanel({
       <label>
         Anthropic API key (stays in this browser — bring your own provider)
         <input
+          className="input"
           type="password"
           value={draft.apiKey}
           placeholder="sk-ant-..."
@@ -159,21 +173,27 @@ function SettingsPanel({
       </label>
       <label>
         Model
-        <select value={draft.model} onChange={(e) => setDraft({ ...draft, model: e.target.value })}>
+        <select
+          className="select"
+          value={draft.model}
+          onChange={(e) => setDraft({ ...draft, model: e.target.value })}
+        >
           <option value="claude-sonnet-5">Claude Sonnet 5</option>
           <option value="claude-opus-4-8">Claude Opus 4.8</option>
           <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
         </select>
       </label>
-      <label className="row">
+      <div className="checkbox-container">
         <input
+          className="checkbox-input"
+          id="auto-apply"
           type="checkbox"
           checked={draft.autoApplyTriggered}
           onChange={(e) => setDraft({ ...draft, autoApplyTriggered: e.target.checked })}
         />
-        Auto-send triggered skills to the agent
-      </label>
-      <button className="primary" onClick={() => onSave(draft)}>
+        <label htmlFor="auto-apply">Auto-send triggered skills to the agent</label>
+      </div>
+      <button data-appearance="primary" onClick={() => onSave(draft)}>
         Save
       </button>
       <p className="hint">

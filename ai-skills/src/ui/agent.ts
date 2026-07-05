@@ -179,6 +179,7 @@ export function buildSystemPrompt(skills: SkillsPayload, context: unknown): stri
     JSON.stringify(context, null, 2),
     "```",
     "",
+    "Be hands-on: when the user asks you to design or create something, gather context (skills, tokens) and then BUILD it with the write tools in the same turn — boards, shapes, text, token fills — instead of stopping at a plan. If needed tokens don't exist yet, create them first (create_color_token), then use them.",
     "Work in small steps, confirm what you changed, reference shapes by name. Keep replies short — you live in a 400px side panel.",
   ].join("\n");
 }
@@ -208,10 +209,13 @@ export async function runTurn(
   const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true });
   const messages = [...history];
 
-  for (let round = 0; round < 16; round++) {
+  for (let round = 0; round < 32; round++) {
     const stream = client.messages.stream({
       model: settings.model,
-      max_tokens: 4096,
+      // generous budget: models with adaptive thinking spend a chunk of it
+      // reasoning before any visible output — a small budget can be consumed
+      // entirely by thinking, yielding an empty (and silent) reply
+      max_tokens: 32000,
       system,
       tools: TOOLS,
       messages,
@@ -228,6 +232,17 @@ export async function runTurn(
     const toolUses = final.content.filter(
       (b: ContentBlock): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use",
     );
+
+    // never end a turn silently
+    if (!turnText && toolUses.length === 0) {
+      cb.onAssistantDone(
+        final.stop_reason === "max_tokens"
+          ? "⚠️ I ran out of output budget before finishing — please send the request again."
+          : "⚠️ The model returned no visible output — try rephrasing the request.",
+      );
+      break;
+    }
+
     if (final.stop_reason !== "tool_use" || toolUses.length === 0) break;
 
     const results: ToolResultBlockParam[] = [];

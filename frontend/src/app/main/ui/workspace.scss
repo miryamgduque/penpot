@@ -27,6 +27,12 @@
   overflow: hidden;
   background-color: var(--color-background-primary);
 
+  // Like the sidebars, the dock must sit above the absolutely-positioned
+  // bottom palette wrapper (100vw wide), which otherwise hit-tests over the
+  // lower part of the panel and swallows clicks (e.g. the chat composer).
+  position: relative;
+  z-index: deprecated.$z-index-1;
+
   &:has(plugin-modal) {
     width: 420px;
   }

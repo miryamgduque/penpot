@@ -15,6 +15,7 @@
    [app.main.data.workspace.drawing.common :as dwc]
    [app.main.data.workspace.history :as dwh]
    [app.main.data.workspace.shortcuts :as sc]
+   [app.main.data.workspace.skills :as dwsk]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
@@ -209,6 +210,14 @@
         :on-zoom-reset on-zoom-reset
         :on-zoom-fit on-zoom-fit
         :on-zoom-selected on-zoom-selected}]]
+
+     ;; Bundled Penpot Skills panel (skills + tokens + embedded agent),
+     ;; opened natively as a docked workspace panel — no plugin install.
+     [:div {:class (stl/css :comments-section)}
+      [:> icon-button* {:variant "ghost"
+                        :aria-label "Penpot Skills"
+                        :icon i/puzzle
+                        :on-click #(st/emit! (dwsk/toggle-skills-panel))}]]
 
      [:div {:class (stl/css :comments-section)}
       [:button {:title (tr "workspace.toolbar.comments" (sc/get-tooltip :add-comment))

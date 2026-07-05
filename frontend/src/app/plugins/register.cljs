@@ -22,6 +22,9 @@
 ;; cause a circular dependency
 (def mcp-plugin-id "96dfa740-005d-8020-8007-55ede24a2bae")
 
+;; Bundled Penpot Skills panel (see `app.main.data.workspace.skills`)
+(def skills-plugin-id "96dfa740-005d-8020-8007-55ede24a2baf")
+
 ;; Promise that resolves when plugins runtime is initialized.
 ;; Lives here to avoid circular dependency: workspace.mcp -> app.plugins -> app.plugins.api -> workspace
 (defonce ^:private runtime-ready-promise (p/deferred))
@@ -152,6 +155,7 @@
   [plugin-id permission]
   (or (= plugin-id "00000000-0000-0000-0000-000000000000")
       (= plugin-id mcp-plugin-id)
+      (= plugin-id skills-plugin-id)
       (let [{:keys [permissions]} (dm/get-in @registry [:data plugin-id])]
         (contains? permissions permission))))
 

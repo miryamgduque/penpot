@@ -512,3 +512,10 @@ button.danger {
 .key-status.ok {
   color: var(--ok);
 }
+
+.composer-hint {
+  padding: var(--spacing-4) var(--spacing-12);
+  font-size: var(--font-size-xs);
+  color: var(--warn);
+  border-block-start: 1px solid var(--border);
+}

@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Penpot Skills prototype: in-file design skills, cascade resolver, skills panel and embedded chat agent",
   "scripts": {
-    "build:plugin": "esbuild src/plugin.ts --bundle --format=iife --target=es2022 --outfile=dist/plugin.js",
+    "build:plugin": "esbuild src/plugin-main.ts --bundle --format=iife --target=es2022 --outfile=dist/plugin.js && esbuild src/plugin-chat.ts --bundle --format=iife --target=es2022 --outfile=dist/plugin-chat.js && esbuild src/plugin-skills.ts --bundle --format=iife --target=es2022 --outfile=dist/plugin-skills.js",
     "serve": "vite preview",
     "start": "npm run build && vite preview",
     "build": "tsc --noEmit && vite build && npm run build:plugin",

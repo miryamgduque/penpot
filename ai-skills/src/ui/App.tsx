@@ -8,6 +8,38 @@ import { AuditPanel } from "./Audit";
 import { NotificationStack, NOTIFICATION_TTL_MS, type SkillNotification } from "./Notifications";
 
 type Tab = "chat" | "skills" | "audit" | "tokens" | "settings";
+type PanelMode = "chat" | "skills" | "all";
+
+/**
+ * Which panel this iframe is: the plugin entry passes ?mode=chat|skills in
+ * the open URL, which the plugins runtime forwards through the URL hash
+ * (manifest version 2). Legacy single-panel installs get every tab.
+ */
+function panelMode(): PanelMode {
+  try {
+    const query = new URLSearchParams(window.location.hash.split("?")[1] ?? "");
+    const mode = query.get("mode");
+    return mode === "chat" || mode === "skills" ? mode : "all";
+  } catch {
+    return "all";
+  }
+}
+
+const MODE: PanelMode = panelMode();
+
+const TABS_BY_MODE: Record<PanelMode, Tab[]> = {
+  chat: ["chat", "settings"],
+  skills: ["skills", "audit", "tokens"],
+  all: ["chat", "skills", "audit", "tokens", "settings"],
+};
+
+/** Hands a prompt to the Chat panel: pending-ask travels through the file's
+ * pluginData; the workspace listens for the open-chat message and docks the
+ * chat panel, which drains the prompt on init. */
+function handOffToChat(prompt: string) {
+  void bridge.call("set-pending-ask", { prompt }).catch(() => {});
+  window.parent.postMessage({ type: "penpot-skills:open-chat" }, "*");
+}
 
 export interface Settings {
   apiKey: string;
@@ -43,7 +75,7 @@ function loadLocalSettings(): Settings {
 }
 
 export function App() {
-  const [tab, setTab] = useState<Tab>("chat");
+  const [tab, setTab] = useState<Tab>(TABS_BY_MODE[MODE][0]);
   const [skills, setSkills] = useState<SkillsPayload | null>(null);
   const [context, setContext] = useState<DesignContext | null>(null);
   const [settings, setSettings] = useState<Settings>(loadLocalSettings);
@@ -63,6 +95,8 @@ export function App() {
         setContext(e.context);
         setViolations(e.violations ?? []);
         document.documentElement.dataset.theme = e.theme;
+      } else if (e.type === "skills-change") {
+        setSkills(e.skills);
       } else if (e.type === "violations-change") {
         setViolations(e.violations);
       } else if (e.type === "theme-change") {
@@ -73,7 +107,9 @@ export function App() {
           ...prev.slice(-3),
           { ...e, id: notifId.current++, expiresAt: Date.now() + NOTIFICATION_TTL_MS },
         ]);
-        if (settingsRef.current.autoApplyTriggered && settingsRef.current.apiKey) {
+        // auto-apply needs the API key, which lives in the chat panel's
+        // storage — only meaningful when this panel hosts the chat
+        if (MODE !== "skills" && settingsRef.current.autoApplyTriggered && settingsRef.current.apiKey) {
           setPendingAsk(
             `[Penpot change watcher] Triggered skill "${e.skill.name}": ${e.reason}` +
               (e.shape ? ` (shape "${e.shape.name}", id ${e.shape.id})` : "") +
@@ -99,10 +135,18 @@ export function App() {
     [],
   );
 
+  const toChat = (prompt: string) => {
+    if (MODE === "skills") {
+      handOffToChat(prompt);
+    } else {
+      setTab("chat");
+      setPendingAsk(prompt);
+    }
+  };
+
   const askAgent = (n: SkillNotification) => {
     dismiss(n.id);
-    setTab("chat");
-    setPendingAsk(
+    toChat(
       `[Penpot change watcher] Triggered skill "${n.skill.name}": ${n.reason}` +
         (n.shape ? ` (shape "${n.shape.name}", id ${n.shape.id})` : "") +
         `\nApply this skill now.`,
@@ -125,44 +169,54 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <span className="brand">⛨ Penpot Skills</span>
+        <span className="brand">{MODE === "chat" ? "✦ Penpot Agent" : "⛨ Penpot Skills"}</span>
         <nav>
-          <button
-            data-appearance={tab === "chat" ? "primary" : "secondary"}
-            className={tab === "chat" ? "active" : ""}
-            onClick={() => setTab("chat")}
-          >
-            Chat
-          </button>
-          <button
-            data-appearance={tab === "skills" ? "primary" : "secondary"}
-            className={tab === "skills" ? "active" : ""}
-            onClick={() => setTab("skills")}
-          >
-            Skills{skills ? ` (${skills.effective.length})` : ""}
-          </button>
-          <button
-            data-appearance={tab === "audit" ? "primary" : "secondary"}
-            className={tab === "audit" ? "active" : ""}
-            onClick={() => setTab("audit")}
-          >
-            Audit{violations.length > 0 ? ` (${violations.length})` : ""}
-          </button>
-          <button
-            data-appearance={tab === "tokens" ? "primary" : "secondary"}
-            className={tab === "tokens" ? "active" : ""}
-            onClick={() => setTab("tokens")}
-          >
-            Tokens
-          </button>
-          <button
-            data-appearance={tab === "settings" ? "primary" : "secondary"}
-            className={tab === "settings" ? "active" : ""}
-            onClick={() => setTab("settings")}
-            title="Settings"
-          >
-            ⚙
-          </button>
+          {TABS_BY_MODE[MODE].includes("chat") && (
+            <button
+              data-appearance={tab === "chat" ? "primary" : "secondary"}
+              className={tab === "chat" ? "active" : ""}
+              onClick={() => setTab("chat")}
+            >
+              Chat
+            </button>
+          )}
+          {TABS_BY_MODE[MODE].includes("skills") && (
+            <button
+              data-appearance={tab === "skills" ? "primary" : "secondary"}
+              className={tab === "skills" ? "active" : ""}
+              onClick={() => setTab("skills")}
+            >
+              Skills{skills ? ` (${skills.effective.length})` : ""}
+            </button>
+          )}
+          {TABS_BY_MODE[MODE].includes("audit") && (
+            <button
+              data-appearance={tab === "audit" ? "primary" : "secondary"}
+              className={tab === "audit" ? "active" : ""}
+              onClick={() => setTab("audit")}
+            >
+              Audit{violations.length > 0 ? ` (${violations.length})` : ""}
+            </button>
+          )}
+          {TABS_BY_MODE[MODE].includes("tokens") && (
+            <button
+              data-appearance={tab === "tokens" ? "primary" : "secondary"}
+              className={tab === "tokens" ? "active" : ""}
+              onClick={() => setTab("tokens")}
+            >
+              Tokens
+            </button>
+          )}
+          {TABS_BY_MODE[MODE].includes("settings") && (
+            <button
+              data-appearance={tab === "settings" ? "primary" : "secondary"}
+              className={tab === "settings" ? "active" : ""}
+              onClick={() => setTab("settings")}
+              title="Settings"
+            >
+              ⚙
+            </button>
+          )}
         </nav>
       </header>
 
@@ -175,24 +229,23 @@ export function App() {
       <NotificationStack notifications={notifications} onDismiss={dismiss} onAskAgent={askAgent} />
 
       <main className="content">
-        <div style={{ display: tab === "chat" ? "contents" : "none" }}>
-          <Chat
-            settings={settings}
-            skills={skills}
-            context={context}
-            pendingAsk={pendingAsk}
-            onPendingAskHandled={() => setPendingAsk(null)}
-          />
-        </div>
+        {MODE !== "skills" && (
+          <div style={{ display: tab === "chat" ? "contents" : "none" }}>
+            <Chat
+              settings={settings}
+              skills={skills}
+              context={context}
+              pendingAsk={pendingAsk}
+              onPendingAskHandled={() => setPendingAsk(null)}
+            />
+          </div>
+        )}
         {tab === "skills" && skills && <SkillsPanel skills={skills} onSkillsChanged={setSkills} />}
         {tab === "audit" && (
           <AuditPanel
             violations={violations}
             onViolationsChanged={setViolations}
-            onFixViaChat={(prompt) => {
-              setTab("chat");
-              setPendingAsk(prompt);
-            }}
+            onFixViaChat={toChat}
           />
         )}
         {tab === "tokens" && <TokensPanel />}

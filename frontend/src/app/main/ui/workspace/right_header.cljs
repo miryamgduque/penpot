@@ -35,6 +35,9 @@
 (def ref:persistence-status
   (l/derived :status refs/persistence))
 
+(def ^:private ref:skills-dock
+  (l/derived :skills-dock refs/workspace-local))
+
 ;; --- Zoom Widget
 
 (mf/defc zoom-widget-workspace
@@ -194,6 +197,18 @@
       (when ^boolean editing?
         (dom/select-text! (mf/ref-val input-ref))))
 
+    ;; The Skills panel asks for the chat panel to open (e.g. "Fix via
+    ;; chat" on audit violations) by posting a message to the workspace
+    ;; window; the pending prompt itself travels through the file's
+    ;; shared pluginData and is drained by the chat panel on init.
+    (mf/with-effect []
+      (let [on-message
+            (fn [event]
+              (when (= "penpot-skills:open-chat" (unchecked-get (.-data event) "type"))
+                (st/emit! (dwsk/open-panel :chat))))]
+        (.addEventListener js/window "message" on-message)
+        #(.removeEventListener js/window "message" on-message)))
+
     [:div {:class (stl/css :workspace-header-right)}
      [:div {:class (stl/css :users-section)}
       [:> active-sessions*]]
@@ -211,13 +226,21 @@
         :on-zoom-fit on-zoom-fit
         :on-zoom-selected on-zoom-selected}]]
 
-     ;; Bundled Penpot Skills panel (skills + tokens + embedded agent),
-     ;; opened natively as a docked workspace panel — no plugin install.
-     [:div {:class (stl/css :comments-section)}
-      [:> icon-button* {:variant "ghost"
-                        :aria-label "Penpot Skills"
-                        :icon i/puzzle
-                        :on-click #(st/emit! (dwsk/toggle-skills-panel))}]]
+     ;; Bundled Penpot panels (agent chat / skills manager), opened
+     ;; natively as docked workspace panels — no plugin install. One dock
+     ;; slot: opening one panel swaps out the other.
+     (let [dock (mf/deref ref:skills-dock)]
+       [:*
+        [:div {:class (stl/css :comments-section)}
+         [:> icon-button* {:variant (if (= dock :chat) "primary" "ghost")
+                           :aria-label "Penpot Agent"
+                           :icon i/feedback
+                           :on-click #(st/emit! (dwsk/toggle-panel :chat))}]]
+        [:div {:class (stl/css :comments-section)}
+         [:> icon-button* {:variant (if (= dock :skills) "primary" "ghost")
+                           :aria-label "Penpot Skills"
+                           :icon i/puzzle
+                           :on-click #(st/emit! (dwsk/toggle-panel :skills))}]]])
 
      [:div {:class (stl/css :comments-section)}
       [:button {:title (tr "workspace.toolbar.comments" (sc/get-tooltip :add-comment))

@@ -11,6 +11,7 @@
    [app.db :as db]
    [app.migrations.clj.migration-0023 :as mg0023]
    [app.migrations.clj.migration-0145 :as mg0145]
+   [app.migrations.clj.migration-0153 :as mg0153]
    [app.util.migrations :as mg]
    [integrant.core :as ig]))
 
@@ -505,7 +506,13 @@
     :fn (mg/resource "app/migrations/sql/0153-add-storage-object-status-and-deletion-attempts.sql")}
 
    {:name "0154-add-upload-session-chunk-table"
-    :fn (mg/resource "app/migrations/sql/0154-add-upload-session-chunk-table.sql")}])
+    :fn (mg/resource "app/migrations/sql/0154-add-upload-session-chunk-table.sql")}
+
+   {:name "0152-add-design-skill-tables"
+    :fn (mg/resource "app/migrations/sql/0152-add-design-skill-tables.sql")}
+
+   {:name "0153-seed-design-skills"
+    :fn mg0153/migrate}])
 
 (defn apply-migrations!
   [pool name migrations]

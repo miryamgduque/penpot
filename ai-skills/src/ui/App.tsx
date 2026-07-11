@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as bridge from "./bridge";
-import type { SkillsPayload, DesignContext } from "./bridge";
+import type { SkillsPayload, DesignContext, Violation } from "./bridge";
 import { Chat } from "./Chat";
 import { SkillsPanel } from "./Skills";
 import { TokensPanel } from "./Tokens";
+import { AuditPanel } from "./Audit";
 import { NotificationStack, NOTIFICATION_TTL_MS, type SkillNotification } from "./Notifications";
 
-type Tab = "chat" | "skills" | "tokens" | "settings";
+type Tab = "chat" | "skills" | "audit" | "tokens" | "settings";
 
 export interface Settings {
   apiKey: string;
@@ -47,6 +48,7 @@ export function App() {
   const [context, setContext] = useState<DesignContext | null>(null);
   const [settings, setSettings] = useState<Settings>(loadLocalSettings);
   const [notifications, setNotifications] = useState<SkillNotification[]>([]);
+  const [violations, setViolations] = useState<Violation[]>([]);
   const [pendingAsk, setPendingAsk] = useState<string | null>(null);
   const notifId = useRef(1);
   const settingsRef = useRef(settings);
@@ -59,7 +61,10 @@ export function App() {
       if (e.type === "init") {
         setSkills(e.skills);
         setContext(e.context);
+        setViolations(e.violations ?? []);
         document.documentElement.dataset.theme = e.theme;
+      } else if (e.type === "violations-change") {
+        setViolations(e.violations);
       } else if (e.type === "theme-change") {
         document.documentElement.dataset.theme = e.theme;
       } else if (e.type === "skill-triggered") {
@@ -137,6 +142,13 @@ export function App() {
             Skills{skills ? ` (${skills.effective.length})` : ""}
           </button>
           <button
+            data-appearance={tab === "audit" ? "primary" : "secondary"}
+            className={tab === "audit" ? "active" : ""}
+            onClick={() => setTab("audit")}
+          >
+            Audit{violations.length > 0 ? ` (${violations.length})` : ""}
+          </button>
+          <button
             data-appearance={tab === "tokens" ? "primary" : "secondary"}
             className={tab === "tokens" ? "active" : ""}
             onClick={() => setTab("tokens")}
@@ -173,6 +185,16 @@ export function App() {
           />
         </div>
         {tab === "skills" && skills && <SkillsPanel skills={skills} onSkillsChanged={setSkills} />}
+        {tab === "audit" && (
+          <AuditPanel
+            violations={violations}
+            onViolationsChanged={setViolations}
+            onFixViaChat={(prompt) => {
+              setTab("chat");
+              setPendingAsk(prompt);
+            }}
+          />
+        )}
         {tab === "tokens" && <TokensPanel />}
         {tab === "settings" && <SettingsPanel settings={settings} onSave={saveSettings} />}
       </main>

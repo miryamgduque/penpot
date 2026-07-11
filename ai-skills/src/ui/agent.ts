@@ -63,17 +63,24 @@ export function estimateCostUSD(model: string, u: UsageTotals): number | null {
   );
 }
 
+/**
+ * Deliberately few, task-scoped tools (the MCP server keeps the atomic
+ * surface for external agents): one orientation read, skill bodies on
+ * demand, a batch token applicator, an audit runner, and execute_code for
+ * everything generative. Fewer calls per task = fewer round trips and less
+ * context burned on tool results.
+ */
 export const TOOLS: Tool[] = [
   {
-    name: "get_design_context",
+    name: "read_design",
     description:
-      "Returns the current Penpot file/page name, the selected shapes and the top-level shapes on the page (ids, names, geometry, fills).",
+      "One-call orientation: current file/page/selection and top-level shapes, the color tokens + library colors, the effective skills/rules manifest, and how many audit violations are open. Call this FIRST each task instead of separate context/token/skill reads.",
     input_schema: { type: "object", properties: {} },
   },
   {
     name: "get_design_skills",
     description:
-      "Returns the effective design skills for this file (four-scope cascade already resolved). By default a lean manifest; pass a name to get one skill's full markdown body.",
+      "Returns the effective design skills for this file (four-scope cascade already resolved, disabled entries excluded). By default a lean manifest; pass a name to get one skill's full markdown body.",
     input_schema: {
       type: "object",
       properties: {
@@ -83,44 +90,36 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "get_color_tokens",
+    name: "audit_file",
     description:
-      "Lists this file's color design tokens (name, resolved value, set, active) and library colors. Colors must come from here when the token-only-colors rule is enforced.",
+      "Scans the current page against the file's active rules (token-only-colors, layer-naming, …) and returns the open violations (rule, shape, reason). Use it to ground a fix-up task and to verify your fixes cleared the list.",
     input_schema: { type: "object", properties: {} },
   },
   {
-    name: "set_fill",
+    name: "apply_tokens",
     description:
-      "Sets a shape's fill. Prefer tokenName (applies the design token). A raw color is validated against the enforced skills and will be REJECTED if it is not a token value.",
+      "Applies color design tokens to shapes in batch — the safe path for coloring (never rejected by token-only-colors). Each application names a shape, a token, and optionally the properties ('fill' and/or 'stroke', default fill). Token application is asynchronous in Penpot: verify with audit_file or read_design afterwards, not in the same call.",
     input_schema: {
       type: "object",
       properties: {
-        shapeId: { type: "string" },
-        tokenName: { type: "string", description: "Name of a color token to apply" },
-        color: { type: "string", description: "Raw hex color — subject to enforcement" },
+        applications: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              shapeId: { type: "string" },
+              tokenName: { type: "string", description: "e.g. color.brand.primary" },
+              properties: {
+                type: "array",
+                items: { type: "string", enum: ["fill", "stroke"] },
+                description: "Which properties to bind (default: fill)",
+              },
+            },
+            required: ["shapeId", "tokenName"],
+          },
+        },
       },
-      required: ["shapeId"],
-    },
-  },
-  {
-    name: "create_shape",
-    description: "Creates a board, rectangle, ellipse or text shape.",
-    input_schema: {
-      type: "object",
-      properties: {
-        kind: { type: "string", enum: ["board", "rectangle", "ellipse", "text"] },
-        name: { type: "string" },
-        x: { type: "number" },
-        y: { type: "number" },
-        width: { type: "number" },
-        height: { type: "number" },
-        parentId: { type: "string" },
-        text: { type: "string" },
-        fontSize: { type: "number" },
-        fillTokenName: { type: "string" },
-        fillColor: { type: "string", description: "Raw hex — subject to enforcement" },
-      },
-      required: ["kind"],
+      required: ["applications"],
     },
   },
   {
@@ -137,18 +136,9 @@ export const TOOLS: Tool[] = [
     },
   },
   {
-    name: "rename_shape",
-    description: "Renames a shape/layer.",
-    input_schema: {
-      type: "object",
-      properties: { shapeId: { type: "string" }, name: { type: "string" } },
-      required: ["shapeId", "name"],
-    },
-  },
-  {
     name: "execute_code",
     description:
-      "Executes JavaScript against the Penpot plugin API (variable `penpot`, plus `console`). Use for anything the structured tools don't cover. Writes are gated by the file's enforced skills — a rejected write throws citing the rule. Return a JSON-serializable value. " +
+      "Executes JavaScript against the Penpot plugin API (variable `penpot`, plus `console`). The workhorse for creating and modifying shapes, boards, text and layout. Writes are gated by the file's enforced rules — a rejected write throws citing the rule. Return a JSON-serializable value. " +
       "API gotchas: shape.width/height are READ-ONLY — use shape.resize(w, h); nest shapes with board.appendChild(shape); components are created with penpot.library.local.createComponent([shapes]); prefer several smaller code blocks over one huge one (each call has a time budget) and re-read state instead of assuming a failed call did nothing.",
     input_schema: {
       type: "object",
@@ -159,26 +149,25 @@ export const TOOLS: Tool[] = [
 ];
 
 const OP_BY_TOOL: Record<string, string> = {
-  get_design_context: "get-design-context",
-  get_color_tokens: "get-color-tokens",
-  set_fill: "set-fill",
-  create_shape: "create-shape",
+  read_design: "read-design",
+  audit_file: "audit-file",
+  apply_tokens: "apply-tokens",
   create_color_token: "create-color-token",
-  rename_shape: "rename-shape",
   execute_code: "execute-code",
 };
 
 async function executeTool(name: string, input: Record<string, unknown>): Promise<unknown> {
   if (name === "get_design_skills") {
     const skills = await bridge.call<SkillsPayload>("get-skills");
+    const enabled = skills.effective.filter((s) => !s.disabled);
     if (typeof input.name === "string") {
-      const skill = skills.effective.find((s) => s.name === input.name);
+      const skill = enabled.find((s) => s.name === input.name);
       return skill ? { name: skill.name, enforcement: skill.enforcement, body: skill.body }
                    : { error: `No skill named ${input.name}` };
     }
     if (input.include_bodies) {
-      return skills.effective.map((s) => ({
-        name: s.name, scope: s.definedAt, enforcement: s.enforcement, body: s.body,
+      return enabled.map((s) => ({
+        name: s.name, kind: s.kind, scope: s.definedAt, enforcement: s.enforcement, body: s.body,
       }));
     }
     return skillManifest(skills.effective);
@@ -186,34 +175,55 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   const op = OP_BY_TOOL[name];
   if (!op) throw new Error(`Unknown tool: ${name}`);
   // canvas-building code can legitimately run for minutes; reads stay snappy
-  const timeoutMs = name === "execute_code" || name === "create_shape" ? 180_000 : 30_000;
+  const timeoutMs = name === "execute_code" || name === "apply_tokens" ? 180_000 : 30_000;
   return bridge.call(op, input, { timeoutMs });
 }
 
 export function buildSystemPrompt(skills: SkillsPayload, context: unknown): string {
-  // Platform skills (the curated penpot-ai-kit set) are listed as a routing
-  // manifest and fetched on demand — inlining their bodies would consume the
-  // whole context. Org/project/file skills are small and user-authored, so
-  // their advisory bodies ride along in full.
-  const platform = skills.effective.filter((s) => s.definedAt === "platform");
-  const local = skills.effective.filter((s) => s.definedAt !== "platform");
+  // Skills are knowledge (playbooks/conventions); rules are constraints about
+  // the artifact. Platform skills (the curated penpot-ai-kit set) are listed
+  // as a routing manifest and fetched on demand — inlining their bodies would
+  // consume the whole context. Local skills are small and ride along in full.
+  const enabled = skills.effective.filter((s) => !s.disabled);
+  const platformSkills = enabled.filter((s) => s.definedAt === "platform" && s.kind === "skill");
+  const rules = enabled.filter((s) => s.kind === "rule");
+  const localSkills = enabled.filter((s) => s.definedAt !== "platform" && s.kind === "skill");
 
-  const platformIndex = platform
+  const platformIndex = platformSkills
     .map((s) => `- **${s.name}**${s.mandatory ? " (mandatory)" : ""}: ${s.description}`)
     .join("\n");
 
-  const localManifest = skillManifest(local);
-  const localAdvisoryBodies = local
-    .filter((s) => s.enforcement === "advisory")
+  const rulesManifest = rules.map((s) => ({
+    name: s.name,
+    enforcement: s.enforcement,
+    mandatory: s.mandatory,
+    scope: s.definedAt,
+    description: s.description,
+  }));
+
+  const localSkillBodies = localSkills
     .map((s) => `### ${s.name} (${s.definedAt})\n${s.body}`)
     .join("\n\n");
 
   return [
     "You are the design agent embedded in Penpot (open-source design tool), working on the user's current file through design tools.",
     "",
+    "Start each task with read_design (one call: context, tokens, skills, open violation count).",
+    "",
     "## Skill routing (platform scope — the curated penpot-ai-kit set)",
     "These skills are your playbooks. Do NOT guess their content: before starting a task that matches one, fetch its full body with get_design_skills({name}) and follow it. Fetch `penpot-plugin-api-gotchas` before your FIRST canvas-mutating execute_code of the session — it prevents the most common API mistakes.",
     platformIndex,
+    "",
+    "## Rules governing this file",
+    "Rules are constraints about the artifact, separate from skills:",
+    "- `enforced` rules are gated structurally in Penpot's write path — violating writes are REJECTED with an error citing the rule. Read the error and self-correct (apply_tokens is the safe path for colors).",
+    "- `triggered` and `advisory` rules are watched: violations accumulate in the file's audit ledger. Use audit_file to see them; when asked to fix them, fix shape by shape and re-run audit_file to confirm.",
+    "```json",
+    JSON.stringify(rulesManifest, null, 2),
+    "```",
+    "",
+    "## Skills local to this org/project/file (full text, follow as context)",
+    localSkillBodies || "(none)",
     "",
     "## Operating modes (governance, distilled from penpot-operating-modes)",
     "- Suggest: audits/reviews propose changes as a report; touch nothing.",
@@ -221,23 +231,12 @@ export function buildSystemPrompt(skills: SkillsPayload, context: unknown): stri
     "- Auto-fix without asking ONLY for the safe set: renaming auto-named layers, loss-less raw-value→token swaps, adding documentation/metadata.",
     "- Never without explicit approval: deleting/restructuring components or shared assets, detach() on instances, large destructive geometry changes.",
     "",
-    "## Skills local to this org/project/file",
-    "```json",
-    JSON.stringify(localManifest, null, 2),
-    "```",
-    "",
-    "Advisory local skills (full text, follow them as context):",
-    localAdvisoryBodies,
-    "",
-    "Rules marked `enforced` are gated structurally in Penpot's write path: violating writes are rejected with an error citing the rule, regardless of what you intend. If a write is rejected, read the error, use get_color_tokens / get_design_skills, and self-correct.",
-    "Rules marked `triggered` are surfaced by Penpot when the relevant change happens; when the user forwards one, apply it.",
-    "",
     "## Current design context",
     "```json",
     JSON.stringify(context, null, 2),
     "```",
     "",
-    "Be hands-on: when the user asks you to design or create something, gather context (skills, tokens) and then BUILD it with the write tools in the same turn — boards, shapes, text, token fills — instead of stopping at a plan. If needed tokens don't exist yet, create them first (create_color_token), then use them.",
+    "Be hands-on: when the user asks you to design or create something, orient with read_design and then BUILD it in the same turn — execute_code for structure, apply_tokens for color — instead of stopping at a plan. If needed tokens don't exist yet, create them first (create_color_token), then use them.",
     "Work in small steps, confirm what you changed, reference shapes by name. Keep replies short — you live in a 400px side panel.",
   ].join("\n");
 }
@@ -256,6 +255,34 @@ export interface AgentSettings {
 }
 
 /**
+ * Context memory management: design-state tool results (read_design, audits,
+ * execute_code dumps) go stale the moment the canvas changes, yet they are the
+ * bulk of the history. Before each turn, results outside the recent window are
+ * replaced with a stub — the model re-reads live state cheaply when it needs
+ * it. The recent window stays intact so multi-step work keeps its grounding.
+ */
+const PRUNE_KEEP_RECENT_MESSAGES = 8;
+const PRUNE_STUB =
+  "[stale tool result elided to conserve context — call the tool again if current state is needed]";
+
+function pruneStaleToolResults(messages: MessageParam[]): void {
+  const cutoff = messages.length - PRUNE_KEEP_RECENT_MESSAGES;
+  for (let i = 0; i < cutoff; i++) {
+    const m = messages[i];
+    if (m.role !== "user" || !Array.isArray(m.content)) continue;
+    for (const block of m.content) {
+      if (
+        block.type === "tool_result" &&
+        typeof block.content === "string" &&
+        block.content.length > 400
+      ) {
+        block.content = PRUNE_STUB;
+      }
+    }
+  }
+}
+
+/**
  * Runs one user turn: streams assistant output, executes tool calls via the
  * plugin bridge (where enforcement lives), feeds results back, and repeats
  * until the model stops calling tools. Returns the updated history.
@@ -268,6 +295,7 @@ export async function runTurn(
 ): Promise<MessageParam[]> {
   const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true });
   const messages = [...history];
+  pruneStaleToolResults(messages);
 
   for (let round = 0; round < 32; round++) {
     const stream = client.messages.stream({

@@ -10,6 +10,7 @@ export const FILE_SEED_SKILLS: string[] = [
   `---
 name: token-only-colors
 scope: file
+kind: rule
 enforcement: enforced
 trigger: fill-change
 description: Fills and strokes must use color tokens or library colors from this file — raw hex values are rejected at the write path.
@@ -27,6 +28,7 @@ color does not resolve to a token, no matter which agent or model issued it.`,
   `---
 name: layer-naming
 scope: file
+kind: rule
 enforcement: triggered
 trigger: rename
 description: Layers use semantic, lowercase names (hero, nav/item, cta-button) — never default names like "Rectangle 5".

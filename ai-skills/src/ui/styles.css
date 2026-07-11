@@ -389,6 +389,102 @@ button.danger {
 .badge.mandatory {
   color: var(--fg);
 }
+.badge.kind-rule {
+  color: var(--fg);
+  border-color: var(--fg-soft);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.badge.kind-skill {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.skill-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-8);
+}
+.skill-row .skill-summary {
+  flex: 1;
+}
+.skill-toggle input {
+  accent-color: var(--app-blue);
+  cursor: pointer;
+}
+.skill-toggle input:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+.skill-card.disabled {
+  opacity: 0.55;
+  border-inline-start-color: var(--border);
+}
+
+/* ---- Audit tab ---- */
+
+.audit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  padding: var(--spacing-8) var(--spacing-12);
+  overflow-y: auto;
+}
+.audit-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  align-items: flex-start;
+}
+.audit-group {
+  border: 1px solid var(--border);
+  border-radius: var(--spacing-8);
+  padding: var(--spacing-8) var(--spacing-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+.audit-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-8);
+  margin-block-end: var(--spacing-4);
+}
+.audit-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  padding: var(--spacing-4) 0;
+  border-block-start: 1px solid var(--border);
+}
+.audit-item-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.audit-shape {
+  font-size: var(--font-size-s);
+  color: var(--fg);
+  font-weight: var(--font-weight-bold);
+}
+.audit-reason {
+  font-size: var(--font-size-xs);
+  color: var(--fg-soft);
+  overflow-wrap: anywhere;
+}
+.audit-item button.icon {
+  all: unset;
+  cursor: pointer;
+  color: var(--fg-soft);
+  padding: 0 var(--spacing-4);
+  font-size: var(--font-size-s);
+}
+.audit-item button.icon:hover {
+  color: var(--fg);
+}
 
 .skill-desc {
   color: var(--fg-soft);

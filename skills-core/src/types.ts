@@ -14,6 +14,16 @@ export type Scope = (typeof SCOPES)[number];
 export const ENFORCEMENTS = ["advisory", "triggered", "enforced"] as const;
 export type Enforcement = (typeof ENFORCEMENTS)[number];
 
+/**
+ * skill = knowledge for the agent (playbooks, conventions, how-tos) — it
+ * shapes what gets produced. rule = a constraint about the artifact that can
+ * be checked (and possibly enforced or auto-fixed) after the fact. Explicit
+ * `kind:` frontmatter wins; otherwise enforced/triggered documents are rules
+ * and advisory ones are skills.
+ */
+export const KINDS = ["skill", "rule"] as const;
+export type SkillKind = (typeof KINDS)[number];
+
 /** Moments the runtime knows how to detect and surface triggered skills on. */
 export type Trigger =
   | "fill-change"
@@ -26,6 +36,7 @@ export interface Skill {
   name: string;
   scope: Scope;
   enforcement: Enforcement;
+  kind: SkillKind;
   description: string;
   /** Only meaningful at platform/org/project scope: lower scopes cannot loosen it. */
   mandatory: boolean;
@@ -46,6 +57,12 @@ export interface EffectiveSkill extends Skill {
   enforcementRaisedBy?: Scope;
   /** Scopes that had definitions overridden by a more specific one. */
   overrides: Scope[];
+  /**
+   * True when every definition of this skill is switched off. Disabled skills
+   * stay in the effective set so UIs can show and re-enable them, but agents
+   * and enforcement must ignore them.
+   */
+  disabled?: boolean;
 }
 
 export function enforcementRank(e: Enforcement): number {

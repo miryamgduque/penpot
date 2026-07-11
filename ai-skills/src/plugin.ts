@@ -19,12 +19,17 @@ import {
   resolveCascade,
   SkillViolationError,
   assertFillsAllowed,
-  assertStrokesAllowed,
   collectAllowedColors,
+  findDisallowedColors,
+  type AllowedColor,
   guardPenpot,
   normalizeHex,
+  parseSkill,
+  skillManifest,
+  type DisabledByScope,
   type EffectiveSkill,
   type LocalLibraryLike,
+  type Scope,
 } from "@penpot/skills-core";
 import { FILE_SEED_SKILLS } from "./skills/seed";
 
@@ -121,18 +126,74 @@ function allScopeSources() {
   };
 }
 
+/* Disabled skills: per-scope name lists. File scope travels with the design
+ * file (shared pluginData, so the MCP path sees it too); platform/org/project
+ * live in the plugin's cross-file store, standing in for app/org settings. */
+
+function parseNameList(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((n): n is string => typeof n === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadDisabled(): Required<DisabledByScope> {
+  return {
+    platform: parseNameList(penpot.localStorage.getItem("skills.disabled.platform")),
+    org: parseNameList(penpot.localStorage.getItem("skills.disabled.org")),
+    project: parseNameList(penpot.localStorage.getItem("skills.disabled.project")),
+    file: parseNameList(penpot.currentFile?.getSharedPluginData(NAMESPACE, "disabled")),
+  };
+}
+
+function saveDisabled(scope: Scope, names: string[]): void {
+  const raw = JSON.stringify(names);
+  if (scope === "file") penpot.currentFile?.setSharedPluginData(NAMESPACE, "disabled", raw);
+  else penpot.localStorage.setItem(`skills.disabled.${scope}`, raw);
+}
+
+function setSkillEnabled(scope: Scope, name: string, enabled: boolean): void {
+  const sources = loadScopeSources(scope);
+  const def = sources.map((s) => parseSkill(s, scope)).find((s) => s.name === name);
+  if (!def) throw new Error(`No skill named "${name}" is defined at ${scope} scope.`);
+  if (def.mandatory && !enabled) {
+    throw new Error(`"${name}" is mandatory at ${scope} scope and cannot be disabled.`);
+  }
+  const current = loadDisabled()[scope];
+  const next = enabled ? current.filter((n) => n !== name) : [...new Set([...current, name])];
+  saveDisabled(scope, next);
+}
+
 function effectiveSkills(): EffectiveSkill[] {
   const scopes = allScopeSources();
-  return resolveCascade([
-    ...parseSkills(scopes.platform, "platform"),
-    ...parseSkills(scopes.org, "org"),
-    ...parseSkills(scopes.project, "project"),
-    ...parseSkills(scopes.file, "file"),
-  ]);
+  return resolveCascade(
+    [
+      ...parseSkills(scopes.platform, "platform"),
+      ...parseSkills(scopes.org, "org"),
+      ...parseSkills(scopes.project, "project"),
+      ...parseSkills(scopes.file, "file"),
+    ],
+    loadDisabled(),
+  );
 }
 
 function isRuleEnforced(name: string): boolean {
-  return effectiveSkills().some((s) => s.name === name && s.enforcement === "enforced");
+  return effectiveSkills().some(
+    (s) => s.name === name && s.enforcement === "enforced" && !s.disabled,
+  );
+}
+
+/** The full skills state the UI renders: sources per scope + disabled + resolved cascade. */
+function skillsPayload() {
+  return {
+    fileSkillSources: loadFileSkillSources(),
+    scopes: allScopeSources(),
+    disabled: loadDisabled(),
+    effective: effectiveSkills(),
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -405,6 +466,109 @@ async function executeCode(code: string) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Violations ledger                                                   */
+/*                                                                     */
+/* Rules are auditable: instead of only blocking at the write path or  */
+/* toasting transiently, violations accumulate here (keyed rule+shape) */
+/* so they can be reviewed in the Audit tab and fixed in batch — via   */
+/* chat or manually. The watcher keeps entries in sync as shapes       */
+/* change; a full scan rebuilds the ledger on demand.                  */
+/* ------------------------------------------------------------------ */
+
+interface Violation {
+  id: string;
+  rule: string;
+  shapeId: string;
+  shapeName: string;
+  reason: string;
+}
+
+const AUDITABLE_RULES = ["token-only-colors", "layer-naming"] as const;
+const violationLedger = new Map<string, Violation>();
+
+function activeRuleNames(): Set<string> {
+  return new Set(
+    effectiveSkills()
+      .filter((s) => s.kind === "rule" && !s.disabled)
+      .map((s) => s.name),
+  );
+}
+
+function notifyViolations(): void {
+  penpot.ui.sendMessage({
+    source: "plugin",
+    type: "violations-change",
+    violations: [...violationLedger.values()],
+  });
+}
+
+/** Checks one shape against the auditable rules and syncs its ledger entries. */
+function auditShape(shape: Shape, rules: Set<string>, allowed: AllowedColor[]): boolean {
+  const found = new Map<string, string>();
+
+  if (rules.has("token-only-colors")) {
+    const bad = [
+      ...findDisallowedColors(shape.fills, allowed, "fillColor").map((c) => `fill ${c}`),
+      ...findDisallowedColors(shape.strokes, allowed, "strokeColor").map((c) => `stroke ${c}`),
+    ];
+    if (bad.length > 0) {
+      found.set("token-only-colors", `Non-token color(s): ${bad.join(", ")}.`);
+    }
+  }
+  if (rules.has("layer-naming") && DEFAULT_NAME_RE.test(shape.name)) {
+    found.set("layer-naming", `Default, non-semantic layer name "${shape.name}".`);
+  }
+
+  let changed = false;
+  for (const rule of AUDITABLE_RULES) {
+    const key = `${rule}:${shape.id}`;
+    const reason = found.get(rule);
+    if (reason) {
+      const prev = violationLedger.get(key);
+      if (!prev || prev.reason !== reason || prev.shapeName !== shape.name) {
+        violationLedger.set(key, { id: key, rule, shapeId: shape.id, shapeName: shape.name, reason });
+        changed = true;
+      }
+    } else if (violationLedger.delete(key)) {
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function auditShapeNow(shape: Shape): boolean {
+  return auditShape(shape, activeRuleNames(), allowedColors());
+}
+
+/** Full-page scan: rebuilds the ledger and prunes entries for deleted shapes. */
+function auditFile() {
+  const rules = activeRuleNames();
+  const allowed = allowedColors();
+  let changed = false;
+  let scanned = 0;
+  const walk = (shapes: Shape[], depth: number) => {
+    for (const shape of shapes) {
+      if (scanned >= 1000) return;
+      scanned++;
+      changed = auditShape(shape, rules, allowed) || changed;
+      const children = (shape as { children?: Shape[] }).children;
+      if (children && depth < 6) walk(children, depth + 1);
+    }
+  };
+  const root = penpot.currentPage?.root as unknown as { children?: Shape[] } | undefined;
+  if (root?.children) walk(root.children, 0);
+
+  for (const v of [...violationLedger.values()]) {
+    if (!penpot.currentPage?.getShapeById(v.shapeId)) {
+      violationLedger.delete(v.id);
+      changed = true;
+    }
+  }
+  if (changed) notifyViolations();
+  return { scanned, violations: [...violationLedger.values()] };
+}
+
+/* ------------------------------------------------------------------ */
 /* Change watching → triggered skills                                  */
 /* ------------------------------------------------------------------ */
 
@@ -436,7 +600,7 @@ function throttled(key: string, ms = 4000): boolean {
 
 function emitTriggered(skillName: string, reason: string, shape?: Shape) {
   const skill = effectiveSkills().find((s) => s.name === skillName);
-  if (!skill || skill.enforcement === "advisory") return;
+  if (!skill || skill.disabled || skill.enforcement === "advisory") return;
   if (throttled(`${skillName}:${shape?.id ?? "global"}:${reason}`)) return;
   penpot.ui.sendMessage({
     source: "plugin",
@@ -453,6 +617,8 @@ function checkShapeChange(shape: Shape) {
   snapshots.set(shape.id, next);
   if (!prev) return;
 
+  if (auditShapeNow(shape)) notifyViolations();
+
   if (prev.name !== next.name && DEFAULT_NAME_RE.test(next.name)) {
     emitTriggered(
       "layer-naming",
@@ -461,41 +627,14 @@ function checkShapeChange(shape: Shape) {
     );
   }
 
-  if (prev.fills !== next.fills) {
-    try {
-      const fills = JSON.parse(next.fills);
-      assertFillsAllowed(fills, allowedColors());
-    } catch (e) {
-      if (e instanceof SkillViolationError) {
-        emitTriggered(
-          "token-only-colors",
-          `Shape "${shape.name}" now has a fill that is not a token: ` +
-            `${(JSON.parse(next.fills) as { fillColor?: string }[])
-              .map((f) => f.fillColor)
-              .filter(Boolean)
-              .join(", ")}. (Edited outside the gated write path — e.g. manually.)`,
-          shape,
-        );
-      }
-    }
-  }
-
-  if (prev.strokes !== next.strokes) {
-    try {
-      const strokes = JSON.parse(next.strokes);
-      assertStrokesAllowed(strokes, allowedColors());
-    } catch (e) {
-      if (e instanceof SkillViolationError) {
-        emitTriggered(
-          "token-only-colors",
-          `Shape "${shape.name}" now has a stroke that is not a token: ` +
-            `${(JSON.parse(next.strokes) as { strokeColor?: string }[])
-              .map((s) => s.strokeColor)
-              .filter(Boolean)
-              .join(", ")}. (Edited outside the gated write path — e.g. manually.)`,
-          shape,
-        );
-      }
+  if (prev.fills !== next.fills || prev.strokes !== next.strokes) {
+    const v = violationLedger.get(`token-only-colors:${shape.id}`);
+    if (v) {
+      emitTriggered(
+        "token-only-colors",
+        `Shape "${shape.name}": ${v.reason} (Edited outside the gated write path — e.g. manually.)`,
+        shape,
+      );
     }
   }
 }
@@ -517,8 +656,10 @@ function watchShape(shapeId: string) {
 }
 
 penpot.on("selectionchange", () => {
+  let ledgerChanged = false;
   for (const shape of penpot.selection) {
     watchShape(shape.id);
+    ledgerChanged = auditShapeNow(shape) || ledgerChanged;
     if (DEFAULT_NAME_RE.test(shape.name)) {
       emitTriggered(
         "layer-naming",
@@ -527,6 +668,7 @@ penpot.on("selectionchange", () => {
       );
     }
   }
+  if (ledgerChanged) notifyViolations();
   penpot.ui.sendMessage({
     source: "plugin",
     type: "selection-change",
@@ -564,23 +706,62 @@ const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
     penpot.localStorage.setItem(chatStorageKey(), p.chat ?? "");
     return { ok: true };
   },
-  "get-skills": () => ({
-    fileSkillSources: loadFileSkillSources(),
-    scopes: allScopeSources(),
-    effective: effectiveSkills(),
-  }),
+  "get-skills": () => skillsPayload(),
   "save-file-skills": (p: { sources: string[] }) => {
     saveFileSkillSources(p.sources);
-    return { fileSkillSources: loadFileSkillSources(), scopes: allScopeSources(), effective: effectiveSkills() };
+    return skillsPayload();
   },
   "save-scope-skills": (p: { scope: "org" | "project" | "file"; sources: string[] }) => {
     if (p.scope === "file") saveFileSkillSources(p.sources);
     else if (p.scope === "org" || p.scope === "project") saveStoredScope(p.scope, p.sources);
     else throw new Error(`Scope not editable: ${p.scope}`);
-    return { fileSkillSources: loadFileSkillSources(), scopes: allScopeSources(), effective: effectiveSkills() };
+    return skillsPayload();
+  },
+  "set-skill-enabled": (p: { scope: Scope; name: string; enabled: boolean }) => {
+    setSkillEnabled(p.scope, p.name, p.enabled);
+    return skillsPayload();
+  },
+  "audit-file": () => auditFile(),
+  "get-violations": () => ({ violations: [...violationLedger.values()] }),
+  "dismiss-violation": (p: { id: string }) => {
+    violationLedger.delete(p.id);
+    notifyViolations();
+    return { violations: [...violationLedger.values()] };
   },
   "get-design-context": () => designContext(),
   "get-color-tokens": () => colorTokens(),
+  // one orientation read for the chat agent: context + tokens + skills + audit state
+  "read-design": () => ({
+    context: designContext(),
+    tokens: colorTokens(),
+    skills: skillManifest(effectiveSkills()),
+    openViolations: violationLedger.size,
+  }),
+  "apply-tokens": (p: {
+    applications: { shapeId: string; tokenName: string; properties?: string[] }[];
+  }) => {
+    if (!Array.isArray(p.applications) || p.applications.length === 0) {
+      throw new Error("apply_tokens requires a non-empty applications array");
+    }
+    const results = p.applications.map((app) => {
+      try {
+        const shape = getShapeOrThrow(app.shapeId);
+        const token = findColorToken(app.tokenName);
+        if (!token) {
+          throw new Error(
+            `No active color token named "${app.tokenName}" — read_design lists the available ones.`,
+          );
+        }
+        // token application is async in Penpot (~100ms): don't re-read the
+        // shape in this same call to verify; audit_file afterwards instead
+        token.applyToShapes([shape], (app.properties?.length ? app.properties : ["fill"]) as never);
+        return { shapeId: app.shapeId, ok: true, applied: app.tokenName };
+      } catch (e) {
+        return { shapeId: app.shapeId, ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    });
+    return { results };
+  },
   "set-fill": (p) => setFill(p),
   "create-shape": (p) => createShape(p),
   "create-color-token": (p) => createColorToken(p),
@@ -601,6 +782,7 @@ const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
     const shape = getShapeOrThrow(p.shapeId);
     shape.name = p.name;
     snapshots.set(shape.id, snapshot(shape));
+    if (auditShapeNow(shape)) notifyViolations();
     return { ok: true, shape: summarizeShape(shape) };
   },
   "execute-code": (p: { code: string }) => executeCode(p.code),
@@ -614,7 +796,8 @@ penpot.ui.onMessage(async (message: unknown) => {
       type: "init",
       theme: penpot.theme,
       context: designContext(),
-      skills: { fileSkillSources: loadFileSkillSources(), scopes: allScopeSources(), effective: effectiveSkills() },
+      skills: skillsPayload(),
+      violations: [...violationLedger.values()],
     });
     return;
   }

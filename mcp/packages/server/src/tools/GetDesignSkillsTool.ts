@@ -51,8 +51,8 @@ export class GetDesignSkillsTool extends Tool<GetDesignSkillsArgs> {
             "the file is the most specific, but rules marked mandatory at broader scopes cannot be loosened.\n" +
             "Each skill has an enforcement level: 'advisory' (context you should follow), 'triggered' " +
             "(surfaced on relevant actions), or 'enforced' (the Penpot write path REJECTS violating " +
-            "operations — e.g. token-only-colors rejects raw hex fills; if a write fails citing a rule, " +
-            "adapt instead of retrying).\n" +
+            "operations — e.g. token-only-colors rejects raw hex fills and strokes; if a write fails " +
+            "citing a rule, adapt instead of retrying).\n" +
             "By default returns a lean manifest (name, scope, enforcement, description). " +
             "Pass name=<skill> for one full body, or include_bodies=true for all."
         );

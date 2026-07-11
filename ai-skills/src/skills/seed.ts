@@ -21,8 +21,8 @@ Never set a raw hex color on a shape. Every fill and stroke color must come
 from this file's design tokens (or library colors). Use \`get_color_tokens\`
 to list what is available and apply colors by token name.
 
-This rule is **enforced**: the write path rejects any fill whose color does
-not resolve to a token, no matter which agent or model issued it.`,
+This rule is **enforced**: the write path rejects any fill or stroke whose
+color does not resolve to a token, no matter which agent or model issued it.`,
 
   `---
 name: layer-naming

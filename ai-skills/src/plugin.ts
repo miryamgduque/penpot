@@ -19,6 +19,7 @@ import {
   resolveCascade,
   SkillViolationError,
   assertFillsAllowed,
+  assertStrokesAllowed,
   collectAllowedColors,
   guardPenpot,
   normalizeHex,
@@ -410,6 +411,7 @@ async function executeCode(code: string) {
 interface ShapeSnapshot {
   name: string;
   fills: string;
+  strokes: string;
 }
 
 const snapshots = new Map<string, ShapeSnapshot>();
@@ -420,6 +422,7 @@ function snapshot(shape: Shape): ShapeSnapshot {
   return {
     name: shape.name,
     fills: JSON.stringify(Array.isArray(shape.fills) ? shape.fills : "mixed"),
+    strokes: JSON.stringify(Array.isArray(shape.strokes) ? shape.strokes : []),
   };
 }
 
@@ -469,6 +472,25 @@ function checkShapeChange(shape: Shape) {
           `Shape "${shape.name}" now has a fill that is not a token: ` +
             `${(JSON.parse(next.fills) as { fillColor?: string }[])
               .map((f) => f.fillColor)
+              .filter(Boolean)
+              .join(", ")}. (Edited outside the gated write path — e.g. manually.)`,
+          shape,
+        );
+      }
+    }
+  }
+
+  if (prev.strokes !== next.strokes) {
+    try {
+      const strokes = JSON.parse(next.strokes);
+      assertStrokesAllowed(strokes, allowedColors());
+    } catch (e) {
+      if (e instanceof SkillViolationError) {
+        emitTriggered(
+          "token-only-colors",
+          `Shape "${shape.name}" now has a stroke that is not a token: ` +
+            `${(JSON.parse(next.strokes) as { strokeColor?: string }[])
+              .map((s) => s.strokeColor)
               .filter(Boolean)
               .join(", ")}. (Edited outside the gated write path — e.g. manually.)`,
           shape,

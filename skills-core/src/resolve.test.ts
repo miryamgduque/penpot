@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseSkill } from "./parse.ts";
-import { resolveCascade } from "./resolve.ts";
+import { parseSkill } from "./parse";
+import { resolveCascade } from "./resolve";
 
 const platformMandatory = parseSkill(`---
 name: a11y-contrast

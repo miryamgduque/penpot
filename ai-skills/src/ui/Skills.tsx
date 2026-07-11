@@ -1,7 +1,7 @@
 import { useState } from "react";
 import * as bridge from "./bridge";
 import type { SkillsPayload } from "./bridge";
-import type { EffectiveSkill, Scope } from "../skills/types";
+import type { EffectiveSkill, Scope } from "@penpot/skills-core";
 
 const EDITABLE_SCOPES: Scope[] = ["org", "project", "file"];
 

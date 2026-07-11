@@ -1,5 +1,5 @@
-import type { EffectiveSkill, Skill, Scope } from "./types.ts";
-import { enforcementRank, scopeRank } from "./types.ts";
+import type { EffectiveSkill, Skill, Scope } from "./types";
+import { enforcementRank, scopeRank } from "./types";
 
 /**
  * Cascade resolver: merges skills from the four scopes into one effective set.

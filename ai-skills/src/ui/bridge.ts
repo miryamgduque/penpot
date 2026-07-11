@@ -4,7 +4,7 @@
  * through window "message" events (relayed by penpot.ui.sendMessage).
  */
 
-import type { EffectiveSkill } from "../skills/types";
+import type { EffectiveSkill } from "@penpot/skills-core";
 
 export interface ScopeSources {
   platform: string[];

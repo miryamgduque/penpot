@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@penpot/plugin-styles": "1.4.2",
-    "@penpot/plugin-types": "1.4.2"
+    "@penpot/plugin-types": "1.4.2",
+    "@penpot/skills-core": "link:../../../skills-core"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",

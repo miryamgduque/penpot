@@ -5,7 +5,7 @@ import { TextResponse } from "../ToolResponse";
 import "reflect-metadata";
 import { PenpotMcpServer } from "../PenpotMcpServer";
 import { ExecuteCodePluginTask } from "../tasks/ExecuteCodePluginTask";
-import { BUILTIN_SKILL_SOURCES, parseSkill, resolveCascade, Skill } from "../skills/SkillsCascade";
+import { BUILTIN_SKILL_SOURCES, parseSkill, resolveCascade, type Skill } from "@penpot/skills-core";
 
 /**
  * Arguments class for GetDesignSkillsTool

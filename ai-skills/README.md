@@ -21,11 +21,12 @@ cascade, same rules — you only run it when you want outside agents connected.
 
 | Piece | Where | What it does |
 |---|---|---|
-| Skill format | [src/skills/parse.ts](src/skills/parse.ts) | Markdown + flat frontmatter (`name`, `scope`, `enforcement`, `mandatory`, `trigger`) |
-| Cascade resolver | [src/skills/resolve.ts](src/skills/resolve.ts) | platform → org → project → file; specific wins, `mandatory` can't be loosened below |
-| Scope stubs | [src/skills/builtin.ts](src/skills/builtin.ts) | platform/org/project skills (stubbed, per prototype scope) |
+| Shared core | [../skills-core](../skills-core) | One package for the skill format parser, cascade resolver, scope stubs and the enforcement guard — consumed by this plugin **and** both MCP packages (npm `file:` / pnpm `link:`), so the implementations cannot drift |
+| Skill format | [../skills-core/src/parse.ts](../skills-core/src/parse.ts) | Markdown + flat frontmatter (`name`, `scope`, `enforcement`, `mandatory`, `trigger`) |
+| Cascade resolver | [../skills-core/src/resolve.ts](../skills-core/src/resolve.ts) | platform → org → project → file; specific wins, `mandatory` can't be loosened below |
+| Scope stubs | [../skills-core/src/builtin.ts](../skills-core/src/builtin.ts) | platform/org/project skills (stubbed, per prototype scope) |
 | File skills | [src/skills/seed.ts](src/skills/seed.ts) + the design file | Stored in the file's **shared pluginData** (`penpot-skills`/`skills`) — versioned with the design, readable by any tool |
-| Enforcement guard | [src/guard.ts](src/guard.ts) | Validates `fills` against the file's color tokens + library colors; recursive Proxy gates arbitrary `execute_code` |
+| Enforcement guard | [../skills-core/src/guard.ts](../skills-core/src/guard.ts) | Validates `fills` against the file's color tokens + library colors; recursive Proxy gates arbitrary `execute_code`. Pure logic — callers bind it to their `penpot` global |
 | Plugin context | [src/plugin.ts](src/plugin.ts) | RPC ops for the chat's tools, change watching (`shapechange`/`selectionchange`) → triggered skills |
 | Embedded chat | [src/ui/](src/ui) | React panel: Chat + Skills + Tokens tabs. BYOK Anthropic (key stays in the browser), manual streaming tool loop — no MCP in the loop |
 | Scope management | [src/ui/Skills.tsx](src/ui/Skills.tsx) | Every level is manageable: org/project skills live in the plugin's cross-file store (`penpot.localStorage`), file skills in the file, platform curated/read-only |
@@ -134,7 +135,9 @@ The platform scope carries the full official
 load-bearing shared docs (`plugin-api-gotchas`, `naming-conventions`,
 `operating-modes`, `mcp-tool-reference`), converted to this skill format by
 `scripts/import-aikit.mjs` (regenerate with
-`node scripts/import-aikit.mjs <path-to-kit-checkout>` — output is committed).
+`node scripts/import-aikit.mjs <path-to-kit-checkout>` — the output,
+`../skills-core/src/aikit.gen.ts`, is committed and shared by the panel and
+the MCP server alike).
 
 The chat agent consumes them through a **router meta-prompt**: the system
 prompt carries only the platform index (name + when-to-use) plus the distilled
@@ -147,10 +150,12 @@ inlined in full.
 ## Notes / prototype simplifications
 
 - Org/project skills are cross-file stores seeded from stubs; only file scope
-  lives in the design file itself.
-- The parser/resolver is intentionally duplicated in
-  `../mcp/packages/server/src/skills/SkillsCascade.ts` (separate workspaces) —
-  keep them in sync.
-- The MCP-side guard checks the file's own frontmatter for `enforcement: enforced`
+  lives in the design file itself. The MCP server serves the stubs as-is, so
+  panel edits to org/project scopes are not visible on the MCP path.
+- Parser, resolver, stubs and guard live once in
+  [`../skills-core`](../skills-core) and are bundled from source into all
+  three consumers (`npm install` here / `pnpm install` in `../mcp` wires the
+  links; `cd ../skills-core && npm install && npm test` runs its tests).
+- The MCP-side guard checks the file's own skills for `enforcement: enforced`
   (no cross-scope mandatory raise on that path yet).
 - Enforcement covers solid fills; gradients/strokes are next.

@@ -11,18 +11,26 @@
  */
 
 import type { Board, Shape, Text } from "@penpot/plugin-types";
-import { PLATFORM_SKILLS, ORG_SKILLS, PROJECT_SKILLS } from "./skills/builtin";
-import { FILE_SEED_SKILLS } from "./skills/seed";
-import { parseSkills } from "./skills/parse";
-import { resolveCascade } from "./skills/resolve";
-import type { EffectiveSkill } from "./skills/types";
 import {
+  PLATFORM_SKILLS,
+  ORG_SKILLS,
+  PROJECT_SKILLS,
+  parseSkills,
+  resolveCascade,
   SkillViolationError,
   assertFillsAllowed,
   collectAllowedColors,
   guardPenpot,
   normalizeHex,
-} from "./guard";
+  type EffectiveSkill,
+  type LocalLibraryLike,
+} from "@penpot/skills-core";
+import { FILE_SEED_SKILLS } from "./skills/seed";
+
+/** The colors this file currently allows (active token sets + library colors). */
+function allowedColors() {
+  return collectAllowedColors(penpot.library.local as LocalLibraryLike);
+}
 
 const NAMESPACE = "penpot-skills";
 const SKILLS_KEY = "skills";
@@ -232,7 +240,7 @@ function setFill(args: { shapeId: string; color?: string; tokenName?: string }) 
   if (args.color) {
     const fills = [{ fillColor: normalizeHex(args.color), fillOpacity: 1 }];
     if (isRuleEnforced("token-only-colors")) {
-      assertFillsAllowed(fills, collectAllowedColors());
+      assertFillsAllowed(fills, allowedColors());
     }
     shape.fills = fills;
     return { ok: true, applied: `color ${args.color}`, shape: summarizeShape(shape) };
@@ -379,7 +387,10 @@ function applyOrgPalette() {
  * other origin into this function.
  */
 async function executeCode(code: string) {
-  const guarded = guardPenpot(penpot, () => isRuleEnforced("token-only-colors"));
+  const guarded = guardPenpot(penpot, {
+    isRuleActive: () => isRuleEnforced("token-only-colors"),
+    collectAllowed: allowedColors,
+  });
   const logs: string[] = [];
   const fakeConsole = {
     log: (...a: unknown[]) => logs.push(a.map(String).join(" ")),
@@ -450,7 +461,7 @@ function checkShapeChange(shape: Shape) {
   if (prev.fills !== next.fills) {
     try {
       const fills = JSON.parse(next.fills);
-      assertFillsAllowed(fills, collectAllowedColors());
+      assertFillsAllowed(fills, allowedColors());
     } catch (e) {
       if (e instanceof SkillViolationError) {
         emitTriggered(

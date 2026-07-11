@@ -28,8 +28,9 @@ cascade, same rules — you only run it when you want outside agents connected.
 | File skills | [src/skills/seed.ts](src/skills/seed.ts) + the design file | Stored in the file's **shared pluginData** (`penpot-skills`/`skills`) — versioned with the design, readable by any tool |
 | Enforcement guard | [../skills-core/src/guard.ts](../skills-core/src/guard.ts) | Validates `fills` and `strokes` against the file's color tokens + library colors; recursive Proxy gates arbitrary `execute_code`. Pure logic — callers bind it to their `penpot` global |
 | Plugin context | [src/plugin.ts](src/plugin.ts) | RPC ops for the chat's tools, change watching (`shapechange`/`selectionchange`) → triggered skills |
-| Embedded chat | [src/ui/](src/ui) | React panel: Chat + Skills + Tokens tabs. BYOK Anthropic (key stays in the browser), manual streaming tool loop — no MCP in the loop. Conversations persist per file (plugin storage) and resume when the panel reopens |
-| Scope management | [src/ui/Skills.tsx](src/ui/Skills.tsx) | Every level is manageable: org/project skills live in the plugin's cross-file store (`penpot.localStorage`), file skills in the file, platform curated/read-only |
+| Embedded chat | [src/ui/](src/ui) | React panel: Chat + Skills + Audit + Tokens tabs. BYOK Anthropic (key stays in the browser), manual streaming tool loop — no MCP in the loop. Task-scoped tools (`read_design`, `audit_file`, `apply_tokens`, `execute_code`) instead of the MCP's atomic surface; stale tool results are pruned from old turns to conserve context. Conversations persist per file (plugin storage) and resume when the panel reopens |
+| Scope management | [src/ui/Skills.tsx](src/ui/Skills.tsx) | Every level is manageable: org/project skills live in the plugin's cross-file store (`penpot.localStorage`), file skills in the file, platform curated/read-only. Each entry is a **skill** (knowledge) or a **rule** (checkable constraint) and can be enabled/disabled per scope (mandatory ones can't) |
+| Audit ledger | [src/ui/Audit.tsx](src/ui/Audit.tsx) + the plugin's violations map | Rule violations are watched and batched instead of only toasted: grouped per rule, selectable on canvas, dismissable, fixable in batch via the chat agent, cleared automatically when shapes come clean |
 | Token management | [src/ui/Tokens.tsx](src/ui/Tokens.tsx) | File color-token CRUD + an org-level palette (cross-file store) that syncs into any file's "org" token set |
 | Skill notifications | [src/ui/Notifications.tsx](src/ui/Notifications.tsx) | Transient toasts outside the chat: appear while designing, auto-dismiss, "⌖ Show" selects the affected shape on canvas, "Ask agent" hands the skill to the chat |
 | MCP tool | [../mcp/packages/server/src/tools/GetDesignSkillsTool.ts](../mcp/packages/server/src/tools/GetDesignSkillsTool.ts) | Lean manifest by default, bodies on demand |
@@ -99,18 +100,25 @@ It opens as a floating window; for the docked look, inject the dock layer
 
 ### The demo script
 
-1. **Skills tab** — the effective set with scope + enforcement badges; every
-   level is manageable (org/project in the cross-file store, file skills saved
-   into the design file itself; platform is the curated ai-kit set).
+1. **Skills tab** — the effective set with kind (skill/rule), scope and
+   enforcement badges; every level is manageable (org/project in the
+   cross-file store, file skills saved into the design file itself; platform
+   is the curated ai-kit set, read-only but toggleable). Any non-mandatory
+   entry can be switched off at the scope that defines it — disabled entries
+   drop out of prompts, enforcement and auditing, on the panel and MCP paths
+   alike (file-level state travels in the file).
 2. **Chat** — *"Style the selected frame using our design system"* or *"create
-   a cooking app home page"*. The agent routes through the ai-kit skills,
-   builds on canvas with token-bound fills, and if it ever tries a raw hex the
-   write path rejects it citing the rule and it self-corrects via
-   `get_color_tokens`. The session meter above the composer shows calls,
-   tokens (with cached share) and estimated cost.
-3. **Watch changes** — rename a layer to "Rectangle 5" or hand-paint a raw
-   fill: a transient notification appears with *⌖ Show* (selects the shape)
-   and *Ask agent to apply*.
+   a cooking app home page"*. The agent orients with one `read_design` call,
+   routes through the ai-kit skills, builds on canvas with token-bound fills
+   (`apply_tokens` in batch), and if it ever tries a raw hex the write path
+   rejects it citing the rule and it self-corrects. The session meter above
+   the composer shows calls, tokens (with cached share) and estimated cost.
+3. **Watch changes → Audit** — rename a layer to "Rectangle 5" or hand-paint a
+   raw fill: a transient notification appears with *⌖ Show*, and the violation
+   is recorded in the **Audit tab** (rules are watched, not just blocked).
+   Violations accumulate per rule; *✦ Fix via chat* hands the whole batch to
+   the agent, *⟳ Re-scan file* audits the full page, and entries clear
+   themselves as shapes come clean.
 4. **Tokens tab** — file color-token CRUD plus the org palette that syncs into
    any file.
 5. **(Optional) Any agent, same rules** — with the MCP stack running, connect
@@ -149,9 +157,12 @@ inlined in full.
 
 ## Notes / prototype simplifications
 
-- Org/project skills are cross-file stores seeded from stubs; only file scope
-  lives in the design file itself. The MCP server serves the stubs as-is, so
-  panel edits to org/project scopes are not visible on the MCP path.
+- Org/project skills (and their disable state) are cross-file stores seeded
+  from stubs; only file scope lives in the design file itself. The MCP server
+  serves the stubs as-is, so panel edits and org/project disable state are not
+  visible on the MCP path — file-scope skills and the file's disabled list are.
+- The audit ledger lives in the plugin context (in-memory): it survives panel
+  navigation but resets when the file closes; re-scan rebuilds it.
 - Parser, resolver, stubs and guard live once in
   [`../skills-core`](../skills-core) and are bundled from source into all
   three consumers (`npm install` here / `pnpm install` in `../mcp` wires the

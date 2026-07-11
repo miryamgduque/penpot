@@ -5,7 +5,13 @@ import { TextResponse } from "../ToolResponse";
 import "reflect-metadata";
 import { PenpotMcpServer } from "../PenpotMcpServer";
 import { ExecuteCodePluginTask } from "../tasks/ExecuteCodePluginTask";
-import { BUILTIN_SKILL_SOURCES, parseSkill, resolveCascade, type Skill } from "@penpot/skills-core";
+import {
+    BUILTIN_SKILL_SOURCES,
+    parseDisabledNames,
+    parseSkill,
+    resolveCascade,
+    type Skill,
+} from "@penpot/skills-core";
 
 /**
  * Arguments class for GetDesignSkillsTool
@@ -59,28 +65,44 @@ export class GetDesignSkillsTool extends Tool<GetDesignSkillsArgs> {
     }
 
     protected async executeCore(args: GetDesignSkillsArgs): Promise<ToolResponse> {
-        // file-scope skills live in the design file itself; read them through the plugin bridge
+        // file-scope skills (and the file's disabled list) live in the design
+        // file itself; read them through the plugin bridge
         const task = new ExecuteCodePluginTask({
-            code: "return penpot.currentFile ? penpot.currentFile.getSharedPluginData('penpot-skills', 'skills') : null;",
+            code:
+                "if (!penpot.currentFile) return null;" +
+                "return { skills: penpot.currentFile.getSharedPluginData('penpot-skills', 'skills')," +
+                " disabled: penpot.currentFile.getSharedPluginData('penpot-skills', 'disabled') };",
         });
         const result = await this.mcpServer.pluginBridge.executePluginTask(task);
 
         let fileSources: string[] = [];
-        const raw = (result.data as { result?: unknown } | undefined)?.result;
-        if (typeof raw === "string" && raw.length > 0) {
+        let fileDisabled: string[] = [];
+        const raw = (result.data as { result?: unknown } | undefined)?.result as
+            | { skills?: unknown; disabled?: unknown }
+            | null
+            | undefined;
+        if (typeof raw?.skills === "string" && raw.skills.length > 0) {
             try {
-                const parsed = JSON.parse(raw);
+                const parsed = JSON.parse(raw.skills);
                 if (Array.isArray(parsed)) fileSources = parsed.filter((s) => typeof s === "string");
             } catch {
                 // malformed pluginData — treat as no file skills
             }
+        }
+        if (typeof raw?.disabled === "string") {
+            fileDisabled = parseDisabledNames(raw.disabled);
         }
 
         const skills: Skill[] = [
             ...BUILTIN_SKILL_SOURCES.map((b) => parseSkill(b.source, b.scope)),
             ...fileSources.map((s) => parseSkill(s, "file")),
         ];
-        const effective = resolveCascade(skills);
+        // agents never see disabled skills; the file's list is authoritative here
+        // (org/project disable state lives in the Skills plugin's store, which
+        // this server cannot read — a documented prototype limitation)
+        const effective = resolveCascade(skills, { file: fileDisabled }).filter(
+            (s) => !s.disabled
+        );
 
         if (args.name) {
             const skill = effective.find((s) => s.name === args.name);
@@ -103,6 +125,7 @@ export class GetDesignSkillsTool extends Tool<GetDesignSkillsArgs> {
 
         const manifest = effective.map((s) => ({
             name: s.name,
+            kind: s.kind,
             scope: s.definedAt,
             enforcement: s.enforcement,
             mandatory: s.mandatory,

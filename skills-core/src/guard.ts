@@ -78,33 +78,47 @@ export function collectAllowedColors(lib: LocalLibraryLike): AllowedColor[] {
   return allowed;
 }
 
+/**
+ * Returns the raw (non-token) colors in a fills/strokes array — the check
+ * behind assertFillsAllowed/assertStrokesAllowed, usable directly for
+ * non-throwing audits.
+ */
+export function findDisallowedColors(
+  values: unknown,
+  allowed: AllowedColor[],
+  colorKey: "fillColor" | "strokeColor",
+): string[] {
+  if (!Array.isArray(values)) return [];
+  const out: string[] = [];
+  for (const entry of values) {
+    const color = (entry as Record<string, unknown>)?.[colorKey];
+    if (typeof color !== "string") continue; // gradients/images are out of scope for the prototype
+    if (!allowed.some((a) => a.value === normalizeHex(color))) out.push(color);
+  }
+  return out;
+}
+
 function assertColorsAllowed(
   values: unknown,
   allowed: AllowedColor[],
   colorKey: "fillColor" | "strokeColor",
   what: "fill" | "stroke",
 ): void {
-  if (!Array.isArray(values)) return;
-  for (const entry of values) {
-    const color = (entry as Record<string, unknown>)?.[colorKey];
-    if (typeof color !== "string") continue; // gradients/images are out of scope for the prototype
-    const hex = normalizeHex(color);
-    if (!allowed.some((a) => a.value === hex)) {
-      const tokenList =
-        allowed
-          .slice(0, 20)
-          .map((a) => `${a.label} (${a.value})`)
-          .join(", ") || "none defined yet — create color tokens first";
-      throw new SkillViolationError(
-        "token-only-colors",
-        `Rejected by enforced design skill "token-only-colors": ${what} color ${color} ` +
-          `is not one of this file's color tokens or library colors. ` +
-          `Allowed colors: ${tokenList}. ` +
-          `Apply colors by token instead of raw hex values — find the token in ` +
-          `penpot.library.local.tokens.sets and call token.applyToShapes([shape], ["${what}"]).`,
-      );
-    }
-  }
+  const [color] = findDisallowedColors(values, allowed, colorKey);
+  if (color === undefined) return;
+  const tokenList =
+    allowed
+      .slice(0, 20)
+      .map((a) => `${a.label} (${a.value})`)
+      .join(", ") || "none defined yet — create color tokens first";
+  throw new SkillViolationError(
+    "token-only-colors",
+    `Rejected by enforced design skill "token-only-colors": ${what} color ${color} ` +
+      `is not one of this file's color tokens or library colors. ` +
+      `Allowed colors: ${tokenList}. ` +
+      `Apply colors by token instead of raw hex values — find the token in ` +
+      `penpot.library.local.tokens.sets and call token.applyToShapes([shape], ["${what}"]).`,
+  );
 }
 
 /**
@@ -141,6 +155,20 @@ export function isSkillEnforcedInSources(
   } catch {
     // unreadable skills data — do not enforce
     return false;
+  }
+}
+
+/**
+ * Parses the per-file disabled-skills list (shared pluginData namespace
+ * "penpot-skills", key "disabled" — a JSON array of skill names).
+ */
+export function parseDisabledNames(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const names: unknown = JSON.parse(raw);
+    return Array.isArray(names) ? names.filter((n): n is string => typeof n === "string") : [];
+  } catch {
+    return [];
   }
 }
 

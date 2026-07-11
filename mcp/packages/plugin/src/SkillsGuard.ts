@@ -17,6 +17,7 @@ import {
     collectAllowedColors,
     guardPenpot as guardWithSkills,
     isSkillEnforcedInSources,
+    parseDisabledNames,
     SkillViolationError,
     type LocalLibraryLike,
 } from "@penpot/skills-core";
@@ -25,8 +26,10 @@ export { SkillViolationError };
 
 function isSkillEnforced(skillName: string): boolean {
     try {
-        const raw = penpot.currentFile?.getSharedPluginData("penpot-skills", "skills");
-        return isSkillEnforcedInSources(raw, skillName);
+        const file = penpot.currentFile;
+        const disabled = parseDisabledNames(file?.getSharedPluginData("penpot-skills", "disabled"));
+        if (disabled.includes(skillName)) return false;
+        return isSkillEnforcedInSources(file?.getSharedPluginData("penpot-skills", "skills"), skillName);
     } catch {
         // unreadable skills data — do not enforce
         return false;

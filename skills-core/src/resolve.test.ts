@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseSkill } from "./parse";
-import { resolveCascade } from "./resolve";
+import { resolveCascade, skillManifest } from "./resolve";
 
 const platformMandatory = parseSkill(`---
 name: a11y-contrast
@@ -43,6 +43,50 @@ test("frontmatter parsing", () => {
   assert.equal(fileOnly.enforcement, "enforced");
   assert.equal(fileOnly.trigger, "fill-change");
   assert.equal(platformMandatory.mandatory, true);
+});
+
+test("kind: explicit frontmatter wins, otherwise inferred from enforcement", () => {
+  assert.equal(fileOnly.kind, "rule", "enforced → rule");
+  assert.equal(projectAdvisory.kind, "skill", "advisory → skill");
+  const explicit = parseSkill(
+    "---\nname: contrast\nkind: rule\nenforcement: advisory\ndescription: x\n---\nBody",
+  );
+  assert.equal(explicit.kind, "rule", "explicit kind overrides inference");
+});
+
+test("disabled definitions are skipped; the next enabled definition wins", () => {
+  const org = parseSkill(
+    "---\nname: tone\nscope: org\nenforcement: advisory\ndescription: org tone\n---\nOrg body",
+  );
+  const file = parseSkill(
+    "---\nname: tone\nscope: file\nenforcement: advisory\ndescription: file tone\n---\nFile body",
+  );
+
+  const fileDisabled = resolveCascade([org, file], { file: ["tone"] });
+  const tone = fileDisabled.find((s) => s.name === "tone")!;
+  assert.equal(tone.definedAt, "org", "org definition wins when file's is disabled");
+  assert.equal(tone.body, "Org body");
+  assert.equal(tone.disabled, undefined);
+
+  const allDisabled = resolveCascade([org, file], { file: ["tone"], org: ["tone"] });
+  const gone = allDisabled.find((s) => s.name === "tone")!;
+  assert.equal(gone.disabled, true, "fully disabled skills stay listed but flagged");
+});
+
+test("mandatory skills cannot be disabled; manifest excludes disabled skills", () => {
+  const effective = resolveCascade([platformMandatory, projectAdvisory], {
+    platform: ["a11y-contrast"],
+    project: ["spacing"],
+  });
+  const a11y = effective.find((s) => s.name === "a11y-contrast")!;
+  assert.equal(a11y.disabled, undefined, "mandatory ignores the disable");
+  assert.equal(effective.find((s) => s.name === "spacing")!.disabled, true);
+
+  const manifest = skillManifest(effective);
+  assert.deepEqual(
+    manifest.map((m) => m.name),
+    ["a11y-contrast"],
+  );
 });
 
 test("specific scope wins body, mandatory enforcement propagates down", () => {

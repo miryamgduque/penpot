@@ -13,13 +13,29 @@ export function SkillsPanel({
   onSkillsChanged: (s: SkillsPayload) => void;
 }) {
   const [editingScope, setEditingScope] = useState<Scope | null>(null);
+  const [error, setError] = useState("");
+
+  const toggle = async (skill: EffectiveSkill, enabled: boolean) => {
+    setError("");
+    try {
+      const next = await bridge.call<SkillsPayload>("set-skill-enabled", {
+        scope: skill.definedAt,
+        name: skill.name,
+        enabled,
+      });
+      onSkillsChanged(next);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   return (
     <div className="skills-panel">
       <div className="skills-head">
         <span className="hint">
-          platform → org → project → file, cascade-resolved. Each level is manageable; platform is
-          curated.
+          platform → org → project → file, cascade-resolved. Skills are knowledge for the agent;
+          rules are constraints that can be watched and enforced. Toggle any non-mandatory entry
+          off at the scope that defines it.
         </span>
       </div>
       <div className="scope-tabs">
@@ -41,12 +57,16 @@ export function SkillsPanel({
           </button>
         ))}
       </div>
+      {error && <div className="msg error">{error}</div>}
       {editingScope === null ? (
-        skills.effective.map((s) => <SkillCard key={s.name} skill={s} />)
+        skills.effective.map((s) => (
+          <SkillCard key={s.name} skill={s} onToggle={(enabled) => void toggle(s, enabled)} />
+        ))
       ) : (
         <ScopeEditor
           scope={editingScope}
           sources={skills.scopes[editingScope]}
+          disabled={skills.disabled[editingScope]}
           readOnly={!EDITABLE_SCOPES.includes(editingScope)}
           onSkillsChanged={onSkillsChanged}
         />
@@ -55,23 +75,52 @@ export function SkillsPanel({
   );
 }
 
-function SkillCard({ skill }: { skill: EffectiveSkill }) {
+function SkillCard({
+  skill,
+  onToggle,
+}: {
+  skill: EffectiveSkill;
+  onToggle: (enabled: boolean) => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
-    <div className={`skill-card enforcement-${skill.enforcement}`}>
-      <button className="skill-summary" onClick={() => setOpen(!open)}>
-        <span className="skill-name">{skill.name}</span>
-        <span className="badges">
-          <span className={`badge scope-${skill.definedAt}`}>{skill.definedAt}</span>
-          <span className={`badge enf-${skill.enforcement}`}>
-            {skill.enforcement === "enforced" && "⛔ "}
-            {skill.enforcement === "triggered" && "👁 "}
-            {skill.enforcement}
+    <div
+      className={`skill-card enforcement-${skill.enforcement}${skill.disabled ? " disabled" : ""}`}
+    >
+      <div className="skill-row">
+        <button className="skill-summary" onClick={() => setOpen(!open)}>
+          <span className="skill-name">{skill.name}</span>
+          <span className="badges">
+            <span className={`badge kind-${skill.kind}`}>{skill.kind}</span>
+            <span className={`badge scope-${skill.definedAt}`}>{skill.definedAt}</span>
+            <span className={`badge enf-${skill.enforcement}`}>
+              {skill.enforcement === "enforced" && "⛔ "}
+              {skill.enforcement === "triggered" && "👁 "}
+              {skill.enforcement}
+            </span>
+            {skill.mandatory && <span className="badge mandatory">🔒 mandatory</span>}
           </span>
-          {skill.mandatory && <span className="badge mandatory">🔒 mandatory</span>}
-        </span>
-      </button>
+        </button>
+        <label
+          className="skill-toggle"
+          title={
+            skill.mandatory
+              ? "Mandatory — cannot be disabled"
+              : skill.disabled
+                ? `Enable (currently off at ${skill.definedAt} scope)`
+                : `Disable at ${skill.definedAt} scope`
+          }
+        >
+          <input
+            type="checkbox"
+            checked={!skill.disabled}
+            disabled={skill.mandatory}
+            onChange={(e) => onToggle(e.target.checked)}
+          />
+        </label>
+      </div>
       <div className="skill-desc">{skill.description}</div>
+      {skill.disabled && <div className="skill-note">disabled — ignored by agents and enforcement</div>}
       {skill.enforcementRaisedBy && (
         <div className="skill-note">enforcement raised by {skill.enforcementRaisedBy} scope</div>
       )}
@@ -86,11 +135,13 @@ function SkillCard({ skill }: { skill: EffectiveSkill }) {
 function ScopeEditor({
   scope,
   sources: initial,
+  disabled,
   readOnly,
   onSkillsChanged,
 }: {
   scope: Scope;
   sources: string[];
+  disabled: string[];
   readOnly: boolean;
   onSkillsChanged: (s: SkillsPayload) => void;
 }) {
@@ -120,7 +171,8 @@ function ScopeEditor({
       <div className="skills-editor">
         <p className="hint">
           Platform skills are curated centrally (approval process in the full vision) — read-only
-          here.
+          here, but each can be switched off in the Effective view.
+          {disabled.length > 0 && ` Currently disabled: ${disabled.join(", ")}.`}
         </p>
         {sources.map((src, i) => (
           <pre className="skill-body" key={i}>
@@ -137,6 +189,7 @@ function ScopeEditor({
         {scope === "file"
           ? "Stored inside this design file — versioned and shared with it."
           : `Stored at ${scope} level (cross-file store in this prototype).`}
+        {disabled.length > 0 && ` Currently disabled: ${disabled.join(", ")}.`}
       </p>
       {sources.map((src, i) => (
         <div className="skill-edit" key={i}>
@@ -157,11 +210,22 @@ function ScopeEditor({
           onClick={() =>
             setSources([
               ...sources,
-              `---\nname: my-skill\nscope: ${scope}\nenforcement: advisory\ndescription: …\n---\n\nWrite the convention here.`,
+              `---\nname: my-skill\nscope: ${scope}\nkind: skill\nenforcement: advisory\ndescription: …\n---\n\nWrite the convention here.`,
             ])
           }
         >
           + Add skill
+        </button>
+        <button
+          data-appearance="secondary"
+          onClick={() =>
+            setSources([
+              ...sources,
+              `---\nname: my-rule\nscope: ${scope}\nkind: rule\nenforcement: triggered\ndescription: …\n---\n\nDescribe the constraint here.`,
+            ])
+          }
+        >
+          + Add rule
         </button>
         <button data-appearance="primary" disabled={saving} onClick={() => void save()}>
           {saving ? "Saving…" : `Save ${scope} skills`}

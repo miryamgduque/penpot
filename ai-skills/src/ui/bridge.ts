@@ -4,7 +4,7 @@
  * through window "message" events (relayed by penpot.ui.sendMessage).
  */
 
-import type { EffectiveSkill } from "@penpot/skills-core";
+import type { DisabledByScope, EffectiveSkill } from "@penpot/skills-core";
 
 export interface ScopeSources {
   platform: string[];
@@ -16,6 +16,7 @@ export interface ScopeSources {
 export interface SkillsPayload {
   fileSkillSources: string[];
   scopes: ScopeSources;
+  disabled: Required<DisabledByScope>;
   effective: EffectiveSkill[];
 }
 
@@ -37,9 +38,24 @@ export interface TriggeredSkillEvent {
   shape?: { id: string; name: string };
 }
 
+export interface Violation {
+  id: string;
+  rule: string;
+  shapeId: string;
+  shapeName: string;
+  reason: string;
+}
+
 type PluginEvent =
-  | { type: "init"; theme: string; context: DesignContext; skills: SkillsPayload }
+  | {
+      type: "init";
+      theme: string;
+      context: DesignContext;
+      skills: SkillsPayload;
+      violations: Violation[];
+    }
   | ({ type: "skill-triggered" } & TriggeredSkillEvent)
+  | { type: "violations-change"; violations: Violation[] }
   | { type: "selection-change"; selection: { id: string; name: string; type: string }[] }
   | { type: "theme-change"; theme: string };
 

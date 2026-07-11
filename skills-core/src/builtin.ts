@@ -16,6 +16,7 @@ export const PLATFORM_SKILLS: string[] = [
   `---
 name: a11y-contrast
 scope: platform
+kind: rule
 enforcement: advisory
 mandatory: true
 description: Text and interactive elements must meet WCAG 2.1 AA contrast (4.5:1 body text, 3:1 large text and UI components).

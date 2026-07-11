@@ -339,6 +339,7 @@
           'app.rpc.commands.binfile
           'app.rpc.commands.comments
           'app.rpc.commands.demo
+          'app.rpc.commands.design-skills
           'app.rpc.commands.files
           'app.rpc.commands.files-create
           'app.rpc.commands.files-share

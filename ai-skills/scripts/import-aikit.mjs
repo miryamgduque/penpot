@@ -14,6 +14,7 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { generateSeed } from "./generate-skill-seed.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const kitDir = process.argv[2] ?? join(here, "..", "..", "..", "penpot-ai-kit");
@@ -125,6 +126,9 @@ const ts = [
   "",
 ].join("\n");
 writeFileSync(join(here, "..", "..", "skills-core", "src", "aikit.gen.ts"), ts);
+
+// keep the backend app-scope seed in sync with the regenerated set
+generateSeed();
 
 console.log(
   `imported ${kitManifest.skills.length} skills + ${sharedDocs.length} shared docs from ${kitDir}`,

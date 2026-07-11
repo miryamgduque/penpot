@@ -10103,3 +10103,139 @@ msgstr "Autosaved versions will be kept for %s days."
 #, unused
 msgid "workspace.viewport.click-to-close-path"
 msgstr "Click to close the path"
+
+#: src/app/main/ui/dashboard/team.cljs, src/app/main/ui/dashboard/skills.cljs
+msgid "labels.skills"
+msgstr "Skills & Rules"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "title.team-skills"
+msgstr "Skills & Rules - %s - Penpot"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.description"
+msgstr "Design intent your AI agents inherit when working on this team's files. Skills are knowledge (playbooks, conventions); rules are constraints that can be watched and enforced at the write path. File-level skills are managed inside each file."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.team-section"
+msgstr "This team"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.team-section-desc"
+msgstr "Skills and rules for every file in this team."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.app-section"
+msgstr "App level (all teams)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.app-section-desc"
+msgstr "The instance-wide set, seeded from the official penpot-ai-kit. Switch an entry off to stop inheriting it in this team."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.create"
+msgstr "+ New skill or rule"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.empty"
+msgstr "No skills defined at this level yet."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.save-success"
+msgstr "Skill saved successfully."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.kind.skill"
+msgstr "Skill (knowledge for the agent)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.kind.rule"
+msgstr "Rule (checkable constraint)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.enforcement.advisory"
+msgstr "Advisory (context the agent follows)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.enforcement.triggered"
+msgstr "Triggered (watched, surfaced on changes)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.enforcement.enforced"
+msgstr "Enforced (violating writes are rejected)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.name"
+msgstr "Name"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.kind"
+msgstr "Kind"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.enforcement"
+msgstr "Enforcement"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.trigger"
+msgstr "Trigger"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.mandatory"
+msgstr "Mandatory"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.mandatory-hint"
+msgstr "More specific levels cannot loosen or disable it"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.description"
+msgstr "Description"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.description-hint"
+msgstr "One line the agent sees in its manifest"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.body"
+msgstr "Body (markdown)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.body-hint"
+msgstr "The full convention or constraint, in markdown"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.toggle-hint"
+msgstr "Enable or disable this entry"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.mandatory-toggle-hint"
+msgstr "Mandatory entries cannot be disabled"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.create-design-skill.title-team"
+msgstr "New team skill or rule"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.create-design-skill.title-app"
+msgstr "New app-level skill or rule"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.create-design-skill.submit-label"
+msgstr "Create"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.edit-design-skill.title"
+msgstr "Edit skill"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.edit-design-skill.submit-label"
+msgstr "Save"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.delete-design-skill.title"
+msgstr "Delete skill"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.delete-design-skill.message"
+msgstr "This removes the skill for everyone it applies to. Files keep their own file-level skills."

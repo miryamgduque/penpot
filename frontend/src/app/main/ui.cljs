@@ -226,6 +226,7 @@
         :dashboard-members
         :dashboard-invitations
         :dashboard-webhooks
+        :dashboard-skills
         :dashboard-settings
         :dashboard-deleted)
        (let [params        (get params :query)

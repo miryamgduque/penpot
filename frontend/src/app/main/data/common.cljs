@@ -425,6 +425,14 @@
       (let [team-id (:current-team-id state)]
         (rx/of (rt/nav :dashboard-webhooks {:team-id team-id}))))))
 
+(defn go-to-dashboard-skills
+  [& {:as options}]
+  (ptk/reify ::go-to-dashboard-skills
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [team-id (:current-team-id state)]
+        (rx/of (rt/nav :dashboard-skills {:team-id team-id}))))))
+
 (defn go-to-dashboard-settings
   [& {:as options}]
   (ptk/reify ::go-to-dashboard-settings

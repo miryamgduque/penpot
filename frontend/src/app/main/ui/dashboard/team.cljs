@@ -84,6 +84,7 @@
         on-nav-settings      (mf/use-fn #(st/emit! (dcm/go-to-dashboard-settings)))
         on-nav-invitations   (mf/use-fn #(st/emit! (dcm/go-to-dashboard-invitations)))
         on-nav-webhooks      (mf/use-fn #(st/emit! (dcm/go-to-dashboard-webhooks)))
+        on-nav-skills        (mf/use-fn #(st/emit! (dcm/go-to-dashboard-skills)))
 
         route                (mf/deref refs/route)
         invite-email         (-> route :query-params :invite-email)
@@ -92,6 +93,7 @@
         settings-section?    (= section :dashboard-team-settings)
         invitations-section? (= section :dashboard-team-invitations)
         webhooks-section?    (= section :dashboard-team-webhooks)
+        skills-section?      (= section :dashboard-team-skills)
         permissions          (:permissions team)
         can-invite?          (dnt/can-send-invitations?
                               {:organization (:organization team)
@@ -118,6 +120,7 @@
              settings-section? (tr "labels.settings")
              invitations-section? (tr "labels.invitations")
              webhooks-section? (tr "labels.webhooks")
+             skills-section? (tr "labels.skills")
              :else nil)]]
      [:nav {:class (stl/css :dashboard-header-menu)}
       [:ul {:class (stl/css :dashboard-header-options)}
@@ -128,6 +131,8 @@
        (when (contains? cfg/flags :webhooks)
          [:li {:class (when webhooks-section? (stl/css :active))}
           [:a {:on-click on-nav-webhooks} (tr "labels.webhooks")]])
+       [:li {:class (when skills-section? (stl/css :active))}
+        [:a {:on-click on-nav-skills} (tr "labels.skills")]]
        [:li {:class (when settings-section? (stl/css :active))}
         [:a {:on-click on-nav-settings} (tr "labels.settings")]]]]
      [:div {:class (stl/css :dashboard-buttons)}

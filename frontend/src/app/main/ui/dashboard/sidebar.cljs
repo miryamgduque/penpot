@@ -445,6 +445,7 @@
   (let [go-members     #(st/emit! (dcm/go-to-dashboard-members))
         go-invitations #(st/emit! (dcm/go-to-dashboard-invitations))
         go-webhooks    #(st/emit! (dcm/go-to-dashboard-webhooks))
+        go-skills      #(st/emit! (dcm/go-to-dashboard-skills))
         go-settings    #(st/emit! (dcm/go-to-dashboard-settings))
 
         members        (get team :members)
@@ -551,6 +552,11 @@
        [:> dropdown-menu-item* {:on-click go-webhooks
                                 :class    (stl/css :team-options-item)}
         (tr "labels.webhooks")])
+
+     [:> dropdown-menu-item* {:on-click    go-skills
+                              :class       (stl/css :team-options-item)
+                              :data-testid "team-skills"}
+      (tr "labels.skills")]
 
      [:> dropdown-menu-item* {:on-click    go-settings
                               :class       (stl/css :team-options-item)

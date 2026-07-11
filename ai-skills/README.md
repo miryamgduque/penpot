@@ -26,7 +26,7 @@ cascade, same rules — you only run it when you want outside agents connected.
 | Cascade resolver | [../skills-core/src/resolve.ts](../skills-core/src/resolve.ts) | platform → org → project → file; specific wins, `mandatory` can't be loosened below |
 | Scope stubs | [../skills-core/src/builtin.ts](../skills-core/src/builtin.ts) | platform/org/project skills (stubbed, per prototype scope) |
 | File skills | [src/skills/seed.ts](src/skills/seed.ts) + the design file | Stored in the file's **shared pluginData** (`penpot-skills`/`skills`) — versioned with the design, readable by any tool |
-| Enforcement guard | [../skills-core/src/guard.ts](../skills-core/src/guard.ts) | Validates `fills` against the file's color tokens + library colors; recursive Proxy gates arbitrary `execute_code`. Pure logic — callers bind it to their `penpot` global |
+| Enforcement guard | [../skills-core/src/guard.ts](../skills-core/src/guard.ts) | Validates `fills` and `strokes` against the file's color tokens + library colors; recursive Proxy gates arbitrary `execute_code`. Pure logic — callers bind it to their `penpot` global |
 | Plugin context | [src/plugin.ts](src/plugin.ts) | RPC ops for the chat's tools, change watching (`shapechange`/`selectionchange`) → triggered skills |
 | Embedded chat | [src/ui/](src/ui) | React panel: Chat + Skills + Tokens tabs. BYOK Anthropic (key stays in the browser), manual streaming tool loop — no MCP in the loop |
 | Scope management | [src/ui/Skills.tsx](src/ui/Skills.tsx) | Every level is manageable: org/project skills live in the plugin's cross-file store (`penpot.localStorage`), file skills in the file, platform curated/read-only |
@@ -158,4 +158,4 @@ inlined in full.
   links; `cd ../skills-core && npm install && npm test` runs its tests).
 - The MCP-side guard checks the file's own skills for `enforcement: enforced`
   (no cross-scope mandatory raise on that path yet).
-- Enforcement covers solid fills; gradients/strokes are next.
+- Enforcement covers solid fills and strokes; gradients are next.

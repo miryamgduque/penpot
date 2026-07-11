@@ -78,14 +78,15 @@ export function collectAllowedColors(lib: LocalLibraryLike): AllowedColor[] {
   return allowed;
 }
 
-/**
- * Validates a fills array against the token-only-colors rule.
- * Throws SkillViolationError when a raw (non-token) color is used.
- */
-export function assertFillsAllowed(fills: unknown, allowed: AllowedColor[]): void {
-  if (!Array.isArray(fills)) return;
-  for (const fill of fills) {
-    const color = (fill as { fillColor?: unknown })?.fillColor;
+function assertColorsAllowed(
+  values: unknown,
+  allowed: AllowedColor[],
+  colorKey: "fillColor" | "strokeColor",
+  what: "fill" | "stroke",
+): void {
+  if (!Array.isArray(values)) return;
+  for (const entry of values) {
+    const color = (entry as Record<string, unknown>)?.[colorKey];
     if (typeof color !== "string") continue; // gradients/images are out of scope for the prototype
     const hex = normalizeHex(color);
     if (!allowed.some((a) => a.value === hex)) {
@@ -96,14 +97,27 @@ export function assertFillsAllowed(fills: unknown, allowed: AllowedColor[]): voi
           .join(", ") || "none defined yet — create color tokens first";
       throw new SkillViolationError(
         "token-only-colors",
-        `Rejected by enforced design skill "token-only-colors": fill color ${color} ` +
+        `Rejected by enforced design skill "token-only-colors": ${what} color ${color} ` +
           `is not one of this file's color tokens or library colors. ` +
           `Allowed colors: ${tokenList}. ` +
           `Apply colors by token instead of raw hex values — find the token in ` +
-          `penpot.library.local.tokens.sets and call token.applyToShapes([shape], ["fill"]).`,
+          `penpot.library.local.tokens.sets and call token.applyToShapes([shape], ["${what}"]).`,
       );
     }
   }
+}
+
+/**
+ * Validates a fills array against the token-only-colors rule.
+ * Throws SkillViolationError when a raw (non-token) color is used.
+ */
+export function assertFillsAllowed(fills: unknown, allowed: AllowedColor[]): void {
+  assertColorsAllowed(fills, allowed, "fillColor", "fill");
+}
+
+/** Same rule for strokes: every strokeColor must resolve to a token or library color. */
+export function assertStrokesAllowed(strokes: unknown, allowed: AllowedColor[]): void {
+  assertColorsAllowed(strokes, allowed, "strokeColor", "stroke");
 }
 
 /**
@@ -139,8 +153,9 @@ export interface GuardOptions {
 
 /**
  * Wraps the `penpot` API object in a recursive Proxy that intercepts every
- * `fills` assignment anywhere in the object graph and validates it. This is
- * how arbitrary code execution (the MCP-style `execute_code` path) is gated.
+ * `fills` and `strokes` assignment anywhere in the object graph and validates
+ * it. This is how arbitrary code execution (the MCP-style `execute_code`
+ * path) is gated.
  */
 export function guardPenpot<T extends object>(root: T, opts: GuardOptions): T {
   const cache = new WeakMap<object, unknown>();
@@ -172,8 +187,10 @@ export function guardPenpot<T extends object>(root: T, opts: GuardOptions): T {
         return wrap(value);
       },
       set(t, prop, value) {
-        if (prop === "fills" && opts.isRuleActive()) {
-          assertFillsAllowed(value, opts.collectAllowed());
+        if ((prop === "fills" || prop === "strokes") && opts.isRuleActive()) {
+          const allowed = opts.collectAllowed();
+          if (prop === "fills") assertFillsAllowed(value, allowed);
+          else assertStrokesAllowed(value, allowed);
         }
         if (!Reflect.set(t, prop, unwrap(value), t)) {
           // a bare "proxy set returned false" is useless to an agent —

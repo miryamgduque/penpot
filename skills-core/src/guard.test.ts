@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   SkillViolationError,
   assertFillsAllowed,
+  assertStrokesAllowed,
   collectAllowedColors,
   guardPenpot,
   isSkillEnforcedInSources,
@@ -53,6 +54,31 @@ test("assertFillsAllowed: token-valued fill passes, raw hex throws citing the ru
       e.message.includes("#ff0000") &&
       e.message.includes("color.brand.primary"),
   );
+});
+
+test("assertStrokesAllowed: token-valued stroke passes, raw hex throws citing the stroke", () => {
+  const allowed = collectAllowedColors(lib);
+  assertStrokesAllowed([{ strokeColor: "#6366f1", strokeWidth: 2 }], allowed);
+  assert.throws(
+    () => assertStrokesAllowed([{ strokeColor: "#00ff00" }], allowed),
+    (e: unknown) =>
+      e instanceof SkillViolationError &&
+      e.rule === "token-only-colors" &&
+      e.message.includes("stroke color #00ff00"),
+  );
+});
+
+test("guardPenpot gates strokes assignments too", () => {
+  const shape = { name: "hero", strokes: [] as unknown[] };
+  const guarded = guardPenpot(
+    { shape },
+    { isRuleActive: () => true, collectAllowed: () => collectAllowedColors(lib) },
+  );
+  assert.throws(() => {
+    guarded.shape.strokes = [{ strokeColor: "#00ff00" }];
+  }, SkillViolationError);
+  guarded.shape.strokes = [{ strokeColor: "#ffffff" }];
+  assert.deepEqual(shape.strokes, [{ strokeColor: "#ffffff" }]);
 });
 
 test("guardPenpot gates fills assignments everywhere in the object graph", () => {

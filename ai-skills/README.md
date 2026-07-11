@@ -28,7 +28,7 @@ cascade, same rules — you only run it when you want outside agents connected.
 | File skills | [src/skills/seed.ts](src/skills/seed.ts) + the design file | Stored in the file's **shared pluginData** (`penpot-skills`/`skills`) — versioned with the design, readable by any tool |
 | Enforcement guard | [../skills-core/src/guard.ts](../skills-core/src/guard.ts) | Validates `fills` and `strokes` against the file's color tokens + library colors; recursive Proxy gates arbitrary `execute_code`. Pure logic — callers bind it to their `penpot` global |
 | Plugin context | [src/plugin.ts](src/plugin.ts) | RPC ops for the chat's tools, change watching (`shapechange`/`selectionchange`) → triggered skills |
-| Embedded chat | [src/ui/](src/ui) | React panel: Chat + Skills + Tokens tabs. BYOK Anthropic (key stays in the browser), manual streaming tool loop — no MCP in the loop |
+| Embedded chat | [src/ui/](src/ui) | React panel: Chat + Skills + Tokens tabs. BYOK Anthropic (key stays in the browser), manual streaming tool loop — no MCP in the loop. Conversations persist per file (plugin storage) and resume when the panel reopens |
 | Scope management | [src/ui/Skills.tsx](src/ui/Skills.tsx) | Every level is manageable: org/project skills live in the plugin's cross-file store (`penpot.localStorage`), file skills in the file, platform curated/read-only |
 | Token management | [src/ui/Tokens.tsx](src/ui/Tokens.tsx) | File color-token CRUD + an org-level palette (cross-file store) that syncs into any file's "org" token set |
 | Skill notifications | [src/ui/Notifications.tsx](src/ui/Notifications.tsx) | Transient toasts outside the chat: appear while designing, auto-dismiss, "⌖ Show" selects the affected shape on canvas, "Ask agent" hands the skill to the chat |

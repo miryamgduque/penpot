@@ -18,6 +18,32 @@ interface ChatItem {
   tool?: ToolEvent;
 }
 
+/** What survives a panel close: the transcript, the raw API history and the spend meter. */
+interface PersistedChat {
+  items: ChatItem[];
+  history: MessageParam[];
+  usage: UsageTotals;
+}
+
+const MAX_PERSISTED_ITEMS = 200;
+const MAX_HISTORY_MESSAGES = 40;
+
+/**
+ * Bounds the API history without splitting a tool_use from its tool_result:
+ * only cuts at a plain-text user message (every turn starts with one).
+ */
+function trimHistory(history: MessageParam[]): MessageParam[] {
+  const isTurnStart = (m: MessageParam) => m.role === "user" && typeof m.content === "string";
+  if (history.length <= MAX_HISTORY_MESSAGES) return history;
+  for (let i = history.length - MAX_HISTORY_MESSAGES; i < history.length; i++) {
+    if (isTurnStart(history[i])) return history.slice(i);
+  }
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (isTurnStart(history[i])) return history.slice(i);
+  }
+  return history;
+}
+
 /**
  * The embedded chat panel. Talks to the provider directly (no MCP server in
  * the loop); design tools execute in Penpot via the plugin bridge. Triggered
@@ -42,6 +68,7 @@ export function Chat({
   const [busy, setBusy] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [usage, setUsage] = useState<UsageTotals>(EMPTY_USAGE);
+  const [hydrated, setHydrated] = useState(false);
   const historyRef = useRef<MessageParam[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
@@ -51,6 +78,43 @@ export function Chat({
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  // resume this file's conversation from the plugin's cross-file store
+  useEffect(() => {
+    void bridge
+      .call<{ chat: string | null }>("get-chat")
+      .then((r) => {
+        if (!r.chat) return;
+        const stored = JSON.parse(r.chat) as PersistedChat;
+        if (Array.isArray(stored.items)) setItems(stored.items);
+        if (Array.isArray(stored.history)) historyRef.current = stored.history;
+        if (stored.usage) setUsage({ ...EMPTY_USAGE, ...stored.usage });
+      })
+      .catch(() => {
+        /* no stored chat / unreadable — start fresh */
+      })
+      .finally(() => setHydrated(true));
+  }, []);
+
+  // persist between turns (never mid-turn: tool results are still streaming in)
+  useEffect(() => {
+    if (!hydrated || busy) return;
+    historyRef.current = trimHistory(historyRef.current);
+    const payload: PersistedChat = {
+      items: items.slice(-MAX_PERSISTED_ITEMS),
+      history: historyRef.current,
+      usage,
+    };
+    void bridge.call("save-chat", { chat: JSON.stringify(payload) }).catch(() => {});
+  }, [hydrated, busy, items, usage]);
+
+  function clearChat() {
+    if (busyRef.current) return;
+    setItems([]);
+    setUsage(EMPTY_USAGE);
+    setStreamText("");
+    historyRef.current = [];
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -154,7 +218,24 @@ export function Chat({
         {streamText && <div className="msg assistant">{streamText}</div>}
         {busy && !streamText && <div className="msg assistant thinking">…</div>}
       </div>
-      {usage.requests > 0 && <UsageMeter usage={usage} model={settings.model} />}
+      {(usage.requests > 0 || items.length > 0) && (
+        <div className="chat-status">
+          {usage.requests > 0 ? (
+            <UsageMeter usage={usage} model={settings.model} />
+          ) : (
+            <span className="usage-meter">Restored conversation</span>
+          )}
+          <button
+            className="chat-clear"
+            type="button"
+            disabled={busy}
+            title="Clear this file's chat history and start a fresh session"
+            onClick={clearChat}
+          >
+            ✕ Clear
+          </button>
+        </div>
+      )}
       {!settings.apiKey && (
         <div className="composer-hint">No API key saved — add yours in ⚙ Settings to chat.</div>
       )}

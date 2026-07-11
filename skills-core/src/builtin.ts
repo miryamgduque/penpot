@@ -2,11 +2,13 @@
  * Platform / org / project scope skills.
  *
  * The platform scope is the curated set: the official penpot-ai-kit skills
- * (imported by scripts/import-aikit.mjs) plus baseline floors. Org/project
- * are editable stores seeded from the stubs below. File-scope skills live in
- * the design file's pluginData.
+ * (imported by ai-skills/scripts/import-aikit.mjs) plus baseline floors.
+ * Org/project are editable stores seeded from the stubs below (the Skills
+ * plugin persists edits; the MCP server serves the stubs as-is). File-scope
+ * skills live in the design file's pluginData.
  */
 
+import type { Scope } from "./types";
 import { AIKIT_PLATFORM_SKILLS } from "./aikit.gen";
 
 export const PLATFORM_SKILLS: string[] = [
@@ -60,4 +62,11 @@ description: 8px spacing grid; type scale 12/14/16/20/24/32; Inter or Work Sans;
 - Type scale: 12, 14, 16, 20, 24, 32. Body text is 14 or 16.
 - Prefer the file's typography library; default families are Inter/Work Sans.
 - Microcopy tone: friendly and concise, sentence case, no exclamation marks.`,
+];
+
+/** The builtin scopes flattened to (scope, source) pairs — the shape the MCP server consumes. */
+export const BUILTIN_SKILL_SOURCES: { scope: Scope; source: string }[] = [
+  ...PLATFORM_SKILLS.map((source) => ({ scope: "platform" as Scope, source })),
+  ...ORG_SKILLS.map((source) => ({ scope: "org" as Scope, source })),
+  ...PROJECT_SKILLS.map((source) => ({ scope: "project" as Scope, source })),
 ];

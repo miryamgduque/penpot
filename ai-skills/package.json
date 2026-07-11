@@ -9,10 +9,11 @@
     "serve": "vite preview",
     "start": "npm run build && vite preview",
     "build": "tsc --noEmit && vite build && npm run build:plugin",
-    "test": "node --experimental-strip-types --test src/skills/*.test.ts"
+    "test": "npm --prefix ../skills-core test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
+    "@penpot/skills-core": "file:../skills-core",
     "@penpot/plugin-styles": "^1.4.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

@@ -17,7 +17,7 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages";
 import * as bridge from "./bridge";
 import type { SkillsPayload } from "./bridge";
-import { skillManifest } from "../skills/resolve";
+import { skillManifest } from "@penpot/skills-core";
 
 export interface ToolEvent {
   id: string;

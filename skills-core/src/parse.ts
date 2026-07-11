@@ -1,5 +1,5 @@
-import type { Enforcement, Scope, Skill, Trigger } from "./types.ts";
-import { ENFORCEMENTS, SCOPES } from "./types.ts";
+import type { Enforcement, Scope, Skill, Trigger } from "./types";
+import { ENFORCEMENTS, SCOPES } from "./types";
 
 /**
  * Parses a skill markdown file: `---` frontmatter with flat `key: value`

@@ -1,3 +1,5 @@
+import { parseSkill } from "./parse";
+
 /**
  * Structural enforcement for the token-only-colors rule.
  *
@@ -5,6 +7,10 @@
  * so any agent (frontier or local) hitting the write path is gated the same
  * way. A violation throws a SkillViolationError whose message cites the rule
  * and lists the allowed tokens, so the agent can self-correct.
+ *
+ * This module is consumer-agnostic: it never touches the `penpot` global or
+ * `@penpot/plugin-types` (whose published version predates the tokens API).
+ * Callers pass in the library object and the rule-activation policy.
  */
 
 export class SkillViolationError extends Error {
@@ -22,6 +28,21 @@ export interface AllowedColor {
   kind: "token" | "library-color";
 }
 
+/**
+ * Minimal structural view of `penpot.library.local`. The tokens catalog is
+ * optional because older Penpot versions (and the published plugin-types)
+ * predate the Design Tokens API.
+ */
+export interface LocalLibraryLike {
+  tokens?: {
+    sets?: {
+      active: boolean;
+      tokens: { name: string; type?: string; resolvedValueString?: string; value?: unknown }[];
+    }[];
+  };
+  colors: { color?: string; name?: string }[];
+}
+
 export function normalizeHex(color: string): string {
   let c = color.trim().toLowerCase();
   if (/^#[0-9a-f]{3}$/.test(c)) {
@@ -30,16 +51,15 @@ export function normalizeHex(color: string): string {
   return c;
 }
 
-/** Collects the colors this file allows: color tokens in active sets + library colors. */
-export function collectAllowedColors(): AllowedColor[] {
+/** Collects the colors a file allows: color tokens in active sets + library colors. */
+export function collectAllowedColors(lib: LocalLibraryLike): AllowedColor[] {
   const allowed: AllowedColor[] = [];
-  const lib = penpot.library.local;
 
-  for (const set of lib.tokens.sets) {
+  for (const set of lib.tokens?.sets ?? []) {
     if (!set.active) continue;
     for (const token of set.tokens) {
-      if ((token as { type?: string }).type !== "color") continue;
-      const value = token.resolvedValueString ?? (token as { value?: string }).value;
+      if (token.type !== "color") continue;
+      const value = token.resolvedValueString ?? token.value;
       if (typeof value === "string" && value.startsWith("#")) {
         allowed.push({ value: normalizeHex(value), label: token.name, kind: "token" });
       }
@@ -76,13 +96,45 @@ export function assertFillsAllowed(fills: unknown, allowed: AllowedColor[]): voi
           .join(", ") || "none defined yet — create color tokens first";
       throw new SkillViolationError(
         "token-only-colors",
-        `Rejected by enforced skill "token-only-colors" (file scope): fill color ${color} ` +
+        `Rejected by enforced design skill "token-only-colors": fill color ${color} ` +
           `is not one of this file's color tokens or library colors. ` +
-          `Use one of: ${tokenList}. ` +
-          `Apply colors by token (see get_color_tokens) instead of raw hex values.`,
+          `Allowed colors: ${tokenList}. ` +
+          `Apply colors by token instead of raw hex values — find the token in ` +
+          `penpot.library.local.tokens.sets and call token.applyToShapes([shape], ["fill"]).`,
       );
     }
   }
+}
+
+/**
+ * Checks whether raw file-scope skills data (the JSON array stored in shared
+ * pluginData namespace "penpot-skills", key "skills") declares the given
+ * skill with `enforcement: enforced`.
+ */
+export function isSkillEnforcedInSources(
+  raw: string | null | undefined,
+  skillName: string,
+): boolean {
+  if (!raw) return false;
+  try {
+    const sources: unknown = JSON.parse(raw);
+    if (!Array.isArray(sources)) return false;
+    return sources.some((source) => {
+      if (typeof source !== "string") return false;
+      const skill = parseSkill(source, "file");
+      return skill.name === skillName && skill.enforcement === "enforced";
+    });
+  } catch {
+    // unreadable skills data — do not enforce
+    return false;
+  }
+}
+
+export interface GuardOptions {
+  /** Whether the token-only-colors rule is currently active for this file. */
+  isRuleActive: () => boolean;
+  /** The colors the file allows, collected at validation time. */
+  collectAllowed: () => AllowedColor[];
 }
 
 /**
@@ -90,7 +142,7 @@ export function assertFillsAllowed(fills: unknown, allowed: AllowedColor[]): voi
  * `fills` assignment anywhere in the object graph and validates it. This is
  * how arbitrary code execution (the MCP-style `execute_code` path) is gated.
  */
-export function guardPenpot<T extends object>(root: T, isRuleActive: () => boolean): T {
+export function guardPenpot<T extends object>(root: T, opts: GuardOptions): T {
   const cache = new WeakMap<object, unknown>();
   const unwrapMap = new WeakMap<object, object>();
 
@@ -110,7 +162,7 @@ export function guardPenpot<T extends object>(root: T, isRuleActive: () => boole
     if (cache.has(target)) return cache.get(target);
 
     const proxy = new Proxy(target, {
-      get(t, prop, _receiver) {
+      get(t, prop) {
         // Use the raw target as receiver so native getters keep working.
         const value = Reflect.get(t, prop, t);
         if (typeof value === "function") {
@@ -120,8 +172,8 @@ export function guardPenpot<T extends object>(root: T, isRuleActive: () => boole
         return wrap(value);
       },
       set(t, prop, value) {
-        if (prop === "fills" && isRuleActive()) {
-          assertFillsAllowed(value, collectAllowedColors());
+        if (prop === "fills" && opts.isRuleActive()) {
+          assertFillsAllowed(value, opts.collectAllowed());
         }
         if (!Reflect.set(t, prop, unwrap(value), t)) {
           // a bare "proxy set returned false" is useless to an agent —

@@ -1,0 +1,314 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) KALEIDOS INC Sucursal en España SL
+
+@use "refactor/common-refactor.scss" as deprecated;
+@use "common/refactor/common-dashboard";
+@use "ds/_utils.scss" as *;
+@use "ds/typography.scss" as t;
+@use "ds/_sizes.scss" as *;
+@use "ds/_borders.scss" as *;
+@use "ds/mixins.scss" as *;
+
+.dashboard-team-skills {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  justify-items: center;
+  gap: var(--sp-xxl);
+  inline-size: 100%;
+  block-size: 100%;
+  padding-inline: var(--sp-xl);
+  padding-block-start: var(--sp-xl);
+  border-top: $b-1 solid var(--color-background-quaternary);
+  overflow-y: auto;
+}
+
+.skills-hero {
+  display: grid;
+  gap: var(--sp-l);
+  margin: var(--sp-xxl) auto 0 auto;
+  max-inline-size: $sz-1000;
+  inline-size: 100%;
+}
+
+.hero-title {
+  @include t.use-typography("title-large");
+
+  color: var(--color-foreground-primary);
+}
+
+.hero-desc {
+  @include t.use-typography("body-large");
+
+  color: var(--color-foreground-secondary);
+  margin-bottom: 0;
+}
+
+.skills-section {
+  inline-size: 100%;
+  max-inline-size: $sz-1000;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--sp-l);
+  margin-block-end: var(--sp-l);
+}
+
+.section-title {
+  @include t.use-typography("title-medium");
+
+  color: var(--color-foreground-primary);
+}
+
+.section-desc {
+  @include t.use-typography("body-medium");
+
+  color: var(--color-foreground-secondary);
+  margin: 0;
+}
+
+.create-btn {
+  @extend %button-primary;
+
+  block-size: $sz-32;
+  padding-inline: var(--sp-l);
+  white-space: nowrap;
+}
+
+.skills-empty {
+  display: grid;
+  place-items: center;
+  block-size: px2rem(96);
+  inline-size: 100%;
+  padding: var(--sp-xxl);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
+  color: var(--color-foreground-secondary);
+}
+
+.table-rows {
+  display: grid;
+  grid-auto-rows: minmax(px2rem(64), auto);
+  gap: var(--sp-s);
+  inline-size: 100%;
+  color: var(--color-foreground-secondary);
+}
+
+.table-row {
+  display: grid;
+  align-items: center;
+  inline-size: 100%;
+  padding: var(--sp-m) var(--sp-l);
+  border-radius: $br-8;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-primary);
+}
+
+.skill-row {
+  grid-template-columns: auto 1fr auto auto;
+  gap: var(--sp-l);
+}
+
+.skill-toggle input {
+  cursor: pointer;
+  accent-color: var(--color-accent-primary);
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+}
+
+.skill-main {
+  display: grid;
+  gap: var(--sp-xs);
+  min-inline-size: 0;
+}
+
+.skill-name {
+  @include t.use-typography("body-medium");
+
+  color: var(--color-foreground-primary);
+}
+
+.skill-desc {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.skill-badges {
+  display: flex;
+  gap: var(--sp-xs);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.badge {
+  @include t.use-typography("body-small");
+
+  padding: 0 var(--sp-s);
+  border-radius: $br-8;
+  border: $b-1 solid var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+.badge-enforcement {
+  color: var(--color-foreground-primary);
+}
+
+.badge-mandatory {
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+}
+
+.actions {
+  position: relative;
+}
+
+.menu-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.menu-icon {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  block-size: $sz-16;
+  inline-size: $sz-16;
+  color: transparent;
+  fill: none;
+  stroke-width: $b-1;
+  stroke: var(--color-foreground-primary);
+}
+
+.skill-actions-dropdown {
+  box-shadow: var(--el-shadow-dark);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+  position: absolute;
+  padding: var(--sp-xs);
+  border-radius: $br-8;
+  z-index: var(--z-index-dropdown);
+  color: var(--color-foreground-primary);
+  background-color: var(--color-background-tertiary);
+  border: $b-2 solid var(--color-background-quaternary);
+  margin: 0;
+  right: 0;
+  inline-size: fit-content;
+  min-inline-size: $sz-160;
+}
+
+.skill-dropdown-item {
+  @include t.use-typography("body-small");
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  block-size: $sz-28;
+  inline-size: 100%;
+  padding: px2rem(6);
+  border-radius: $br-8;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-quaternary);
+  }
+}
+
+// MODAL (same layout conventions as the webhooks modal in team.scss)
+
+.modal-overlay {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: fixed;
+  left: 0;
+  top: 0;
+  block-size: 100%;
+  inline-size: 100%;
+  z-index: var(--z-index-set);
+  background-color: var(--overlay-color);
+}
+
+.modal-container {
+  position: relative;
+  padding: var(--sp-xxxl);
+  border-radius: $br-8;
+  background-color: var(--color-background-primary);
+  border: $b-2 solid var(--color-background-quaternary);
+  min-inline-size: $sz-512;
+  max-inline-size: px2rem(640);
+  max-block-size: 90vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  margin-bottom: var(--sp-xxl);
+}
+
+.modal-title {
+  @include t.use-typography("title-small");
+
+  color: var(--color-foreground-primary);
+}
+
+.modal-close-btn {
+  @extend %modal-close-btn-base;
+}
+
+.modal-content {
+  @include t.use-typography("body-small");
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xxl);
+  margin-bottom: var(--sp-xxl);
+}
+
+.fields-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+  flex: 1;
+}
+
+.fields-row-checkbox {
+  justify-content: flex-end;
+}
+
+.fields-pair {
+  display: flex;
+  gap: var(--sp-l);
+}
+
+.select-title {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-primary);
+}
+
+.hint {
+  color: var(--color-foreground-secondary);
+}
+
+.action-buttons {
+  @extend %modal-action-btns;
+
+  .cancel-button {
+    @extend %modal-cancel-btn;
+  }
+}

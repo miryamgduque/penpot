@@ -25,9 +25,11 @@ import {
   guardPenpot,
   normalizeHex,
   parseSkill,
+  serializeSkill,
   skillManifest,
   type DisabledByScope,
   type EffectiveSkill,
+  type Enforcement,
   type LocalLibraryLike,
   type Scope,
 } from "@penpot/skills-core";
@@ -42,14 +44,26 @@ const NAMESPACE = "penpot-skills";
 const SKILLS_KEY = "skills";
 const DEFAULT_NAME_RE = /^(rectangle|ellipse|board|text|path|group|frame|circle|image|svg)\s*\d*$/i;
 
-// dock:true renders the plugin as an integrated workspace side panel on hosts
-// that provide the plugin dock (see plugins-runtime create-modal.ts); other
-// hosts fall back to the regular floating plugin window.
-penpot.ui.open("Penpot Skills", `?theme=${penpot.theme}`, {
-  width: 400,
-  height: 620,
-  dock: true,
-} as { width: number; height: number });
+export type PanelMode = "chat" | "skills" | "all";
+
+/**
+ * Opens the panel UI. Called by the entry bundles (plugin-chat.ts /
+ * plugin-skills.ts / plugin-main.ts) — this module itself has no side
+ * effect on load beyond registering listeners.
+ *
+ * dock:true renders the plugin as an integrated workspace side panel on
+ * hosts that provide the plugin dock (see plugins-runtime create-modal.ts);
+ * other hosts fall back to the regular floating plugin window. The extra
+ * query params reach the iframe through the URL hash (plugins-runtime
+ * prepareUrl, manifest version 2).
+ */
+export function openPanel(title: string, mode: PanelMode): void {
+  penpot.ui.open(title, `?theme=${penpot.theme}&mode=${mode}`, {
+    width: 400,
+    height: 620,
+    dock: true,
+  } as { width: number; height: number });
+}
 
 /* ------------------------------------------------------------------ */
 /* Skills storage & cascade                                            */
@@ -117,7 +131,82 @@ function loadScopeSources(scope: "platform" | "org" | "project" | "file"): strin
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* DB-backed scopes                                                     */
+/*                                                                      */
+/* In the native build the app/team skill sets live in Penpot's         */
+/* database; the workspace fetches them and pushes them in here via     */
+/* window.postMessage (type "penpot-skills/scopes"), which the plugins  */
+/* runtime forwards to this context. When present they replace the      */
+/* bundled platform set and the localStorage org store (App → Team →    */
+/* File cascade; the project slot goes unused). Outside the native      */
+/* build nothing is pushed and the bundled/localStorage sources apply.  */
+/* ------------------------------------------------------------------ */
+
+interface DbSkillRow {
+  name: string;
+  kind?: string;
+  enforcement?: string;
+  description?: string;
+  body?: string;
+  ["is-mandatory"]?: boolean;
+  ["is-enabled"]?: boolean;
+  ["trigger-on"]?: string | null;
+}
+
+interface DbScopes {
+  app: DbSkillRow[];
+  team: DbSkillRow[];
+  overrides: string[];
+}
+
+let dbScopes: DbScopes | null = null;
+
+const ENFORCEMENT_VALUES = ["advisory", "triggered", "enforced"];
+
+function rowToSource(row: DbSkillRow, scope: Scope): string {
+  return serializeSkill({
+    name: row.name,
+    scope,
+    kind: row.kind === "rule" ? "rule" : "skill",
+    enforcement: ENFORCEMENT_VALUES.includes(row.enforcement ?? "")
+      ? (row.enforcement as Enforcement)
+      : "advisory",
+    description: row.description ?? "",
+    mandatory: row["is-mandatory"] === true,
+    trigger: (row["trigger-on"] || undefined) as never,
+    body: row.body ?? "",
+    source: "",
+  });
+}
+
+function acceptDbScopes(payload: unknown): void {
+  const p = payload as { app?: unknown; team?: unknown; overrides?: unknown };
+  const rows = (v: unknown): DbSkillRow[] =>
+    Array.isArray(v) ? v.filter((r) => r && typeof (r as DbSkillRow).name === "string") : [];
+  dbScopes = {
+    app: rows(p.app),
+    team: rows(p.team),
+    overrides: Array.isArray(p.overrides)
+      ? p.overrides.filter((n): n is string => typeof n === "string")
+      : [],
+  };
+}
+
+/** Scopes whose content is managed natively (dashboard/DB) rather than in this panel. */
+function managedScopes(): Scope[] {
+  return dbScopes ? ["platform", "org", "project"] : [];
+}
+
 function allScopeSources() {
+  if (dbScopes) {
+    return {
+      platform: dbScopes.app.map((r) => rowToSource(r, "platform")),
+      org: dbScopes.team.map((r) => rowToSource(r, "org")),
+      project: [] as string[],
+      file: loadFileSkillSources(),
+    };
+  }
   return {
     platform: loadScopeSources("platform"),
     org: loadScopeSources("org"),
@@ -141,6 +230,18 @@ function parseNameList(raw: string | null | undefined): string[] {
 }
 
 function loadDisabled(): Required<DisabledByScope> {
+  if (dbScopes) {
+    return {
+      // app rows switched off globally + the team's per-entry overrides
+      platform: [
+        ...dbScopes.app.filter((r) => r["is-enabled"] === false).map((r) => r.name),
+        ...dbScopes.overrides,
+      ],
+      org: dbScopes.team.filter((r) => r["is-enabled"] === false).map((r) => r.name),
+      project: [],
+      file: parseNameList(penpot.currentFile?.getSharedPluginData(NAMESPACE, "disabled")),
+    };
+  }
   return {
     platform: parseNameList(penpot.localStorage.getItem("skills.disabled.platform")),
     org: parseNameList(penpot.localStorage.getItem("skills.disabled.org")),
@@ -156,6 +257,12 @@ function saveDisabled(scope: Scope, names: string[]): void {
 }
 
 function setSkillEnabled(scope: Scope, name: string, enabled: boolean): void {
+  if (managedScopes().includes(scope)) {
+    throw new Error(
+      `The ${scope === "platform" ? "app" : "team"} scope is managed in the dashboard ` +
+        `(Team → Skills & Rules) — toggle it there.`,
+    );
+  }
   const sources = loadScopeSources(scope);
   const def = sources.map((s) => parseSkill(s, scope)).find((s) => s.name === name);
   if (!def) throw new Error(`No skill named "${name}" is defined at ${scope} scope.`);
@@ -192,6 +299,7 @@ function skillsPayload() {
     fileSkillSources: loadFileSkillSources(),
     scopes: allScopeSources(),
     disabled: loadDisabled(),
+    managed: managedScopes(),
     effective: effectiveSkills(),
   };
 }
@@ -706,12 +814,27 @@ const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
     penpot.localStorage.setItem(chatStorageKey(), p.chat ?? "");
     return { ok: true };
   },
+  // cross-panel prompt handoff: the Skills panel writes a pending prompt
+  // into the file's shared pluginData, the Chat panel drains it on open
+  // (two panels = two plugin ids, so penpot.localStorage is not shared)
+  "set-pending-ask": (p: { prompt: string }) => {
+    penpot.currentFile?.setSharedPluginData(NAMESPACE, "pending-ask", p.prompt ?? "");
+    return { ok: true };
+  },
+  "drain-pending-ask": () => {
+    const prompt = penpot.currentFile?.getSharedPluginData(NAMESPACE, "pending-ask") ?? "";
+    if (prompt) penpot.currentFile?.setSharedPluginData(NAMESPACE, "pending-ask", "");
+    return { prompt };
+  },
   "get-skills": () => skillsPayload(),
   "save-file-skills": (p: { sources: string[] }) => {
     saveFileSkillSources(p.sources);
     return skillsPayload();
   },
   "save-scope-skills": (p: { scope: "org" | "project" | "file"; sources: string[] }) => {
+    if (p.scope !== "file" && managedScopes().includes(p.scope)) {
+      throw new Error(`The ${p.scope} scope is managed in the dashboard (Team → Skills & Rules).`);
+    }
     if (p.scope === "file") saveFileSkillSources(p.sources);
     else if (p.scope === "org" || p.scope === "project") saveStoredScope(p.scope, p.sources);
     else throw new Error(`Scope not editable: ${p.scope}`);
@@ -790,6 +913,19 @@ const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
 
 penpot.ui.onMessage(async (message: unknown) => {
   const msg = message as RpcMessage & { type?: string };
+
+  // DB-backed app/team scopes pushed by the Penpot workspace (the plugins
+  // runtime forwards window messages posted on the host page into here)
+  if (msg?.type === "penpot-skills/scopes") {
+    acceptDbScopes(msg);
+    penpot.ui.sendMessage({
+      source: "plugin",
+      type: "skills-change",
+      skills: skillsPayload(),
+    });
+    return;
+  }
+
   if (msg?.type === "ready") {
     penpot.ui.sendMessage({
       source: "plugin",

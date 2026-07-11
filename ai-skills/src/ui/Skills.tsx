@@ -29,13 +29,18 @@ export function SkillsPanel({
     }
   };
 
+  const managed = new Set(skills.managed ?? []);
+
   return (
     <div className="skills-panel">
       <div className="skills-head">
         <span className="hint">
-          platform → org → project → file, cascade-resolved. Skills are knowledge for the agent;
-          rules are constraints that can be watched and enforced. Toggle any non-mandatory entry
-          off at the scope that defines it.
+          {managed.size > 0
+            ? "app → team → file, cascade-resolved. App and team scopes are managed in the " +
+              "dashboard (Team → Skills & Rules); file skills live in this design file."
+            : "platform → org → project → file, cascade-resolved. Skills are knowledge for the " +
+              "agent; rules are constraints that can be watched and enforced. Toggle any " +
+              "non-mandatory entry off at the scope that defines it."}
         </span>
       </div>
       <div className="scope-tabs">
@@ -60,14 +65,20 @@ export function SkillsPanel({
       {error && <div className="msg error">{error}</div>}
       {editingScope === null ? (
         skills.effective.map((s) => (
-          <SkillCard key={s.name} skill={s} onToggle={(enabled) => void toggle(s, enabled)} />
+          <SkillCard
+            key={s.name}
+            skill={s}
+            managed={managed.has(s.definedAt)}
+            onToggle={(enabled) => void toggle(s, enabled)}
+          />
         ))
       ) : (
         <ScopeEditor
           scope={editingScope}
           sources={skills.scopes[editingScope]}
           disabled={skills.disabled[editingScope]}
-          readOnly={!EDITABLE_SCOPES.includes(editingScope)}
+          readOnly={!EDITABLE_SCOPES.includes(editingScope) || managed.has(editingScope)}
+          managed={managed.has(editingScope)}
           onSkillsChanged={onSkillsChanged}
         />
       )}
@@ -77,9 +88,11 @@ export function SkillsPanel({
 
 function SkillCard({
   skill,
+  managed,
   onToggle,
 }: {
   skill: EffectiveSkill;
+  managed?: boolean;
   onToggle: (enabled: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -104,17 +117,19 @@ function SkillCard({
         <label
           className="skill-toggle"
           title={
-            skill.mandatory
-              ? "Mandatory — cannot be disabled"
-              : skill.disabled
-                ? `Enable (currently off at ${skill.definedAt} scope)`
-                : `Disable at ${skill.definedAt} scope`
+            managed
+              ? "Managed in the dashboard (Team → Skills & Rules)"
+              : skill.mandatory
+                ? "Mandatory — cannot be disabled"
+                : skill.disabled
+                  ? `Enable (currently off at ${skill.definedAt} scope)`
+                  : `Disable at ${skill.definedAt} scope`
           }
         >
           <input
             type="checkbox"
             checked={!skill.disabled}
-            disabled={skill.mandatory}
+            disabled={skill.mandatory || managed}
             onChange={(e) => onToggle(e.target.checked)}
           />
         </label>
@@ -137,12 +152,14 @@ function ScopeEditor({
   sources: initial,
   disabled,
   readOnly,
+  managed,
   onSkillsChanged,
 }: {
   scope: Scope;
   sources: string[];
   disabled: string[];
   readOnly: boolean;
+  managed?: boolean;
   onSkillsChanged: (s: SkillsPayload) => void;
 }) {
   const [sources, setSources] = useState<string[]>(initial);
@@ -170,8 +187,10 @@ function ScopeEditor({
     return (
       <div className="skills-editor">
         <p className="hint">
-          Platform skills are curated centrally (approval process in the full vision) — read-only
-          here, but each can be switched off in the Effective view.
+          {managed
+            ? "This scope is managed natively in the dashboard (Team → Skills & Rules) — read-only here."
+            : "Platform skills are curated centrally (approval process in the full vision) — " +
+              "read-only here, but each can be switched off in the Effective view."}
           {disabled.length > 0 && ` Currently disabled: ${disabled.join(", ")}.`}
         </p>
         {sources.map((src, i) => (

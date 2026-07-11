@@ -128,6 +128,19 @@ export function Chat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingAsk]);
 
+  // A prompt handed over from the Skills panel through the file's
+  // pluginData (cross-panel: e.g. "Fix via chat" on audit violations)
+  useEffect(() => {
+    if (!hydrated) return;
+    void bridge
+      .call<{ prompt: string }>("drain-pending-ask")
+      .then((r) => {
+        if (r.prompt && !busyRef.current) void send(r.prompt);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
+
   async function send(message: string, echoUser = true) {
     if (!message.trim() || busyRef.current) return;
     if (!settings.apiKey) {

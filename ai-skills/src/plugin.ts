@@ -542,6 +542,10 @@ penpot.on("themechange", (theme) => {
 /* RPC                                                                 */
 /* ------------------------------------------------------------------ */
 
+function chatStorageKey(): string {
+  return `chat.${penpot.currentFile?.id ?? "no-file"}`;
+}
+
 type RpcMessage = { source: "ui"; id: number; op: string; payload?: Record<string, unknown> };
 
 const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
@@ -551,6 +555,13 @@ const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
   "get-settings": () => ({ settings: penpot.localStorage.getItem("ui.settings") }),
   "save-settings": (p: { settings: string }) => {
     penpot.localStorage.setItem("ui.settings", p.settings ?? "");
+    return { ok: true };
+  },
+  // chat transcripts persist per design file in the plugin's cross-file store,
+  // so reopening the panel (or Penpot) resumes the conversation
+  "get-chat": () => ({ chat: penpot.localStorage.getItem(chatStorageKey()) }),
+  "save-chat": (p: { chat: string }) => {
+    penpot.localStorage.setItem(chatStorageKey(), p.chat ?? "");
     return { ok: true };
   },
   "get-skills": () => ({

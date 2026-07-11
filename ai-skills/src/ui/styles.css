@@ -520,10 +520,35 @@ button.danger {
   border-block-start: 1px solid var(--border);
 }
 
-.usage-meter {
+.chat-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-8);
   padding: var(--spacing-4) var(--spacing-12);
+  border-block-start: 1px solid var(--border);
+}
+
+.usage-meter {
+  flex: 1;
   font-size: var(--font-size-xs);
   color: var(--fg-soft);
-  border-block-start: 1px solid var(--border);
   text-align: end;
+}
+
+.chat-clear {
+  font-size: var(--font-size-xs);
+  color: var(--fg-soft);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chat-clear:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.chat-clear:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

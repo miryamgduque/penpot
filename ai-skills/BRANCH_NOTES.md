@@ -58,6 +58,7 @@ all bundles build.
 
 **Not yet driven live:** the file-level panel wiring — DB-scope push into the docked panels, panel
 swap/active-state, cross-panel "Fix via chat". Implemented + builds, needs a design file open to exercise.
+→ **When the DB push is confirmed working, do the fallback cleanup in "Candidates" below.**
 
 ## Cleanup
 
@@ -66,7 +67,12 @@ swap/active-state, cross-panel "Fix via chat". Implemented + builds, needs a des
 `save-file-skills`/`get-violations` ops) — leftovers from before the chat tools were consolidated to
 `read_design`/`apply_tokens`/`execute_code`. Also pruned now-unused imports.
 
-**Candidates still on the table (decide together):**
+**Candidates still on the table — ⏳ DO ONCE THE DB PUSH IS VERIFIED LIVE.**
+These are all held back by one thing: the native DB-scope push into the panels isn't confirmed working
+end-to-end yet (see "Not yet driven live" above). That push is what replaces the standalone fallback
+below, so **once we've watched the panels populate from the DB in a real workspace, remove all three.**
+Until then they're the only thing keeping the panel usable outside the native app.
+
 - **Manual plugin-install path** — `ai-skills/public/manifest.json` + `icon.png`, the `plugin-main.ts`
   "all" bundle (`dist/plugin.js`), and the `mode:"all"` branch in `App.tsx`. Superseded by the native
   docked panels; only kept as a standalone/manual-load fallback. Remove if we commit fully to native.
@@ -74,7 +80,7 @@ swap/active-state, cross-panel "Fix via chat". Implemented + builds, needs a des
   `saveStoredScope`, the `org|project` branch of `save-scope-skills`) + `EDITABLE_SCOPES` in
   `Skills.tsx`. Org(=team)/project are now DB-managed via the dashboard and read-only in the panel;
   these only serve the non-native fallback. Removing them means the panel shows nothing until the DB
-  push arrives (~0.6–3.6s) when run standalone — acceptable if we drop standalone support.
+  push arrives (~0.6–3.6s) when run standalone — acceptable once we drop standalone support.
 - **`project` scope generally** — the cascade is App→Team→File; the `project` slot is unused natively.
   `PROJECT_SKILLS` in `skills-core` and the project handling could go if we don't want to keep the
   4-scope model for future use.

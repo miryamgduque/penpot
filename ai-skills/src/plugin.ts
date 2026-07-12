@@ -10,7 +10,7 @@
  *  - watch the file for changes and surface triggered skills to the UI
  */
 
-import type { Board, Shape, Text } from "@penpot/plugin-types";
+import type { Shape } from "@penpot/plugin-types";
 import {
   PLATFORM_SKILLS,
   ORG_SKILLS,
@@ -18,7 +18,6 @@ import {
   parseSkills,
   resolveCascade,
   SkillViolationError,
-  assertFillsAllowed,
   collectAllowedColors,
   findDisallowedColors,
   type AllowedColor,
@@ -393,82 +392,6 @@ function getShapeOrThrow(shapeId: string): Shape {
 /* Design writes (enforced path)                                       */
 /* ------------------------------------------------------------------ */
 
-function setFill(args: { shapeId: string; color?: string; tokenName?: string }) {
-  const shape = getShapeOrThrow(args.shapeId);
-
-  if (args.tokenName) {
-    const token = findColorToken(args.tokenName);
-    if (!token) {
-      throw new Error(
-        `No active color token named "${args.tokenName}". Call get_color_tokens to list them.`,
-      );
-    }
-    token.applyToShapes([shape], ["fill"]);
-    return { ok: true, applied: `token ${args.tokenName}`, shape: summarizeShape(shape) };
-  }
-
-  if (args.color) {
-    const fills = [{ fillColor: normalizeHex(args.color), fillOpacity: 1 }];
-    if (isRuleEnforced("token-only-colors")) {
-      assertFillsAllowed(fills, allowedColors());
-    }
-    shape.fills = fills;
-    return { ok: true, applied: `color ${args.color}`, shape: summarizeShape(shape) };
-  }
-
-  throw new Error("set_fill requires either tokenName or color");
-}
-
-function createShape(args: {
-  kind: "board" | "rectangle" | "ellipse" | "text";
-  name?: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  parentId?: string;
-  text?: string;
-  fontSize?: number;
-  fillTokenName?: string;
-  fillColor?: string;
-}) {
-  let shape: Shape | null;
-  switch (args.kind) {
-    case "board":
-      shape = penpot.createBoard();
-      break;
-    case "rectangle":
-      shape = penpot.createRectangle();
-      break;
-    case "ellipse":
-      shape = penpot.createEllipse();
-      break;
-    case "text":
-      shape = penpot.createText(args.text ?? "Text");
-      break;
-    default:
-      throw new Error(`Unknown shape kind: ${args.kind}`);
-  }
-  if (!shape) throw new Error(`Could not create ${args.kind}`);
-
-  if (args.name) shape.name = args.name;
-  if (args.width && args.height) shape.resize(args.width, args.height);
-  if (typeof args.x === "number") shape.x = args.x;
-  if (typeof args.y === "number") shape.y = args.y;
-  if (typeof args.fontSize === "number" && args.kind === "text") {
-    (shape as Text).fontSize = String(args.fontSize);
-  }
-  if (args.parentId) {
-    const parent = getShapeOrThrow(args.parentId);
-    (parent as Board).appendChild(shape);
-  }
-  if (args.fillTokenName || args.fillColor) {
-    setFill({ shapeId: shape.id, tokenName: args.fillTokenName, color: args.fillColor });
-  }
-  watchShape(shape.id);
-  return { ok: true, shape: summarizeShape(shape) };
-}
-
 function createColorToken(args: { name: string; value: string; set?: string }) {
   const lib = penpot.library.local;
   const setName = args.set ?? "core";
@@ -827,10 +750,6 @@ const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
     return { prompt };
   },
   "get-skills": () => skillsPayload(),
-  "save-file-skills": (p: { sources: string[] }) => {
-    saveFileSkillSources(p.sources);
-    return skillsPayload();
-  },
   "save-scope-skills": (p: { scope: "org" | "project" | "file"; sources: string[] }) => {
     if (p.scope !== "file" && managedScopes().includes(p.scope)) {
       throw new Error(`The ${p.scope} scope is managed in the dashboard (Team → Skills & Rules).`);
@@ -845,7 +764,6 @@ const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
     return skillsPayload();
   },
   "audit-file": () => auditFile(),
-  "get-violations": () => ({ violations: [...violationLedger.values()] }),
   "dismiss-violation": (p: { id: string }) => {
     violationLedger.delete(p.id);
     notifyViolations();
@@ -885,8 +803,6 @@ const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
     });
     return { results };
   },
-  "set-fill": (p) => setFill(p),
-  "create-shape": (p) => createShape(p),
   "create-color-token": (p) => createColorToken(p),
   "update-color-token": (p) => updateColorToken(p),
   "delete-color-token": (p) => deleteColorToken(p),
@@ -900,13 +816,6 @@ const OPS: Record<string, (payload: any) => unknown | Promise<unknown>> = {
     const shape = getShapeOrThrow(p.shapeId);
     penpot.selection = [shape];
     return { ok: true, selected: shape.name };
-  },
-  "rename-shape": (p: { shapeId: string; name: string }) => {
-    const shape = getShapeOrThrow(p.shapeId);
-    shape.name = p.name;
-    snapshots.set(shape.id, snapshot(shape));
-    if (auditShapeNow(shape)) notifyViolations();
-    return { ok: true, shape: summarizeShape(shape) };
   },
   "execute-code": (p: { code: string }) => executeCode(p.code),
 };

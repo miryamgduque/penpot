@@ -16,7 +16,6 @@
    [app.main.data.workspace.drawing.common :as dwc]
    [app.main.data.workspace.history :as dwh]
    [app.main.data.workspace.shortcuts :as sc]
-   [app.main.data.workspace.skills :as dwsk]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
@@ -195,34 +194,6 @@
     (mf/with-effect [editing?]
       (when ^boolean editing?
         (dom/select-text! (mf/ref-val input-ref))))
-
-    ;; Messages posted by the docked panels to the workspace window:
-    ;; - open-chat: the Skills panel asks for the chat panel (e.g. "Fix via
-    ;;   chat" on audit violations); the pending prompt travels through the
-    ;;   file's shared pluginData and is drained by the chat panel on init.
-    ;; - refresh-scopes: the chat panel asks for a fresh skills + AI-provider
-    ;;   push (e.g. after connecting a provider in another tab).
-    ;; - ai-round: one buffered agent round to relay to the backend proxy.
-    (mf/with-effect []
-      (let [on-message
-            (fn [event]
-              (when-let [data (.-data event)]
-                (case (unchecked-get data "type")
-                  "penpot-skills:open-chat"
-                  (st/emit! (dwsk/open-panel :chat))
-
-                  "penpot-skills:refresh-scopes"
-                  (st/emit! (dwsk/fetch-and-push-scopes))
-
-                  "penpot-skills:ai-round"
-                  (st/emit! (dwsk/relay-ai-round
-                             {:id (unchecked-get data "id")
-                              :provider (unchecked-get data "provider")
-                              :payload (unchecked-get data "payload")}))
-
-                  nil)))]
-        (.addEventListener js/window "message" on-message)
-        #(.removeEventListener js/window "message" on-message)))
 
     [:div {:class (stl/css :workspace-header-right)}
      [:div {:class (stl/css :users-section)}

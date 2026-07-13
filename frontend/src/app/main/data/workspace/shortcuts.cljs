@@ -568,6 +568,11 @@
                           :section [:workspace]
                           :fn #(st/emit! (dcm/go-to-workspace :layout :assets))}
 
+   :toggle-ai-panel      {:tooltip (ds/alt "B")
+                          :command (ds/a-mod "b")
+                          :subsections [:panels]
+                          :fn #(st/emit! (toggle-layout-flag :ai-panel))}
+
    :toggle-history       {:tooltip (ds/meta-alt "H")
                           :command (ds/ca-mod "h")
                           :subsections [:panels]

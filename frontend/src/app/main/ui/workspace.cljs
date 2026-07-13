@@ -73,6 +73,8 @@
         textpalette?   (:textpalette layout)
         hide-ui?       (:hide-ui layout)
 
+        ai-panel-open? (mf/deref refs/ai-panel-open?)
+
         on-resize
         (mf/use-fn
          (mf/deps vport)
@@ -126,10 +128,10 @@
                      :section options-mode
                      :drawing-tool (get drawing :tool)}])
 
-     ;; All-In Penpot AI panel: a native right-docked side panel, shown when
-     ;; the `:ai-panel` flag is set (scaffold for Phase 01; later phases move
-     ;; the open state to a file-bound store).
-     (when (and (not ^boolean hide-ui?) (contains? layout :ai-panel))
+     ;; All-In Penpot (Agents) panel: a native right-docked side panel. Its
+     ;; open state is file-bound and in-memory (survives navigation, resets on
+     ;; a hard refresh) — see app.main.data.workspace.ai-panel.
+     (when (and (not ^boolean hide-ui?) ^boolean ai-panel-open?)
        [:> ai-panel* {:file file :page page}])
 
      ;; Host container for plugins opened with the `dock` option (see

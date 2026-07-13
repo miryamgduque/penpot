@@ -290,6 +290,14 @@
                  (dm/get-in state [:recent-fonts file-id])))
              st/state))
 
+(def ai-panel-open?
+  "Whether the All-In Penpot (Agents) panel is open for the current file.
+  In-memory and file-bound: survives navigation, resets on a hard refresh."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :open?])))
+             st/state))
+
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
 

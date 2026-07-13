@@ -12,6 +12,7 @@
    [app.main.data.shortcuts :as scd]
    [app.main.data.team :as dtm]
    [app.main.data.workspace :as dw]
+   [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.drawing.common :as dwc]
    [app.main.data.workspace.history :as dwh]
    [app.main.data.workspace.shortcuts :as sc]
@@ -118,6 +119,7 @@
         zoom              (mf/deref refs/selected-zoom)
         read-only?        (mf/use-ctx ctx/workspace-read-only?)
         selected-drawtool (mf/deref refs/selected-drawing-tool)
+        ai-panel-open?    (mf/deref refs/ai-panel-open?)
 
         on-increase       (mf/use-fn #(st/emit! (dw/increase-zoom nil)))
         on-decrease       (mf/use-fn #(st/emit! (dw/decrease-zoom nil)))
@@ -267,15 +269,14 @@
             :on-click open-share-dialog}
         deprecated-icon/share])
 
-     ;; All-In Penpot AI panel toggle: a single button (Lucide bot icon)
-     ;; next to the View mode button. Drives the `:ai-panel` layout flag
-     ;; (Phase 04 rebinds this to the file-bound open state).
+     ;; All-In Penpot (Agents) panel toggle: a single button (Lucide bot
+     ;; icon) next to the View mode button, driving the file-bound open state.
      [:div {:class (stl/css :comments-section)
-            :title (str "All-In Penpot — " (sc/get-tooltip :toggle-ai-panel))}
-      [:> icon-button* {:variant (if (contains? layout :ai-panel) "primary" "ghost")
-                        :aria-label "All-In Penpot"
+            :title (str "Agents — " (sc/get-tooltip :toggle-ai-panel))}
+      [:> icon-button* {:variant (if ai-panel-open? "primary" "ghost")
+                        :aria-label "Agents"
                         :icon i/bot
-                        :on-click #(st/emit! (dw/toggle-layout-flag :ai-panel))}]]
+                        :on-click #(st/emit! (dwaip/toggle-panel))}]]
 
      [:a {:class (stl/css :viewer-btn)
           :title (tr "workspace.header.viewer" (sc/get-tooltip :open-viewer))

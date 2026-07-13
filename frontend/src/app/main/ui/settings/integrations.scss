@@ -260,7 +260,15 @@
 
 .provider-card-header {
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+// Title and the "key saved" tag share a baseline-aligned row so the tag lines
+// up with the provider label; the models hint sits below.
+.provider-card-title {
+  display: flex;
+  align-items: baseline;
   justify-content: space-between;
   gap: var(--sp-m);
 }
@@ -311,31 +319,12 @@
 
 .provider-models-item {
   display: flex;
-}
-
-.provider-models-label {
-  display: flex;
   align-items: center;
   gap: var(--sp-s);
-  cursor: pointer;
-  color: var(--color-foreground-secondary);
 
-  input {
-    accent-color: var(--color-accent-primary);
-  }
-
-  input:disabled {
-    cursor: default;
-  }
-
-  &:has(input:disabled) {
-    cursor: default;
+  &:has(:disabled) {
     opacity: 0.6;
   }
-}
-
-.provider-models-name {
-  color: var(--color-foreground-primary);
 }
 
 .provider-models-context {

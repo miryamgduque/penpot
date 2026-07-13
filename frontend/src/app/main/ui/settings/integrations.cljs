@@ -23,6 +23,7 @@
    [app.main.ui.components.context-menu-a11y :refer [context-menu*]]
    [app.main.ui.ds.buttons.button :refer [button*]]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
+   [app.main.ui.ds.controls.checkbox :refer [checkbox*]]
    [app.main.ui.ds.controls.input :refer [input*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i :refer [icon*]]
@@ -742,20 +743,20 @@
     [:div {:class (stl/css :provider-card)
            :data-testid (dm/str "ai-provider-" provider)}
      [:div {:class (stl/css :provider-card-header)}
-      [:div
+      [:div {:class (stl/css :provider-card-title)}
        [:> text* {:as "h3"
                   :typography t/headline-small
                   :class (stl/css :color-primary)}
         label]
-       [:> text* {:as "div"
-                  :typography t/body-small
-                  :class (stl/css :color-secondary)}
-        models-hint]]
-      (when ^boolean connected?
-        [:> text* {:as "span"
-                   :typography t/body-small
-                   :class (stl/css :provider-connected-tag)}
-         (tr "integrations.ai-provider.status.saved" (:key-hint status))])]
+       (when ^boolean connected?
+         [:> text* {:as "span"
+                    :typography t/body-small
+                    :class (stl/css :provider-connected-tag)}
+          (tr "integrations.ai-provider.status.saved" (:key-hint status))])]
+      [:> text* {:as "div"
+                 :typography t/body-small
+                 :class (stl/css :color-secondary)}
+       models-hint]]
 
      ;; the key is autosaved on blur — no explicit connect action
      [:div {:class (stl/css :provider-key-form)}
@@ -798,16 +799,15 @@
       [:ul {:class (stl/css :provider-models-list)}
        (for [{:keys [id label context]} rows]
          [:li {:key id :class (stl/css :provider-models-item)}
-          [:label {:class (stl/css :provider-models-label)}
-           [:input {:type "checkbox"
-                    :checked (contains? enabled-set id)
-                    :disabled (not connected?)
-                    :data-model id
-                    :on-change on-toggle-model}]
-           [:span {:class (stl/css :provider-models-name)} label]
-           (when-let [ctx (format-context context)]
-             [:span {:class (stl/css :provider-models-context)}
-              (tr "integrations.ai-provider.models.context" ctx)])]])]]
+          [:> checkbox* {:id (dm/str "ai-model-" provider "-" id)
+                         :label label
+                         :checked (contains? enabled-set id)
+                         :disabled (not connected?)
+                         :data-model id
+                         :on-change on-toggle-model}]
+          (when-let [ctx (format-context context)]
+            [:span {:class (stl/css :provider-models-context)}
+             (tr "integrations.ai-provider.models.context" ctx)])])]]
 
      (when ^boolean connected?
        [:div

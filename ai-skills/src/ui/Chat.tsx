@@ -287,21 +287,10 @@ export function Chat({
           >
             Connect an AI provider
           </button>
-          <button
-            data-appearance="secondary"
-            className="first-run-refresh"
-            type="button"
-            title="Re-check after connecting a provider in the settings tab"
-            onClick={() => bridge.requestScopesRefresh()}
-          >
-            I've connected one, check again
-          </button>
         </div>
       </div>
     );
   }
-
-  const providers = [...new Set(pool.map((e) => e.provider))];
 
   return (
     <div className="chat">
@@ -345,36 +334,13 @@ export function Chat({
       {/* one pool across all connected providers; switching mid-conversation
           (provider included) carries the canonical history over */}
       <div className="model-picker-row">
-        <label className="model-picker-label" htmlFor="chat-model-picker">
-          Model
-        </label>
-        <select
-          id="chat-model-picker"
-          className="model-picker"
+        <ModelPicker
+          pool={pool}
+          selection={selection}
+          selectionValid={selectionValid}
           disabled={busy}
-          value={selection && selectionValid ? poolKey(selection) : ""}
-          onChange={(e) => {
-            const entry = pool.find((p) => poolKey(p) === e.target.value);
-            if (entry) setSelection(entry);
-          }}
-        >
-          {!selectionValid && (
-            <option value="" disabled>
-              {selection ? `${selection.model} (unavailable)` : "Select a model"}
-            </option>
-          )}
-          {providers.map((prov) => (
-            <optgroup key={prov} label={providerLabel(prov)}>
-              {pool
-                .filter((e) => e.provider === prov)
-                .map((e) => (
-                  <option key={poolKey(e)} value={poolKey(e)}>
-                    {e.model}
-                  </option>
-                ))}
-            </optgroup>
-          ))}
-        </select>
+          onSelect={setSelection}
+        />
       </div>
 
       {!selectionValid && selection && (
@@ -417,6 +383,112 @@ export function Chat({
           ➤
         </button>
       </form>
+    </div>
+  );
+}
+
+/**
+ * Compact model picker in the spirit of Cursor's: a trigger showing the
+ * current model that opens a popover of the whole pool grouped by
+ * provider. Closes on outside-click or Escape. Selecting an entry switches
+ * the model mid-conversation — the canonical history carries over.
+ */
+function ModelPicker({
+  pool,
+  selection,
+  selectionValid,
+  disabled,
+  onSelect,
+}: {
+  pool: AiPoolEntry[];
+  selection: AiPoolEntry | null;
+  selectionValid: boolean;
+  disabled: boolean;
+  onSelect: (e: AiPoolEntry) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const providers = [...new Set(pool.map((e) => e.provider))];
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (ev: MouseEvent) => {
+      if (ref.current && !ref.current.contains(ev.target as Node)) setOpen(false);
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const current = selection && selectionValid ? selection : null;
+
+  return (
+    <div className="model-picker" ref={ref}>
+      <button
+        type="button"
+        className="model-picker-trigger"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        title="Choose the model for this conversation"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="model-picker-current">
+          {current ? (
+            <>
+              <span className="model-picker-name">{current.model}</span>
+              <span className="model-picker-provider">{providerLabel(current.provider)}</span>
+            </>
+          ) : (
+            <span className="model-picker-name">Select a model</span>
+          )}
+        </span>
+        <span className="model-picker-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+
+      {open && (
+        <div className="model-picker-menu" role="listbox">
+          {providers.map((prov) => (
+            <div className="model-picker-group" key={prov}>
+              <div className="model-picker-group-label">{providerLabel(prov)}</div>
+              {pool
+                .filter((e) => e.provider === prov)
+                .map((e) => {
+                  const active =
+                    !!current && current.provider === e.provider && current.model === e.model;
+                  return (
+                    <button
+                      key={poolKey(e)}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      className={`model-picker-option${active ? " active" : ""}`}
+                      onClick={() => {
+                        onSelect(e);
+                        setOpen(false);
+                      }}
+                    >
+                      <span className="model-picker-option-name">{e.model}</span>
+                      {active && (
+                        <span className="model-picker-check" aria-hidden="true">
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

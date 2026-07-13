@@ -298,6 +298,13 @@
                  (dm/get-in state [:ai-panel file-id :open?])))
              st/state))
 
+(def ai-panel-messages
+  "The Agents chat transcript for the current file (in-memory, file-bound)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :messages])))
+             st/state))
+
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
 

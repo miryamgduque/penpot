@@ -58,6 +58,59 @@
   height: 100%;
 }
 
+// Current-file context (page + selection) surfaced above the transcript.
+.context-chip {
+  @include deprecated.body-small-typography;
+
+  display: flex;
+  gap: deprecated.$s-6;
+  align-items: center;
+  padding: deprecated.$s-8 var(--sp-m);
+  border-block-end: deprecated.$s-1 solid var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.context-page {
+  color: var(--color-foreground-primary);
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.context-selection {
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.transcript {
+  @extend %new-scrollbar;
+
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: var(--sp-m);
+  overflow-y: auto;
+}
+
+.message {
+  @include deprecated.body-small-typography;
+
+  max-width: 85%;
+  padding: deprecated.$s-8 deprecated.$s-12;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-primary);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.message-user {
+  align-self: flex-end;
+  background-color: var(--color-background-quaternary);
+}
+
 .transcript-empty {
   @include deprecated.body-small-typography;
 
@@ -85,7 +138,7 @@
   border-radius: deprecated.$br-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
-  color: var(--color-foreground-secondary);
+  color: var(--color-foreground-primary);
 }
 
 .skills-tab {

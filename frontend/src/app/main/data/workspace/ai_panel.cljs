@@ -42,3 +42,21 @@
     ptk/UpdateEvent
     (update [_ state]
       (set-open state (not (open? state))))))
+
+;; --- Chat transcript
+;;
+;; Per-file, in-memory chat messages (`[:ai-panel <file-id> :messages]`, a
+;; vector of `{:role :content}`). Persists across navigation like the open
+;; state; hard-refresh survival is out of scope here (story #5). The live
+;; agent turn that produces assistant replies is the CLJS port of the
+;; `ai-skills` agent — a separate plan; this only stores/renders messages.
+
+(defn append-message
+  [role content]
+  (ptk/reify ::append-message
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :messages]
+                   (fnil conj []) {:role role :content content})
+        state))))

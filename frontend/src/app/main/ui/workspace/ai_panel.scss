@@ -19,25 +19,86 @@
   background-color: var(--panel-background-color);
   position: relative;
   z-index: deprecated.$z-index-1;
+
+  // Separation from the options sidebar on its left.
+  border-inline-start: deprecated.$s-1 solid var(--panel-border-color);
 }
 
+// Title band. Height matches the workspace right-header so the tabs below
+// align with the sidebar's Design/Prototype/Inspect row. Inline padding uses
+// the same panel spacing token as the other panels.
 .header {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: space-between;
-  padding: deprecated.$s-8 deprecated.$s-12;
-  border-block-end: deprecated.$s-1 solid var(--color-background-tertiary);
+  height: deprecated.$s-48;
+  padding-inline: var(--sp-m);
 }
 
 .title {
-  @include deprecated.uppercase-title-typography;
+  @include deprecated.small-title-typography;
 
   color: var(--modal-title-foreground-color);
 }
 
-.body {
-  @extend %new-scrollbar;
+// The tab switcher (Chat / Skills) fills the rest of the panel; its
+// scrollable panel holds the active tab body.
+.tabs {
+  --tabs-nav-padding-inline-start: var(--sp-m);
+  --tabs-nav-padding-inline-end: var(--sp-m);
 
   flex: 1;
-  overflow-y: auto;
+  min-height: 0;
+}
+
+.chat-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.transcript-empty {
+  @include deprecated.body-small-typography;
+
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: deprecated.$s-16;
+  text-align: center;
+  color: var(--color-foreground-secondary);
+}
+
+.composer {
+  padding: deprecated.$s-8;
+  border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+}
+
+.composer-input {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  min-height: deprecated.$s-52;
+  resize: none;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-secondary);
+}
+
+.skills-tab {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: deprecated.$s-16;
+}
+
+.placeholder {
+  @include deprecated.body-small-typography;
+
+  text-align: center;
+  color: var(--color-foreground-secondary);
 }

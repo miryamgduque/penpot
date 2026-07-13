@@ -23,6 +23,7 @@
    [app.main.ui.hooks :as hooks]
    [app.main.ui.hooks.resize :refer [use-resize-observer]]
    [app.main.ui.modal :refer [modal-container*]]
+   [app.main.ui.workspace.ai-panel :refer [ai-panel*]]
    [app.main.ui.workspace.colorpicker]
    [app.main.ui.workspace.components-debugger :refer [components-debugger*]]
    [app.main.ui.workspace.context-menu :refer [context-menu*]]
@@ -125,6 +126,12 @@
                      :selected selected
                      :section options-mode
                      :drawing-tool (get drawing :tool)}])
+
+     ;; All-In Penpot AI panel: a native right-docked side panel, shown when
+     ;; the `:ai-panel` flag is set (scaffold for Phase 01; later phases move
+     ;; the open state to a file-bound store).
+     (when (and (not ^boolean hide-ui?) (contains? layout :ai-panel))
+       [:> ai-panel* {:file file :page page}])
 
      ;; Host container for plugins opened with the `dock` option (see
      ;; @penpot/plugins-runtime create-modal): the plugins runtime mounts the

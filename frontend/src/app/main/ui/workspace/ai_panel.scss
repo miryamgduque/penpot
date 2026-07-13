@@ -111,6 +111,11 @@
   background-color: var(--color-background-quaternary);
 }
 
+.message-thinking {
+  color: var(--color-foreground-secondary);
+  font-style: italic;
+}
+
 .transcript-empty {
   @include deprecated.body-small-typography;
 
@@ -124,8 +129,29 @@
 }
 
 .composer {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
   padding: deprecated.$s-8;
   border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+}
+
+.model-picker {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+}
+
+.no-provider {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
 }
 
 .composer-input {

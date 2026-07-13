@@ -16,6 +16,8 @@
   separately (phase 05; hard-refresh survival is story #5)."
   (:require
    [app.common.data.macros :as dm]
+   [app.main.data.workspace.agent :as agent]
+   [beicon.v2.core :as rx]
    [potok.v2.core :as ptk]))
 
 (defn- open?
@@ -60,3 +62,48 @@
         (update-in state [:ai-panel file-id :messages]
                    (fnil conj []) {:role role :content content})
         state))))
+
+(defn set-busy
+  [busy?]
+  (ptk/reify ::set-busy
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (assoc-in state [:ai-panel file-id :busy?] busy?)
+        state))))
+
+(defn- display->canonical
+  "The rendered transcript stores `{:role \"user\"/\"assistant\" :content}`;
+  the agent's canonical history uses `{:role :user/:assistant :text}`. For the
+  text-only phase this mapping is 1:1 (tool_use/tool_result blocks arrive with
+  a dedicated canonical history in a later phase)."
+  [{:keys [role content]}]
+  {:role (keyword role) :text content})
+
+(defn send-message
+  "Runs one user turn: appends the user message, runs the agent round through
+  the backend proxy, and appends the assistant reply (or a readable error).
+  `context` is the current page + selection surfaced to the system prompt."
+  [settings text context]
+  (ptk/reify ::send-message
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [file-id (:current-file-id state)
+            history (-> (mapv display->canonical
+                              (dm/get-in state [:ai-panel file-id :messages]))
+                        (conj {:role :user :text text}))
+            system  (agent/build-system-prompt context)]
+        (rx/concat
+         (rx/of (append-message "user" text)
+                (set-busy true))
+         (rx/concat
+          (->> (agent/run-round settings history system)
+               (rx/map (fn [reply] (append-message "assistant" reply)))
+               (rx/catch (fn [cause]
+                           (let [data (ex-data cause)
+                                 msg  (or (:hint data)
+                                          (some-> (:code data) name)
+                                          (ex-message cause)
+                                          "request failed")]
+                             (rx/of (append-message "assistant" (dm/str "⚠️ " msg)))))))
+          (rx/of (set-busy false))))))))

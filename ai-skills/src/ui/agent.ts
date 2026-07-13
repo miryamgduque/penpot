@@ -1,23 +1,41 @@
 /**
- * The embedded chat agent: a provider loop against the Anthropic API (BYOK,
- * called directly from the plugin iframe — no server of ours in the middle),
- * with design tools that execute inside Penpot via the plugin bridge.
+ * The embedded chat agent, routed through the Penpot backend proxy (one
+ * buffered request per provider round — see bridge.aiRound): provider keys
+ * live with the user's profile on the server and never reach the browser.
+ * Design tools execute inside Penpot via the plugin bridge.
  *
- * Provider-agnosticism note: skills reach the model as plain tool results and
- * system text; nothing here depends on Anthropic-specific behavior beyond the
- * transport, and the enforced rules are gated in the plugin runtime anyway.
+ * The conversation history is stored in ONE canonical format and encoded
+ * into the wire form of whichever provider the user has currently selected
+ * (Anthropic Messages for Claude models; OpenAI chat.completions for
+ * OpenAI/Zhipu/Moonshot models). That is what lets the user switch models
+ * mid-conversation — across providers — and carry the whole history,
+ * including tool calls, to a provider that never produced it.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
-import type {
-  MessageParam,
-  Tool,
-  ToolResultBlockParam,
-  ContentBlock,
-} from "@anthropic-ai/sdk/resources/messages";
 import * as bridge from "./bridge";
 import type { SkillsPayload } from "./bridge";
 import { skillManifest } from "@penpot/skills-core";
+
+/* ------------------------------------------------------------------ */
+/* Canonical conversation model                                        */
+/* ------------------------------------------------------------------ */
+
+export interface CanonicalToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface CanonicalToolResult {
+  id: string;
+  content: string;
+  isError: boolean;
+}
+
+export type CanonicalMessage =
+  | { role: "user"; text: string }
+  | { role: "assistant"; text: string; toolCalls: CanonicalToolCall[] }
+  | { role: "tool_results"; results: CanonicalToolResult[] };
 
 export interface ToolEvent {
   id: string;
@@ -44,7 +62,8 @@ export const EMPTY_USAGE: UsageTotals = {
   requests: 0,
 };
 
-/** $ per million tokens (standard list price; cache read ≈ 0.1×, write ≈ 1.25×). */
+/** $ per million tokens (standard list price; cache read ≈ 0.1×, write ≈ 1.25×).
+ * Only maintained for Claude models — the meter hides cost otherwise. */
 const PRICING: Record<string, { input: number; output: number }> = {
   "claude-sonnet-5": { input: 3, output: 15 },
   "claude-opus-4-8": { input: 5, output: 25 },
@@ -63,6 +82,10 @@ export function estimateCostUSD(model: string, u: UsageTotals): number | null {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/* Tools                                                               */
+/* ------------------------------------------------------------------ */
+
 /**
  * Deliberately few, task-scoped tools (the MCP server keeps the atomic
  * surface for external agents): one orientation read, skill bodies on
@@ -70,7 +93,13 @@ export function estimateCostUSD(model: string, u: UsageTotals): number | null {
  * everything generative. Fewer calls per task = fewer round trips and less
  * context burned on tool results.
  */
-export const TOOLS: Tool[] = [
+export interface ToolSpec {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+}
+
+export const TOOLS: ToolSpec[] = [
   {
     name: "read_design",
     description:
@@ -179,6 +208,10 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   return bridge.call(op, input, { timeoutMs });
 }
 
+/* ------------------------------------------------------------------ */
+/* System prompt                                                       */
+/* ------------------------------------------------------------------ */
+
 export function buildSystemPrompt(skills: SkillsPayload, context: unknown): string {
   // Skills are knowledge (playbooks/conventions); rules are constraints about
   // the artifact. Platform skills (the curated penpot-ai-kit set) are listed
@@ -241,18 +274,9 @@ export function buildSystemPrompt(skills: SkillsPayload, context: unknown): stri
   ].join("\n");
 }
 
-export interface AgentCallbacks {
-  onTextDelta: (text: string) => void;
-  onToolEvent: (e: ToolEvent) => void;
-  onAssistantDone: (fullText: string) => void;
-  /** Fired after every API round with that round's token usage. */
-  onUsage?: (usage: UsageTotals) => void;
-}
-
-export interface AgentSettings {
-  apiKey: string;
-  model: string;
-}
+/* ------------------------------------------------------------------ */
+/* History management                                                  */
+/* ------------------------------------------------------------------ */
 
 /**
  * Context memory management: design-state tool results (read_design, audits,
@@ -265,116 +289,277 @@ const PRUNE_KEEP_RECENT_MESSAGES = 8;
 const PRUNE_STUB =
   "[stale tool result elided to conserve context — call the tool again if current state is needed]";
 
-function pruneStaleToolResults(messages: MessageParam[]): void {
+function pruneStaleToolResults(messages: CanonicalMessage[]): void {
   const cutoff = messages.length - PRUNE_KEEP_RECENT_MESSAGES;
   for (let i = 0; i < cutoff; i++) {
     const m = messages[i];
-    if (m.role !== "user" || !Array.isArray(m.content)) continue;
-    for (const block of m.content) {
-      if (
-        block.type === "tool_result" &&
-        typeof block.content === "string" &&
-        block.content.length > 400
-      ) {
-        block.content = PRUNE_STUB;
-      }
+    if (m.role !== "tool_results") continue;
+    for (const r of m.results) {
+      if (r.content.length > 400) r.content = PRUNE_STUB;
     }
   }
 }
 
-/**
- * Runs one user turn: streams assistant output, executes tool calls via the
- * plugin bridge (where enforcement lives), feeds results back, and repeats
- * until the model stops calling tools. Returns the updated history.
- */
-export async function runTurn(
-  settings: AgentSettings,
-  history: MessageParam[],
-  system: string,
-  cb: AgentCallbacks,
-): Promise<MessageParam[]> {
-  const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true });
-  const messages = [...history];
-  pruneStaleToolResults(messages);
+/* ------------------------------------------------------------------ */
+/* Wire encoding/decoding                                              */
+/* ------------------------------------------------------------------ */
 
-  for (let round = 0; round < 32; round++) {
-    const stream = client.messages.stream({
+/** Providers that speak the Anthropic Messages API; the rest are
+ * OpenAI-compatible (chat.completions). */
+function isAnthropic(provider: string): boolean {
+  return provider === "anthropic";
+}
+
+function encodeAnthropic(messages: CanonicalMessage[]): unknown[] {
+  const out: unknown[] = [];
+  for (const m of messages) {
+    if (m.role === "user") {
+      out.push({ role: "user", content: m.text });
+    } else if (m.role === "assistant") {
+      const blocks: unknown[] = [];
+      if (m.text) blocks.push({ type: "text", text: m.text });
+      for (const c of m.toolCalls) {
+        blocks.push({ type: "tool_use", id: c.id, name: c.name, input: c.input });
+      }
+      // an assistant message must carry at least one block
+      out.push({ role: "assistant", content: blocks.length ? blocks : [{ type: "text", text: "…" }] });
+    } else {
+      out.push({
+        role: "user",
+        content: m.results.map((r) => ({
+          type: "tool_result",
+          tool_use_id: r.id,
+          content: r.content,
+          is_error: r.isError || undefined,
+        })),
+      });
+    }
+  }
+  return out;
+}
+
+function encodeOpenAI(system: string, messages: CanonicalMessage[]): unknown[] {
+  const out: unknown[] = [{ role: "system", content: system }];
+  for (const m of messages) {
+    if (m.role === "user") {
+      out.push({ role: "user", content: m.text });
+    } else if (m.role === "assistant") {
+      out.push({
+        role: "assistant",
+        content: m.text || null,
+        ...(m.toolCalls.length > 0
+          ? {
+              tool_calls: m.toolCalls.map((c) => ({
+                id: c.id,
+                type: "function",
+                function: { name: c.name, arguments: JSON.stringify(c.input ?? {}) },
+              })),
+            }
+          : {}),
+      });
+    } else {
+      for (const r of m.results) {
+        out.push({ role: "tool", tool_call_id: r.id, content: r.content });
+      }
+    }
+  }
+  return out;
+}
+
+function openAITools() {
+  return TOOLS.map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description, parameters: t.input_schema },
+  }));
+}
+
+/** Parses a provider response body, throwing a readable error on failure. */
+function parseRound(round: { status: number; body: string }): Record<string, any> {
+  let parsed: Record<string, any>;
+  try {
+    parsed = JSON.parse(round.body);
+  } catch {
+    throw new Error(`The provider returned a non-JSON response (status ${round.status}).`);
+  }
+  if (round.status < 200 || round.status >= 300) {
+    const message =
+      parsed?.error?.message ?? parsed?.message ?? `provider error (status ${round.status})`;
+    throw new Error(String(message));
+  }
+  return parsed;
+}
+
+interface RoundOutcome {
+  text: string;
+  toolCalls: CanonicalToolCall[];
+  stoppedForLength: boolean;
+  usage: UsageTotals;
+}
+
+function decodeAnthropic(parsed: Record<string, any>): RoundOutcome {
+  const content: { type: string; text?: string; id?: string; name?: string; input?: unknown }[] =
+    parsed.content ?? [];
+  return {
+    text: content.filter((b) => b.type === "text").map((b) => b.text ?? "").join(""),
+    toolCalls: content
+      .filter((b) => b.type === "tool_use")
+      .map((b) => ({
+        id: b.id as string,
+        name: b.name as string,
+        input: (b.input ?? {}) as Record<string, unknown>,
+      })),
+    stoppedForLength: parsed.stop_reason === "max_tokens",
+    usage: {
+      inputTokens: parsed.usage?.input_tokens ?? 0,
+      outputTokens: parsed.usage?.output_tokens ?? 0,
+      cacheReadTokens: parsed.usage?.cache_read_input_tokens ?? 0,
+      cacheWriteTokens: parsed.usage?.cache_creation_input_tokens ?? 0,
+      requests: 1,
+    },
+  };
+}
+
+function decodeOpenAI(parsed: Record<string, any>): RoundOutcome {
+  const choice = parsed.choices?.[0];
+  const message = choice?.message ?? {};
+  const toolCalls: { id: string; function: { name: string; arguments: string } }[] =
+    message.tool_calls ?? [];
+  return {
+    text: typeof message.content === "string" ? message.content : "",
+    toolCalls: toolCalls.map((c) => {
+      let input: Record<string, unknown> = {};
+      try {
+        input = JSON.parse(c.function.arguments || "{}");
+      } catch {
+        /* malformed arguments — run the tool with none and let it complain */
+      }
+      return { id: c.id, name: c.function.name, input };
+    }),
+    stoppedForLength: choice?.finish_reason === "length",
+    usage: {
+      inputTokens: parsed.usage?.prompt_tokens ?? 0,
+      outputTokens: parsed.usage?.completion_tokens ?? 0,
+      cacheReadTokens: parsed.usage?.prompt_tokens_details?.cached_tokens ?? 0,
+      cacheWriteTokens: 0,
+      requests: 1,
+    },
+  };
+}
+
+function buildRoundBody(
+  settings: AgentSettings,
+  messages: CanonicalMessage[],
+  system: string,
+): string {
+  if (isAnthropic(settings.provider)) {
+    return JSON.stringify({
       model: settings.model,
       // generous budget: models with adaptive thinking spend a chunk of it
       // reasoning before any visible output — a small budget can be consumed
       // entirely by thinking, yielding an empty (and silent) reply
       max_tokens: 32000,
-      // Prompt caching: the system block marker caches tools+system; the
-      // top-level marker auto-caches the last message block, so each round of
-      // a multi-round turn re-reads the whole prior prefix at ~0.1× price
-      // instead of re-paying full input price for the growing history.
-      cache_control: { type: "ephemeral" },
+      // the system block marker caches tools+system across rounds at ~0.1×
       system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       tools: TOOLS,
-      messages,
+      messages: encodeAnthropic(messages),
     });
-    let turnText = "";
-    stream.on("text", (delta) => {
-      turnText += delta;
-      cb.onTextDelta(delta);
-    });
-    const final = await stream.finalMessage();
-    cb.onUsage?.({
-      inputTokens: final.usage.input_tokens ?? 0,
-      outputTokens: final.usage.output_tokens ?? 0,
-      cacheReadTokens: final.usage.cache_read_input_tokens ?? 0,
-      cacheWriteTokens: final.usage.cache_creation_input_tokens ?? 0,
-      requests: 1,
-    });
-    if (turnText) cb.onAssistantDone(turnText);
-    messages.push({ role: "assistant", content: final.content });
+  }
+  const body: Record<string, unknown> = {
+    model: settings.model,
+    messages: encodeOpenAI(system, messages),
+    tools: openAITools(),
+  };
+  // OpenAI deprecated max_tokens on newer models; the compat providers
+  // still expect it
+  if (settings.provider === "openai") body.max_completion_tokens = 16000;
+  else body.max_tokens = 16000;
+  return JSON.stringify(body);
+}
 
-    const toolUses = final.content.filter(
-      (b: ContentBlock): b is Extract<ContentBlock, { type: "tool_use" }> => b.type === "tool_use",
+/* ------------------------------------------------------------------ */
+/* Turn loop                                                           */
+/* ------------------------------------------------------------------ */
+
+export interface AgentCallbacks {
+  /** Full assistant text of one round (buffered — no token streaming). */
+  onAssistantDone: (fullText: string) => void;
+  onToolEvent: (e: ToolEvent) => void;
+  /** Fired after every API round with that round's token usage. */
+  onUsage?: (usage: UsageTotals) => void;
+}
+
+export interface AgentSettings {
+  provider: string;
+  model: string;
+}
+
+const MAX_ROUNDS = 32;
+
+/**
+ * Runs one user turn: sends buffered rounds through the backend proxy,
+ * executes tool calls via the plugin bridge (where enforcement lives), feeds
+ * results back, and repeats until the model stops calling tools. Returns the
+ * updated canonical history.
+ */
+export async function runTurn(
+  settings: AgentSettings,
+  history: CanonicalMessage[],
+  system: string,
+  cb: AgentCallbacks,
+): Promise<CanonicalMessage[]> {
+  const messages = [...history];
+  pruneStaleToolResults(messages);
+
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const roundResult = await bridge.aiRound(
+      settings.provider,
+      buildRoundBody(settings, messages, system),
     );
+    const parsed = parseRound(roundResult);
+    const outcome = isAnthropic(settings.provider)
+      ? decodeAnthropic(parsed)
+      : decodeOpenAI(parsed);
+
+    cb.onUsage?.(outcome.usage);
+    if (outcome.text) cb.onAssistantDone(outcome.text);
+    messages.push({ role: "assistant", text: outcome.text, toolCalls: outcome.toolCalls });
 
     // never end a turn silently
-    if (!turnText && toolUses.length === 0) {
+    if (!outcome.text && outcome.toolCalls.length === 0) {
       cb.onAssistantDone(
-        final.stop_reason === "max_tokens"
+        outcome.stoppedForLength
           ? "⚠️ I ran out of output budget before finishing — please send the request again."
           : "⚠️ The model returned no visible output — try rephrasing the request.",
       );
       break;
     }
+    if (outcome.toolCalls.length === 0) break;
 
-    if (final.stop_reason !== "tool_use" || toolUses.length === 0) break;
-
-    const results: ToolResultBlockParam[] = [];
-    for (const block of toolUses) {
-      cb.onToolEvent({ id: block.id, name: block.name, input: block.input, status: "running" });
+    const results: CanonicalToolResult[] = [];
+    for (const call of outcome.toolCalls) {
+      cb.onToolEvent({ id: call.id, name: call.name, input: call.input, status: "running" });
       try {
-        const result = await executeTool(block.name, (block.input ?? {}) as Record<string, unknown>);
+        const result = await executeTool(call.name, call.input);
         results.push({
-          type: "tool_result",
-          tool_use_id: block.id,
+          id: call.id,
           content: JSON.stringify(result ?? null).slice(0, 20_000),
+          isError: false,
         });
-        cb.onToolEvent({ id: block.id, name: block.name, input: block.input, status: "ok" });
+        cb.onToolEvent({ id: call.id, name: call.name, input: call.input, status: "ok" });
       } catch (e) {
         const err = e as Error & { rule?: string };
-        results.push({
-          type: "tool_result",
-          tool_use_id: block.id,
-          content: err.message,
-          is_error: true,
-        });
+        results.push({ id: call.id, content: err.message, isError: true });
         cb.onToolEvent({
-          id: block.id,
-          name: block.name,
-          input: block.input,
+          id: call.id,
+          name: call.name,
+          input: call.input,
           status: err.rule ? "rejected" : "error",
           detail: err.message,
           rule: err.rule,
         });
       }
     }
-    messages.push({ role: "user", content: results });
+    messages.push({ role: "tool_results", results });
   }
   return messages;
 }

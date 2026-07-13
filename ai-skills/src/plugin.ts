@@ -832,6 +832,47 @@ penpot.ui.onMessage(async (message: unknown) => {
       type: "skills-change",
       skills: skillsPayload(),
     });
+    // the account-level model pool rides along with the scopes push; the
+    // panel gates the chat on it (first-run state when the pool is empty)
+    const scoped = msg as {
+      aiProviders?: { provider: string; models?: string[] }[];
+      settingsUri?: string;
+    };
+    const pool = (scoped.aiProviders ?? []).flatMap((p) =>
+      (p.models ?? []).map((model) => ({ provider: p.provider, model })),
+    );
+    penpot.ui.sendMessage({
+      source: "plugin",
+      type: "ai-pool-change",
+      pool,
+      settingsUri: scoped.settingsUri ?? null,
+    });
+    return;
+  }
+
+  // result of a buffered agent round relayed by the workspace (see
+  // bridge.aiRound): forward it into the panel iframe untouched
+  if (msg?.type === "penpot-skills/ai-round-result") {
+    const round = msg as unknown as {
+      id: number;
+      ok: boolean;
+      provider?: string;
+      status?: number;
+      body?: string;
+      code?: string;
+      hint?: string;
+    };
+    penpot.ui.sendMessage({
+      source: "plugin",
+      type: "ai-round-result",
+      id: round.id,
+      ok: round.ok,
+      provider: round.provider,
+      status: round.status,
+      body: round.body,
+      code: round.code,
+      hint: round.hint,
+    });
     return;
   }
 

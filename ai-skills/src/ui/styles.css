@@ -648,3 +648,57 @@ button.danger {
   opacity: 0.5;
   cursor: default;
 }
+
+/* First-run state: no provider connected / no models enabled — setup
+   happens on /settings/integrations, this is just the signpost */
+.first-run {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-12);
+  padding: var(--spacing-24);
+  text-align: center;
+  color: var(--fg-soft);
+}
+.first-run h2 {
+  color: var(--fg);
+  font-size: var(--font-size-m);
+  margin: 0;
+}
+.first-run p {
+  margin: 0;
+  line-height: var(--font-line-height-m);
+  max-inline-size: 32ch;
+}
+.first-run-icon {
+  font-size: 28px;
+  color: var(--accent);
+}
+.first-run button {
+  min-inline-size: 220px;
+}
+
+/* Model picker: one pool across all connected providers */
+.model-picker-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  padding: var(--spacing-4) var(--spacing-12);
+  border-block-start: 1px solid var(--border);
+}
+.model-picker-label {
+  font-size: var(--font-size-xs);
+  color: var(--fg-soft);
+}
+.model-picker {
+  flex: 1;
+  min-inline-size: 0;
+  font-size: var(--font-size-xs);
+  background: var(--bg-soft);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: var(--spacing-4) var(--spacing-8);
+}

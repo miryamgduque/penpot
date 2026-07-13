@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
-import type { Settings } from "./App";
-import type { SkillsPayload, DesignContext } from "./bridge";
+import type { SkillsPayload, DesignContext, AiPoolEntry } from "./bridge";
 import {
   buildSystemPrompt,
   runTurn,
   estimateCostUSD,
   EMPTY_USAGE,
+  type CanonicalMessage,
   type ToolEvent,
   type UsageTotals,
 } from "./agent";
@@ -18,22 +17,38 @@ interface ChatItem {
   tool?: ToolEvent;
 }
 
-/** What survives a panel close: the transcript, the raw API history and the spend meter. */
+/** What survives a panel close: the transcript, the canonical history, the
+ * spend meter and the selected pool entry. v2 = canonical history format —
+ * older persisted chats keep their transcript but drop the API history. */
 interface PersistedChat {
+  v?: number;
   items: ChatItem[];
-  history: MessageParam[];
+  history: CanonicalMessage[];
   usage: UsageTotals;
+  selection?: AiPoolEntry | null;
 }
 
+const PERSIST_VERSION = 2;
 const MAX_PERSISTED_ITEMS = 200;
 const MAX_HISTORY_MESSAGES = 40;
 
+export const PROVIDER_LABELS: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  zhipu: "Zhipu AI",
+  moonshot: "Moonshot AI",
+};
+
+export function providerLabel(id: string): string {
+  return PROVIDER_LABELS[id] ?? id;
+}
+
 /**
- * Bounds the API history without splitting a tool_use from its tool_result:
- * only cuts at a plain-text user message (every turn starts with one).
+ * Bounds the canonical history without splitting a tool call from its
+ * results: only cuts at a plain user message (every turn starts with one).
  */
-function trimHistory(history: MessageParam[]): MessageParam[] {
-  const isTurnStart = (m: MessageParam) => m.role === "user" && typeof m.content === "string";
+function trimHistory(history: CanonicalMessage[]): CanonicalMessage[] {
+  const isTurnStart = (m: CanonicalMessage) => m.role === "user";
   if (history.length <= MAX_HISTORY_MESSAGES) return history;
   for (let i = history.length - MAX_HISTORY_MESSAGES; i < history.length; i++) {
     if (isTurnStart(history[i])) return history.slice(i);
@@ -44,20 +59,34 @@ function trimHistory(history: MessageParam[]): MessageParam[] {
   return history;
 }
 
+function inPool(pool: AiPoolEntry[], sel: AiPoolEntry | null): boolean {
+  return !!sel && pool.some((e) => e.provider === sel.provider && e.model === sel.model);
+}
+
+function poolKey(e: AiPoolEntry): string {
+  return `${e.provider}::${e.model}`;
+}
+
 /**
- * The embedded chat panel. Talks to the provider directly (no MCP server in
- * the loop); design tools execute in Penpot via the plugin bridge. Triggered
- * skills arrive here only when the user (or auto-apply) forwards them from the
- * notification layer via `pendingAsk`.
+ * The embedded chat panel. Rounds go through the Penpot backend proxy (the
+ * provider keys never reach the browser); design tools execute in Penpot
+ * via the plugin bridge. The model picker spans the enabled models of ALL
+ * connected providers and can be switched mid-conversation — the canonical
+ * history carries over, tool calls included. Triggered skills arrive here
+ * only when the user (or auto-apply) forwards them from the notification
+ * layer via `pendingAsk`. With an empty model pool it renders the
+ * first-run state instead.
  */
 export function Chat({
-  settings,
+  pool,
+  settingsUri,
   skills,
   context,
   pendingAsk,
   onPendingAskHandled,
 }: {
-  settings: Settings;
+  pool: AiPoolEntry[];
+  settingsUri: string | null;
   skills: SkillsPayload | null;
   context: DesignContext | null;
   pendingAsk: string | null;
@@ -66,13 +95,15 @@ export function Chat({
   const [items, setItems] = useState<ChatItem[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [streamText, setStreamText] = useState("");
   const [usage, setUsage] = useState<UsageTotals>(EMPTY_USAGE);
   const [hydrated, setHydrated] = useState(false);
-  const historyRef = useRef<MessageParam[]>([]);
+  const [selection, setSelection] = useState<AiPoolEntry | null>(null);
+  const historyRef = useRef<CanonicalMessage[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const selectionValid = inPool(pool, selection);
 
   // the panel iframe doesn't get focus automatically when docked
   useEffect(() => {
@@ -87,7 +118,10 @@ export function Chat({
         if (!r.chat) return;
         const stored = JSON.parse(r.chat) as PersistedChat;
         if (Array.isArray(stored.items)) setItems(stored.items);
-        if (Array.isArray(stored.history)) historyRef.current = stored.history;
+        if (stored.v === PERSIST_VERSION) {
+          if (Array.isArray(stored.history)) historyRef.current = stored.history;
+          if (stored.selection) setSelection(stored.selection);
+        }
         if (stored.usage) setUsage({ ...EMPTY_USAGE, ...stored.usage });
       })
       .catch(() => {
@@ -96,29 +130,39 @@ export function Chat({
       .finally(() => setHydrated(true));
   }, []);
 
-  // persist between turns (never mid-turn: tool results are still streaming in)
+  // a fresh conversation defaults to the pool's first model; an explicit
+  // selection that became invalid (provider disconnected / model disabled)
+  // is kept visible so the disabled-conversation state can explain itself
+  useEffect(() => {
+    if (!hydrated) return;
+    if (selection === null && pool.length > 0) setSelection(pool[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, pool]);
+
+  // persist between turns (never mid-turn: tool results are still coming in)
   useEffect(() => {
     if (!hydrated || busy) return;
     historyRef.current = trimHistory(historyRef.current);
     const payload: PersistedChat = {
+      v: PERSIST_VERSION,
       items: items.slice(-MAX_PERSISTED_ITEMS),
       history: historyRef.current,
       usage,
+      selection,
     };
     void bridge.call("save-chat", { chat: JSON.stringify(payload) }).catch(() => {});
-  }, [hydrated, busy, items, usage]);
+  }, [hydrated, busy, items, usage, selection]);
 
   function clearChat() {
     if (busyRef.current) return;
     setItems([]);
     setUsage(EMPTY_USAGE);
-    setStreamText("");
     historyRef.current = [];
   }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [items, streamText]);
+  }, [items, busy]);
 
   // A triggered skill handed over from the notification layer
   useEffect(() => {
@@ -143,13 +187,7 @@ export function Chat({
 
   async function send(message: string, echoUser = true) {
     if (!message.trim() || busyRef.current) return;
-    if (!settings.apiKey) {
-      setItems((p) => [
-        ...p,
-        { kind: "error", text: "Add your Anthropic API key in ⚙ Settings first." },
-      ]);
-      return;
-    }
+    if (!selection || !inPool(pool, selection)) return;
     busyRef.current = true;
     setBusy(true);
     if (echoUser) setItems((p) => [...p, { kind: "user", text: message }]);
@@ -161,16 +199,14 @@ export function Chat({
         bridge.call<DesignContext>("get-design-context"),
       ]);
       const system = buildSystemPrompt(freshSkills, freshContext);
-      historyRef.current = [...historyRef.current, { role: "user", content: message }];
+      historyRef.current = [...historyRef.current, { role: "user", text: message }];
 
       historyRef.current = await runTurn(
-        { apiKey: settings.apiKey, model: settings.model },
+        { provider: selection.provider, model: selection.model },
         historyRef.current,
         system,
         {
-          onTextDelta: (d) => setStreamText((t) => t + d),
           onAssistantDone: (full) => {
-            setStreamText("");
             setItems((p) => [...p, { kind: "assistant", text: full }]);
           },
           onToolEvent: (e) => {
@@ -198,7 +234,6 @@ export function Chat({
     } catch (e) {
       setItems((p) => [...p, { kind: "error", text: (e as Error).message }]);
     } finally {
-      setStreamText("");
       setBusy(false);
       busyRef.current = false;
     }
@@ -210,6 +245,63 @@ export function Chat({
     setInput("");
     void send(msg);
   };
+
+  // First-run state: no provider connected, or none with an enabled model.
+  // The actual setup lives on /settings/integrations — not in this panel.
+  if (hydrated && pool.length === 0) {
+    return (
+      <div className="chat">
+        <div className="first-run">
+          {/* Lucide "unplug" icon, inlined to keep the bundle self-contained */}
+          <svg
+            className="first-run-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            width="32"
+            height="32"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m19 5 3-3" />
+            <path d="m2 22 3-3" />
+            <path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z" />
+            <path d="M7.5 13.5 10 11" />
+            <path d="M10.5 16.5 13 14" />
+            <path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z" />
+          </svg>
+          <h2>Connect an AI provider</h2>
+          <p>
+            The agent needs an AI provider before it can be used. Connect one from your account
+            settings and enable the models you want to chat with.
+          </p>
+          <button
+            data-appearance="primary"
+            type="button"
+            onClick={() => {
+              if (settingsUri) window.open(settingsUri, "_blank");
+            }}
+          >
+            Connect an AI provider
+          </button>
+          <button
+            data-appearance="secondary"
+            className="first-run-refresh"
+            type="button"
+            title="Re-check after connecting a provider in the settings tab"
+            onClick={() => bridge.requestScopesRefresh()}
+          >
+            I've connected one, check again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const providers = [...new Set(pool.map((e) => e.provider))];
 
   return (
     <div className="chat">
@@ -228,13 +320,13 @@ export function Chat({
         {items.map((item, i) => (
           <Item key={i} item={item} />
         ))}
-        {streamText && <div className="msg assistant">{streamText}</div>}
-        {busy && !streamText && <div className="msg assistant thinking">…</div>}
+        {busy && <div className="msg assistant thinking">…</div>}
       </div>
+
       {(usage.requests > 0 || items.length > 0) && (
         <div className="chat-status">
           {usage.requests > 0 ? (
-            <UsageMeter usage={usage} model={settings.model} />
+            <UsageMeter usage={usage} model={selection?.model ?? ""} />
           ) : (
             <span className="usage-meter">Restored conversation</span>
           )}
@@ -249,16 +341,57 @@ export function Chat({
           </button>
         </div>
       )}
-      {!settings.apiKey && (
-        <div className="composer-hint">No API key saved — add yours in ⚙ Settings to chat.</div>
+
+      {/* one pool across all connected providers; switching mid-conversation
+          (provider included) carries the canonical history over */}
+      <div className="model-picker-row">
+        <label className="model-picker-label" htmlFor="chat-model-picker">
+          Model
+        </label>
+        <select
+          id="chat-model-picker"
+          className="model-picker"
+          disabled={busy}
+          value={selection && selectionValid ? poolKey(selection) : ""}
+          onChange={(e) => {
+            const entry = pool.find((p) => poolKey(p) === e.target.value);
+            if (entry) setSelection(entry);
+          }}
+        >
+          {!selectionValid && (
+            <option value="" disabled>
+              {selection ? `${selection.model} (unavailable)` : "Select a model"}
+            </option>
+          )}
+          {providers.map((prov) => (
+            <optgroup key={prov} label={providerLabel(prov)}>
+              {pool
+                .filter((e) => e.provider === prov)
+                .map((e) => (
+                  <option key={poolKey(e)} value={poolKey(e)}>
+                    {e.model}
+                  </option>
+                ))}
+            </optgroup>
+          ))}
+        </select>
+      </div>
+
+      {!selectionValid && selection && (
+        <div className="composer-hint">
+          {providerLabel(selection.provider)} was disconnected (or “{selection.model}” is no
+          longer enabled). Pick another model above to resume this conversation.
+        </div>
       )}
+
       <form className="composer" onSubmit={onSubmit} onClick={() => inputRef.current?.focus()}>
         <textarea
           ref={inputRef}
           className="input"
           value={input}
           rows={2}
-          placeholder="Ask the agent…"
+          disabled={!selectionValid}
+          placeholder={selectionValid ? "Ask the agent…" : "Select a model to resume…"}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -269,8 +402,16 @@ export function Chat({
         />
         <button
           data-appearance="primary"
-          disabled={busy || !input.trim()}
-          title={busy ? "Working…" : input.trim() ? "Send" : "Type a message first"}
+          disabled={busy || !input.trim() || !selectionValid}
+          title={
+            !selectionValid
+              ? "Select a model first"
+              : busy
+                ? "Working…"
+                : input.trim()
+                  ? "Send"
+                  : "Type a message first"
+          }
           type="submit"
         >
           ➤
@@ -293,7 +434,7 @@ function UsageMeter({ usage, model }: { usage: UsageTotals; model: string }) {
   return (
     <div
       className="usage-meter"
-      title="Session token usage across all API calls from this panel. Cost is an estimate at standard list prices — the Anthropic Console has the authoritative numbers."
+      title="Session token usage across all API calls from this panel. Cost is an estimate at standard list prices — your provider's console has the authoritative numbers."
     >
       {usage.requests} calls · {formatTokens(promptTokens)} in ({cachedShare}% cached) ·{" "}
       {formatTokens(usage.outputTokens)} out

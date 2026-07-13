@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as bridge from "./bridge";
-import type { SkillsPayload, DesignContext, Violation } from "./bridge";
+import type { SkillsPayload, DesignContext, Violation, AiPoolEntry } from "./bridge";
 import { Chat } from "./Chat";
 import { SkillsPanel } from "./Skills";
 import { TokensPanel } from "./Tokens";
@@ -41,16 +41,15 @@ function handOffToChat(prompt: string) {
   window.parent.postMessage({ type: "penpot-skills:open-chat" }, "*");
 }
 
+/** Panel-local preferences. Provider connections and the model pool are
+ * account-level and managed on /settings/integrations; the active model is
+ * picked inside the chat and persisted with the conversation. */
 export interface Settings {
-  apiKey: string;
-  model: string;
   autoApplyTriggered: boolean;
 }
 
 const SETTINGS_KEY = "penpot-skills.settings";
 const DEFAULT_SETTINGS: Settings = {
-  apiKey: "",
-  model: "claude-sonnet-5",
   autoApplyTriggered: false,
 };
 
@@ -79,14 +78,20 @@ export function App() {
   const [skills, setSkills] = useState<SkillsPayload | null>(null);
   const [context, setContext] = useState<DesignContext | null>(null);
   const [settings, setSettings] = useState<Settings>(loadLocalSettings);
+  const [pool, setPool] = useState<AiPoolEntry[]>([]);
+  const [settingsUri, setSettingsUri] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<SkillNotification[]>([]);
   const [violations, setViolations] = useState<Violation[]>([]);
   const [pendingAsk, setPendingAsk] = useState<string | null>(null);
   const notifId = useRef(1);
   const settingsRef = useRef(settings);
+  const poolRef = useRef(pool);
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+  useEffect(() => {
+    poolRef.current = pool;
+  }, [pool]);
 
   useEffect(() => {
     const off = bridge.onPluginEvent((e) => {
@@ -101,15 +106,22 @@ export function App() {
         setViolations(e.violations);
       } else if (e.type === "theme-change") {
         document.documentElement.dataset.theme = e.theme;
+      } else if (e.type === "ai-pool-change") {
+        setPool(e.pool ?? []);
+        setSettingsUri(e.settingsUri ?? null);
       } else if (e.type === "skill-triggered") {
         // transient notification layer — separate from the chat
         setNotifications((prev) => [
           ...prev.slice(-3),
           { ...e, id: notifId.current++, expiresAt: Date.now() + NOTIFICATION_TTL_MS },
         ]);
-        // auto-apply needs the API key, which lives in the chat panel's
-        // storage — only meaningful when this panel hosts the chat
-        if (MODE !== "skills" && settingsRef.current.autoApplyTriggered && settingsRef.current.apiKey) {
+        // auto-apply needs a usable model pool — only meaningful when this
+        // panel hosts the chat
+        if (
+          MODE !== "skills" &&
+          settingsRef.current.autoApplyTriggered &&
+          poolRef.current.length > 0
+        ) {
           setPendingAsk(
             `[Penpot change watcher] Triggered skill "${e.skill.name}": ${e.reason}` +
               (e.shape ? ` (shape "${e.shape.name}", id ${e.shape.id})` : "") +
@@ -232,7 +244,8 @@ export function App() {
         {MODE !== "skills" && (
           <div style={{ display: tab === "chat" ? "contents" : "none" }}>
             <Chat
-              settings={settings}
+              pool={pool}
+              settingsUri={settingsUri}
               skills={skills}
               context={context}
               pendingAsk={pendingAsk}
@@ -249,7 +262,9 @@ export function App() {
           />
         )}
         {tab === "tokens" && <TokensPanel />}
-        {tab === "settings" && <SettingsPanel settings={settings} onSave={saveSettings} />}
+        {tab === "settings" && (
+          <SettingsPanel settings={settings} settingsUri={settingsUri} onSave={saveSettings} />
+        )}
       </main>
     </div>
   );
@@ -257,9 +272,11 @@ export function App() {
 
 function SettingsPanel({
   settings,
+  settingsUri,
   onSave,
 }: {
   settings: Settings;
+  settingsUri: string | null;
   onSave: (s: Settings) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(settings);
@@ -283,33 +300,6 @@ function SettingsPanel({
 
   return (
     <div className="settings">
-      <label>
-        Anthropic API key (stored in this plugin, never sent anywhere but your provider)
-        <input
-          className="input"
-          type="password"
-          value={draft.apiKey}
-          placeholder="sk-ant-..."
-          onChange={(e) => setDraft({ ...draft, apiKey: e.target.value })}
-        />
-      </label>
-      <span className={`key-status ${settings.apiKey ? "ok" : ""}`}>
-        {settings.apiKey
-          ? `✓ Key saved (…${settings.apiKey.slice(-4)}) — the chat is ready`
-          : "No key saved yet — the chat needs one"}
-      </span>
-      <label>
-        Model
-        <select
-          className="select"
-          value={draft.model}
-          onChange={(e) => setDraft({ ...draft, model: e.target.value })}
-        >
-          <option value="claude-sonnet-5">Claude Sonnet 5</option>
-          <option value="claude-opus-4-8">Claude Opus 4.8</option>
-          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
-        </select>
-      </label>
       <div className="checkbox-container">
         <input
           className="checkbox-input"
@@ -327,8 +317,15 @@ function SettingsPanel({
         <div className="msg error">Could not save settings — is the plugin still connected?</div>
       )}
       <p className="hint">
-        The chat calls your provider directly from this panel — no MCP server required; skills and
-        enforcement live in Penpot, so any provider gets the same rules.
+        AI provider connections and the model pool are managed at the account level, in{" "}
+        {settingsUri ? (
+          <a href={settingsUri} target="_blank" rel="noreferrer">
+            Penpot Settings → Integrations
+          </a>
+        ) : (
+          "Penpot Settings → Integrations"
+        )}
+        . Keys stay on the Penpot server; the active model is picked inside the chat.
       </p>
     </div>
   );

@@ -194,12 +194,60 @@
     {:provider provider
      :models (fetch-models! cfg provider (:api-key row))}))
 
+;; --- Mutation: store / rotate key (no validation — see note below)
+;;
+;; The key is stored as-is, WITHOUT a live check against the provider: an
+;; invalid key, a revoked key, or an account without funds surfaces only
+;; when the user actually sends a message (see `ai-agent-round`). This
+;; keeps the settings page instant and avoids a provider round-trip on
+;; every keystroke/blur. On conflict the enabled-model selection is kept.
+
+(def ^:private schema:set-ai-provider-key
+  [:map {:title "set-ai-provider-key"}
+   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
+   [:api-key [:string {:min 8 :max 500}]]])
+
+;; No ORM/upsert helper in app.db — a parameterized ON CONFLICT statement
+;; is the house pattern for insert-or-update (cf. teams_invitations,
+;; files_thumbnails). enabled_models is set only on insert; a key rotation
+;; keeps the existing selection.
+(def ^:private sql:upsert-provider-key
+  "INSERT INTO profile_ai_provider (profile_id, provider, api_key, enabled_models)
+   VALUES (?, ?, ?, ?)
+   ON CONFLICT (profile_id, provider)
+   DO UPDATE SET api_key = ?, updated_at = now()")
+
+(sv/defmethod ::set-ai-provider-key
+  {::doc/added "2.13"
+   ::sm/params schema:set-ai-provider-key}
+  [{:keys [::db/pool]} {:keys [::rpc/profile-id provider api-key]}]
+  (let [row  (get-provider-row pool profile-id provider)
+        kept (vec (:enabled-models row []))]
+    (db/exec-one! pool [sql:upsert-provider-key
+                        profile-id provider api-key (db/json kept)
+                        api-key])
+    {:provider provider
+     :connected true
+     :key-hint (key-hint api-key)
+     :enabled-models kept}))
+
 ;; --- Mutation: connect / rotate key (validate on submit, store on success)
+;;
+;; DEPRECATED by ::set-ai-provider-key — kept for external/API callers that
+;; still want an upfront validation. The settings UI no longer calls it.
 
 (def ^:private schema:connect-ai-provider
   [:map {:title "connect-ai-provider"}
    [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
    [:api-key [:string {:min 8 :max 500}]]])
+
+;; Like sql:upsert-provider-key but also rewrites enabled_models — the
+;; validated model list may have dropped some of the previous selection.
+(def ^:private sql:upsert-provider-connection
+  "INSERT INTO profile_ai_provider (profile_id, provider, api_key, enabled_models)
+   VALUES (?, ?, ?, ?)
+   ON CONFLICT (profile_id, provider)
+   DO UPDATE SET api_key = ?, enabled_models = ?, updated_at = now()")
 
 (sv/defmethod ::connect-ai-provider
   {::doc/added "2.13"
@@ -211,13 +259,9 @@
         ;; on key rotation keep the enabled selection, dropping models the
         ;; provider no longer offers
         kept   (vec (filter (set models) (:enabled-models row [])))]
-    (db/exec-one! pool
-                  ["INSERT INTO profile_ai_provider (profile_id, provider, api_key, enabled_models)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT (profile_id, provider)
-                    DO UPDATE SET api_key = ?, enabled_models = ?, updated_at = now()"
-                   profile-id provider api-key (db/json kept)
-                   api-key (db/json kept)])
+    (db/exec-one! pool [sql:upsert-provider-connection
+                        profile-id provider api-key (db/json kept)
+                        api-key (db/json kept)])
     {:provider provider
      :connected true
      :key-hint (key-hint api-key)

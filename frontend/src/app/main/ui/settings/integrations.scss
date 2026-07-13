@@ -278,9 +278,14 @@
 
 .provider-key-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   gap: var(--sp-s);
   align-items: center;
+}
+
+.provider-key-status {
+  color: var(--color-foreground-secondary);
+  min-block-size: var(--sp-l);
 }
 
 .provider-models {
@@ -318,4 +323,22 @@
   input {
     accent-color: var(--color-accent-primary);
   }
+
+  input:disabled {
+    cursor: default;
+  }
+
+  &:has(input:disabled) {
+    cursor: default;
+    opacity: 0.6;
+  }
+}
+
+.provider-models-name {
+  color: var(--color-foreground-primary);
+}
+
+.provider-models-context {
+  margin-inline-start: auto;
+  color: var(--color-foreground-secondary);
 }

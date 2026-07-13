@@ -2453,10 +2453,11 @@ msgstr "Penpot Agent"
 
 msgid "integrations.ai-provider.description"
 msgstr ""
-"Connect your own AI provider accounts to power the Penpot Agent. Keys are "
+"Add your own AI provider accounts to power the Penpot Agent. Keys are "
 "stored with your profile and only used from Penpot's server, so they never "
-"reach the browser. The models you enable across all connected providers "
-"form the pool available in the agent chat."
+"reach the browser. They aren't checked here — an invalid key or an account "
+"without funds only shows up when you send a message. The models you enable "
+"across all providers form the pool available in the agent chat."
 
 msgid "integrations.ai-provider.key.label"
 msgstr "API key"
@@ -2465,58 +2466,43 @@ msgid "integrations.ai-provider.key.placeholder"
 msgstr "Paste your API key"
 
 msgid "integrations.ai-provider.key.placeholder-rotate"
-msgstr "Paste a new key to rotate it"
+msgstr "Paste a new key to replace it"
 
-msgid "integrations.ai-provider.connect"
-msgstr "Connect"
+msgid "integrations.ai-provider.autosave-hint"
+msgstr "Saved automatically when you click away."
 
-msgid "integrations.ai-provider.connecting"
-msgstr "Connecting…"
+msgid "integrations.ai-provider.saving"
+msgstr "Saving…"
 
-msgid "integrations.ai-provider.rotate-key"
-msgstr "Rotate key"
+msgid "integrations.ai-provider.saved"
+msgstr "Saved"
 
 msgid "integrations.ai-provider.disconnect"
-msgstr "Disconnect"
+msgstr "Remove key"
 
-msgid "integrations.ai-provider.status.connected"
-msgstr "Connected · key ending in %s"
+msgid "integrations.ai-provider.status.saved"
+msgstr "Key saved · ending in %s"
 
 msgid "integrations.ai-provider.models.title"
 msgstr "Models"
 
-msgid "integrations.ai-provider.models.loading"
-msgstr "Loading available models…"
-
-msgid "integrations.ai-provider.models.error"
-msgstr "Could not fetch this provider's models. The key may have been revoked, try rotating it."
-
 msgid "integrations.ai-provider.models.select-one"
-msgstr "Select at least one model to make this connection usable in the agent chat."
+msgstr "Enable at least one model to make this provider usable in the agent chat."
 
-msgid "integrations.ai-provider.models.missing"
-msgstr "No longer available from this provider: %s. Unselect them and pick a current model."
+msgid "integrations.ai-provider.models.save-key-first"
+msgstr "Save an API key above to enable models for the agent chat."
 
-msgid "integrations.ai-provider.error.empty-key"
-msgstr "Enter your API key first."
-
-msgid "integrations.ai-provider.error.invalid-key"
-msgstr "Couldn't connect with this key. Check it and try again."
-
-msgid "integrations.ai-provider.error.unreachable"
-msgstr "Could not reach the provider. Check your connection and try again."
+msgid "integrations.ai-provider.models.context"
+msgstr "%s context"
 
 msgid "integrations.ai-provider.error.generic"
-msgstr "Something went wrong while connecting the provider. Please try again."
+msgstr "Something went wrong while saving the key. Please try again."
 
-msgid "integrations.ai-provider.notification.connected"
-msgstr "Connected to %s."
+msgid "integrations.ai-provider.notification.key-saved"
+msgstr "%s key saved."
 
 msgid "integrations.ai-provider.notification.disconnected"
-msgstr "%s disconnected."
-
-msgid "integrations.ai-provider.notification.models-unavailable"
-msgstr "%s: some enabled models are no longer available (%s)."
+msgstr "%s key removed."
 
 #: src/app/main/ui/settings/integrations.cljs:629
 msgid "integrations.access-tokens.create"

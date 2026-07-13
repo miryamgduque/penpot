@@ -600,9 +600,11 @@
 ;; --- AI providers section (account-level connections for the design agent)
 ;;
 ;; One card per supported provider, each independently connectable — this
-;; is not an either/or choice. A connected card live-fetches the provider's
-;; model list; the models the user enables across all cards form the single
-;; pool that populates the chat's model picker.
+;; is not an either/or choice. The key is stored on blur without any
+;; up-front validation (an invalid key or an unfunded account only shows
+;; up when the user sends a message). Each card lists a curated subset of
+;; the provider's latest models; the models the user toggles on across all
+;; cards form the single pool that populates the chat's model picker.
 
 (def ^:private ai-provider-defs
   [{:id "anthropic" :label "Anthropic"   :models-hint "Claude models"}
@@ -610,12 +612,35 @@
    {:id "zhipu"     :label "Zhipu AI"    :models-hint "GLM models"}
    {:id "moonshot"  :label "Moonshot AI" :models-hint "Kimi models"}])
 
-(defn- connect-error-message
-  [cause]
-  (case (:code (ex-data cause))
-    :ai-provider-invalid-key (tr "integrations.ai-provider.error.invalid-key")
-    :ai-provider-unreachable (tr "integrations.ai-provider.error.unreachable")
-    (tr "integrations.ai-provider.error.generic")))
+;; Curated, hand-maintained catalog: a small subset of each provider's
+;; latest models with their context window (in tokens). Not a live fetch —
+;; edit this list as providers ship new models.
+(def ^:private ai-provider-models
+  {"anthropic"
+   [{:id "claude-opus-4-8"            :label "Claude Opus 4.8"  :context 200000}
+    {:id "claude-sonnet-5"           :label "Claude Sonnet 5"  :context 200000}
+    {:id "claude-haiku-4-5-20251001" :label "Claude Haiku 4.5" :context 200000}]
+   "openai"
+   [{:id "gpt-5"      :label "GPT-5"      :context 400000}
+    {:id "gpt-5-mini" :label "GPT-5 mini" :context 400000}
+    {:id "gpt-4.1"    :label "GPT-4.1"    :context 1000000}]
+   "zhipu"
+   [{:id "glm-4.6"     :label "GLM-4.6"     :context 200000}
+    {:id "glm-4.5"     :label "GLM-4.5"     :context 128000}
+    {:id "glm-4.5-air" :label "GLM-4.5 Air" :context 128000}]
+   "moonshot"
+   [{:id "kimi-k2-0905-preview" :label "Kimi K2"          :context 256000}
+    {:id "moonshot-v1-128k"     :label "Moonshot v1 128K" :context 128000}
+    {:id "moonshot-v1-32k"      :label "Moonshot v1 32K"  :context 32000}]})
+
+(defn- format-context
+  "Human-friendly context-window size, e.g. 200000 → \"200K\", 1000000 → \"1M\"."
+  [n]
+  (cond
+    (nil? n)        nil
+    (>= n 1000000)  (dm/str (quot n 1000000) "M")
+    (>= n 1000)     (dm/str (quot n 1000) "K")
+    :else           (dm/str n)))
 
 (mf/defc ai-provider-card*
   {::mf/private true}
@@ -630,40 +655,66 @@
         pending*    (mf/use-state false)
         pending?    (deref pending*)
 
-        error*      (mf/use-state nil)
-        error       (deref error*)
+        ;; a transient "Saved" acknowledgement next to the key field,
+        ;; cleared as soon as the user edits the field again
+        saved?*     (mf/use-state false)
+        saved?      (deref saved?*)
 
-        ;; live-fetched model list; nil = not loaded yet
-        models*     (mf/use-state nil)
-        models      (deref models*)
+        ;; the curated catalog, plus any enabled model no longer in it
+        ;; (kept visible so the user can toggle it back off)
+        catalog     (get ai-provider-models provider [])
+        catalog-ids (set (map :id catalog))
+        rows        (concat catalog
+                            (for [m enabled
+                                  :when (not (contains? catalog-ids m))]
+                              {:id m :label m :context nil}))
 
-        models-error* (mf/use-state nil)
-        models-error  (deref models-error*)
-
-        ;; enabled models the provider no longer offers upstream
-        missing     (when (some? models)
-                      (vec (remove (set models) enabled)))
-
-        load-models
+        save-key
         (mf/use-fn
-         (mf/deps provider)
-         (fn []
-           (st/emit!
-            (dai/fetch-ai-provider-models
-             (with-meta {:provider provider}
-               {:on-success
-                (fn [result]
-                  (reset! models-error* nil)
-                  (reset! models* (vec (:models result))))
-                :on-error
-                (fn [_cause]
-                  (reset! models-error* (tr "integrations.ai-provider.models.error"))
-                  (rx/empty))})))))
+         (mf/deps provider label)
+         (fn [raw]
+           (let [key (str/trim (or raw ""))]
+             ;; autosave on blur: skip empties, no provider round-trip
+             (when-not (str/blank? key)
+               (reset! pending* true)
+               (st/emit!
+                (dai/set-ai-provider-key
+                 (with-meta {:provider provider :api-key key}
+                   {:on-success
+                    (fn [_]
+                      (reset! pending* false)
+                      (reset! api-key* "")
+                      (reset! saved?* true)
+                      (st/emit! (ntf/show {:level :info
+                                           :type :toast
+                                           :content (tr "integrations.ai-provider.notification.key-saved" label)
+                                           :timeout notification-timeout})))
+                    :on-error
+                    (fn [_cause]
+                      (reset! pending* false)
+                      (st/emit! (ntf/error (tr "integrations.ai-provider.error.generic")))
+                      (rx/empty))})))))))
 
         on-key-change
         (mf/use-fn
          (fn [event]
+           (reset! saved?* false)
            (reset! api-key* (dom/get-target-val event))))
+
+        on-key-blur
+        (mf/use-fn
+         (mf/deps save-key)
+         (fn [event]
+           (save-key (dom/get-target-val event))))
+
+        ;; Enter saves without leaving the field
+        on-key-down
+        (mf/use-fn
+         (mf/deps save-key)
+         (fn [event]
+           (when (= "Enter" (.-key event))
+             (dom/prevent-default event)
+             (save-key (dom/get-target-val event)))))
 
         on-toggle-model
         (mf/use-fn
@@ -682,59 +733,11 @@
         (mf/use-fn
          (mf/deps provider label)
          (fn []
-           (reset! models* nil)
            (st/emit! (dai/disconnect-ai-provider {:provider provider})
                      (ntf/show {:level :info
                                 :type :toast
                                 :content (tr "integrations.ai-provider.notification.disconnected" label)
-                                :timeout notification-timeout}))))
-
-        on-connect
-        (mf/use-fn
-         (mf/deps provider label api-key)
-         (fn [event]
-           (dom/prevent-default event)
-           ;; validation happens on submit, not while typing
-           (if (str/blank? api-key)
-             (reset! error* (tr "integrations.ai-provider.error.empty-key"))
-             (do
-               (reset! pending* true)
-               (reset! error* nil)
-               (st/emit!
-                (dai/connect-ai-provider
-                 (with-meta {:provider provider
-                             :api-key (str/trim api-key)}
-                   {:on-success
-                    (fn [result]
-                      (reset! pending* false)
-                      (reset! api-key* "")
-                      (reset! models-error* nil)
-                      (reset! models* (vec (:models result)))
-                      (st/emit! (ntf/show {:level :info
-                                           :type :toast
-                                           :content (tr "integrations.ai-provider.notification.connected" label)
-                                           :timeout notification-timeout})))
-                    ;; on failure the key field keeps its value so the user
-                    ;; can correct it without retyping
-                    :on-error
-                    (fn [cause]
-                      (reset! pending* false)
-                      (reset! error* (connect-error-message cause))
-                      (rx/empty))})))))))]
-
-    ;; a card revisited while already connected loads its checklist live
-    (mf/with-effect [connected?]
-      (when (and ^boolean connected? (nil? (deref models*)))
-        (load-models)))
-
-    ;; a model that disappeared upstream is reported on the page itself
-    (mf/with-effect [missing]
-      (when (seq missing)
-        (st/emit! (ntf/show {:level :warning
-                             :type :toast
-                             :content (tr "integrations.ai-provider.notification.models-unavailable"
-                                          label (str/join ", " missing))
-                             :timeout notification-timeout}))))
+                                :timeout notification-timeout}))))]
 
     [:div {:class (stl/css :provider-card)
            :data-testid (dm/str "ai-provider-" provider)}
@@ -752,11 +755,10 @@
         [:> text* {:as "span"
                    :typography t/body-small
                    :class (stl/css :provider-connected-tag)}
-         (tr "integrations.ai-provider.status.connected" (:key-hint status))])]
+         (tr "integrations.ai-provider.status.saved" (:key-hint status))])]
 
-     ;; first connect and key rotation share this form
-     [:form {:class (stl/css :provider-key-form)
-             :on-submit on-connect}
+     ;; the key is autosaved on blur — no explicit connect action
+     [:div {:class (stl/css :provider-key-form)}
       [:div {:class (stl/css :provider-key-row)}
        [:> input* {:type "text"
                    :value api-key
@@ -764,73 +766,48 @@
                    :placeholder (if connected?
                                   (tr "integrations.ai-provider.key.placeholder-rotate")
                                   (tr "integrations.ai-provider.key.placeholder"))
-                   :on-change on-key-change}]
-       [:> button* {:variant (if connected? "secondary" "primary")
-                    :type "submit"
-                    :class (stl/css :fit-content)
-                    :disabled pending?}
-        (cond
-          pending?   (tr "integrations.ai-provider.connecting")
-          connected? (tr "integrations.ai-provider.rotate-key")
-          :else      (tr "integrations.ai-provider.connect"))]]
+                   :on-change on-key-change
+                   :on-blur on-key-blur
+                   :on-key-down on-key-down}]]
 
-      (when (some? error)
-        [:> notification-pill* {:level :error
-                                :type :context}
-         [:> text* {:as "div"
-                    :typography t/body-medium
-                    :class (stl/css :color-primary)}
-          error]])]
+      [:> text* {:as "div"
+                 :typography t/body-small
+                 :class (stl/css :provider-key-status)}
+       (cond
+         pending? (tr "integrations.ai-provider.saving")
+         saved?   (tr "integrations.ai-provider.saved")
+         :else    (tr "integrations.ai-provider.autosave-hint"))]]
 
-     (when ^boolean connected?
-       [:div {:class (stl/css :provider-models)}
-        [:> text* {:as "h4"
-                   :typography t/body-medium
-                   :class (stl/css :color-primary)}
-         (tr "integrations.ai-provider.models.title")]
+     [:div {:class (stl/css :provider-models)}
+      [:> text* {:as "h4"
+                 :typography t/body-medium
+                 :class (stl/css :color-primary)}
+       (tr "integrations.ai-provider.models.title")]
 
-        (cond
-          (some? models-error)
-          [:> notification-pill* {:level :warning
-                                  :type :context}
-           [:> text* {:as "div"
-                      :typography t/body-medium
-                      :class (stl/css :color-primary)}
-            models-error]]
-
-          (nil? models)
+      (if connected?
+        (when (empty? enabled)
           [:> text* {:as "div"
                      :typography t/body-small
-                     :class (stl/css :color-secondary)}
-           (tr "integrations.ai-provider.models.loading")]
+                     :class (stl/css :provider-models-note)}
+           (tr "integrations.ai-provider.models.select-one")])
+        [:> text* {:as "div"
+                   :typography t/body-small
+                   :class (stl/css :color-secondary)}
+         (tr "integrations.ai-provider.models.save-key-first")])
 
-          :else
-          [:*
-           ;; not a persistent badge — an inline instruction in the
-           ;; checklist area, per the interaction spec
-           (when (empty? enabled)
-             [:> text* {:as "div"
-                        :typography t/body-small
-                        :class (stl/css :provider-models-note)}
-              (tr "integrations.ai-provider.models.select-one")])
-
-           (when (seq missing)
-             [:> notification-pill* {:level :warning
-                                     :type :context}
-              [:> text* {:as "div"
-                         :typography t/body-medium
-                         :class (stl/css :color-primary)}
-               (tr "integrations.ai-provider.models.missing" (str/join ", " missing))]])
-
-           [:ul {:class (stl/css :provider-models-list)}
-            (for [model models]
-              [:li {:key model :class (stl/css :provider-models-item)}
-               [:label {:class (stl/css :provider-models-label)}
-                [:input {:type "checkbox"
-                         :checked (contains? enabled-set model)
-                         :data-model model
-                         :on-change on-toggle-model}]
-                [:span model]]])]])])
+      [:ul {:class (stl/css :provider-models-list)}
+       (for [{:keys [id label context]} rows]
+         [:li {:key id :class (stl/css :provider-models-item)}
+          [:label {:class (stl/css :provider-models-label)}
+           [:input {:type "checkbox"
+                    :checked (contains? enabled-set id)
+                    :disabled (not connected?)
+                    :data-model id
+                    :on-change on-toggle-model}]
+           [:span {:class (stl/css :provider-models-name)} label]
+           (when-let [ctx (format-context context)]
+             [:span {:class (stl/css :provider-models-context)}
+              (tr "integrations.ai-provider.models.context" ctx)])]])]]
 
      (when ^boolean connected?
        [:div

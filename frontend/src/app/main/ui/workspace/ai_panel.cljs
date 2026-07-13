@@ -15,7 +15,7 @@
   `:ai-panel` layout flag (Phase 04 replaces it with a file-bound store)."
   (:require-macros [app.main.style :as stl])
   (:require
-   [app.main.data.workspace.layout :as dwl]
+   [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.store :as st]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
@@ -31,7 +31,7 @@
         tab       (deref tab*)
         on-change (mf/use-fn #(reset! tab* %))
 
-        on-close  (mf/use-fn #(st/emit! (dwl/remove-layout-flag :ai-panel)))
+        on-close  (mf/use-fn #(st/emit! (dwaip/close-panel)))
 
         tabs      (mf/with-memo []
                     [{:label "Chat" :id "chat"}

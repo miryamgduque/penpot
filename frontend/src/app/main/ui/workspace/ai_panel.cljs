@@ -17,6 +17,7 @@
   (:require-macros [app.main.style :as stl])
   (:require
    [app.common.data.macros :as dm]
+   [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.refs :as refs]
    [app.main.store :as st]
@@ -38,6 +39,14 @@
       (= 1 n)   (dm/str "1 layer: " (:name (get objects (first selected))))
       :else     (dm/str n " layers selected"))))
 
+(defn- provider-pool
+  "Flattens the connected providers into `{:provider :model}` entries — one per
+  model the user enabled."
+  [providers]
+  (vec (for [[_ status] providers
+             model (:enabled-models status)]
+         {:provider (:provider status) :model model})))
+
 (mf/defc chat-tab*
   {::mf/private true}
   []
@@ -45,6 +54,17 @@
         page      (mf/deref refs/workspace-page)
         selected  (mf/deref refs/selected-shapes)
         objects   (mf/deref refs/workspace-page-objects)
+        providers (mf/deref refs/ai-providers)
+        busy?     (mf/deref refs/ai-panel-busy?)
+
+        pool      (mf/with-memo [providers] (provider-pool providers))
+
+        ;; the model pool loads asynchronously; default to the first entry
+        ;; until the user picks another (tracked by index into `pool`)
+        picked*   (mf/use-state nil)
+        picked    (deref picked*)
+        idx       (if (and picked (< picked (count pool))) picked 0)
+        settings  (nth pool idx nil)
 
         input*    (mf/use-state "")
         input     (deref input*)
@@ -53,13 +73,22 @@
                    (fn [event]
                      (reset! input* (dom/get-value (dom/get-target event)))))
 
+        on-pick   (mf/use-fn
+                   (fn [event]
+                     (reset! picked* (js/parseInt (dom/get-value (dom/get-target event)) 10))))
+
         send      (mf/use-fn
-                   (mf/deps input)
+                   (mf/deps input settings busy? page selected objects)
                    (fn []
                      (let [text (str/trim input)]
-                       (when (seq text)
-                         (st/emit! (dwaip/append-message "user" text))
-                         (reset! input* "")))))
+                       (when (and (seq text) settings (not busy?))
+                         (let [context {:file (:name page)
+                                        :page (:name page)
+                                        :selection (->> selected
+                                                        (map #(select-keys (get objects %) [:name :type]))
+                                                        (vec))}]
+                           (st/emit! (dwaip/send-message settings text context))
+                           (reset! input* ""))))))
 
         on-key-down (mf/use-fn
                      (mf/deps send)
@@ -68,6 +97,11 @@
                                   (not (.-shiftKey event)))
                          (dom/prevent-default event)
                          (send))))]
+
+    ;; the provider pool is fetched from the settings page; make sure it is
+    ;; loaded when the chat is shown
+    (mf/with-effect []
+      (st/emit! (dai/fetch-ai-providers)))
 
     [:div {:class (stl/css :chat-tab)}
      ;; Current-file context surfaced to the agent: page + selection.
@@ -82,16 +116,31 @@
           [:div {:key idx
                  :class (stl/css-case :message true
                                       :message-user (= "user" (:role message)))}
-           (:content message)])]
+           (:content message)])
+        (when busy?
+          [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
        [:div {:class (stl/css :transcript-empty)}
         "Start a conversation with the design agent."])
 
-     [:div {:class (stl/css :composer)}
-      [:textarea {:class (stl/css :composer-input)
-                  :placeholder "Ask the agent…"
-                  :value input
-                  :on-change on-input
-                  :on-key-down on-key-down}]]]))
+     (if (seq pool)
+       [:div {:class (stl/css :composer)}
+        [:select {:class (stl/css :model-picker)
+                  :value (str idx)
+                  :on-change on-pick}
+         (for [[i entry] (map-indexed vector pool)]
+           [:option {:key i :value (str i)}
+            (dm/str (:provider entry) " / " (:model entry))])]
+        [:textarea {:class (stl/css :composer-input)
+                    :placeholder "Ask the agent…"
+                    :value input
+                    :disabled busy?
+                    :on-change on-input
+                    :on-key-down on-key-down}]]
+       [:div {:class (stl/css :composer)}
+        [:div {:class (stl/css :no-provider)}
+         "Connect an AI provider in "
+         [:a {:href "#/settings/integrations"} "Settings → Integrations"]
+         " to start chatting."]])]))
 
 (mf/defc ai-panel*
   ;; `file` / `page` are passed for future context-aware tabs; the Chat tab

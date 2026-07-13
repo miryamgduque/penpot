@@ -305,6 +305,13 @@
                  (dm/get-in state [:ai-panel file-id :messages])))
              st/state))
 
+(def ai-panel-busy?
+  "Whether an agent turn is currently running for the current file."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :busy?])))
+             st/state))
+
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
 

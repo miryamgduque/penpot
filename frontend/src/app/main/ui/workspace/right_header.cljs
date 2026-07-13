@@ -35,9 +35,6 @@
 (def ref:persistence-status
   (l/derived :status refs/persistence))
 
-(def ^:private ref:skills-dock
-  (l/derived :skills-dock refs/workspace-local))
-
 ;; --- Zoom Widget
 
 (mf/defc zoom-widget-workspace
@@ -242,22 +239,6 @@
         :on-zoom-fit on-zoom-fit
         :on-zoom-selected on-zoom-selected}]]
 
-     ;; Bundled Penpot panels (agent chat / skills manager), opened
-     ;; natively as docked workspace panels — no plugin install. One dock
-     ;; slot: opening one panel swaps out the other.
-     (let [dock (mf/deref ref:skills-dock)]
-       [:*
-        [:div {:class (stl/css :comments-section)}
-         [:> icon-button* {:variant (if (= dock :chat) "primary" "ghost")
-                           :aria-label "Penpot Agent"
-                           :icon i/feedback
-                           :on-click #(st/emit! (dwsk/toggle-panel :chat))}]]
-        [:div {:class (stl/css :comments-section)}
-         [:> icon-button* {:variant (if (= dock :skills) "primary" "ghost")
-                           :aria-label "Penpot Skills"
-                           :icon i/puzzle
-                           :on-click #(st/emit! (dwsk/toggle-panel :skills))}]]])
-
      [:div {:class (stl/css :comments-section)}
       [:button {:title (tr "workspace.toolbar.comments" (sc/get-tooltip :add-comment))
                 :aria-label (tr "workspace.toolbar.comments" (sc/get-tooltip :add-comment))
@@ -285,6 +266,16 @@
             :title (tr "workspace.header.share")
             :on-click open-share-dialog}
         deprecated-icon/share])
+
+     ;; All-In Penpot AI panel toggle: a single button (Lucide bot icon)
+     ;; next to the View mode button. Drives the `:ai-panel` layout flag
+     ;; (Phase 04 rebinds this to the file-bound open state).
+     [:div {:class (stl/css :comments-section)
+            :title (str "All-In Penpot — " (sc/get-tooltip :toggle-ai-panel))}
+      [:> icon-button* {:variant (if (contains? layout :ai-panel) "primary" "ghost")
+                        :aria-label "All-In Penpot"
+                        :icon i/bot
+                        :on-click #(st/emit! (dw/toggle-layout-flag :ai-panel))}]]
 
      [:a {:class (stl/css :viewer-btn)
           :title (tr "workspace.header.viewer" (sc/get-tooltip :open-viewer))

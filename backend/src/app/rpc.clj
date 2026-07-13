@@ -332,6 +332,7 @@
   (let [cfg (assoc cfg ::module "main" ::type "command" ::metrics-id :rpc-main-timing)]
     (->> (sv/scan-ns
           'app.rpc.commands.access-token
+          'app.rpc.commands.ai-providers
           'app.rpc.commands.audit
           'app.rpc.commands.auth
           'app.rpc.commands.feedback

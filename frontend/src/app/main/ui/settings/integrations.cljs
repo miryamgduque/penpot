@@ -13,6 +13,7 @@
    [app.common.time :as ct]
    [app.config :as cf]
    [app.main.broadcast :as mbc]
+   [app.main.data.ai-providers :as dai]
    [app.main.data.event :as ev]
    [app.main.data.modal :as modal]
    [app.main.data.notifications :as ntf]
@@ -35,6 +36,8 @@
    [app.util.dom :as dom]
    [app.util.forms :as fm]
    [app.util.i18n :as i18n :refer [tr]]
+   [beicon.v2.core :as rx]
+   [cuerdas.core :as str]
    [rumext.v2 :as mf]))
 
 (def notification-timeout 7000)
@@ -594,6 +597,280 @@
          (tr "integrations.mcp-server.mcp-keys.help")
          [:> icon* {:icon-id i/open-link}]]]]]]))
 
+;; --- AI providers section (account-level connections for the design agent)
+;;
+;; One card per supported provider, each independently connectable — this
+;; is not an either/or choice. A connected card live-fetches the provider's
+;; model list; the models the user enables across all cards form the single
+;; pool that populates the chat's model picker.
+
+(def ^:private ai-provider-defs
+  [{:id "anthropic" :label "Anthropic"   :models-hint "Claude models"}
+   {:id "openai"    :label "OpenAI"      :models-hint "GPT models"}
+   {:id "zhipu"     :label "Zhipu AI"    :models-hint "GLM models"}
+   {:id "moonshot"  :label "Moonshot AI" :models-hint "Kimi models"}])
+
+(defn- connect-error-message
+  [cause]
+  (case (:code (ex-data cause))
+    :ai-provider-invalid-key (tr "integrations.ai-provider.error.invalid-key")
+    :ai-provider-unreachable (tr "integrations.ai-provider.error.unreachable")
+    (tr "integrations.ai-provider.error.generic")))
+
+(mf/defc ai-provider-card*
+  {::mf/private true}
+  [{:keys [provider label models-hint status]}]
+  (let [connected?  (:connected status)
+        enabled     (:enabled-models status)
+        enabled-set (set enabled)
+
+        api-key*    (mf/use-state "")
+        api-key     (deref api-key*)
+
+        pending*    (mf/use-state false)
+        pending?    (deref pending*)
+
+        error*      (mf/use-state nil)
+        error       (deref error*)
+
+        ;; live-fetched model list; nil = not loaded yet
+        models*     (mf/use-state nil)
+        models      (deref models*)
+
+        models-error* (mf/use-state nil)
+        models-error  (deref models-error*)
+
+        ;; enabled models the provider no longer offers upstream
+        missing     (when (some? models)
+                      (vec (remove (set models) enabled)))
+
+        load-models
+        (mf/use-fn
+         (mf/deps provider)
+         (fn []
+           (st/emit!
+            (dai/fetch-ai-provider-models
+             (with-meta {:provider provider}
+               {:on-success
+                (fn [result]
+                  (reset! models-error* nil)
+                  (reset! models* (vec (:models result))))
+                :on-error
+                (fn [_cause]
+                  (reset! models-error* (tr "integrations.ai-provider.models.error"))
+                  (rx/empty))})))))
+
+        on-key-change
+        (mf/use-fn
+         (fn [event]
+           (reset! api-key* (dom/get-target-val event))))
+
+        on-toggle-model
+        (mf/use-fn
+         (mf/deps provider enabled)
+         (fn [event]
+           (let [node    (dom/get-target event)
+                 model   (dom/get-data node "model")
+                 checked (dom/checked? node)
+                 next    (if checked
+                           (conj (vec enabled) model)
+                           (vec (remove #(= % model) enabled)))]
+             (st/emit! (dai/set-ai-provider-models {:provider provider
+                                                    :models next})))))
+
+        on-disconnect
+        (mf/use-fn
+         (mf/deps provider label)
+         (fn []
+           (reset! models* nil)
+           (st/emit! (dai/disconnect-ai-provider {:provider provider})
+                     (ntf/show {:level :info
+                                :type :toast
+                                :content (tr "integrations.ai-provider.notification.disconnected" label)
+                                :timeout notification-timeout}))))
+
+        on-connect
+        (mf/use-fn
+         (mf/deps provider label api-key)
+         (fn [event]
+           (dom/prevent-default event)
+           ;; validation happens on submit, not while typing
+           (if (str/blank? api-key)
+             (reset! error* (tr "integrations.ai-provider.error.empty-key"))
+             (do
+               (reset! pending* true)
+               (reset! error* nil)
+               (st/emit!
+                (dai/connect-ai-provider
+                 (with-meta {:provider provider
+                             :api-key (str/trim api-key)}
+                   {:on-success
+                    (fn [result]
+                      (reset! pending* false)
+                      (reset! api-key* "")
+                      (reset! models-error* nil)
+                      (reset! models* (vec (:models result)))
+                      (st/emit! (ntf/show {:level :info
+                                           :type :toast
+                                           :content (tr "integrations.ai-provider.notification.connected" label)
+                                           :timeout notification-timeout})))
+                    ;; on failure the key field keeps its value so the user
+                    ;; can correct it without retyping
+                    :on-error
+                    (fn [cause]
+                      (reset! pending* false)
+                      (reset! error* (connect-error-message cause))
+                      (rx/empty))})))))))]
+
+    ;; a card revisited while already connected loads its checklist live
+    (mf/with-effect [connected?]
+      (when (and ^boolean connected? (nil? (deref models*)))
+        (load-models)))
+
+    ;; a model that disappeared upstream is reported on the page itself
+    (mf/with-effect [missing]
+      (when (seq missing)
+        (st/emit! (ntf/show {:level :warning
+                             :type :toast
+                             :content (tr "integrations.ai-provider.notification.models-unavailable"
+                                          label (str/join ", " missing))
+                             :timeout notification-timeout}))))
+
+    [:div {:class (stl/css :provider-card)
+           :data-testid (dm/str "ai-provider-" provider)}
+     [:div {:class (stl/css :provider-card-header)}
+      [:div
+       [:> text* {:as "h3"
+                  :typography t/headline-small
+                  :class (stl/css :color-primary)}
+        label]
+       [:> text* {:as "div"
+                  :typography t/body-small
+                  :class (stl/css :color-secondary)}
+        models-hint]]
+      (when ^boolean connected?
+        [:> text* {:as "span"
+                   :typography t/body-small
+                   :class (stl/css :provider-connected-tag)}
+         (tr "integrations.ai-provider.status.connected" (:key-hint status))])]
+
+     ;; first connect and key rotation share this form
+     [:form {:class (stl/css :provider-key-form)
+             :on-submit on-connect}
+      [:div {:class (stl/css :provider-key-row)}
+       [:> input* {:type "text"
+                   :value api-key
+                   :aria-label (tr "integrations.ai-provider.key.label")
+                   :placeholder (if connected?
+                                  (tr "integrations.ai-provider.key.placeholder-rotate")
+                                  (tr "integrations.ai-provider.key.placeholder"))
+                   :on-change on-key-change}]
+       [:> button* {:variant (if connected? "secondary" "primary")
+                    :type "submit"
+                    :class (stl/css :fit-content)
+                    :disabled pending?}
+        (cond
+          pending?   (tr "integrations.ai-provider.connecting")
+          connected? (tr "integrations.ai-provider.rotate-key")
+          :else      (tr "integrations.ai-provider.connect"))]]
+
+      (when (some? error)
+        [:> notification-pill* {:level :error
+                                :type :context}
+         [:> text* {:as "div"
+                    :typography t/body-medium
+                    :class (stl/css :color-primary)}
+          error]])]
+
+     (when ^boolean connected?
+       [:div {:class (stl/css :provider-models)}
+        [:> text* {:as "h4"
+                   :typography t/body-medium
+                   :class (stl/css :color-primary)}
+         (tr "integrations.ai-provider.models.title")]
+
+        (cond
+          (some? models-error)
+          [:> notification-pill* {:level :warning
+                                  :type :context}
+           [:> text* {:as "div"
+                      :typography t/body-medium
+                      :class (stl/css :color-primary)}
+            models-error]]
+
+          (nil? models)
+          [:> text* {:as "div"
+                     :typography t/body-small
+                     :class (stl/css :color-secondary)}
+           (tr "integrations.ai-provider.models.loading")]
+
+          :else
+          [:*
+           ;; not a persistent badge — an inline instruction in the
+           ;; checklist area, per the interaction spec
+           (when (empty? enabled)
+             [:> text* {:as "div"
+                        :typography t/body-small
+                        :class (stl/css :provider-models-note)}
+              (tr "integrations.ai-provider.models.select-one")])
+
+           (when (seq missing)
+             [:> notification-pill* {:level :warning
+                                     :type :context}
+              [:> text* {:as "div"
+                         :typography t/body-medium
+                         :class (stl/css :color-primary)}
+               (tr "integrations.ai-provider.models.missing" (str/join ", " missing))]])
+
+           [:ul {:class (stl/css :provider-models-list)}
+            (for [model models]
+              [:li {:key model :class (stl/css :provider-models-item)}
+               [:label {:class (stl/css :provider-models-label)}
+                [:input {:type "checkbox"
+                         :checked (contains? enabled-set model)
+                         :data-model model
+                         :on-change on-toggle-model}]
+                [:span model]]])]])])
+
+     (when ^boolean connected?
+       [:div
+        [:> button* {:variant "ghost"
+                     :class (stl/css :fit-content)
+                     :on-click on-disconnect}
+         (tr "integrations.ai-provider.disconnect")]])]))
+
+(mf/defc ai-providers-section*
+  {::mf/private true}
+  []
+  (let [statuses (mf/deref refs/ai-providers)]
+
+    (mf/with-effect []
+      (st/emit! (dai/fetch-ai-providers)))
+
+    [:section {:class (stl/css :ai-provider-section)}
+     [:div
+      [:div {:class (stl/css :title)}
+       [:> heading* {:level 2
+                     :typography t/title-medium
+                     :class (stl/css :color-primary :ai-provider-title)}
+        (tr "integrations.ai-provider.title")]
+       [:> text* {:as "span"
+                  :typography t/body-small
+                  :class (stl/css :beta)}
+        (tr "integrations.mcp-server.title.beta")]]
+
+      [:> text* {:as "div"
+                 :typography t/body-medium
+                 :class (stl/css :color-secondary)}
+       (tr "integrations.ai-provider.description")]]
+
+     (for [{:keys [id label models-hint]} ai-provider-defs]
+       [:> ai-provider-card* {:key id
+                              :provider id
+                              :label label
+                              :models-hint models-hint
+                              :status (get statuses id)}])]))
+
 (mf/defc access-tokens-section*
   {::mf/private true}
   [{:keys [access-tokens]}]
@@ -668,8 +945,12 @@
      (when ^boolean mcp-enabled?
        [:> mcp-server-section* props])
 
-     (when (and ^boolean mcp-enabled?
-                ^boolean access-tokens-enabled?)
+     (when ^boolean mcp-enabled?
+       [:hr {:class (stl/css :separator)}])
+
+     [:> ai-providers-section* {}]
+
+     (when ^boolean access-tokens-enabled?
        [:hr {:class (stl/css :separator)}])
 
      (when ^boolean access-tokens-enabled?

@@ -197,15 +197,31 @@
       (when ^boolean editing?
         (dom/select-text! (mf/ref-val input-ref))))
 
-    ;; The Skills panel asks for the chat panel to open (e.g. "Fix via
-    ;; chat" on audit violations) by posting a message to the workspace
-    ;; window; the pending prompt itself travels through the file's
-    ;; shared pluginData and is drained by the chat panel on init.
+    ;; Messages posted by the docked panels to the workspace window:
+    ;; - open-chat: the Skills panel asks for the chat panel (e.g. "Fix via
+    ;;   chat" on audit violations); the pending prompt travels through the
+    ;;   file's shared pluginData and is drained by the chat panel on init.
+    ;; - refresh-scopes: the chat panel asks for a fresh skills + AI-provider
+    ;;   push (e.g. after connecting a provider in another tab).
+    ;; - ai-round: one buffered agent round to relay to the backend proxy.
     (mf/with-effect []
       (let [on-message
             (fn [event]
-              (when (= "penpot-skills:open-chat" (unchecked-get (.-data event) "type"))
-                (st/emit! (dwsk/open-panel :chat))))]
+              (when-let [data (.-data event)]
+                (case (unchecked-get data "type")
+                  "penpot-skills:open-chat"
+                  (st/emit! (dwsk/open-panel :chat))
+
+                  "penpot-skills:refresh-scopes"
+                  (st/emit! (dwsk/fetch-and-push-scopes))
+
+                  "penpot-skills:ai-round"
+                  (st/emit! (dwsk/relay-ai-round
+                             {:id (unchecked-get data "id")
+                              :provider (unchecked-get data "provider")
+                              :payload (unchecked-get data "payload")}))
+
+                  nil)))]
         (.addEventListener js/window "message" on-message)
         #(.removeEventListener js/window "message" on-message)))
 

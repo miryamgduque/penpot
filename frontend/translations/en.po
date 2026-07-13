@@ -2448,6 +2448,76 @@ msgstr "Resolved value:"
 msgid "inspect.tabs.styles.variants-panel"
 msgstr "Variant Properties"
 
+msgid "integrations.ai-provider.title"
+msgstr "Penpot Agent"
+
+msgid "integrations.ai-provider.description"
+msgstr ""
+"Connect your own AI provider accounts to power the Penpot Agent. Keys are "
+"stored with your profile and only used from Penpot's server, so they never "
+"reach the browser. The models you enable across all connected providers "
+"form the pool available in the agent chat."
+
+msgid "integrations.ai-provider.key.label"
+msgstr "API key"
+
+msgid "integrations.ai-provider.key.placeholder"
+msgstr "Paste your API key"
+
+msgid "integrations.ai-provider.key.placeholder-rotate"
+msgstr "Paste a new key to rotate it"
+
+msgid "integrations.ai-provider.connect"
+msgstr "Connect"
+
+msgid "integrations.ai-provider.connecting"
+msgstr "Connecting…"
+
+msgid "integrations.ai-provider.rotate-key"
+msgstr "Rotate key"
+
+msgid "integrations.ai-provider.disconnect"
+msgstr "Disconnect"
+
+msgid "integrations.ai-provider.status.connected"
+msgstr "Connected · key ending in %s"
+
+msgid "integrations.ai-provider.models.title"
+msgstr "Models"
+
+msgid "integrations.ai-provider.models.loading"
+msgstr "Loading available models…"
+
+msgid "integrations.ai-provider.models.error"
+msgstr "Could not fetch this provider's models. The key may have been revoked, try rotating it."
+
+msgid "integrations.ai-provider.models.select-one"
+msgstr "Select at least one model to make this connection usable in the agent chat."
+
+msgid "integrations.ai-provider.models.missing"
+msgstr "No longer available from this provider: %s. Unselect them and pick a current model."
+
+msgid "integrations.ai-provider.error.empty-key"
+msgstr "Enter your API key first."
+
+msgid "integrations.ai-provider.error.invalid-key"
+msgstr "Couldn't connect with this key. Check it and try again."
+
+msgid "integrations.ai-provider.error.unreachable"
+msgstr "Could not reach the provider. Check your connection and try again."
+
+msgid "integrations.ai-provider.error.generic"
+msgstr "Something went wrong while connecting the provider. Please try again."
+
+msgid "integrations.ai-provider.notification.connected"
+msgstr "Connected to %s."
+
+msgid "integrations.ai-provider.notification.disconnected"
+msgstr "%s disconnected."
+
+msgid "integrations.ai-provider.notification.models-unavailable"
+msgstr "%s: some enabled models are no longer available (%s)."
+
 #: src/app/main/ui/settings/integrations.cljs:629
 msgid "integrations.access-tokens.create"
 msgstr "Create new access token"

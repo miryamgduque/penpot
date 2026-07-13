@@ -48,6 +48,29 @@ export interface Violation {
   reason: string;
 }
 
+/** One enabled model of one connected provider. The entries across all
+ * connected providers form the single pool behind the chat's model picker.
+ * Keys never reach the browser — connection management lives in Penpot
+ * Settings → Integrations. */
+export interface AiPoolEntry {
+  provider: string;
+  model: string;
+}
+
+export interface AiPoolStatus {
+  pool: AiPoolEntry[];
+  /** Absolute URL of /settings/integrations, for the first-run CTA. */
+  settingsUri: string | null;
+}
+
+export interface AiRoundResult {
+  provider: string;
+  /** HTTP status returned by the provider. */
+  status: number;
+  /** Raw provider response body (JSON string). */
+  body: string;
+}
+
 type PluginEvent =
   | {
       type: "init";
@@ -60,13 +83,16 @@ type PluginEvent =
   | { type: "skills-change"; skills: SkillsPayload }
   | { type: "violations-change"; violations: Violation[] }
   | { type: "selection-change"; selection: { id: string; name: string; type: string }[] }
-  | { type: "theme-change"; theme: string };
+  | { type: "theme-change"; theme: string }
+  | ({ type: "ai-pool-change" } & AiPoolStatus);
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 
 const pending = new Map<number, Pending>();
+const pendingRounds = new Map<number, Pending>();
 const eventListeners = new Set<(e: PluginEvent) => void>();
 let nextId = 1;
+let nextRoundId = 1;
 
 window.addEventListener("message", (event) => {
   const msg = event.data;
@@ -80,6 +106,20 @@ window.addEventListener("message", (event) => {
     else {
       const err = new Error(msg.error) as Error & { rule?: string };
       err.rule = msg.rule;
+      p.reject(err);
+    }
+    return;
+  }
+
+  if (msg.type === "ai-round-result") {
+    const p = pendingRounds.get(msg.id);
+    if (!p) return;
+    pendingRounds.delete(msg.id);
+    if (msg.ok) {
+      p.resolve({ provider: msg.provider, status: msg.status, body: msg.body });
+    } else {
+      const err = new Error(msg.hint || "AI provider request failed") as Error & { code?: string };
+      err.code = msg.code;
       p.reject(err);
     }
     return;
@@ -120,4 +160,36 @@ export function onPluginEvent(listener: (e: PluginEvent) => void): () => void {
 
 export function announceReady(): void {
   window.parent.postMessage({ type: "ready" }, "*");
+}
+
+/**
+ * One buffered agent round via the backend proxy. The request goes to the
+ * WORKSPACE window (not the plugin context): the workspace runs the
+ * :ai-agent-round RPC with the user's session, the backend attaches the
+ * stored provider key, and the result comes back through the plugin's
+ * message forwarding as an "ai-round-result" event.
+ */
+export function aiRound(
+  provider: string,
+  payload: string,
+  opts?: { timeoutMs?: number },
+): Promise<AiRoundResult> {
+  const id = nextRoundId++;
+  const timeoutMs = opts?.timeoutMs ?? 300_000;
+  return new Promise<AiRoundResult>((resolve, reject) => {
+    pendingRounds.set(id, { resolve: resolve as (v: unknown) => void, reject });
+    window.parent.postMessage({ type: "penpot-skills:ai-round", id, provider, payload }, "*");
+    setTimeout(() => {
+      if (pendingRounds.has(id)) {
+        pendingRounds.delete(id);
+        reject(new Error(`AI round timed out after ${Math.round(timeoutMs / 1000)}s`));
+      }
+    }, timeoutMs);
+  });
+}
+
+/** Ask the workspace for a fresh skills + AI-provider push (e.g. after the
+ * user connected a provider in the settings tab and came back). */
+export function requestScopesRefresh(): void {
+  window.parent.postMessage({ type: "penpot-skills:refresh-scopes" }, "*");
 }

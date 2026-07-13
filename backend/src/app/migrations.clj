@@ -500,7 +500,10 @@
     :fn (mg/resource "app/migrations/sql/0152-add-design-skill-tables.sql")}
 
    {:name "0153-seed-design-skills"
-    :fn mg0153/migrate}])
+    :fn mg0153/migrate}
+
+   {:name "0154-add-profile-ai-provider-table"
+    :fn (mg/resource "app/migrations/sql/0154-add-profile-ai-provider-table.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]

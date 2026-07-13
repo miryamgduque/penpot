@@ -18,6 +18,8 @@
   the plugin context via window.postMessage — the plugins runtime
   forwards window messages to running plugins."
   (:require
+   [app.common.uri :as u]
+   [app.config :as cf]
    [app.main.data.plugins :as dp]
    [app.main.repo :as rp]
    [app.plugins.register :as preg]
@@ -76,30 +78,83 @@
 
 ;; --- DB scopes push
 
+(def ^:private settings-integrations-uri
+  "Absolute URL of the account-level integrations page, where the AI
+  provider connection is managed."
+  (delay (-> cf/public-uri
+             (u/ensure-path-slash)
+             (str "#/settings/integrations"))))
+
 (defn- push-scopes!
-  "Posts the app/team skill rows into the running plugin context. The
-  plugins runtime forwards any window message to running plugins; sent a
-  few times because the plugin script needs a moment to boot and register
-  its listener (the payload is idempotent)."
+  "Posts the app/team skill rows (plus the account AI-provider pool) into
+  the running plugin context. The plugins runtime forwards any window
+  message to running plugins; sent a few times because the plugin script
+  needs a moment to boot and register its listener (the payload is
+  idempotent)."
   [data]
   (let [msg (clj->js {:type "penpot-skills/scopes"
                       :app (:app data)
                       :team (:team data)
-                      :overrides (:overrides data)})]
+                      :overrides (:overrides data)
+                      ;; the chat's model pool: one entry per connected
+                      ;; provider with the models the user enabled
+                      :aiProviders (mapv (fn [status]
+                                           {:provider (:provider status)
+                                            :models (vec (:enabled-models status))})
+                                         (:ai-providers data))
+                      :settingsUri @settings-integrations-uri})]
     (doseq [delay-ms [600 1800 3600]]
       (tm/schedule delay-ms #(.postMessage js/window msg "*")))))
 
-(defn- fetch-and-push-scopes
+(defn fetch-and-push-scopes
+  "Public: also re-triggered by the panel (\"penpot-skills:refresh-scopes\")
+  after the user connects a provider in another tab."
   []
   (ptk/reify ::fetch-and-push-scopes
     ptk/WatchEvent
     (watch [_ state _]
       (let [team-id (:current-team-id state)]
-        (->> (rp/cmd! :get-design-skills {:team-id team-id})
-             (rx/tap push-scopes!)
+        (->> (rx/zip (rp/cmd! :get-design-skills {:team-id team-id})
+                     (->> (rp/cmd! :get-ai-providers {})
+                          (rx/catch (fn [_] (rx/of [])))))
+             (rx/tap (fn [[skills providers]]
+                       (push-scopes! (assoc skills :ai-providers providers))))
              (rx/catch (fn [_cause]
                          ;; DB scopes unavailable (old backend, offline…) —
                          ;; the panel falls back to its bundled set
+                         (rx/empty)))
+             (rx/ignore))))))
+
+;; --- AI agent round relay
+;;
+;; The panel iframe cannot call the Penpot RPC itself (cross-origin, no
+;; session), and the provider APIs reject browser calls (CORS) — so the
+;; panel posts each buffered agent round here, the workspace runs the
+;; :ai-agent-round RPC (the backend attaches the stored key), and the
+;; result travels back through the plugins runtime message forwarding.
+
+(defn relay-ai-round
+  [{:keys [id provider payload]}]
+  (ptk/reify ::relay-ai-round
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (letfn [(respond! [msg]
+                (.postMessage js/window
+                              (clj->js (assoc msg
+                                              :type "penpot-skills/ai-round-result"
+                                              :id id))
+                              "*"))]
+        (->> (rp/cmd! :ai-agent-round {:provider provider :payload payload})
+             (rx/tap (fn [result]
+                       (respond! {:ok true
+                                  :provider (:provider result)
+                                  :status (:status result)
+                                  :body (:body result)})))
+             (rx/catch (fn [cause]
+                         (let [data (ex-data cause)]
+                           (respond! {:ok false
+                                      :code (some-> (:code data) name)
+                                      :hint (or (:hint data) "request failed")}))
                          (rx/empty)))
              (rx/ignore))))))
 

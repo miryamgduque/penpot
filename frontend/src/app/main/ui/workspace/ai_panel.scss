@@ -1,0 +1,43 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) KALEIDOS INC Sucursal en España SL
+
+@use "refactor/common-refactor.scss" as deprecated;
+
+// Native right-docked AI panel. The workspace grid gives it the `ai-panel`
+// column; this element fills that column's height. Like the sidebars and the
+// plugin dock, it sits above the absolutely-positioned bottom palette wrapper
+// (100vw wide) so clicks in its lower region aren't swallowed.
+.ai-panel {
+  grid-area: ai-panel;
+  display: flex;
+  flex-direction: column;
+  width: deprecated.$s-360;
+  height: 100%;
+  background-color: var(--panel-background-color);
+  position: relative;
+  z-index: deprecated.$z-index-1;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: deprecated.$s-8 deprecated.$s-12;
+  border-block-end: deprecated.$s-1 solid var(--color-background-tertiary);
+}
+
+.title {
+  @include deprecated.uppercase-title-typography;
+
+  color: var(--modal-title-foreground-color);
+}
+
+.body {
+  @extend %new-scrollbar;
+
+  flex: 1;
+  overflow-y: auto;
+}

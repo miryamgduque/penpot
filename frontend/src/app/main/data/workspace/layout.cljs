@@ -33,7 +33,10 @@
     :display-artboard-names
     :snap-ruler-guides
     :show-pixel-grid
-    :snap-pixel-grid})
+    :snap-pixel-grid
+    ;; All-In Penpot AI panel (scaffold flag; Phase 04 replaces it with a
+    ;; file-bound in-memory open state)
+    :ai-panel})
 
 (def presets
   {:assets

@@ -14,7 +14,7 @@
   max-height: 100vh;
   user-select: none;
   display: grid;
-  grid-template: "left-sidebar viewport right-sidebar plugin-dock" 1fr / auto 1fr auto auto;
+  grid-template: "left-sidebar viewport right-sidebar ai-panel plugin-dock" 1fr / auto 1fr auto auto auto;
   overflow: hidden;
 }
 

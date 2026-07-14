@@ -99,6 +99,18 @@
         (assoc-in state [:ai-panel file-id :busy?] busy?)
         state))))
 
+(defn set-enforced-rules
+  "Records which rule names are enforced for the current file — the agent's
+  color tools reject raw colors when `token-only-colors` is in this set. Wired
+  to the backend skills resolution in a later phase."
+  [rules]
+  (ptk/reify ::set-enforced-rules
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (assoc-in state [:ai-panel file-id :enforced-rules] (set rules))
+        state))))
+
 (defn send-message
   "Runs one user turn: appends the user message, runs the agent turn through
   the backend proxy (executing native tools between rounds), and streams the

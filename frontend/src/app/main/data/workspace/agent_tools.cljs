@@ -36,7 +36,8 @@
    [app.main.data.workspace.wasm-text :as dwwt]
    [app.main.features :as features]
    [app.main.store :as st]
-   [beicon.v2.core :as rx]))
+   [beicon.v2.core :as rx]
+   [cuerdas.core :as str]))
 
 ;; --- Tool declarations (provider-agnostic; encoded per provider in agent.cljs)
 
@@ -190,61 +191,121 @@
     "ellipse" :circle
     :rect))
 
+;; --- token-only-colors enforcement (tool boundary)
+;;
+;; Port of skills-core/src/guard.ts. When the file enforces `token-only-colors`,
+;; the color-setting tools accept only colors that are a design token value or a
+;; library color; a raw hex is rejected with a rule-tagged error the agent
+;; recovers from by using create_color_token + apply_tokens. Which rules are
+;; enforced is read from `[:ai-panel <file-id> :enforced-rules]` (populated by
+;; the backend skills resolution — phase 07).
+
+(defn- normalize-hex
+  "Lowercase, `#`-prefixed 6-digit hex, or nil for a non-hex value."
+  [s]
+  (when (string? s)
+    (let [h (cond-> (str/lower (str/trim s))
+              (str/starts-with? (str/lower (str/trim s)) "#") (subs 1))]
+      (cond
+        (= 3 (count h)) (dm/str "#" (apply str (mapcat #(list % %) h)))
+        (= 6 (count h)) (dm/str "#" h)
+        :else nil))))
+
+(defn- allowed-colors
+  "Set of normalized hexes allowed under token-only-colors: color-token values
+  in active sets + the file's library colors."
+  [state]
+  (let [fdata (dsh/lookup-file-data state)
+        token-values (some->> (:tokens-lib fdata)
+                              (ctob/get-tokens-in-active-sets)
+                              (vals)
+                              (filter #(= :color (:type %)))
+                              (keep #(or (:resolved-value %) (:value %))))
+        library-colors (->> (vals (:colors fdata)) (keep :color))]
+    (into #{} (keep normalize-hex) (concat token-values library-colors))))
+
+(defn- rule-enforced?
+  [state rule]
+  (when-let [file-id (:current-file-id state)]
+    (contains? (dm/get-in state [:ai-panel file-id :enforced-rules]) rule)))
+
+(defn- color-violation
+  "Returns a token-only-colors ex-info when `hex` is a raw color that the rule
+  forbids, or nil when it is allowed / the rule is not enforced."
+  [state hex]
+  (when (and (string? hex)
+             (seq hex)
+             (rule-enforced? state "token-only-colors"))
+    (let [allowed (allowed-colors state)]
+      (when-not (contains? allowed (normalize-hex hex))
+        (ex-info (dm/str "token-only-colors: raw color " hex " is not a design token. "
+                         "Create it with create_color_token and bind it with apply_tokens, "
+                         "or use an existing token"
+                         (when (seq allowed)
+                           (dm/str " (allowed: " (str/join ", " (take 20 allowed)) ")"))
+                         ".")
+                 {:rule "token-only-colors"})))))
+
 (defn- create-shape
   [{:keys [type x y width height fill parentId] :as input}]
-  (let [nm      (:name input)
-        state   @st/state
-        page    (dsh/lookup-page state)
-        objects (:objects page)
-        pid     (some-> parentId parse-uuid)
-        parent? (boolean (and pid (contains? objects pid)))
-        shape   (cond-> (cts/setup-shape
-                         (cond-> {:type (shape-type type)
-                                  :x (or x 0) :y (or y 0)
-                                  :width (or width 100) :height (or height 100)}
-                           nm (assoc :name nm)))
-                  fill    (assoc :fills [{:fill-color fill :fill-opacity 1}])
-                  parent? (assoc :parent-id pid :frame-id pid))
-        changes (-> (cb/empty-changes)
-                    (cb/with-page page)
-                    (cb/with-objects objects)
-                    (cb/add-object shape))]
-    (interrupt!)
-    (st/emit! (dch/commit-changes changes))
-    (rx/of {:id (dm/str (:id shape))
-            :type type
-            :parentId (when parent? (dm/str pid))
-            :note "created — verify geometry with read_design"})))
+  (if-let [violation (color-violation @st/state fill)]
+    (rx/throw violation)
+    (let [nm      (:name input)
+          state   @st/state
+          page    (dsh/lookup-page state)
+          objects (:objects page)
+          pid     (some-> parentId parse-uuid)
+          parent? (boolean (and pid (contains? objects pid)))
+          shape   (cond-> (cts/setup-shape
+                           (cond-> {:type (shape-type type)
+                                    :x (or x 0) :y (or y 0)
+                                    :width (or width 100) :height (or height 100)}
+                             nm (assoc :name nm)))
+                    fill    (assoc :fills [{:fill-color fill :fill-opacity 1}])
+                    parent? (assoc :parent-id pid :frame-id pid))
+          changes (-> (cb/empty-changes)
+                      (cb/with-page page)
+                      (cb/with-objects objects)
+                      (cb/add-object shape))]
+      (interrupt!)
+      (st/emit! (dch/commit-changes changes))
+      (rx/of {:id (dm/str (:id shape))
+              :type type
+              :parentId (when parent? (dm/str pid))
+              :note "created — verify geometry with read_design"}))))
 
 (defn- modify-shape
   [{:keys [shapeId x y width height fill stroke] :as input}]
-  (let [nm (:name input)
-        id (some-> shapeId parse-uuid)]
-    (if (nil? id)
-      (rx/throw (ex-info "modify_shape: missing or invalid shapeId" {}))
-      (let [tx (random-uuid)]
-        (interrupt!)
-        (st/emit! (dwu/start-undo-transaction tx))
-        (when nm
-          (st/emit! (dwsh/update-shapes [id] #(assoc % :name nm))))
-        (when (or (some? x) (some? y))
-          (st/emit! (dwt/update-position id (cond-> {}
-                                              (some? x) (assoc :x x)
-                                              (some? y) (assoc :y y)))))
-        (when (some? width)
-          (st/emit! (dwt/update-dimensions [id] :width width)))
-        (when (some? height)
-          (st/emit! (dwt/update-dimensions [id] :height height)))
-        (when fill
-          (st/emit! (dwsh/update-shapes [id] #(assoc % :fills [{:fill-color fill :fill-opacity 1}]))))
-        (when stroke
-          (st/emit! (dwsh/update-shapes [id] #(assoc % :strokes [{:stroke-color stroke
-                                                                  :stroke-opacity 1
-                                                                  :stroke-width 1
-                                                                  :stroke-style :solid
-                                                                  :stroke-alignment :center}]))))
-        (st/emit! (dwu/commit-undo-transaction tx))
-        (rx/of {:id shapeId :note "modified — verify with read_design"})))))
+  (let [nm    (:name input)
+        id    (some-> shapeId parse-uuid)
+        state @st/state]
+    (if-let [violation (or (color-violation state fill) (color-violation state stroke))]
+      (rx/throw violation)
+      (if (nil? id)
+        (rx/throw (ex-info "modify_shape: missing or invalid shapeId" {}))
+        (let [tx (random-uuid)]
+          (interrupt!)
+          (st/emit! (dwu/start-undo-transaction tx))
+          (when nm
+            (st/emit! (dwsh/update-shapes [id] #(assoc % :name nm))))
+          (when (or (some? x) (some? y))
+            (st/emit! (dwt/update-position id (cond-> {}
+                                                (some? x) (assoc :x x)
+                                                (some? y) (assoc :y y)))))
+          (when (some? width)
+            (st/emit! (dwt/update-dimensions [id] :width width)))
+          (when (some? height)
+            (st/emit! (dwt/update-dimensions [id] :height height)))
+          (when fill
+            (st/emit! (dwsh/update-shapes [id] #(assoc % :fills [{:fill-color fill :fill-opacity 1}]))))
+          (when stroke
+            (st/emit! (dwsh/update-shapes [id] #(assoc % :strokes [{:stroke-color stroke
+                                                                    :stroke-opacity 1
+                                                                    :stroke-width 1
+                                                                    :stroke-style :solid
+                                                                    :stroke-alignment :center}]))))
+          (st/emit! (dwu/commit-undo-transaction tx))
+          (rx/of {:id shapeId :note "modified — verify with read_design"}))))))
 
 (defn- nest-shape
   [{:keys [shapeId parentId index]}]

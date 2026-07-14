@@ -248,7 +248,7 @@
      ;; All-In Penpot (Agent) panel toggle: a single button (Lucide bot icon)
      ;; to the right of the View mode button, driving the file-bound open state.
      ;; Same selected treatment as the Comments toggle.
-     [:div {:class (stl/css :comments-section)}
+     [:div {:class (stl/css :agent-toggle)}
       [:button {:title (str "Agent — " (sc/get-tooltip :toggle-ai-panel))
                 :aria-label "Agent"
                 :class (stl/css-case :comments-btn true :agent-btn true :selected ai-panel-open?)

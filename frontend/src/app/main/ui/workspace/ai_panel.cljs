@@ -98,9 +98,10 @@
                    (fn [event]
                      (reset! input* (dom/get-value (dom/get-target event)))))
 
-        on-pick   (mf/use-fn
-                   (fn [event]
-                     (reset! picked* (js/parseInt (dom/get-value (dom/get-target event)) 10))))
+        picker-open* (mf/use-state false)
+        picker-open? (deref picker-open*)
+        picker-ref   (mf/use-ref nil)
+        on-toggle-picker (mf/use-fn #(swap! picker-open* not))
 
         send      (mf/use-fn
                    (mf/deps input settings busy? page selected objects)
@@ -129,10 +130,15 @@
                        (when-not busy?
                          (st/emit! (dwaip/clear-chat)))))]
 
-    ;; the provider pool is fetched from the settings page; make sure it is
-    ;; loaded when the chat is shown
-    (mf/with-effect []
-      (st/emit! (dai/fetch-ai-providers)))
+    ;; close the model picker on any click outside it
+    (mf/with-effect [picker-open?]
+      (when ^boolean picker-open?
+        (let [on-doc (fn [event]
+                       (let [node (mf/ref-val picker-ref)]
+                         (when (and node (not (.contains node (dom/get-target event))))
+                           (reset! picker-open* false))))]
+          (.addEventListener js/document "pointerdown" on-doc)
+          (fn [] (.removeEventListener js/document "pointerdown" on-doc)))))
 
     [:div {:class (stl/css :chat-tab)}
      ;; Current-file context surfaced to the agent: page + selection.
@@ -160,7 +166,7 @@
         (when busy?
           [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
        [:div {:class (stl/css :transcript-empty)}
-        "Start a conversation with the design agent."])
+        [:> i/icon* {:icon-id i/bot-message-square :size "m"}]])
 
      ;; Spend meter + clear, shown once there is a conversation to act on.
      (when (or (seq messages) (some-> usage :requests pos?))
@@ -177,26 +183,39 @@
                   :on-click on-clear}
          "✕ Clear"]])
 
-     (if (seq pool)
-       [:div {:class (stl/css :composer)}
-        [:select {:class (stl/css :model-picker)
-                  :value (str idx)
-                  :on-change on-pick}
-         (for [[provider entries] (group-by #(:provider (second %)) (map-indexed vector pool))]
-           [:optgroup {:key provider :label provider}
-            (for [[i entry] entries]
-              [:option {:key i :value (str i)} (:model entry)])])]
-        [:textarea {:class (stl/css :composer-input)
-                    :placeholder "Ask the agent…"
-                    :value input
-                    :disabled busy?
-                    :on-change on-input
-                    :on-key-down on-key-down}]]
-       [:div {:class (stl/css :composer)}
-        [:div {:class (stl/css :no-provider)}
-         "Connect an AI provider in "
-         [:a {:href "#/settings/integrations"} "Settings → Integrations"]
-         " to start chatting."]])]))
+     [:div {:class (stl/css :composer)}
+      [:div {:class (stl/css :model-picker)
+             :ref picker-ref}
+       [:button {:type "button"
+                 :class (stl/css-case :model-picker-trigger true
+                                      :model-picker-open picker-open?)
+                 :on-click on-toggle-picker}
+        [:span {:class (stl/css :model-picker-current)}
+         (if settings (:model settings) "No model")]
+        [:> i/icon* {:icon-id i/arrow-down :class (stl/css :model-picker-caret)}]]
+
+       (when picker-open?
+         [:div {:class (stl/css :model-picker-menu)}
+          (for [[provider entries] (group-by #(:provider (second %)) (map-indexed vector pool))]
+            [:div {:key provider :class (stl/css :model-picker-group)}
+             [:div {:class (stl/css :model-picker-group-label)} provider]
+             (for [[i entry] entries]
+               [:button {:key i
+                         :type "button"
+                         :class (stl/css-case :model-picker-option true
+                                              :selected (= i idx))
+                         :on-click #(do (reset! picked* i)
+                                        (reset! picker-open* false))}
+                (:model entry)])])
+          [:a {:class (stl/css :model-picker-manage)
+               :href "#/settings/integrations"}
+           "Manage your models"]])]
+      [:textarea {:class (stl/css :composer-input)
+                  :placeholder "Ask the agent…"
+                  :value input
+                  :disabled busy?
+                  :on-change on-input
+                  :on-key-down on-key-down}]]]))
 
 (mf/defc mode-badge*
   "The colored mode pill shared by the catalog cards and the detail view."
@@ -257,6 +276,21 @@
               [:span {:class (stl/css :catalog-blurb)} blurb]
               [:> mode-badge* {:mode mode}]]])])])))
 
+(mf/defc connect-empty*
+  "Shown in place of the whole panel body (tabs included) when no AI provider
+  is connected — a single call to action to set one up."
+  {::mf/private true}
+  []
+  [:div {:class (stl/css :connect-empty)}
+   [:div {:class (stl/css :connect-icon)}
+    [:> i/icon* {:icon-id i/unplug :size "l"}]]
+   [:div {:class (stl/css :connect-title)} "Ready when you are!"]
+   [:p {:class (stl/css :connect-subtitle)}
+    "Works with Claude, ChatGPT, and others. Bring your own key, no subscription through Penpot."]
+   [:a {:class (stl/css :connect-button)
+        :href "#/settings/integrations"}
+    "Connect a provider"]])
+
 (mf/defc ai-panel*
   ;; `file` / `page` are passed for future context-aware tabs; the Chat tab
   ;; reads live context from refs.
@@ -267,9 +301,17 @@
 
         on-close  (mf/use-fn #(st/emit! (dwaip/close-panel)))
 
+        providers (mf/deref refs/ai-providers)
+        pool      (mf/with-memo [providers] (provider-pool providers))
+
         tabs      (mf/with-memo []
                     [{:label "Chat" :id "chat"}
                      {:label "Skills" :id "skills"}])]
+
+    ;; Providers are configured on the settings page; load them so we know
+    ;; whether to show the panel or the connect-a-provider prompt.
+    (mf/with-effect []
+      (st/emit! (dai/fetch-ai-providers)))
 
     [:aside {:class (stl/css :ai-panel)}
      ;; Title header, sized to the workspace right-header band so the tabs
@@ -281,15 +323,18 @@
                         :on-click on-close
                         :icon i/close}]]
 
-     [:> tab-switcher* {:tabs tabs
-                        :selected tab
-                        :on-change on-change
-                        :scrollable-panel true
-                        :class (stl/css :tabs)}
+     (if (empty? pool)
+       ;; No provider connected — replace the whole body, tabs included.
+       [:> connect-empty*]
 
-      (case tab
-        "chat"
-        [:> chat-tab*]
+       [:> tab-switcher* {:tabs tabs
+                          :selected tab
+                          :on-change on-change
+                          :scrollable-panel true
+                          :class (stl/css :tabs)}
+        (case tab
+          "chat"
+          [:> chat-tab*]
 
-        "skills"
-        [:> skills-tab*])]]))
+          "skills"
+          [:> skills-tab*])])]))

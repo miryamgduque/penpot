@@ -84,9 +84,11 @@ agent's own output introduced.
    ✅ **done**: an always-on layer (governance + naming + native-tool notes) with **0 MCP and 0
    plugin-API references**, invisible to the Skills tab and non-toggleable. Costs ~+$0.0006/turn
    on opus (re-read at 0.1×) and the agent demonstrably follows it.
-4. [Phase 04 — Skill bodies on demand](./todo-phase-04-skill-bodies.md) — real bodies via
-   `get_design_skills`; measure whether the index actually causes a fetch and the playbook is
-   followed.
+4. [Phase 04 — Skill bodies on demand](./done-phase-04-skill-bodies.md) — ✅ **done**: a
+   generated, section-stripped corpus (−36%) served on a named fetch. **The index does cause a
+   fetch**, and fixing the index to carry the skill's `name` cut a wasted round (3→2 requests).
+   The body earns its keep only where it states what the model cannot know (workflow order,
+   checkpoints) — on well-known domains it adds nothing measurable.
 5. [Phase 05 — Per-skill load policy](./todo-phase-05-load-policy.md) — `always | index |
    gated | off` so authors control disclosure instead of code.
 6. [Phase 06 — Token/component-first bias](./todo-phase-06-token-bias.md) — measure violations

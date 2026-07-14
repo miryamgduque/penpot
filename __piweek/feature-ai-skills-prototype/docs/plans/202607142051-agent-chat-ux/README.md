@@ -80,7 +80,7 @@ which can proceed in parallel (different app).
 3. [Phase 03 — Cancel plumbing](./done-phase-03-cancel-plumbing.md) — `::cancel-turn`, `take-until`, `cancel-history` + unit test ✅ **done**
 4. [Phase 04 — Composer send/stop](./done-phase-04-composer-send-stop.md) — real button, type-while-busy ✅ **done**
 5. [Phase 05 — Tool event payload](./done-phase-05-tool-payload.md) — `:input`/`:result`, map-arity `append-tool` ✅ **done**
-6. [Phase 06 — Collapsible tool groups](./todo-phase-06-collapsible-tools.md) — render-time grouping *(needs 05)*
+6. [Phase 06 — Collapsible tool groups](./done-phase-06-collapsible-tools.md) — render-time grouping ✅ **done**
 7. [Phase 07 — Backend streaming + abort](./todo-phase-07-backend-streaming.md) — `::ai-agent-round-stream`, `events/closed?`
 8. [Phase 08 — Client streaming](./todo-phase-08-client-streaming.md) — accumulators, `:assistant-delta`, batching *(needs 07)*
 

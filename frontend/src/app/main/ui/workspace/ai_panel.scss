@@ -258,6 +258,65 @@
   }
 }
 
+// A run of consecutive tool calls, collapsed behind one summary row.
+.tool-group {
+  align-self: flex-start;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.tool-group-summary {
+  @extend .tool-chip;
+
+  cursor: pointer;
+  border: none;
+}
+
+.tool-group-caret {
+  color: var(--color-foreground-secondary);
+}
+
+.tool-group-detail {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-tertiary);
+}
+
+.tool-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.tool-detail-name {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.tool-detail-payload {
+  @extend %new-scrollbar;
+
+  margin: 0;
+  padding: deprecated.$s-6;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-secondary);
+  font-family: monospace;
+  font-size: deprecated.$fs-11;
+  // a long JSON payload must scroll inside its box, never widen the panel
+  overflow-x: auto;
+  max-height: deprecated.$s-160;
+  overflow-y: auto;
+  white-space: pre;
+}
+
 .tool-chip-detail {
   color: var(--color-accent-error);
 }

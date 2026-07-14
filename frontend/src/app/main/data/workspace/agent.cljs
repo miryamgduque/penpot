@@ -78,7 +78,7 @@
 
 ;; --- Wire encoding
 
-(defn- encode-anthropic
+(defn encode-anthropic
   [messages]
   (->> messages
        (mapv (fn [{:keys [role text tool-calls results] :as message}]
@@ -110,7 +110,7 @@
                                      (:error? r) (assoc :is_error true)))
                                  results)})))))
 
-(defn- encode-openai
+(defn encode-openai
   [system messages]
   (into [{:role "system" :content system}]
         (mapcat (fn [{:keys [role text tool-calls results] :as message}]
@@ -318,6 +318,30 @@
   [o]
   {:id (:id (:call o)) :content (:content o) :error? (:error? o)})
 
+(defn- cancelled-result
+  [call]
+  {:id (:id call)
+   :content "Cancelled by the user before this tool ran."
+   :error? true})
+
+(defn cancel-history
+  "Closes any tool call left unanswered by a cancelled turn.
+
+  Both providers reject a request whose assistant message makes a tool call
+  with no matching result in the next message — Anthropic with \"tool_use ids
+  were found without tool_result blocks\", OpenAI with an unmatched
+  tool_call_id. Synthesizing an errored result is the documented remedy, and
+  doing it here (on the canonical history) covers both wire formats at once.
+
+  Without this, the *next* turn 400s and nothing points back at the cancel."
+  [messages]
+  (let [messages (vec messages)
+        last-msg (peek messages)]
+    (if-let [calls (and (= :assistant (:role last-msg))
+                        (seq (:tool-calls last-msg)))]
+      (conj messages {:role :tool-results :results (mapv cancelled-result calls)})
+      messages)))
+
 (defn- tool-outcome->event
   [o]
   {:kind :tool
@@ -378,7 +402,12 @@
                                                       :text text
                                                       :tool-calls calls})]
                         (rx/concat
-                         (rx/of {:kind :usage :usage (:usage outcome)})
+                         (rx/of {:kind :usage :usage (:usage outcome)}
+                                ;; A cancel unsubscribes this stream from the
+                                ;; outside, so the loop never learns it was
+                                ;; stopped. Publishing the history as it grows
+                                ;; is what lets the caller close the turn off.
+                                {:kind :turn-history :history messages'})
                          (cond
                            (and (empty? text) (empty? calls))
                            (rx/of {:kind :assistant :text (empty-reply-text outcome)}

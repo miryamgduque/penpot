@@ -77,8 +77,9 @@ agent's own output introduced.
 1. [Phase 01 — Measure the layering](./done-phase-01-measure-layering.md) — the
    selection-change experiment. ✅ **done — hypothesis CONFIRMED**: stable conversation caches
    at 96%, changing the selection drops it to **0% every turn** (~9× the per-turn cost).
-2. [Phase 02 — Fix the layering](./todo-phase-02-fix-layering.md) — volatile context out of
-   the cached prefix; re-measure and prove `% cached` survives a selection change.
+2. [Phase 02 — Fix the layering](./done-phase-02-fix-layering.md) — volatile context out of
+   the cached prefix. ✅ **done — fixed**: selection changes went from **0% → 95/92/89% cached**
+   (~8.3× cheaper per turn), with the agent still correctly reading the selection.
 3. [Phase 03 — Inner knowledge vs. user-facing skills](./todo-phase-03-inner-knowledge.md) —
    split the corpus, rework the shared docs for the native agent (drop MCP, drop/replace the
    plugin-API gotchas), make inner knowledge always-on and non-toggleable.

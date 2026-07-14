@@ -15,6 +15,7 @@
    [app.common.types.tokens-lib :as ctob]
    [app.config :as cf]
    [app.main.data.helpers :as dsh]
+   [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.tokens.selected-set :as dwts]
    [app.main.store :as st]
    [app.main.streams :as ms]
@@ -692,3 +693,9 @@
 
 (def ai-providers
   (l/derived :ai-providers st/state))
+
+(def resolved-skills-enabled
+  "Map of built-in skill-name → effective on/off for the current file, resolving
+  the user's per-account + per-file overrides over the catalog defaults. Backs
+  the Skills-tab toggles."
+  (l/derived ask/resolved-enabled-map st/state))

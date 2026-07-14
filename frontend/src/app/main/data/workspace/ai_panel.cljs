@@ -147,7 +147,7 @@
       (let [file-id (:current-file-id state)
             prior   (dm/get-in state [:ai-panel file-id :history])
             history (conj (vec prior) {:role :user :text text})
-            system  (agent/build-system-prompt context)]
+            system  (agent/build-system-prompt state context)]
         (rx/concat
          (rx/of (append-message "user" text)
                 (set-busy true))

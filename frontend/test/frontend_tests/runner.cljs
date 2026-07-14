@@ -18,6 +18,7 @@
    [frontend-tests.data.workspace-mcp-test]
    [frontend-tests.data.workspace-media-test]
    [frontend-tests.data.workspace-shortcuts-test]
+   [frontend-tests.data.workspace-skill-state-test]
    [frontend-tests.data.workspace-texts-test]
    [frontend-tests.data.workspace-thumbnails-test]
    [frontend-tests.errors-test]
@@ -92,6 +93,7 @@
    'frontend-tests.data.workspace-mcp-test
    'frontend-tests.data.workspace-media-test
    'frontend-tests.data.workspace-shortcuts-test
+   'frontend-tests.data.workspace-skill-state-test
    'frontend-tests.data.workspace-texts-test
    'frontend-tests.data.workspace-thumbnails-test
    'frontend-tests.errors-test

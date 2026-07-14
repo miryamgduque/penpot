@@ -226,7 +226,7 @@
 ;; --- System prompt (scaffold; skills/rules sections arrive in Phase 07)
 
 (defn build-system-prompt
-  [context]
+  [state context]
   (str/join "\n"
             ["You are the design agent embedded in Penpot (the open-source design tool), working on the user's current file."
              ""
@@ -238,7 +238,7 @@
              ""
              ;; Enabled built-in skills (routing index); details on demand via
              ;; get_design_skills. Empty string when none are enabled.
-             (or (ask/system-prompt-section) "")
+             (or (ask/system-prompt-section state) "")
              ""
              "## Current design context"
              "```json"

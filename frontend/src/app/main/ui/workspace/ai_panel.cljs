@@ -24,6 +24,7 @@
    [app.main.data.workspace.skill-state :as skst]
    [app.main.refs :as refs]
    [app.main.store :as st]
+   [app.main.ui.components.dropdown :refer [dropdown]]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
@@ -253,11 +254,66 @@
      [:div {:class (stl/css :detail-section-label)} "What it does"]
      [:div {:class (stl/css :detail-what)} what]]))
 
+(mf/defc skill-row*
+  "One catalog row: name + description, a muted \"Off\" pill when disabled, and a
+  discreet ⋯ overflow menu (always visible, not hover-gated) holding the per-skill
+  actions. Clicking the row body opens the detail view; the menu swallows its own
+  clicks so it doesn't. Enable/Disable is instant; Fork / Promote to team are
+  entry points only (disabled — wired by US #10 / US #12)."
+  {::mf/private true}
+  [{:keys [label blurb enabled on-open on-set-enabled]}]
+  (let [show-menu?  (mf/use-state false)
+        toggle-menu (mf/use-fn #(swap! show-menu? not))
+        close-menu  (mf/use-fn #(reset! show-menu? false))
+        open-detail (mf/use-fn
+                     (mf/deps on-open)
+                     (fn [event]
+                       (when (or (nil? event) (kbd/enter? event) (kbd/space? event))
+                         (some-> event dom/prevent-default)
+                         (on-open))))
+        on-enable   (mf/use-fn
+                     (mf/deps on-set-enabled enabled)
+                     (fn []
+                       (on-set-enabled (not enabled))))]
+    [:div {:class (stl/css-case :catalog-card true :disabled (not enabled))
+           :role "button"
+           :tab-index 0
+           :on-click on-open
+           :on-key-down open-detail}
+     [:div {:class (stl/css :catalog-card-head)}
+      [:span {:class (stl/css :catalog-name)} label]
+      (when-not enabled
+        [:span {:class (stl/css :catalog-off)} "Off"])
+      ;; The menu lives inside the clickable row, so swallow its click/keydown to
+      ;; keep them from opening the detail view.
+      [:div {:class (stl/css :catalog-menu)
+             :on-click dom/stop-propagation
+             :on-key-down dom/stop-propagation}
+       [:> icon-button* {:variant "ghost"
+                         :icon i/menu
+                         :aria-label (dm/str "Actions for " label)
+                         :on-click toggle-menu}]
+       [:& dropdown {:show @show-menu? :on-close close-menu}
+        [:ul {:class (stl/css :skill-menu)}
+         [:li {:class (stl/css :menu-option)
+               :role "button"
+               :on-click #(do (on-enable) (close-menu))}
+          (if enabled "Disable" "Enable")]
+         [:li {:class (stl/css-case :menu-option true :menu-option-disabled true)
+               :aria-disabled true}
+          "Fork"]
+         [:li {:class (stl/css-case :menu-option true :menu-option-disabled true)
+               :aria-disabled true}
+          "Promote to team"]]]]]
+     [:div {:class (stl/css :catalog-desc)}
+      [:span {:class (stl/css :catalog-blurb)} blurb]]]))
+
 (mf/defc skills-tab*
-  "The built-in skills catalog: cards group the bundled skills by category with a
-  mode badge and an on/off toggle. Clicking a card opens its detail view in
-  place; toggling flips the skill for this file (per-user, instant) and drops a
-  disabled skill from the agent's router — see agent-skills/resolve-enabled."
+  "The built-in skills catalog: rows grouped by category. Each row opens its
+  detail view on click and carries a discreet ⋯ menu (Enable/Disable + Fork /
+  Promote entry points). Enable/Disable flips the skill for this file (per-user,
+  instant) and drops a disabled skill from the agent's router — see
+  agent-skills/resolve-enabled."
   {::mf/private true}
   []
   (let [selected*   (mf/use-state nil)
@@ -278,31 +334,13 @@
        (for [{:keys [category skills]} ask/catalog]
          [:div {:key category :class (stl/css :catalog-group)}
           [:div {:class (stl/css :catalog-group-label)} category]
-          (for [{:keys [name label blurb mode]} skills]
-            (let [enabled? (get enabled-map name true)
-                  open     #(reset! selected* name)]
-              [:div {:key name
-                     :role "button"
-                     :tab-index 0
-                     :class (stl/css-case :catalog-card true :disabled (not enabled?))
-                     :on-click open
-                     :on-key-down (fn [event]
-                                    (when (or (kbd/enter? event) (kbd/space? event))
-                                      (dom/prevent-default event)
-                                      (open)))}
-               [:div {:class (stl/css :catalog-card-head)}
-                [:span {:class (stl/css :catalog-name)} label]
-                ;; The toggle sits inside the clickable card, so swallow its
-                ;; click/keydown to keep them from opening the detail view.
-                [:span {:class (stl/css :catalog-toggle)
-                        :on-click dom/stop-propagation
-                        :on-key-down dom/stop-propagation}
-                 [:> switch* {:default-checked enabled?
-                              :aria-label (dm/str (if enabled? "Disable " "Enable ") label)
-                              :on-change #(toggle name %)}]]]
-               [:div {:class (stl/css :catalog-desc)}
-                [:span {:class (stl/css :catalog-blurb)} blurb]
-                [:> mode-badge* {:mode mode}]]]))])])))
+          (for [{:keys [name label blurb]} skills]
+            [:> skill-row* {:key name
+                            :label label
+                            :blurb blurb
+                            :enabled (get enabled-map name true)
+                            :on-open #(reset! selected* name)
+                            :on-set-enabled #(toggle name %)}])])])))
 
 (mf/defc connect-empty*
   "Shown in place of the whole panel body (tabs included) when no AI provider

@@ -417,7 +417,7 @@
 .catalog-card {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-4;
+  gap: deprecated.$s-2;
   width: 100%;
   padding: deprecated.$s-8 deprecated.$s-12;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
@@ -436,8 +436,9 @@
     outline-offset: deprecated.$s-1;
   }
 
-  // A disabled skill is dropped from the router; mute the card but keep the
-  // toggle fully legible so it can be turned back on.
+  // A disabled skill is dropped from the router; mute the name + description but
+  // keep the "Off" pill and the ⋯ menu legible so the state reads and it can be
+  // turned back on.
   &.disabled {
     .catalog-name,
     .catalog-desc {
@@ -449,24 +450,92 @@
 .catalog-card-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: deprecated.$s-8;
+  gap: deprecated.$s-4;
 }
 
 .catalog-name {
   @include deprecated.body-small-typography;
 
+  // Push the "Off" pill + ⋯ menu to the trailing edge, whatever the name length.
+  margin-inline-end: auto;
   color: var(--color-foreground-primary);
   font-weight: 600;
 }
 
-// Wraps the switch inside the clickable card; default cursor (not the card's
-// pointer) and no shrink so the toggle keeps its size next to a long name.
-.catalog-toggle {
+// Small state pill on a disabled row — legible on its own, no control needed.
+.catalog-off {
+  @include deprecated.body-small-typography;
+
+  flex-shrink: 0;
+  padding: 0 deprecated.$s-6;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+// Anchors the ⋯ overflow menu inside the clickable row. Muted so it recedes but
+// stays visible without hover (touch-friendly, per the story); full contrast on
+// hover/focus.
+.catalog-menu {
+  // A darker gray behind the ghost ⋯ button on hover so it reads as actionable.
+  --button-hover-bg-color: var(--color-background-quaternary);
+
+  position: relative;
   display: flex;
   align-items: center;
   flex-shrink: 0;
   cursor: default;
+  opacity: 0.6;
+
+  &:hover,
+  &:focus-within {
+    opacity: 1;
+  }
+}
+
+.catalog-card:hover .catalog-menu {
+  opacity: 1;
+}
+
+// The overflow menu itself (rendered by `dropdown` when open), anchored to the
+// trailing edge below the ⋯ button.
+.skill-menu {
+  position: absolute;
+  inset-block-start: calc(100% + #{deprecated.$s-4});
+  inset-inline-end: 0;
+  z-index: 12;
+  min-width: 160px;
+  margin: 0;
+  padding: deprecated.$s-4;
+  list-style: none;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+}
+
+.menu-option {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border-radius: deprecated.$br-6;
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+.menu-option-disabled {
+  color: var(--color-foreground-secondary);
+  cursor: default;
+  opacity: 0.5;
+
+  &:hover {
+    background-color: transparent;
+  }
 }
 
 .catalog-desc {

@@ -1,5 +1,5 @@
-import type { Enforcement, Scope, Skill, SkillKind, Trigger } from "./types";
-import { ENFORCEMENTS, KINDS, SCOPES } from "./types";
+import type { Enforcement, Mode, Scope, Skill, SkillKind, Trigger } from "./types";
+import { ENFORCEMENTS, KINDS, MODES, SCOPES } from "./types";
 
 /**
  * Parses a skill markdown file: `---` frontmatter with flat `key: value`
@@ -39,6 +39,7 @@ export function parseSkill(source: string, fallbackScope: Scope = "file"): Skill
     kind,
     description: meta["description"] || body.split(/\r?\n/)[0].slice(0, 200),
     mandatory: meta["mandatory"] === "true",
+    mode: (MODES as readonly string[]).includes(meta["mode"]) ? (meta["mode"] as Mode) : undefined,
     trigger: meta["trigger"] ? (meta["trigger"] as Trigger) : undefined,
     body,
     source,
@@ -63,6 +64,7 @@ export function serializeSkill(s: Skill): string {
     `kind: ${s.kind}`,
     `enforcement: ${s.enforcement}`,
     ...(s.mandatory ? ["mandatory: true"] : []),
+    ...(s.mode ? [`mode: ${s.mode}`] : []),
     ...(s.trigger ? [`trigger: ${s.trigger}`] : []),
     `description: ${s.description}`,
     "---",

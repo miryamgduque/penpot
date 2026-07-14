@@ -78,6 +78,29 @@
                    (fnil conj []) {:role role :content content})
         state))))
 
+(defn append-delta
+  "Appends streamed text to the open assistant bubble, opening one first if the
+  round hasn't produced text yet.
+
+  That fallback is the bubble's start signal — after a user message or a run of
+  tool chips the last message isn't an assistant one, so the round's first
+  delta opens a fresh bubble and the rest extend it. Updating the last message
+  in place is O(1) on a vector, so text can arrive token by token without
+  rebuilding the transcript."
+  [text]
+  (ptk/reify ::append-delta
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :messages]
+                   (fn [messages]
+                     (let [messages (vec messages)
+                           idx      (dec (count messages))]
+                       (if (and (>= idx 0) (= "assistant" (:role (nth messages idx))))
+                         (update messages idx update :content str text)
+                         (conj messages {:role "assistant" :content text})))))
+        state))))
+
 (defn append-tool
   "Appends a tool-call marker to the rendered transcript (a chip).
 
@@ -198,7 +221,8 @@
          (->> (agent/run-turn settings history system)
               (rx/mapcat (fn [ev]
                            (case (:kind ev)
-                             :assistant    (rx/of (append-message "assistant" (:text ev)))
+                             :assistant       (rx/of (append-message "assistant" (:text ev)))
+                             :assistant-delta (rx/of (append-delta (:text ev)))
                              :tool         (rx/of (append-tool (dissoc ev :kind)))
                              :usage        (rx/of (accumulate-usage (:usage ev)))
                              :turn-history (do (reset! latest* (:history ev))

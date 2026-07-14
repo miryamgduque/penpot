@@ -6,23 +6,22 @@
 
 (ns app.main.data.workspace.agent
   "The Agents chat model, routed through the Penpot backend proxy
-  (`:ai-agent-round`) — provider keys live with the profile on the server and
-  never reach the browser. This is the native CLJS port of
+  (`::sse/ai-agent-round-stream`) — provider keys live with the profile on the
+  server and never reach the browser. The proxy is a dumb pipe: it forwards our
+  payload verbatim and re-emits the provider's own SSE frames, so both wire
+  dialects are decoded here. This is the native CLJS port of
   `ai-skills/src/ui/agent.ts`.
 
   The conversation history is kept in ONE canonical form and re-encoded into
   the wire form of whichever provider is currently selected (Anthropic
   Messages for Claude models; OpenAI chat.completions for OpenAI-compatible
   providers). That is what lets a user switch models — even across providers —
-  mid-conversation and carry the whole history.
-
-  Phase 01 is text-only: no tools, a single round per turn. The tool
-  declarations and the multi-round tool loop arrive in later phases (there are
-  clearly-marked seams below)."
+  mid-conversation and carry the whole history."
   (:require
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.repo :as rp]
+   [app.util.sse :as sse]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
 
@@ -137,7 +136,10 @@
         messages))
 
 (defn- build-round-body
-  [{:keys [provider model]} messages system]
+  "`stream?` sets the provider's own stream flag. It is set here, not by the
+  proxy: the backend forwards the payload byte-for-byte and never decodes it,
+  and OpenAI's usage opt-in is dialect-specific anyway."
+  [{:keys [provider model]} messages system stream?]
   (js/JSON.stringify
    (clj->js
     (if (anthropic? provider)
@@ -150,73 +152,22 @@
                :system [{:type "text" :text system
                          :cache_control {:type "ephemeral"}}]
                :messages (encode-anthropic messages)}
-        (seq at/tool-specs) (assoc :tools (anthropic-tools)))
+        (seq at/tool-specs) (assoc :tools (anthropic-tools))
+        stream?             (assoc :stream true))
       (cond-> {:model model
                :messages (encode-openai system messages)}
         (seq at/tool-specs)      (assoc :tools (openai-tools))
         (= provider "openai")    (assoc :max_completion_tokens 16000)
-        (not= provider "openai") (assoc :max_tokens 16000))))))
+        (not= provider "openai") (assoc :max_tokens 16000)
+        stream?                  (assoc :stream true)
+        ;; without this opt-in the final chunk carries no usage at all and the
+        ;; spend meter silently reads zero
+        stream?                  (assoc :stream_options {:include_usage true}))))))
 
-;; --- Response parsing / decoding
-
-(defn- parse-round
-  "Parses the provider response body, throwing a readable error on failure."
-  [{:keys [status body]}]
-  (let [parsed (try
-                 (js->clj (js/JSON.parse body) :keywordize-keys true)
-                 (catch :default _
-                   (throw (ex-info (str "The provider returned a non-JSON response (status " status ").")
-                                   {:status status}))))]
-    (when (or (< status 200) (>= status 300))
-      (let [message (or (get-in parsed [:error :message])
-                        (:message parsed)
-                        (str "provider error (status " status ")"))]
-        (throw (ex-info (str message) {:status status}))))
-    parsed))
-
-(defn- decode-anthropic
-  [parsed]
-  (let [content (:content parsed)
-        usage   (:usage parsed)]
-    {:text (->> content
-                (filter #(= "text" (:type %)))
-                (map #(or (:text %) ""))
-                (str/join ""))
-     :tool-calls (->> content
-                      (filter #(= "tool_use" (:type %)))
-                      (mapv (fn [b] {:id (:id b) :name (:name b) :input (or (:input b) {})})))
-     :stopped-for-length? (= "max_tokens" (:stop_reason parsed))
-     :usage {:input-tokens (or (:input_tokens usage) 0)
-             :output-tokens (or (:output_tokens usage) 0)
-             :cache-read-tokens (or (:cache_read_input_tokens usage) 0)
-             :cache-write-tokens (or (:cache_creation_input_tokens usage) 0)
-             :requests 1}}))
-
-(defn- decode-openai
-  [parsed]
-  (let [message (get-in parsed [:choices 0 :message])
-        finish  (get-in parsed [:choices 0 :finish_reason])
-        usage   (:usage parsed)]
-    {:text (let [c (:content message)] (if (string? c) c ""))
-     :tool-calls (->> (:tool_calls message)
-                      (mapv (fn [c]
-                              {:id (:id c)
-                               :name (get-in c [:function :name])
-                               :input (try
-                                        (js->clj (js/JSON.parse (or (get-in c [:function :arguments]) "{}"))
-                                                 :keywordize-keys true)
-                                        (catch :default _ {}))})))
-     :stopped-for-length? (= "length" finish)
-     :usage {:input-tokens (or (:prompt_tokens usage) 0)
-             :output-tokens (or (:completion_tokens usage) 0)
-             :cache-read-tokens (or (get-in usage [:prompt_tokens_details :cached_tokens]) 0)
-             :cache-write-tokens 0
-             :requests 1}}))
-
-;; --- Usage & cost
+;; --- Usage
 ;;
-;; Session token totals accumulate in the panel (Phase 09 spend meter). Pricing
-;; is Claude-only by design — the meter hides `$` for other providers.
+;; Session token totals accumulate in the panel (the spend meter). Defined here
+;; because the streaming accumulators below seed themselves with it.
 
 (def empty-usage
   {:input-tokens 0 :output-tokens 0 :cache-read-tokens 0 :cache-write-tokens 0 :requests 0})
@@ -225,6 +176,121 @@
   "Merges a round's usage into the running totals."
   [a b]
   (merge-with + (or a empty-usage) (or b empty-usage)))
+
+;; --- Streaming accumulators
+;;
+;; The incremental twins of the decoders above, and kept beside them: both
+;; dialects have to stay consistent with their encoder. Each folds the
+;; provider's own SSE frames into the *same* `outcome` map the buffered path
+;; produces, so the turn loop never learns that streaming exists — deltas are
+;; purely a presentation channel.
+
+(def empty-accumulator
+  {:text "" :tools (sorted-map) :stop-reason nil :usage empty-usage})
+
+(defn- parse-json-frame
+  "A provider `data:` payload. OpenAI's terminator `[DONE]` is not JSON."
+  [s]
+  (when (and (string? s) (not= "[DONE]" (str/trim s)))
+    (try
+      (js->clj (js/JSON.parse s) :keywordize-keys true)
+      (catch :default _ nil))))
+
+(defn- decode-tool-json
+  "A tool call with no arguments streams zero deltas, so the accumulated JSON
+  is empty — mirror the buffered decoder and default to no input."
+  [s]
+  (if (str/blank? s)
+    {}
+    (try
+      (js->clj (js/JSON.parse s) :keywordize-keys true)
+      (catch :default _ {}))))
+
+(defn accumulate-anthropic
+  "Folds one Anthropic stream frame into `acc`. Returns `[acc text-delta]`."
+  [acc frame]
+  (case (:type frame)
+    "message_start"
+    (let [usage (get-in frame [:message :usage])]
+      [(assoc acc :usage {:input-tokens (or (:input_tokens usage) 0)
+                          :output-tokens (or (:output_tokens usage) 0)
+                          :cache-read-tokens (or (:cache_read_input_tokens usage) 0)
+                          :cache-write-tokens (or (:cache_creation_input_tokens usage) 0)
+                          :requests 1})
+       nil])
+
+    "content_block_start"
+    (let [block (:content_block frame)]
+      [(if (= "tool_use" (:type block))
+         (assoc-in acc [:tools (:index frame)]
+                   {:id (:id block) :name (:name block) :json ""})
+         acc)
+       nil])
+
+    "content_block_delta"
+    (let [delta (:delta frame)]
+      (case (:type delta)
+        "text_delta"
+        (let [text (or (:text delta) "")]
+          [(update acc :text str text) text])
+
+        "input_json_delta"
+        [(update-in acc [:tools (:index frame) :json] str (or (:partial_json delta) "")) nil]
+
+        [acc nil]))
+
+    ;; the only frame carrying the real output count — usage spans two events
+    "message_delta"
+    [(-> acc
+         (assoc :stop-reason (get-in frame [:delta :stop_reason]))
+         (assoc-in [:usage :output-tokens] (or (get-in frame [:usage :output_tokens]) 0)))
+     nil]
+
+    [acc nil]))
+
+(defn accumulate-openai
+  "Folds one OpenAI-dialect stream chunk into `acc`. Returns `[acc text-delta]`."
+  [acc frame]
+  (let [choice (get-in frame [:choices 0])
+        delta  (:delta choice)
+        usage  (:usage frame)
+        acc    (cond-> acc
+                 (some? usage)
+                 (assoc :usage {:input-tokens (or (:prompt_tokens usage) 0)
+                                :output-tokens (or (:completion_tokens usage) 0)
+                                :cache-read-tokens (or (get-in usage [:prompt_tokens_details :cached_tokens]) 0)
+                                :cache-write-tokens 0
+                                :requests 1})
+
+                 (some? (:finish_reason choice))
+                 (assoc :stop-reason (:finish_reason choice)))
+        ;; id/name arrive only on the first fragment per index; the index is
+        ;; the tool-call's, not the choice's
+        acc    (reduce (fn [acc call]
+                         (let [idx (:index call)]
+                           (cond-> acc
+                             (:id call)   (assoc-in [:tools idx :id] (:id call))
+                             (get-in call [:function :name])
+                             (assoc-in [:tools idx :name] (get-in call [:function :name]))
+                             :always
+                             (update-in [:tools idx :json] str
+                                        (or (get-in call [:function :arguments]) "")))))
+                       acc
+                       (:tool_calls delta))
+        text   (:content delta)]
+    (if (and (string? text) (seq text))
+      [(update acc :text str text) text]
+      [acc nil])))
+
+(defn accumulator->outcome
+  "The same shape the buffered decoders return, so the turn loop is unchanged."
+  [{:keys [text tools stop-reason usage]} anthropic?]
+  {:text text
+   :tool-calls (mapv (fn [[_ t]]
+                       {:id (:id t) :name (:name t) :input (decode-tool-json (:json t))})
+                     tools)
+   :stopped-for-length? (= (if anthropic? "max_tokens" "length") stop-reason)
+   :usage usage})
 
 ;; $ per million tokens (standard list price; cache read ≈ 0.1×, write ≈ 1.25×).
 (def ^:private pricing
@@ -366,14 +432,45 @@
    :input (:input (:call o))
    :result (displayed-result (:content o))})
 
+(defn- stream-round
+  "One provider round over SSE. Emits `{:kind :assistant-delta}` as text
+  arrives, then exactly one `{:kind :outcome}` carrying the same map the
+  buffered decoders return.
+
+  The accumulator is a local atom rather than an `rx/scan`: the fold has to
+  emit text deltas *and* survive to the end of the stream, and this keeps the
+  round's state private to one subscription."
+  [settings messages system]
+  (let [anthropic?* (anthropic? (:provider settings))
+        acc*        (atom empty-accumulator)]
+    (->> (rp/cmd! ::sse/ai-agent-round-stream
+                  {:provider (:provider settings)
+                   :payload (build-round-body settings messages system true)})
+         (rx/mapcat
+          (fn [event]
+            (case (sse/get-type event)
+              ;; the backend taps `:delta` per provider `data:` line; a tapped
+              ;; `:error` is turned into a thrown ex-info by `sse/read-stream`
+              ;; before it reaches us
+              "delta"
+              (if-let [frame (parse-json-frame (sse/get-payload event))]
+                (let [[acc text] (if anthropic?*
+                                   (accumulate-anthropic @acc* frame)
+                                   (accumulate-openai @acc* frame))]
+                  (reset! acc* acc)
+                  (if (seq text)
+                    (rx/of {:kind :assistant-delta :text text})
+                    (rx/empty)))
+                (rx/empty))
+
+              "end"
+              (rx/of {:kind :outcome :outcome (accumulator->outcome @acc* anthropic?*)})
+
+              (rx/empty)))))))
+
 (defn run-turn
   [settings history system]
-  (letfn [(decode [parsed]
-            (if (anthropic? (:provider settings))
-              (decode-anthropic parsed)
-              (decode-openai parsed)))
-
-          (run-tool [call]
+  (letfn [(run-tool [call]
             ;; → observable of one {:call :status :content :error? :rule :detail}
             (->> (at/execute-tool (:name call) (:input call))
                  (rx/map (fn [result]
@@ -387,11 +484,10 @@
                                        :content (or (ex-message cause) "tool error")
                                        :error? true}))))))
 
-          (tool-round [messages' round text calls]
-            ;; emit this round's text (if any), run the tools, feed the results
-            ;; back into the next round
+          (tool-round [messages' round _text calls]
+            ;; no text emission: this round's text already reached the panel as
+            ;; deltas. Run the tools and feed the results into the next round.
             (rx/concat
-             (if (seq text) (rx/of {:kind :assistant :text text}) (rx/empty))
              (->> (rx/from calls)
                   (rx/mapcat run-tool)
                   (rx/reduce conj [])
@@ -406,33 +502,37 @@
           (step [messages round]
             (if (>= round max-rounds)
               (rx/empty)
-              (->> (rp/cmd! :ai-agent-round
-                            {:provider (:provider settings)
-                             :payload (build-round-body settings messages system)})
+              (->> (stream-round settings messages system)
                    (rx/mapcat
-                    (fn [round-result]
-                      (let [outcome   (decode (parse-round round-result))
-                            text      (:text outcome)
-                            calls     (:tool-calls outcome)
-                            messages' (conj messages {:role :assistant
-                                                      :text text
-                                                      :tool-calls calls})]
-                        (rx/concat
-                         (rx/of {:kind :usage :usage (:usage outcome)}
-                                ;; A cancel unsubscribes this stream from the
-                                ;; outside, so the loop never learns it was
-                                ;; stopped. Publishing the history as it grows
-                                ;; is what lets the caller close the turn off.
-                                {:kind :turn-history :history messages'})
-                         (cond
-                           (and (empty? text) (empty? calls))
-                           (rx/of {:kind :assistant :text (empty-reply-text outcome)}
-                                  {:kind :done :history (trim-history messages')})
+                    (fn [ev]
+                      ;; deltas flow straight through to the panel; the single
+                      ;; :outcome drives the loop exactly as the decoded
+                      ;; response used to
+                      (if (not= :outcome (:kind ev))
+                        (rx/of ev)
+                        (let [outcome   (:outcome ev)
+                              text      (:text outcome)
+                              calls     (:tool-calls outcome)
+                              messages' (conj messages {:role :assistant
+                                                        :text text
+                                                        :tool-calls calls})]
+                          (rx/concat
+                           (rx/of {:kind :usage :usage (:usage outcome)}
+                                  ;; A cancel unsubscribes this stream from the
+                                  ;; outside, so the loop never learns it was
+                                  ;; stopped. Publishing the history as it grows
+                                  ;; is what lets the caller close the turn off.
+                                  {:kind :turn-history :history messages'})
+                           (cond
+                             (and (empty? text) (empty? calls))
+                             ;; nothing streamed, so there is no bubble to seal
+                             (rx/of {:kind :assistant :text (empty-reply-text outcome)}
+                                    {:kind :done :history (trim-history messages')})
 
-                           (empty? calls)
-                           (rx/of {:kind :assistant :text text}
-                                  {:kind :done :history (trim-history messages')})
+                             ;; text already streamed — nothing left to render
+                             (empty? calls)
+                             (rx/of {:kind :done :history (trim-history messages')})
 
-                           :else
-                           (tool-round messages' round text calls)))))))))]
+                             :else
+                             (tool-round messages' round text calls))))))))))]
     (step (vec history) 0)))

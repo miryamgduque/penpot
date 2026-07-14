@@ -1,7 +1,34 @@
 # Phase 08 — Client streaming
 
-**Status:** todo
-**Depends on:** Phase 07 (backend endpoint), Phase 01 (autoscroll — or streaming text runs off-screen)
+**Status:** done
+**Depends on:** Phase 07 (backend endpoint) ✅, Phase 01 (autoscroll) ✅
+
+## Verified
+
+**Unit** — `npm test`: **443 tests / 1805 assertions, 0 failures** (+5 tests since phase 03). All 14
+`agent-test` vars confirmed by name in the output. The accumulators are asserted to rebuild exactly
+what the buffered decoders returned: text from deltas, tool JSON from `partial_json` fragments,
+usage merged across `message_start` + `message_delta`, a no-arg tool's empty JSON, and OpenAI's
+id/name-only-on-first-fragment plus its `include_usage` tail chunk.
+
+**Live (devenv :3450):**
+
+| Behaviour | Result |
+|---|---|
+| **text streams into the bubble** | ✅ first text at 1206ms, growing over 6.8s |
+| a tool round splits bubbles correctly | ✅ `user → assistant(56) → tool → assistant(291)` — the second bubble opens off `append-delta`'s fallback |
+| usage accumulates across rounds | ✅ 3 calls, 10.6k in / 452 out, `~$0.01` |
+| **Stop mid-stream** | ✅ text froze, partial answer kept, `busy?` cleared, `⏹ Stopped.` |
+| **Stop aborts the provider** | ✅ backend logged `ai stream aborted, client gone … events=13` |
+| buffered `::ai-agent-round` untouched | ✅ still serves external callers |
+
+### Cache tokens read 0 — checked, NOT a streaming regression
+
+The plan warned usage can silently read zero. It does — but calling the **buffered** and
+**streaming** commands with the same cached-prefix payload returns *identical* usage
+(`cache_creation_input_tokens: 0`, `cache_read_input_tokens: 0`). So caching isn't engaging on
+either path and the accumulator reads `message_start.usage` correctly. **Belongs to the metaprompt
+plan (US #26), which owns prompt caching** — not this one.
 
 ## Before Start
 
@@ -13,17 +40,17 @@
 
 ## Checklist
 
-- [ ] **Tests first**: accumulator unit tests (deltas → `outcome`) in `agent_test.cljs`
-- [ ] `::sse/ai-agent-round-stream {:stream? true}` in `repo.cljs` `default-options`
-- [ ] `build-round-body`: `"stream": true` (+ OpenAI `stream_options.include_usage`)
-- [ ] `accumulate-anthropic` / `accumulate-openai` → the existing `outcome` map
-- [ ] `step` consumes deltas; emits `:assistant-start` / `:assistant-delta` / `:assistant-end`
-- [ ] `append-delta` mutates the last message in place
-- [ ] Batch with `rx/buffer-time 100` in `send-message`'s `mapcat`
-- [ ] `npm test` passes
-- [ ] Live review: text streams; scroll/stop/collapse still work
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] **Tests first**: accumulator unit tests (deltas → `outcome`) in `agent_test.cljs`
+- [x] `::sse/ai-agent-round-stream {:stream? true}` in `repo.cljs` (landed with phase 07)
+- [x] `build-round-body`: `"stream": true` (+ OpenAI `stream_options.include_usage`)
+- [x] `accumulate-anthropic` / `accumulate-openai` → the existing `outcome` map
+- [x] `step` consumes deltas — bookends dropped, see deviation 2
+- [x] `append-delta` mutates the last message in place
+- [x] ~~Batch with `rx/buffer-time 100`~~ — **not needed, measured**; see deviation 3
+- [x] `npm test` passes (443/1805, 0 failures)
+- [x] Live review: text streams; stop/tool-splitting/usage all work
+- [x] Human approval received
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 
@@ -38,6 +65,42 @@
 - `frontend/src/app/main/data/workspace/ai_panel.cljs` — `append-delta`, batching
 
 ## Notes
+
+### Deviations from the plan
+
+**1. The SSE event type is `"delta"`, not `"event"`.** `sse/read-stream` maps the frame's `event:`
+name to `:type`, and the backend taps `:delta` per provider line. (`sse/event?` checks for
+`"event"` — that helper is for handlers that tap `:event`, and does not apply here.)
+
+**2. No `:assistant-start` / `:assistant-end` bookends.** They turned out redundant:
+`append-delta` opens a bubble when the last message isn't an assistant one, which — after a user
+message or a run of tool chips — is exactly the round's first delta. Emitting an `:assistant-end`
+the panel ignores would be noise. Verified across a tool round: `user → assistant(56) → tool →
+assistant(291)` produced two correctly-separated bubbles. The `{:kind :assistant …}` emission is now
+reserved for the empty-reply warning, where nothing was streamed.
+
+**3. `rx/buffer-time` batching was dropped — the premise didn't hold.** The plan feared ~50 root-atom
+`swap!`s/sec. Measured reality is **~7/sec** (phase 07: 28 events over 4.1s), because Anthropic packs
+multiple tokens per delta. Batching would have added an ordering hazard (deltas racing `:done`) to
+solve a problem that doesn't exist. Revisit only if a provider streams per-token.
+
+**4. `aria-live` gating is `aria-busy`, not an `:assistant-end` trigger.** `aria-busy` on the live
+region is the standard way to hold announcements until content settles, and it needs no event —
+`busy?` already tracks exactly that window.
+
+**5. Dead code removed.** `step` no longer decodes a buffered response, so the `decode` letfn went
+with it — and clj-kondo then flagged `parse-round` / `decode-anthropic` / `decode-openai` as unused
+private vars, so they are gone too (git history keeps them if a client-side fallback is ever
+wanted). The buffered `::ai-agent-round` command stays on the backend for external callers. The ns
+docstring was also stale ("Phase 01 is text-only: no tools, a single round per turn") — tools and
+the multi-round loop shipped long ago.
+
+**Verified after removal:** `aria-busy` is `"true"` during a stream and `"false"` after, so the live
+region holds announcements until the text settles; markdown still renders in a streamed bubble
+(`<strong>` present).
+
+**6. `empty-usage` moved above the accumulators** (they seed themselves with it) — CLJS has no
+forward references.
 
 **Transport is already built — this is the cheap half.** Verified line by line in `repo.cljs`:
 method → `:post` (`:175-178`); `:response-type nil` when `stream?` (`:200-201`) so `body` stays a

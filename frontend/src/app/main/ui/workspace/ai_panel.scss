@@ -5,6 +5,7 @@
 // Copyright (c) KALEIDOS INC Sucursal en España SL
 
 @use "refactor/common-refactor.scss" as deprecated;
+@use "ds/typography.scss" as t;
 
 // Native right-docked AI panel. The workspace grid gives it the `ai-panel`
 // column; this element fills that column's height. Like the sidebars and the
@@ -623,7 +624,8 @@
 .catalog-group {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
+  // Rows are flush; the per-card divider separates them.
+  gap: 0;
 }
 
 .catalog-group-label {
@@ -639,17 +641,22 @@
 .catalog-card {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-2;
+  gap: deprecated.$s-1;
   width: 100%;
   padding: deprecated.$s-8 deprecated.$s-12;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
+  // A divider between skills instead of a box border — same line, dropped on the
+  // last row of a group. Rows sit flush (group gap is 0) so the cards' padding
+  // frames the line symmetrically.
+  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: transparent;
   text-align: start;
   cursor: pointer;
 
+  &:last-child {
+    border-block-end: none;
+  }
+
   &:hover {
-    border-color: var(--color-accent-primary-muted);
     background-color: var(--color-background-tertiary);
   }
 
@@ -676,12 +683,11 @@
 }
 
 .catalog-name {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("title-small");
 
   // Push the "Off" pill + ⋯ menu to the trailing edge, whatever the name length.
   margin-inline-end: auto;
   color: var(--color-foreground-primary);
-  font-weight: 600;
 }
 
 // Small state pill on a disabled row — legible on its own, no control needed.
@@ -700,9 +706,6 @@
 // stays visible without hover (touch-friendly, per the story); full contrast on
 // hover/focus.
 .catalog-menu {
-  // A darker gray behind the ghost ⋯ button on hover so it reads as actionable.
-  --button-hover-bg-color: var(--color-background-quaternary);
-
   position: relative;
   display: flex;
   align-items: center;
@@ -713,6 +716,19 @@
   &:hover,
   &:focus-within {
     opacity: 1;
+  }
+
+  // Shrink the 32px DS icon-button so the row hugs the title (the button height,
+  // not the flex gap, is what pushes the description down). Override on the button
+  // element — the ghost variant sets its hover var on itself, so a parent-level
+  // override wouldn't win; set the darker-gray hover background directly instead.
+  button {
+    width: deprecated.$s-24;
+    height: deprecated.$s-24;
+
+    &:hover {
+      background-color: var(--color-background-secondary);
+    }
   }
 }
 

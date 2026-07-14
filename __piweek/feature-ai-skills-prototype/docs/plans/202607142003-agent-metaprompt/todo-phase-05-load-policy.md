@@ -1,8 +1,16 @@
 # Phase 05 — Per-skill load policy
 
 **Status:** todo
-**Informed by:** Phase 04's fetch-rate finding — if the agent reliably fetches on hint, this
-phase is a refinement; if it does not, this phase is the fix.
+**Informed by:** ✅ Phase 04 measured it. The agent **does** reliably fetch on hint (unprompted,
+first-try correct once the index carries the `name`), so this phase is a refinement, not a fix —
+`index` is a safe default. But Phase 04 also found the thing that gives this phase real work:
+**the body's value is wildly uneven across skills.** On a domain the model knows (accessibility)
+the fetched body changed nothing measurable; on Penpot-specific procedure (foundations) it alone
+produced the phased workflow and checkpoints. So the interesting policy question is no longer
+"how does a skill load" but **"does this skill's body say anything the model doesn't already
+know?"** — a skill that is only convention is already covered by `inner-knowledge` and may
+deserve `off`/`index`; a skill with real procedure earns the fetch. Decide per skill, with
+evidence, rather than assigning a field by taste.
 
 ## Goal
 

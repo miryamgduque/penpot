@@ -357,3 +357,77 @@
   border-color: color-mix(in srgb, var(--color-accent-warning) 40%, transparent);
   background-color: color-mix(in srgb, var(--color-accent-warning) 14%, transparent);
 }
+
+// Read-only detail view (shown in place of the list within the Skills tab).
+.skill-detail {
+  @extend %new-scrollbar;
+
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  height: 100%;
+  padding: deprecated.$s-12;
+  overflow-y: auto;
+}
+
+.detail-back {
+  align-self: flex-start;
+  margin-block-end: deprecated.$s-16;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--color-foreground-secondary);
+
+  @include deprecated.body-small-typography;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+}
+
+.detail-category {
+  @include deprecated.small-title-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+.detail-name {
+  @include deprecated.med-title-typography;
+
+  color: var(--color-foreground-primary);
+}
+
+.detail-tags {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+  margin-block: deprecated.$s-4 deprecated.$s-8;
+}
+
+.detail-section-label {
+  @include deprecated.body-small-typography;
+
+  margin-block-start: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.detail-example {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-8 deprecated.$s-12;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-primary);
+  font-style: italic;
+}
+
+.detail-what {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  line-height: 1.5;
+}

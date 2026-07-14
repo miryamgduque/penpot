@@ -22,33 +22,63 @@
 ;; Grouped by category in display order; the dispatch router and the shared/core
 ;; house-rule docs are intentionally excluded. Audit + build skills ship enabled;
 ;; the single auto-fix skill ships off (it writes directly).
+;; Each skill also carries an `:example` (a natural trigger phrase) and `:what`
+;; (a one-paragraph "what it does"), surfaced by the Skills-tab detail view.
 (def catalog
   [{:category "Audits"
     :skills [{:name "penpot-audit-accessibility" :label "Accessibility audit"
-              :blurb "WCAG 2.1/2.2 AA checks" :mode "suggest" :enabled true}
+              :blurb "WCAG 2.1/2.2 AA checks" :mode "suggest" :enabled true
+              :example "Check this screen for accessibility problems."
+              :what "Runs a WCAG 2.1/2.2 AA audit covering contrast, tap-target sizes, heading structure, and focus order. Returns a severity-ranked report without changing the file."}
              {:name "penpot-audit-tokens" :label "Tokens governance audit"
-              :blurb "Hardcoded values, off-grid spacing" :mode "suggest" :enabled true}
+              :blurb "Hardcoded values, off-grid spacing" :mode "suggest" :enabled true
+              :example "Audit this file for design-system issues."
+              :what "Flags hardcoded values where a token exists, off-grid spacing, orphan or unused tokens, and detached instances. Suggests semantic-token swaps; reports only, no changes."}
              {:name "penpot-design-to-code-review" :label "Design-to-code review"
-              :blurb "Design vs. built code drift" :mode "suggest" :enabled true}]}
+              :blurb "Design vs. built code drift" :mode "suggest" :enabled true
+              :example "Does my code match this design?"
+              :what "Diffs a Penpot selection against its implemented component (or Storybook story) and reports drift in tokens, structure and states, with a reconciliation. Read-only."}]}
    {:category "Build"
     :skills [{:name "penpot-foundations" :label "Foundations"
-              :blurb "Design tokens setup" :mode "review" :enabled true}
+              :blurb "Design tokens setup" :mode "review" :enabled true
+              :example "Set up design tokens for this file."
+              :what "Builds and governs the token + library foundation: primitive/semantic/component token tiers and light/dark themes. Proposes changes for your review before applying."}
              {:name "penpot-component-factory" :label "Component factory"
-              :blurb "Builds full variant matrix" :mode "review" :enabled true}
+              :blurb "Builds full variant matrix" :mode "review" :enabled true
+              :example "Turn this into a component with variants."
+              :what "Builds a component with a complete variant matrix — sizes, hierarchies and every interactive state — fully tokenized and correctly named. Proposed for review."}
              {:name "penpot-build-screen" :label "Build screen"
-              :blurb "Designs screens from a brief" :mode "review" :enabled true}
+              :blurb "Designs screens from a brief" :mode "review" :enabled true
+              :example "Design a dashboard screen from this brief."
+              :what "Designs a production-grade screen from a brief, section by section, reusing the existing tokens and components. Proposes the result for review."}
              {:name "penpot-build-from-code" :label "Build from code"
-              :blurb "Recreates a view on your tokens" :mode "review" :enabled true}
+              :blurb "Recreates a view on your tokens" :mode "review" :enabled true
+              :example "Recreate this React view in Penpot."
+              :what "Translates existing page or component code into a Penpot screen bound to your design system — mapping code styles onto semantic tokens and reusing library components. For review."}
              {:name "penpot-document-handoff" :label "Document handoff"
-              :blurb "Annotates a design for devs" :mode "review" :enabled true}
+              :blurb "Annotates a design for devs" :mode "review" :enabled true
+              :example "Annotate this screen for handoff."
+              :what "Builds a clean annotation layer beside the design — a context card, numbered pins and matching note cards — wrapped in a hideable group. Proposed for review."}
              {:name "penpot-migrate" :label "Migrate"
-              :blurb "Figma → Penpot migration" :mode "review" :enabled true}]}
+              :blurb "Figma → Penpot migration" :mode "review" :enabled true
+              :example "Import this Figma file into Penpot."
+              :what "Migrates a Figma design into Penpot with high fidelity: Auto Layout → flex/grid, Variables → tokens, component sets → variants, preserving hierarchy. For review."}]}
    {:category "Auto-fix"
     :skills [{:name "penpot-rename-layers" :label "Rename layers"
-              :blurb "Auto-fixes messy layer names" :mode "autofix" :enabled false}]}])
+              :blurb "Auto-fixes messy layer names" :mode "autofix" :enabled false
+              :example "Clean up the layer names in this file."
+              :what "Renames auto-generated layer names (Rectangle 12…) to semantic HTML or role names like nav, header, button and h1–h6. Applies directly — off by default."}]}])
 
 (def mode-label
   {"suggest" "suggest" "review" "review" "autofix" "auto-fix"})
+
+(defn find-skill
+  "The full catalog entry for `name`, tagged with its `:category`, or nil.
+  Backs the Skills-tab detail view."
+  [name]
+  (some (fn [{:keys [category skills]}]
+          (some #(when (= name (:name %)) (assoc % :category category)) skills))
+        catalog))
 
 (defn enabled-skills
   "Flattened, category-tagged list of the skills enabled on this file."

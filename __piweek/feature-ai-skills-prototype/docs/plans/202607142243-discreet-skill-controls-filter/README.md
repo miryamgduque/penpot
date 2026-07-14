@@ -73,9 +73,9 @@ here.
 
 ## Phases
 
-1. [Phase 01 — Row overflow menu + legible state](./todo-phase-01-row-overflow-menu.md) — replace the
+1. [Phase 01 — Row overflow menu + legible state](./done-phase-01-row-overflow-menu.md) — replace the
    per-row `switch*` with a muted ⋯ menu (Enable/Disable wired; Fork/Promote disabled), add the
-   dimmed + "Off" pill disabled state, and remove the per-row mode badge.
+   dimmed + "Off" pill disabled state, and remove the per-row mode badge. ✅ **done** (verified live)
 2. [Phase 02 — Filter control](./todo-phase-02-filter-control.md) — an All / Enabled filter at the
    top of the Skills tab, in-memory session state defaulting to **Enabled**, filtering the list.
 

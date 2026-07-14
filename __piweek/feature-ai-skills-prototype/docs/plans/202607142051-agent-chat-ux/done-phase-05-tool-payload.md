@@ -1,8 +1,19 @@
 # Phase 05 — Tool event payload
 
-**Status:** todo
+**Status:** done
 
 Invisible on its own — it exists to make Phase 06's expansion worth opening.
+
+## Verified live (devenv :3450)
+
+A real tool-calling turn (`read_design`), one Haiku call:
+
+| Behaviour | Result |
+|---|---|
+| chips still render (no regression) | ✅ 1 chip, `read_design`, status `ok` |
+| event now carries `:input` | ✅ |
+| event now carries `:result` | ✅ |
+| display truncation actually bites | ✅ `resultLen` exactly **2000** — `read_design`'s real result is longer, so the cap is doing real work rather than being theoretical |
 
 ## Before Start
 
@@ -12,18 +23,23 @@ Invisible on its own — it exists to make Phase 06's expansion worth opening.
 
 ## Checklist
 
-- [ ] Add `:input` + `:result` to `tool-outcome->event`
-- [ ] Change `append-tool` to a **map** arity
-- [ ] Update the `send-message` call site (`:159-160`)
-- [ ] Truncate `:result` for display (~2000 chars)
-- [ ] Compile; existing behaviour unchanged (chips still render)
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] Add `:input` + `:result` to `tool-outcome->event`
+- [x] Change `append-tool` to a **map** arity — one caller, so a clean swap
+- [x] Update the `send-message` call site → `(append-tool (dissoc ev :kind))`
+- [x] Truncate `:result` for display (2000 chars, `max-displayed-result-chars`)
+- [x] Compile (0 warnings); chips still render
+- [x] Human approval received
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 
-- [ ] Rename `todo-` → `done-`; update README links
-- [ ] Phase 06 unblocked
+- [x] Rename `todo-` → `done-`; update README links
+- [x] Phase 06 unblocked — `:input`/`:result` now reach the transcript
+
+### Note
+
+`{:keys [name …]}` would shadow `clojure.core/name`, which `append-tool` needs for the status
+keyword. Bound as `tool-name :name` instead of reaching for `cljs.core/name`.
 
 ## Files
 

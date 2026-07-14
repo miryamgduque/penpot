@@ -79,7 +79,7 @@ which can proceed in parallel (different app).
 2. [Phase 02 — Markdown rendering](./done-phase-02-markdown.md) — `marked.lexer` → elements, safe hrefs, code highlighting ✅ **done**
 3. [Phase 03 — Cancel plumbing](./done-phase-03-cancel-plumbing.md) — `::cancel-turn`, `take-until`, `cancel-history` + unit test ✅ **done**
 4. [Phase 04 — Composer send/stop](./done-phase-04-composer-send-stop.md) — real button, type-while-busy ✅ **done**
-5. [Phase 05 — Tool event payload](./todo-phase-05-tool-payload.md) — `:input`/`:result`, map-arity `append-tool`
+5. [Phase 05 — Tool event payload](./done-phase-05-tool-payload.md) — `:input`/`:result`, map-arity `append-tool` ✅ **done**
 6. [Phase 06 — Collapsible tool groups](./todo-phase-06-collapsible-tools.md) — render-time grouping *(needs 05)*
 7. [Phase 07 — Backend streaming + abort](./todo-phase-07-backend-streaming.md) — `::ai-agent-round-stream`, `events/closed?`
 8. [Phase 08 — Client streaming](./todo-phase-08-client-streaming.md) — accumulators, `:assistant-delta`, batching *(needs 07)*

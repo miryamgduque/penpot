@@ -79,8 +79,11 @@
         state))))
 
 (defn append-tool
-  "Appends a tool-call marker to the rendered transcript (a chip)."
-  [tool-name status rule detail]
+  "Appends a tool-call marker to the rendered transcript (a chip).
+
+  Takes the turn event itself (minus `:kind`) rather than positional args —
+  it already carries everything the chip shows, and new fields come for free."
+  [{:keys [status rule detail input result] tool-name :name}]
   (ptk/reify ::append-tool
     ptk/UpdateEvent
     (update [_ state]
@@ -90,7 +93,9 @@
                                    :name tool-name
                                    :status (some-> status name)
                                    :rule rule
-                                   :detail detail})
+                                   :detail detail
+                                   :input input
+                                   :result result})
         state))))
 
 (defn- store-history
@@ -194,8 +199,7 @@
               (rx/mapcat (fn [ev]
                            (case (:kind ev)
                              :assistant    (rx/of (append-message "assistant" (:text ev)))
-                             :tool         (rx/of (append-tool (:name ev) (:status ev)
-                                                               (:rule ev) (:detail ev)))
+                             :tool         (rx/of (append-tool (dissoc ev :kind)))
                              :usage        (rx/of (accumulate-usage (:usage ev)))
                              :turn-history (do (reset! latest* (:history ev))
                                                (rx/empty))

@@ -27,6 +27,7 @@
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
+   [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.shapes :as dwsh]
    [app.main.data.workspace.tokens.application :as dwta]
@@ -48,6 +49,14 @@
          "page's top-level shapes. Call this FIRST each task to see what is in "
          "the file instead of guessing.")
     :input-schema {:type "object" :properties {}}}
+
+   {:name "get_design_skills"
+    :description
+    (str "Returns the design skills available for this file — your playbooks "
+         "(name, category, mode, what it does). Call this before a task that "
+         "matches one and follow it. Pass a name for one skill's details.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string" :description "return one skill's details"}}}}
 
    {:name "create_shape"
     :description
@@ -410,12 +419,22 @@
         (rx/of {:results results
                 :note "tokens resolve asynchronously — verify with read_design or audit_file"})))))
 
+;; --- Skills
+
+(defn- get-design-skills
+  [{:keys [name]}]
+  (rx/of (if name
+           (or (ask/catalog-manifest name)
+               {:error (dm/str "no skill named " name)})
+           (ask/catalog-manifest))))
+
 ;; --- Dispatch
 
 (defn execute-tool
   [name input]
   (case name
     "read_design"        (rx/of (read-design))
+    "get_design_skills"  (get-design-skills input)
     "create_shape"       (create-shape input)
     "modify_shape"       (modify-shape input)
     "nest_shape"         (nest-shape input)

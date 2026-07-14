@@ -15,6 +15,19 @@ export const ENFORCEMENTS = ["advisory", "triggered", "enforced"] as const;
 export type Enforcement = (typeof ENFORCEMENTS)[number];
 
 /**
+ * How much autonomy a built-in skill is granted, mirroring the mode system in
+ * the penpot-ai-kit skills repo: `suggest` reports only, `review` proposes
+ * changes for approval, `autofix` applies directly. Only built-in catalog
+ * skills carry a mode; org/project/file skills do not.
+ */
+export const MODES = ["suggest", "review", "autofix"] as const;
+export type Mode = (typeof MODES)[number];
+
+/** Display grouping for the built-in catalog, derived from a skill's mode. */
+export const CATEGORIES = ["Audits", "Build", "Auto-fix"] as const;
+export type Category = (typeof CATEGORIES)[number];
+
+/**
  * skill = knowledge for the agent (playbooks, conventions, how-tos) — it
  * shapes what gets produced. rule = a constraint about the artifact that can
  * be checked (and possibly enforced or auto-fixed) after the fact. Explicit
@@ -40,6 +53,8 @@ export interface Skill {
   description: string;
   /** Only meaningful at platform/org/project scope: lower scopes cannot loosen it. */
   mandatory: boolean;
+  /** Autonomy level for built-in catalog skills; undefined for user-authored skills. */
+  mode?: Mode;
   trigger?: Trigger;
   /** Markdown body (without frontmatter). */
   body: string;

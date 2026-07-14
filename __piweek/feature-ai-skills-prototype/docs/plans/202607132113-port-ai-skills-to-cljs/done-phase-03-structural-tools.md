@@ -1,6 +1,6 @@
 # Phase 03 — Structural tools: create / modify / nest
 
-**Status:** todo
+**Status:** done
 
 ## Goal
 
@@ -19,14 +19,15 @@ The heart of dropping `execute_code`: give the agent native tools to **build and
 
 ## Checklist
 
-- [ ] `create_shape` tool: input `{type: rect|ellipse|board, x, y, width, height, name?, parentId?}`. Build via `cts/setup-shape` + `pcb/add-object` (+ `pcb/change-parent` when `parentId`), commit; return the new shape id. Geometry from args (not viewport-center) so the agent controls placement.
-- [ ] `modify_shape` tool: input `{shapeId, name?, x?, y?, width?, height?, fill?, stroke?}`. Route: name → `update-shapes`; x/y → `transforms/update-position`; w/h → `transforms/update-dimensions`; fill/stroke → `colors/*` (subject to Phase 06 enforcement — for now accept token refs and raw, tighten in P6).
-- [ ] `nest_shape` tool: input `{shapeId, parentId, index?}` → `relocate-shapes`.
-- [ ] Wrap each tool's writes in one undo transaction so a tool call = one history step.
-- [ ] Async note in tool results: geometry settles asynchronously under `render-wasm/v1` — return "applied; re-read to confirm geometry" rather than echoing final selrect.
-- [ ] `make lint/frontend`, `make typecheck/frontend`
-- [ ] Preview: "make a 200×120 board at 0,0 with a red rectangle inside" → board + rect appear nested; "move it to 300,300" works; **Cmd+Z undoes each tool step**.
-- [ ] Human approval; commit `feat(workspace): native create/modify/nest agent tools`
+- [x] `create_shape` tool: input `{type: rect|ellipse|board, x, y, width, height, name?, fill?, parentId?}`. Build via `cts/setup-shape` + `cb/add-object` (parent via the shape's `:parent-id`/`:frame-id` when `parentId`) → `dch/commit-changes`; returns the new id. Placement from args. **Added an optional `fill`** (set on `:fills`) so "create a red rectangle" works in one call — the model tried this and had no way to fill on create otherwise. ✓
+- [x] `modify_shape` tool: input `{shapeId, name?, x?, y?, width?, height?, fill?, stroke?}`. name → `update-shapes`; x/y → `transforms/update-position`; w/h → `transforms/update-dimensions`; fill/stroke → `update-shapes` with raw `:fills`/`:strokes` (proven plugin pattern; Phase 06 reworks this for enforcement). ✓
+- [x] `nest_shape` tool: input `{shapeId, parentId, index?}` → `dwsh/relocate-shapes #{id} parent-id index`. ✓
+- [x] `modify_shape` writes wrapped in one `start/commit-undo-transaction` → one history step. ✓
+- [x] Async note in every tool result ("verify with read_design"). ✓
+- [x] Lint / format / typecheck: `clj-kondo` 0/0, `cljfmt` clean, `shadow-cljs compile main` → **0 warnings**. ✓
+- [x] Preview (live devenv, Haiku): "Create a board named Card… then add a rectangle inside it…" → **Card board with nested rectangle built on canvas** (2× `create_shape` chips, no crash). Console-verified all paths: create rect/ellipse/board, create-with-parent, create-with-fill, modify fill/geometry, `nest_shape` relocate. ✓
+- [x] **Crash found + fixed:** creating/mutating shapes *while a path/pen drawing tool was active* crashed Penpot's `path-preview*` overlay. Fix: each mutating tool emits `:interrupt` first to clear transient drawing/edition state. **Deterministically validated** — reproduced the `:path`+draw-area state, then `create_shape` ran cleanly and unmounted the overlay. ✓
+- [ ] Human approval; commit `:sparkles: Native create/modify/nest agent tools`
 
 ## After Finish
 

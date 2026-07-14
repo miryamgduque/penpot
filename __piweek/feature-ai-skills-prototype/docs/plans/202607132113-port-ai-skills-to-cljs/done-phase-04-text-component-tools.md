@@ -1,6 +1,6 @@
 # Phase 04 — Text & component tools
 
-**Status:** todo
+**Status:** done
 
 ## Goal
 
@@ -15,12 +15,12 @@ Two more `execute_code` replacements: `create_text` (create a text shape and set
 
 ## Checklist
 
-- [ ] `create_text` tool: input `{text, x, y, width?, name?, parentId?, fill?}`. Build the text shape with `change-text`, add via the low-level path (avoid auto edit-mode), commit, then trigger `resize-wasm-text-*` so width/height settle. Return the new id + "geometry settles async — re-read to confirm size".
-- [ ] `create_component` tool: input `{shapeIds}` (default current selection). Pre-validate eligibility; `id-ref (atom nil)`; emit `dwl/add-component`; read `@id-ref` after emit; return the component id (or a clear error if ineligible).
-- [ ] Tool-chip + result rendering already handled by Phase 02; just register the two tools.
-- [ ] `make lint/frontend`, `make typecheck/frontend`
-- [ ] Preview: "add a heading that says Welcome at 20,20" → text renders with real size after settle; select two shapes, "make this a component" → component created, shows in assets.
-- [ ] Human approval; commit `feat(workspace): native create_text and create_component tools`
+- [x] `create_text` tool: input `{text, x, y, name?, fill?, parentId?}`. Builds an auto-width text shape (`setup-shape {:type :text … :grow-type :auto-width}` → `txt/change-text` for content → `dissoc :position-data` → `cb/add-object` → commit), then `dwwt/resize-wasm-text-debounce` under `render-wasm/v1`. Returns the id + async note. *(Dropped the `width?` param — auto-width text, matching the plugin.)* ✓
+- [x] `create_component` tool: input `{shapeIds?}` (default current selection). `id-ref (atom nil)` → emit `dwl/add-component` → read `@id-ref`; returns the component id, or a clear error if `@id-ref` is nil (shapes ineligible). Wrapped in try/catch. ✓
+- [x] Both tools registered; chips render via Phase 02 machinery. Both emit `:interrupt` first (Phase 03 crash fix). ✓
+- [x] Lint / format / typecheck: `clj-kondo` 0/0, `cljfmt` clean, `shadow-cljs compile main` → **0 warnings**. ✓
+- [x] Preview (live devenv): **console** — `create_text` "Welcome back" created; `create_component` on a rect returned `componentId` and the file gained a component (no crash). **LLM (Haiku)** — "Add a text heading that says Dashboard at 300,600…" → ✓ `create_text` chip, "Dashboard Heading" on canvas, model echoed the async-settle note. Screenshot confirms the text + the Main component in the layers/DESIGN panel. ✓
+- [ ] Human approval; commit `:sparkles: Native create_text and create_component tools`
 
 ## After Finish
 

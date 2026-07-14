@@ -1,6 +1,6 @@
 # Phase 06 — Tool-boundary enforcement (`token-only-colors`)
 
-**Status:** todo
+**Status:** done
 
 ## Goal
 
@@ -15,14 +15,15 @@ Enforce the `token-only-colors` rule **at the native tool boundary**: when the r
 
 ## Checklist
 
-- [ ] CLJS port of `collect-allowed-colors` (active color-token resolved values + library colors, normalized) and `find-disallowed-colors` in a small `agent_guard.cljs` (or reuse in `agent_tools.cljs`).
-- [ ] In the color-setting tools: when the rule is active, inspect the incoming fill/stroke; if it carries a raw color not in the allowed set (and no token ref), **throw** `{:rule "token-only-colors" :message "…names the offending color + up to ~20 allowed tokens + points at apply_tokens"}`.
-- [ ] `run-turn` already surfaces `{:rule …}` errors as `rejected` tool events with the rule shown — verify the chip renders the rule + hint (Phase 02 wiring).
-- [ ] `apply_tokens` / `create_color_token` are **never** gated (they are the safe path).
-- [ ] Gradients/images skipped (out of scope, matches the source guard).
-- [ ] `make lint/frontend`, `make typecheck/frontend`
-- [ ] Preview: with `token-only-colors` active, "fill the box with #ff0000" → tool **rejected** citing the rule; the agent then creates/applies a token and succeeds. With the rule inactive, raw fills go through.
-- [ ] Human approval; commit `feat(workspace): token-only-colors enforcement at agent tool boundary`
+- [x] CLJS port of `collect-allowed-colors` (active color-token `:resolved-value`/`:value` + the file's library colors, normalized via `normalize-hex`) + `color-violation` — kept in `agent_tools.cljs` (small enough, avoids a new ns). ✓
+- [x] `create_shape` (initial `fill`) and `modify_shape` (`fill`/`stroke`) check `color-violation` first; a raw color not in the allowed set (with the rule enforced) → `(rx/throw (ex-info … {:rule "token-only-colors"}))` naming the offending color + up to 20 allowed values + pointing at create_color_token/apply_tokens. ✓
+- [x] `run-turn`'s `rx/catch` surfaces `{:rule …}` errors as **rejected** chips (Phase 02 wiring) — verified: the chip shows `✕ create_shape token-only-colors`. ✓
+- [x] `apply_tokens` / `create_color_token` are never gated. ✓
+- [x] Gradients/images skipped (only string hex fills checked). ✓
+- [x] **"Rule active" source:** `[:ai-panel <file-id> :enforced-rules]` in app state, set by the new `dwaip/set-enforced-rules` event — **wired to the backend skills manifest in Phase 07**; off by default (nothing populates it yet). Enabled via console for this test. ✓
+- [x] Lint / format / typecheck: `clj-kondo` 0/0, `cljfmt` clean, `shadow-cljs compile main` → **0 warnings**. ✓
+- [x] Preview (live devenv, Haiku): with the rule enforced — console: raw `#ff0000` create **not added to canvas** (rejected), raw `#6366f1` (a token value) **succeeds**, `apply_tokens` still works. LLM: "create a red rectangle with raw fill #ff0000" → **✕ rejected chip citing token-only-colors** → agent self-corrected (created `color.red.bright` token, then `create_shape` + `apply_tokens`) → red rectangle, token-bound. ✓
+- [ ] Human approval; commit `:sparkles: token-only-colors enforcement at the agent tool boundary`
 
 ## After Finish
 

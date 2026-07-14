@@ -1,10 +1,28 @@
-# Phase 07 — Backend skills resolution + `get_design_skills` + system prompt
+# Phase 07 — Skills → agent (lighter, built on Miryam's catalog)
 
-**Status:** todo
+**Status:** done
 
-## Goal
+## ⚠️ Redesigned (2026-07-14)
 
-Move the skills **cascade resolution** to the backend: port `skills-core`'s `parseSkill`/`resolveCascade`/`skillManifest` to Clojure, add a `:get-effective-skills` RPC that resolves app→team→file into an effective manifest, back the native `get_design_skills` tool with it, and enrich the agent system prompt with the resolved skills, rules manifest, and local bodies.
+The original plan (below) was to port the **DB-backed cascade** (`resolveCascade` → a Clojure `:get-effective-skills` RPC). **Miryam's US #7 replaced that model** with a **built-in skills catalog** (`skills-core/catalog.ts` `builtinCatalog()`, mirrored as a CLJS catalog in the Skills tab). Per the user's call ("lighter Phase 07 now"), this phase instead **wires the agent to that catalog** — no backend RPC, no cascade port. Blockers deferred: full skill **bodies** aren't in CLJS yet (only metadata), and Miryam's persisted **enabled-state** (her US #7 Phase 02) is still todo (we use the static `:enabled` defaults for now).
+
+## What shipped
+
+- [x] New `app.main.data.workspace.agent-skills` — the **single source of truth** for the built-in catalog: moved the `catalog` + `mode-label` defs out of `ui/workspace/ai_panel.cljs` (Miryam's Skills tab now requires them from here), plus `enabled-skills`, `catalog-manifest` (for the tool), and `system-prompt-section` (the routing index). ✓
+- [x] `get_design_skills` tool (in `agent-tools`): returns the **9 enabled** catalog skills (metadata: name/category/mode/blurb), or one by name. Bodies deferred (documented). ✓
+- [x] System prompt: filled the Phase 01 seam with the enabled-skills **routing index** + "call get_design_skills to read details and follow it". Verified the actual prompt string lists Foundations/Accessibility audit and excludes the disabled autofix. ✓
+- [x] `enforced-rules`: left as-is (the Phase 06 mechanism, off by default) per the user's "simple default". Not wired to the catalog (rules aren't catalog skills). ✓
+- [x] Lint / format / typecheck: `clj-kondo` 0/0, `cljfmt` clean, `stylelint` clean, `shadow-cljs compile main` → **0 warnings** (1181 files). ✓
+- [x] Preview (live devenv): Miryam's Skills tab still renders (10 cards, 3 groups — no regression from the shared-catalog refactor); `get_design_skills` returns 9 enabled skills; **LLM (Haiku)** — "what design skills do you have?" → agent **called `get_design_skills`** and listed the real catalog skills by category/mode. ✓
+- [ ] Human approval; commit `:sparkles: Wire the agent to the built-in skills catalog`
+
+> **Coordination note for Miryam:** this moved your `skills-catalog`/`mode-label` defs from `ui/workspace/ai_panel.cljs` into the shared `data/workspace/agent-skills` ns (your Skills tab now `require`s `[… :as ask]` and uses `ask/catalog` / `ask/mode-label`). Single source of truth for the UI + the agent. When your US #7 Phase 02 lands persisted enabled-state, `agent-skills/enabled-skills` should read it instead of the static `:enabled` defaults.
+
+---
+
+## Original plan (superseded — kept for reference)
+
+**Goal:** Move the skills **cascade resolution** to the backend: port `skills-core`'s `parseSkill`/`resolveCascade`/`skillManifest` to Clojure, add a `:get-effective-skills` RPC that resolves app→team→file into an effective manifest, back the native `get_design_skills` tool with it, and enrich the agent system prompt with the resolved skills, rules manifest, and local bodies.
 
 ## Before Start
 

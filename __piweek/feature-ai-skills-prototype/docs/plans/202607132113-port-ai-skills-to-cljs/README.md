@@ -35,13 +35,14 @@ Today the AI chat is a React app running in a plugin iframe (`ai-skills/`): a UI
 
 1. [Phase 01 — Native agent loop (text-only round)](./done-phase-01-agent-loop.md) — canonical model + wire codecs + round runner, calling `:ai-agent-round`; Chat tab actually talks. ✅ **done**
 2. [Phase 02 — Tool-call infrastructure + `read_design`](./todo-phase-02-tool-infra-read-design.md) — tool declarations, the execute-tool dispatch, and the read-only orientation tool.
-3. [Phase 03 — Structural tools: create / modify / nest](./todo-phase-03-structural-tools.md) — `create_shape`, `modify_shape`, `nest_shape` — the core `execute_code` replacement.
+3. [Phase 03 — Structural tools: create / modify / nest](./done-phase-03-structural-tools.md) — `create_shape`, `modify_shape`, `nest_shape` — the core `execute_code` replacement.
 4. [Phase 04 — Text & component tools](./todo-phase-04-text-component-tools.md) — `create_text` (WASM resize), `create_component` (id-ref atom).
 5. [Phase 05 — Token tools: create & apply](./todo-phase-05-token-tools.md) — `create_color_token`, `apply_tokens` (async StyleDictionary settle).
 6. [Phase 06 — Tool-boundary enforcement (`token-only-colors`)](./todo-phase-06-enforcement.md) — port allowed-color logic; color tools reject raw hex, agent self-corrects.
 7. [Phase 07 — Backend skills resolution + `get_design_skills` + system prompt](./todo-phase-07-skills-resolution.md) — port the cascade to Clojure, `:get-effective-skills` RPC, enrich the system prompt.
-8. [Phase 08 — `audit_file` tool](./todo-phase-08-audit-file.md) — native page scan against active rules, returns violations.
+8. [Phase 08 — `audit_file` tool](./done-phase-08-audit-file.md) — native page scan against active rules, returns violations. ✅ **done**
 9. [Phase 09 — Chat polish: model picker, spend meter, history](./todo-phase-09-chat-polish.md) — parity with `Chat.tsx` beyond the US #2 shell.
+10. [Phase 10 — Deferred follow-ups](./todo-phase-10-deferred-followups.md) — running list of intentionally-deferred items (skill bodies in CLJS, persisted enabled-state, `enforced-rules` source, live violations ledger, …).
 
 ## Acceptance Criteria
 

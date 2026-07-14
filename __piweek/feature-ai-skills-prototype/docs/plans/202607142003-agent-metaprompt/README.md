@@ -89,8 +89,10 @@ agent's own output introduced.
    fetch**, and fixing the index to carry the skill's `name` cut a wasted round (3→2 requests).
    The body earns its keep only where it states what the model cannot know (workflow order,
    checkpoints) — on well-known domains it adds nothing measurable.
-5. [Phase 05 — Per-skill load policy](./todo-phase-05-load-policy.md) — `always | index |
-   gated | off` so authors control disclosure instead of code.
+5. [Phase 05 — Per-skill load policy](./done-phase-05-load-policy.md) — ⛔ **dropped, with
+   reasons.** All four of `always | index | gated | off` turned out redundant, default, moot, or
+   already shipped by US #8. The field would be a second mechanism disagreeing with the ones we
+   have. No code; the decision is the deliverable.
 6. [Phase 06 — Token/component-first bias](./todo-phase-06-token-bias.md) — measure violations
    per generated design with the rules layer on vs. off; strengthen the always-on rules if the
    bias is weak.

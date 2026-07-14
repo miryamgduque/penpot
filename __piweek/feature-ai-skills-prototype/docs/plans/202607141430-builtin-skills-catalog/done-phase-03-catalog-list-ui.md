@@ -16,25 +16,28 @@ mode label. Keep the existing scope/enforcement view reachable (build alongside)
 
 ## Checklist
 
-- [ ] `SkillsCatalog.tsx` (new): render entries grouped by category in fixed order
+- [x] `SkillsCatalog.tsx` (new): render entries grouped by category in fixed order
       (Audits → Build → Auto-fix), category section headers, one card per entry
-- [ ] Card shows: name, description, mode label (`suggest` / `review` / `auto-fix`);
-      reflect `enabled === false` as a muted/inactive visual (no control)
-- [ ] `App.tsx`: Skills tab renders `SkillsCatalog` by default; expose the existing
-      `SkillsPanel` (scope/enforcement) behind a small "Advanced" affordance so it stays reachable
-- [ ] `styles.css`: category headers, catalog card, mode label styling (light/dark themes)
-- [ ] Cards are clickable containers (wire the click handler; detail view lands in Phase 04)
-- [ ] Lint + typecheck pass (`make lint`, panel build)
-- [ ] Preview review: screenshot the grouped list; confirm router/shared docs absent,
-      rename-layers present but muted (off)
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] Card shows: name (humanized from skill name), blurb (derived), mode label
+      (`suggest`/`review`/`auto-fix`); `defaultEnabled === false` → muted card + "off by default"
+- [x] `App.tsx`: `SkillsTab` renders `SkillsCatalog` by default; existing `SkillsPanel`
+      behind an "Advanced — scopes & enforcement" link (shown only when a host payload is present)
+- [x] `styles.css`: category headers, catalog card, colored mode badges (design-system `--app-*`)
+- [x] Cards are clickable containers (`onOpen` handler wired; detail view lands in Phase 04)
+- [x] Typecheck pass (`ai-skills` tsc clean). `make lint` not run (see Phase 01 note)
+- [x] Preview review: verified in the preview tool. Live dev server on :4600 hung
+      `preview_screenshot` (Vite HMR socket keeps the page busy); screenshotted the static
+      production `dist/` build on :8793 instead. Confirmed: 10 entries, router + shared docs
+      absent, rename-layers muted/off, curated crisp blurbs, badges = real `--app-*` tokens, bg `#18181a`
+- [x] Curated label/blurb map added (matches the approved mockup), with derived fallback for unlisted skills
+- [x] Human approval received (2026-07-14)
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 
-- [ ] Rename `todo-` → `done-`; update README links
-- [ ] Note the "Advanced" affordance chosen (subtab / link / toggle)
-- [ ] Confirm Phase 04 can slot the detail view into the same tab
+- [x] Rename `todo-` → `done-`; update README links
+- [x] Advanced affordance: a bottom "Advanced — scopes & enforcement" link, shown only when a host payload is present
+- [x] Phase 04 slots in via `onOpen` (already wired) + local `selected` state in SkillsCatalog
 
 ## Files
 

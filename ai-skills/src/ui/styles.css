@@ -422,6 +422,106 @@ button.danger {
   border-inline-start-color: var(--border);
 }
 
+/* ---- Skills catalog (built-in first-run view) ---- */
+.skills-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+.catalog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+  padding: var(--spacing-8);
+}
+.catalog-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-8);
+}
+.catalog-group-label {
+  padding: var(--spacing-8) var(--spacing-4) var(--spacing-4);
+  font-size: var(--font-size-xs);
+  color: var(--fg-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: var(--font-weight-bold);
+}
+.catalog-card {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  border: 1px solid var(--border);
+  border-radius: var(--spacing-8);
+  padding: var(--spacing-8) var(--spacing-12);
+}
+.catalog-card:hover {
+  border-color: var(--accent-muted);
+  background: var(--bg-soft);
+}
+.catalog-card.disabled {
+  opacity: 0.55;
+}
+.catalog-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-8);
+}
+.catalog-card .skill-desc {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-8);
+  flex-wrap: wrap;
+}
+.mode-badge {
+  font-size: var(--font-size-xs);
+  padding: 1px var(--spacing-8);
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--fg-soft);
+  white-space: nowrap;
+}
+.mode-badge.mode-suggest {
+  color: var(--app-blue);
+  border-color: color-mix(in srgb, var(--app-blue) 40%, transparent);
+  background: color-mix(in srgb, var(--app-blue) 14%, transparent);
+}
+.mode-badge.mode-review {
+  color: var(--app-purple);
+  border-color: color-mix(in srgb, var(--app-purple) 40%, transparent);
+  background: color-mix(in srgb, var(--app-purple) 14%, transparent);
+}
+.mode-badge.mode-autofix {
+  color: var(--app-gold);
+  border-color: color-mix(in srgb, var(--app-gold) 40%, transparent);
+  background: color-mix(in srgb, var(--app-gold) 14%, transparent);
+}
+.default-off {
+  font-size: var(--font-size-xs);
+  color: var(--fg-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 var(--spacing-8);
+  white-space: nowrap;
+}
+.skills-advanced-link {
+  all: unset;
+  cursor: pointer;
+  color: var(--fg-soft);
+  font-size: var(--font-size-xs);
+  padding: var(--spacing-8) var(--spacing-12);
+}
+.skills-advanced-link:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
 /* ---- Audit tab ---- */
 
 .audit-panel {

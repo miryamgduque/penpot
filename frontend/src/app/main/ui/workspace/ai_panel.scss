@@ -443,10 +443,22 @@
   }
 }
 
+// The input and its send/stop control share a row; the picker sits above.
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: deprecated.$s-8;
+}
+
+.composer-action {
+  flex: none;
+}
+
 .composer-input {
   @include deprecated.body-small-typography;
 
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: deprecated.$s-52;
   resize: none;
   padding: deprecated.$s-8;

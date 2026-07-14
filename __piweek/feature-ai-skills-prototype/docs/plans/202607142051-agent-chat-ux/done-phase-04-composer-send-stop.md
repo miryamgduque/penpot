@@ -1,7 +1,23 @@
 # Phase 04 — Composer send/stop
 
-**Status:** todo
-**Depends on:** Phase 03 (cancel plumbing)
+**Status:** done
+**Depends on:** Phase 03 (cancel plumbing) ✅
+
+## Verified live (devenv :3450) — driven through the real controls
+
+| Behaviour | Result |
+|---|---|
+| textarea enabled when idle | ✅ |
+| Send disabled while input is empty | ✅ |
+| Send enables once you type | ✅ |
+| clicking Send starts the turn | ✅ `busy? true` |
+| **textarea stays enabled while busy** | ✅ |
+| **you can type mid-turn** | ✅ |
+| button swaps to a destructive Stop while busy | ✅ |
+| clicking Stop ends the turn | ✅ `busy? false`, `⏹ Stopped.` |
+| Enter still sends (keyboard path intact) | ✅ full turn replied `PONG`, input cleared |
+
+Cost: two Haiku calls.
 
 ## Before Start
 
@@ -11,19 +27,27 @@
 
 ## Checklist
 
-- [ ] Add an `icon-button*` to the composer that swaps Send → Stop on `busy?`
-- [ ] Remove `:disabled busy?` from the textarea
-- [ ] Stop emits `dwaip/cancel-turn`
-- [ ] Accessible names on both states
-- [ ] SCSS for the button inside `.composer`
-- [ ] Compile + preview review with browser tools
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] Add an `icon-button*` to the composer that swaps Send → Stop on `busy?`
+- [x] Remove `:disabled busy?` from the textarea
+- [x] Stop emits `dwaip/cancel-turn`
+- [x] Accessible names on both states ("Send message" / "Stop generating")
+- [x] SCSS for the button inside `.composer` (new `.composer-row`)
+- [x] Compile (0 warnings) + live preview review
+- [x] Human approval received
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 
-- [ ] Rename `todo-` → `done-`; update README links
-- [ ] File the DS `stop` icon follow-up (see Notes)
+- [x] Rename `todo-` → `done-`; update README links
+- [x] File the DS `stop` icon follow-up (see Notes)
+
+### Follow-ups
+
+1. **DS: no `stop` glyph.** Using `i/close` for now. A filled square belongs in the DS
+   (`ds/foundations/assets/icon.cljs` + the `collect-icons` macro) — own ticket, along with the
+   `icon-button*` empty-accessible-name issue from Phase 01.
+2. **Stop still only halts the panel.** The provider keeps generating (and billing) server-side
+   until Phase 07 lands the upstream abort. Don't describe it as "stops the agent" until then.
 
 ## Files
 

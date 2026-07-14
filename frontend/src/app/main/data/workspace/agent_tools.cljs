@@ -22,12 +22,16 @@
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.types.shape :as cts]
+   [app.common.types.text :as txt]
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
+   [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.shapes :as dwsh]
    [app.main.data.workspace.transforms :as dwt]
    [app.main.data.workspace.undo :as dwu]
+   [app.main.data.workspace.wasm-text :as dwwt]
+   [app.main.features :as features]
    [app.main.store :as st]
    [beicon.v2.core :as rx]))
 
@@ -80,7 +84,28 @@
                    :properties {:shapeId {:type "string"}
                                 :parentId {:type "string"}
                                 :index {:type "number"}}
-                   :required ["shapeId" "parentId"]}}])
+                   :required ["shapeId" "parentId"]}}
+
+   {:name "create_text"
+    :description
+    (str "Creates an auto-width text shape with the given string at x,y. "
+         "Optional fill (hex, default black) and parentId to nest it. Width/"
+         "height settle asynchronously — re-read to confirm.")
+    :input-schema {:type "object"
+                   :properties {:text {:type "string"}
+                                :x {:type "number"}
+                                :y {:type "number"}
+                                :name {:type "string"}
+                                :fill {:type "string" :description "hex, default #000000"}
+                                :parentId {:type "string"}}
+                   :required ["text" "x" "y"]}}
+
+   {:name "create_component"
+    :description
+    (str "Turns the given shapes (or the current selection if shapeIds is "
+         "omitted) into a reusable component. Returns the new component id.")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}}}])
 
 ;; --- read_design
 
@@ -201,13 +226,66 @@
                   :note "reparented — verify with read_design"}))
       (rx/throw (ex-info "nest_shape: missing or invalid shapeId/parentId" {})))))
 
+;; --- Text & component tools
+
+(defn- create-text
+  [{:keys [text x y parentId fill] :as input}]
+  (if (or (not (string? text)) (empty? text))
+    (rx/throw (ex-info "create_text: text must be a non-empty string" {}))
+    (let [nm      (:name input)
+          color   (or fill "#000000")
+          state   @st/state
+          page    (dsh/lookup-page state)
+          objects (:objects page)
+          pid     (some-> parentId parse-uuid)
+          parent? (boolean (and pid (contains? objects pid)))
+          shape   (-> (cts/setup-shape
+                       (cond-> {:type :text
+                                :x (or x 0) :y (or y 0)
+                                :width 1 :height 1
+                                :grow-type :auto-width}
+                         nm (assoc :name nm)))
+                      (update :content txt/change-text text
+                              {:fills [{:fill-color color :fill-opacity 1}]})
+                      (dissoc :position-data)
+                      (cond-> parent? (assoc :parent-id pid :frame-id pid)))
+          changes (-> (cb/empty-changes)
+                      (cb/with-page page)
+                      (cb/with-objects objects)
+                      (cb/add-object shape))]
+      (interrupt!)
+      (st/emit! (dch/commit-changes changes))
+      (when (features/active-feature? @st/state "render-wasm/v1")
+        (st/emit! (dwwt/resize-wasm-text-debounce (:id shape))))
+      (rx/of {:id (dm/str (:id shape))
+              :note "text created — size settles async; verify with read_design"}))))
+
+(defn- create-component
+  [{:keys [shapeIds]}]
+  (let [ids (if (seq shapeIds)
+              (into #{} (keep parse-uuid) shapeIds)
+              (dsh/get-selected-ids @st/state))]
+    (if (empty? ids)
+      (rx/throw (ex-info "create_component: no shapes given and nothing selected" {}))
+      (try
+        (let [id-ref (atom nil)]
+          (interrupt!)
+          (st/emit! (dwl/add-component id-ref ids))
+          (if-let [cid (deref id-ref)]
+            (rx/of {:componentId (dm/str cid) :note "component created"})
+            (rx/throw (ex-info "create_component: shapes are not eligible for a component" {}))))
+        (catch :default e
+          (rx/throw e))))))
+
 ;; --- Dispatch
 
 (defn execute-tool
   [name input]
   (case name
-    "read_design"  (rx/of (read-design))
-    "create_shape" (create-shape input)
-    "modify_shape" (modify-shape input)
-    "nest_shape"   (nest-shape input)
+    "read_design"      (rx/of (read-design))
+    "create_shape"     (create-shape input)
+    "modify_shape"     (modify-shape input)
+    "nest_shape"       (nest-shape input)
+    "create_text"      (create-text input)
+    "create_component" (create-component input)
     (rx/throw (ex-info (dm/str "Unknown tool: " name) {}))))

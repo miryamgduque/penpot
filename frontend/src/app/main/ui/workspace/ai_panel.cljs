@@ -80,6 +80,57 @@
 ;; sub-pixel scroll positions and the last message's bottom margin.
 (def ^:private bottom-threshold 24)
 
+(defn- tool-failed?
+  [message]
+  (contains? #{"error" "rejected"} (:status message)))
+
+(mf/defc tool-group*
+  "One run of consecutive tool calls, collapsed to a summary you can open.
+
+  Grouping happens at render time rather than in state: the transcript is a
+  flat vector appended to one message at a time, and folding runs into it
+  would make every append inspect and rewrite its tail."
+  {::mf/private true}
+  [{:keys [messages]}]
+  (let [failed?  (some tool-failed? messages)
+        ;; a blocked or failed write is the thing the user most needs to see —
+        ;; never hide it behind a click
+        open*    (mf/use-state (boolean failed?))
+        open?    (deref open*)
+        detail-id (mf/use-id)
+        on-toggle (mf/use-fn #(swap! open* not))
+        n        (count messages)]
+    [:div {:class (stl/css :tool-group)}
+     [:button {:type "button"
+               :class (stl/css-case :tool-group-summary true
+                                    :tool-chip-error (boolean failed?))
+               :aria-expanded open?
+               :aria-controls detail-id
+               :on-click on-toggle}
+      [:span {:class (stl/css :tool-chip-glyph)} (if failed? "✕" "✓")]
+      [:span {:class (stl/css :tool-chip-name)}
+       (if (= 1 n)
+         (:name (first messages))
+         (dm/str "Ran " n " tools"))]
+      [:> i/icon* {:icon-id (if open? i/arrow-down i/arrow-right)
+                   :class (stl/css :tool-group-caret)}]]
+
+     (when open?
+       [:div {:id detail-id :class (stl/css :tool-group-detail)}
+        (for [[i message] (map-indexed vector messages)]
+          [:div {:key i :class (stl/css :tool-detail-row)}
+           [:div {:class (stl/css-case :tool-detail-name true
+                                       :tool-chip-error (tool-failed? message))}
+            (:name message)]
+           (when (tool-failed? message)
+             [:div {:class (stl/css :tool-chip-detail)}
+              (or (:rule message) (:detail message))])
+           (when-let [input (:input message)]
+             [:pre {:class (stl/css :tool-detail-payload)}
+              (js/JSON.stringify (clj->js input) nil 2)])
+           (when-let [result (:result message)]
+             [:pre {:class (stl/css :tool-detail-payload)} result])])])]))
+
 (mf/defc transcript*
   "The message list, split out so it can own its scroll ref.
 
@@ -94,7 +145,13 @@
   sentinel is never seen, leaving it wrongly detached forever."
   {::mf/private true}
   [{:keys [messages busy?]}]
-  (let [scroll-ref    (mf/use-ref nil)
+  (let [;; consecutive tool calls collapse into one row; `partition-by` on the
+        ;; role predicate yields alternating runs of tools / everything else
+        runs          (mf/with-memo [messages]
+                        (->> (map-indexed vector messages)
+                             (partition-by (fn [[_ m]] (= "tool" (:role m))))))
+
+        scroll-ref    (mf/use-ref nil)
         ;; a fresh transcript starts pinned to the newest message
         at-bottom*    (mf/use-state true)
         at-bottom?    (deref at-bottom*)
@@ -133,25 +190,21 @@
             :role "log"
             :aria-live "polite"
             :aria-relevant "additions text"}
-      (for [[idx message] (map-indexed vector messages)]
-        (if (= "tool" (:role message))
-          (let [error? (contains? #{"error" "rejected"} (:status message))]
-            [:div {:key idx
-                   :class (stl/css-case :tool-chip true :tool-chip-error error?)}
-             [:span {:class (stl/css :tool-chip-glyph)} (if error? "✕" "✓")]
-             [:span {:class (stl/css :tool-chip-name)} (:name message)]
-             (when error?
-               [:span {:class (stl/css :tool-chip-detail)}
-                (or (:rule message) (:detail message))])])
-          (let [user? (= "user" (:role message))]
-            [:div {:key idx
-                   :class (stl/css-case :message true
-                                        :message-user user?
-                                        :message-md (not user?))}
-             ;; the user didn't write markdown — don't eat their asterisks
-             (if user?
-               (:content message)
-               [:> md/markdown* {:text (:content message)}])])))
+      ;; `map-indexed` before the partition keeps `:key` on the stable
+      ;; transcript index — appends are tail-only, so it never shifts
+      (for [run runs]
+        (if (= "tool" (:role (second (first run))))
+          [:> tool-group* {:key (ffirst run) :messages (mapv second run)}]
+          (for [[idx message] run]
+            (let [user? (= "user" (:role message))]
+              [:div {:key idx
+                     :class (stl/css-case :message true
+                                          :message-user user?
+                                          :message-md (not user?))}
+               ;; the user didn't write markdown — don't eat their asterisks
+               (if user?
+                 (:content message)
+                 [:> md/markdown* {:text (:content message)}])]))))
       (when busy?
         [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
 

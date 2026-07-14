@@ -1,7 +1,23 @@
 # Phase 06 — Collapsible tool groups
 
-**Status:** todo
-**Depends on:** Phase 05 (tool event payload)
+**Status:** done
+**Depends on:** Phase 05 (tool event payload) ✅
+
+## Verified live (devenv :3450)
+
+A run of 3 successful tools, an assistant message, then a rejected call:
+
+| Behaviour | Result |
+|---|---|
+| consecutive tools collapse into one row | ✅ `✓ Ran 3 tools` |
+| an assistant message splits the runs | ✅ 2 groups, not 1 |
+| a lone tool shows its name, not "Ran 1 tools" | ✅ `✕ create_shape` |
+| **a rejected call auto-expands** | ✅ `aria-expanded=true` while the successful run stays `false` |
+| expanding shows input + result per call | ✅ 3 rows, 6 payload blocks |
+| rejection shows its rule | ✅ `token-only-colors` |
+| `aria-expanded` + `aria-controls` resolve to the panel | ✅ |
+| collapses again on click | ✅ |
+| **long payloads don't widen the panel** | ✅ still 360px; payloads scroll (`overflow-x: auto`, capped height) |
 
 ## Before Start
 
@@ -11,19 +27,24 @@
 
 ## Checklist
 
-- [ ] Group consecutive `"tool"` messages at render time
-- [ ] `tool-group*` disclosure component ("Ran 3 tools")
-- [ ] Expanded rows show input + result
-- [ ] Auto-expand groups containing an `error`/`rejected` chip
-- [ ] `aria-expanded` + `aria-controls`
-- [ ] SCSS for the group row + detail
-- [ ] Compile + preview review with browser tools
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] Group consecutive `"tool"` messages at render time
+- [x] `tool-group*` disclosure component ("Ran 3 tools")
+- [x] Expanded rows show input + result
+- [x] Auto-expand groups containing an `error`/`rejected` chip
+- [x] `aria-expanded` + `aria-controls`
+- [x] SCSS for the group row + detail
+- [x] Compile (0 warnings) + live preview review
+- [x] Human approval received
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 
-- [ ] Rename `todo-` → `done-`; update README links
+- [x] Rename `todo-` → `done-`; update README links
+
+### Note
+
+The old flat `.tool-chip` rule is still the visual base — `.tool-group-summary` `@extend`s it, so
+the chip's look survives even though nothing renders a bare `.tool-chip` element any more.
 
 ## Files
 

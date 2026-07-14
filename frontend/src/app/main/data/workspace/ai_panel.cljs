@@ -153,16 +153,20 @@
   "Runs one user turn: appends the user message, runs the agent turn through
   the backend proxy (executing native tools between rounds), and streams the
   assistant reply + tool chips into the transcript. `context` is the current
-  page + selection surfaced to the system prompt. The full canonical history
-  (with tool_use/tool_result blocks) is threaded across turns via `:history`."
+  page + selection; it rides on the user message (the volatile slot) rather than
+  the system prompt, which is the cached prefix — see `agent/user-content`. The
+  full canonical history (with tool_use/tool_result blocks) is threaded across
+  turns via `:history`."
   [settings text context]
   (ptk/reify ::send-message
     ptk/WatchEvent
     (watch [_ state _]
       (let [file-id (:current-file-id state)
             prior   (dm/get-in state [:ai-panel file-id :history])
-            history (conj (vec prior) {:role :user :text text})
-            system  (agent/build-system-prompt state context)]
+            ;; context rides on the user message (the volatile slot), while the
+            ;; system prompt stays a stable, cacheable prefix built from `state`
+            history (conj (vec prior) {:role :user :text text :context context})
+            system  (agent/build-system-prompt state)]
         (rx/concat
          (rx/of (append-message "user" text)
                 (set-busy true))

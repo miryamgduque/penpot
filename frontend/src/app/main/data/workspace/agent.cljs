@@ -29,9 +29,29 @@
 ;; --- Canonical conversation model
 ;;
 ;; A message is one of:
-;;   {:role :user       :text "…"}
+;;   {:role :user       :text "…" :context {…}}
 ;;   {:role :assistant  :text "…" :tool-calls [{:id :name :input}]}
-;;   {:role :tool-results :results [{:id :content :error?}]}   ; later phases
+;;   {:role :tool-results :results [{:id :content :error?}]}
+;;
+;; `:context` is the design orientation (file/page/selection) for THAT turn. It
+;; rides on the user message — the volatile slot — and deliberately NOT in the
+;; system prompt: the system block carries the `cache_control` marker, so any
+;; per-turn content inside it rewrites the cached prefix on every selection
+;; change. Measured: 96% cached → 0% cached, ~9× the per-turn cost.
+
+(defn- user-content
+  "Renders a canonical user message for the wire: the turn's design context (when
+  present) followed by what the user typed. Both providers take a plain string
+  here, so one renderer serves both."
+  [{:keys [text context]}]
+  (if (seq context)
+    (str/join "\n" ["## Current design context"
+                    "```json"
+                    (js/JSON.stringify (clj->js context))
+                    "```"
+                    ""
+                    text])
+    text))
 
 (defn- anthropic?
   "Providers that speak the Anthropic Messages API; the rest are
@@ -61,10 +81,10 @@
 (defn- encode-anthropic
   [messages]
   (->> messages
-       (mapv (fn [{:keys [role text tool-calls results]}]
+       (mapv (fn [{:keys [role text tool-calls results] :as message}]
                (case role
                  :user
-                 {:role "user" :content text}
+                 {:role "user" :content (user-content message)}
 
                  :assistant
                  (let [blocks (cond-> []
@@ -93,10 +113,10 @@
 (defn- encode-openai
   [system messages]
   (into [{:role "system" :content system}]
-        (mapcat (fn [{:keys [role text tool-calls results]}]
+        (mapcat (fn [{:keys [role text tool-calls results] :as message}]
                   (case role
                     :user
-                    [{:role "user" :content text}]
+                    [{:role "user" :content (user-content message)}]
 
                     :assistant
                     [(cond-> {:role "assistant" :content (when (seq text) text)}
@@ -223,10 +243,19 @@
           (* output-tokens output))
        1000000)))
 
-;; --- System prompt (scaffold; skills/rules sections arrive in Phase 07)
+;; --- System prompt
+;;
+;; STABLE CONTENT ONLY. This is the cached prefix (the Anthropic `system` block
+;; carries the `cache_control` marker, and tools render ahead of it), so every
+;; byte here is re-read at ~0.1× on a hit — and any per-turn value would rewrite
+;; the whole prefix at 1.25× instead. The turn's design context therefore lives
+;; on the user message; see `user-content`.
 
 (defn build-system-prompt
-  [state context]
+  ;; `state` for the per-user enabled-skills index (US #8); `context` is
+  ;; deliberately NOT here — it is volatile and would break the cached prefix,
+  ;; so it rides on the user message instead (US #26).
+  [state]
   (str/join "\n"
             ["You are the design agent embedded in Penpot (the open-source design tool), working on the user's current file."
              ""
@@ -240,10 +269,7 @@
              ;; get_design_skills. Empty string when none are enabled.
              (or (ask/system-prompt-section state) "")
              ""
-             "## Current design context"
-             "```json"
-             (js/JSON.stringify (clj->js context))
-             "```"
+             "Each turn opens with the current design context (file, page, selection). Treat it as orientation only — call read_design when you need ground truth."
              ""
              "Keep replies short — you live in a narrow side panel. Work in small steps and reference shapes by name."]))
 

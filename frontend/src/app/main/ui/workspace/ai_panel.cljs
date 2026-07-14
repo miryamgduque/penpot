@@ -220,7 +220,9 @@
                      (mf/deps busy?)
                      (fn []
                        (when-not busy?
-                         (st/emit! (dwaip/clear-chat)))))]
+                         (st/emit! (dwaip/clear-chat)))))
+
+        on-cancel   (mf/use-fn #(st/emit! (dwaip/cancel-turn)))]
 
     ;; close the model picker on any click outside it, or on Escape — without
     ;; the latter it is a keyboard trap: openable by keyboard, not closable
@@ -305,12 +307,29 @@
           [:a {:class (stl/css :model-picker-manage)
                :href "#/settings/integrations"}
            "Manage your models"]])]
-      [:textarea {:class (stl/css :composer-input)
-                  :placeholder "Ask the agent…"
-                  :value input
-                  :disabled busy?
-                  :on-change on-input
-                  :on-key-down on-key-down}]]]))
+      [:div {:class (stl/css :composer-row)}
+       ;; deliberately NOT disabled while busy: only *sending* needs gating,
+       ;; and being unable to even type through a long turn is the harshest
+       ;; part of the current experience
+       [:textarea {:class (stl/css :composer-input)
+                   :placeholder "Ask the agent…"
+                   :value input
+                   :on-change on-input
+                   :on-key-down on-key-down}]
+       (if busy?
+         ;; the DS has no stop glyph — `close` is the closest; a filled square
+         ;; would need a new DS icon, which is its own change
+         [:> icon-button* {:class (stl/css :composer-action)
+                           :variant "destructive"
+                           :aria-label "Stop generating"
+                           :on-click on-cancel
+                           :icon i/close}]
+         [:> icon-button* {:class (stl/css :composer-action)
+                           :variant "primary"
+                           :aria-label "Send message"
+                           :disabled (or (not settings) (empty? (str/trim input)))
+                           :on-click send
+                           :icon i/arrow-up}])]]]))
 
 (mf/defc mode-badge*
   "The colored mode pill shared by the catalog cards and the detail view."

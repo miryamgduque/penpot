@@ -3,6 +3,7 @@ import * as bridge from "./bridge";
 import type { SkillsPayload, DesignContext, Violation, AiPoolEntry } from "./bridge";
 import { Chat } from "./Chat";
 import { SkillsPanel } from "./Skills";
+import { SkillsCatalog } from "./SkillsCatalog";
 import { TokensPanel } from "./Tokens";
 import { AuditPanel } from "./Audit";
 import { NotificationStack, NOTIFICATION_TTL_MS, type SkillNotification } from "./Notifications";
@@ -253,7 +254,7 @@ export function App() {
             />
           </div>
         )}
-        {tab === "skills" && skills && <SkillsPanel skills={skills} onSkillsChanged={setSkills} />}
+        {tab === "skills" && <SkillsTab skills={skills} onSkillsChanged={setSkills} />}
         {tab === "audit" && (
           <AuditPanel
             violations={violations}
@@ -266,6 +267,44 @@ export function App() {
           <SettingsPanel settings={settings} settingsUri={settingsUri} onSave={saveSettings} />
         )}
       </main>
+    </div>
+  );
+}
+
+/**
+ * The Skills tab. Shows the built-in catalog by default (self-sourced from
+ * skills-core, so it renders even before the plugin host pushes a payload).
+ * The legacy scope/enforcement view is kept reachable behind an Advanced link
+ * whenever a host payload is present (build alongside, not replace).
+ */
+function SkillsTab({
+  skills,
+  onSkillsChanged,
+}: {
+  skills: SkillsPayload | null;
+  onSkillsChanged: (s: SkillsPayload) => void;
+}) {
+  const [advanced, setAdvanced] = useState(false);
+
+  if (advanced && skills) {
+    return (
+      <div className="skills-view">
+        <button className="skills-advanced-link" onClick={() => setAdvanced(false)}>
+          ← Back to catalog
+        </button>
+        <SkillsPanel skills={skills} onSkillsChanged={onSkillsChanged} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="skills-view">
+      <SkillsCatalog />
+      {skills && (
+        <button className="skills-advanced-link" onClick={() => setAdvanced(true)}>
+          Advanced — scopes &amp; enforcement
+        </button>
+      )}
     </div>
   );
 }

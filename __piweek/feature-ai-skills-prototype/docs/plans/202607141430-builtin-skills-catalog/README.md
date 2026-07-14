@@ -1,7 +1,12 @@
 # Built-in skills ship with the panel (US #7)
 
-**Status:** doing (Phase 01 done)
+**Status:** doing (Phases 01 + 03 done; Phase 02 deferred after 03)
 **Created:** 2026-07-14
+
+> **Resequencing note:** Phase 03 (catalog UI) was built directly on Phase 01's pure
+> `builtinCatalog()` so it renders live standalone, ahead of Phase 02. Phase 02 (host payload +
+> persisted enabled-state) now follows: the UI already accepts an optional `enabledByName`
+> override and defaults to `defaultEnabled` until Phase 02 wires the host-resolved state.
 **Apps:** `ai-skills` (panel), `skills-core`
 **Source:** [Taiga US #7 — Built-in skills ship with the panel](https://tree.taiga.io/project/miryam-all-in-penpot/us/7)
 **Dependencies:** None. Adjacent (out of scope here): #8 toggling, #9/#10 create/fork, #12/#13 team-published skills.
@@ -62,7 +67,7 @@ the shared docs carry no `mode` and fall out naturally.
 
 1. [Phase 01 — Catalog model in skills-core](./done-phase-01-catalog-model.md) — parse `mode`, derive category/example/default, exclude core; unit-tested. ✅ **done** (31 tests green)
 2. [Phase 02 — Enabled state + payload](./todo-phase-02-enabled-and-payload.md) — default-enabled resolution + persisted layer, exposed through the plugin→panel payload.
-3. [Phase 03 — Catalog list UI](./todo-phase-03-catalog-list-ui.md) — grouped cards as the default Skills tab; keep the scope/enforcement view reachable.
+3. [Phase 03 — Catalog list UI](./done-phase-03-catalog-list-ui.md) — grouped cards as the default Skills tab; keep the scope/enforcement view reachable. ✅ **done** (live-verified)
 4. [Phase 04 — Read-only detail view](./todo-phase-04-detail-view.md) — card → detail (name, category, mode, example, what it does) with back control.
 
 ## Acceptance Criteria

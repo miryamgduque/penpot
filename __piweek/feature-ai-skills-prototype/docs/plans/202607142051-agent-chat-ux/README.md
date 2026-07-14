@@ -2,7 +2,7 @@
 
 # Agent chat UX — streaming, stop, scroll, collapsible tools
 
-**Status:** todo
+**Status:** doing
 **Created:** 2026-07-14
 **Apps:** `frontend`, `backend`
 **User story:** [US #27 — Agent chat UI improvements](https://tree.taiga.io/project/miryam-all-in-penpot/us/27)
@@ -75,7 +75,7 @@ not roll Penpot back); the tool set; the skills cascade; the Skills tab; the sys
 Each ≤3 files, independently demoable. **01–06 are frontend-only and independent of 07–08**,
 which can proceed in parallel (different app).
 
-1. [Phase 01 — Scroll + a11y](./todo-phase-01-scroll-a11y.md) — stick-to-bottom, jump-to-latest pill, live region
+1. [Phase 01 — Scroll + a11y](./done-phase-01-scroll-a11y.md) — stick-to-bottom, jump-to-latest pill, live region ✅ **done**
 2. [Phase 02 — Markdown rendering](./todo-phase-02-markdown.md) — `marked.lexer` → elements, safe hrefs, code highlighting
 3. [Phase 03 — Cancel plumbing](./todo-phase-03-cancel-plumbing.md) — `::cancel-turn`, `take-until`, `cancel-history` + unit test
 4. [Phase 04 — Composer send/stop](./todo-phase-04-composer-send-stop.md) — real button, type-while-busy *(needs 03)*

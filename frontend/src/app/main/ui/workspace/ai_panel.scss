@@ -200,6 +200,49 @@
   color: var(--color-foreground-primary);
 }
 
+// Spend meter + clear row, above the composer.
+.chat-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+}
+
+.usage-meter {
+  @include deprecated.body-small-typography;
+
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-foreground-secondary);
+}
+
+.chat-clear {
+  @include deprecated.body-small-typography;
+
+  flex-shrink: 0;
+  padding: deprecated.$s-2 deprecated.$s-6;
+  border-radius: deprecated.$br-6;
+  border: none;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-background-tertiary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+}
+
 // Skills tab: the built-in catalog, grouped Audits / Build / Auto-fix.
 .skills-tab {
   @extend %new-scrollbar;

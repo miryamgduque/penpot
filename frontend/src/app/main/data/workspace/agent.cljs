@@ -156,7 +156,8 @@
 
 (defn- decode-anthropic
   [parsed]
-  (let [content (:content parsed)]
+  (let [content (:content parsed)
+        usage   (:usage parsed)]
     {:text (->> content
                 (filter #(= "text" (:type %)))
                 (map #(or (:text %) ""))
@@ -164,12 +165,18 @@
      :tool-calls (->> content
                       (filter #(= "tool_use" (:type %)))
                       (mapv (fn [b] {:id (:id b) :name (:name b) :input (or (:input b) {})})))
-     :stopped-for-length? (= "max_tokens" (:stop_reason parsed))}))
+     :stopped-for-length? (= "max_tokens" (:stop_reason parsed))
+     :usage {:input-tokens (or (:input_tokens usage) 0)
+             :output-tokens (or (:output_tokens usage) 0)
+             :cache-read-tokens (or (:cache_read_input_tokens usage) 0)
+             :cache-write-tokens (or (:cache_creation_input_tokens usage) 0)
+             :requests 1}}))
 
 (defn- decode-openai
   [parsed]
   (let [message (get-in parsed [:choices 0 :message])
-        finish  (get-in parsed [:choices 0 :finish_reason])]
+        finish  (get-in parsed [:choices 0 :finish_reason])
+        usage   (:usage parsed)]
     {:text (let [c (:content message)] (if (string? c) c ""))
      :tool-calls (->> (:tool_calls message)
                       (mapv (fn [c]
@@ -179,7 +186,42 @@
                                         (js->clj (js/JSON.parse (or (get-in c [:function :arguments]) "{}"))
                                                  :keywordize-keys true)
                                         (catch :default _ {}))})))
-     :stopped-for-length? (= "length" finish)}))
+     :stopped-for-length? (= "length" finish)
+     :usage {:input-tokens (or (:prompt_tokens usage) 0)
+             :output-tokens (or (:completion_tokens usage) 0)
+             :cache-read-tokens (or (get-in usage [:prompt_tokens_details :cached_tokens]) 0)
+             :cache-write-tokens 0
+             :requests 1}}))
+
+;; --- Usage & cost
+;;
+;; Session token totals accumulate in the panel (Phase 09 spend meter). Pricing
+;; is Claude-only by design — the meter hides `$` for other providers.
+
+(def empty-usage
+  {:input-tokens 0 :output-tokens 0 :cache-read-tokens 0 :cache-write-tokens 0 :requests 0})
+
+(defn add-usage
+  "Merges a round's usage into the running totals."
+  [a b]
+  (merge-with + (or a empty-usage) (or b empty-usage)))
+
+;; $ per million tokens (standard list price; cache read ≈ 0.1×, write ≈ 1.25×).
+(def ^:private pricing
+  {"claude-sonnet-5" {:input 3 :output 15}
+   "claude-opus-4-8" {:input 5 :output 25}
+   "claude-haiku-4-5-20251001" {:input 1 :output 5}})
+
+(defn estimate-cost-usd
+  "Estimated session cost in USD for Claude models; nil for anything unpriced
+  (the meter hides the figure)."
+  [model {:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens]}]
+  (when-let [{:keys [input output]} (get pricing model)]
+    (/ (+ (* input-tokens input)
+          (* cache-read-tokens input 0.1)
+          (* cache-write-tokens input 1.25)
+          (* output-tokens output))
+       1000000)))
 
 ;; --- System prompt (scaffold; skills/rules sections arrive in Phase 07)
 
@@ -216,6 +258,24 @@
 
 (def ^:private max-rounds 32)
 (def ^:private max-tool-result-chars 20000)
+(def ^:private max-history-messages 40)
+
+(defn trim-history
+  "Bounds the canonical history without splitting a tool call from its results:
+  only cuts at a plain user message (every turn starts with one), so
+  tool_use/tool_result pairs stay intact."
+  [history]
+  (let [history (vec history)
+        n       (count history)]
+    (if (<= n max-history-messages)
+      history
+      (let [turn-start? (fn [m] (= :user (:role m)))
+            from        (- n max-history-messages)]
+        (or (some (fn [i] (when (turn-start? (nth history i)) (subvec history i)))
+                  (range from n))
+            (some (fn [i] (when (turn-start? (nth history i)) (subvec history i)))
+                  (range (dec n) -1 -1))
+            history)))))
 
 (defn- empty-reply-text
   [outcome]
@@ -293,15 +353,17 @@
                             messages' (conj messages {:role :assistant
                                                       :text text
                                                       :tool-calls calls})]
-                        (cond
-                          (and (empty? text) (empty? calls))
-                          (rx/of {:kind :assistant :text (empty-reply-text outcome)}
-                                 {:kind :done :history messages'})
+                        (rx/concat
+                         (rx/of {:kind :usage :usage (:usage outcome)})
+                         (cond
+                           (and (empty? text) (empty? calls))
+                           (rx/of {:kind :assistant :text (empty-reply-text outcome)}
+                                  {:kind :done :history (trim-history messages')})
 
-                          (empty? calls)
-                          (rx/of {:kind :assistant :text text}
-                                 {:kind :done :history messages'})
+                           (empty? calls)
+                           (rx/of {:kind :assistant :text text}
+                                  {:kind :done :history (trim-history messages')})
 
-                          :else
-                          (tool-round messages' round text calls))))))))]
+                           :else
+                           (tool-round messages' round text calls)))))))))]
     (step (vec history) 0)))

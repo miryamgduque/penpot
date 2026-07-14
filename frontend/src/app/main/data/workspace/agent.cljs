@@ -342,13 +342,29 @@
       (conj messages {:role :tool-results :results (mapv cancelled-result calls)})
       messages)))
 
+;; What the transcript keeps for an expanded tool row. The canonical history
+;; already holds the full result (up to `max-tool-result-chars`, 20k, per call
+;; — 32 rounds of which is a lot of state to duplicate), and this copy is a UI
+;; artifact, not the wire format.
+(def ^:private max-displayed-result-chars 2000)
+
+(defn- displayed-result
+  [content]
+  (when (string? content)
+    (if (> (count content) max-displayed-result-chars)
+      (subs content 0 max-displayed-result-chars)
+      content)))
+
 (defn- tool-outcome->event
   [o]
   {:kind :tool
    :name (:name (:call o))
    :status (:status o)
    :rule (:rule o)
-   :detail (:detail o)})
+   :detail (:detail o)
+   ;; both already sit on the outcome — the chip just never showed them
+   :input (:input (:call o))
+   :result (displayed-result (:content o))})
 
 (defn run-turn
   [settings history system]

@@ -16,6 +16,16 @@ mechanism works: does the index cause a fetch, and does the body change behaviou
 - [ ] Re-read `agent-skills/catalog-manifest` and `skill-manifest` (metadata-only today)
 - [ ] Re-read `agent-tools/get-design-skills` — the tool that must start returning bodies
 - [ ] Confirm Phase 03's split — bodies are only needed for what stayed **user-facing**
+      (the 10 catalog skills). Phase 03 also handed this phase two extra jobs: the
+      **fill-policy** and **token-modes** sections carved out of `modes-and-policies`, which are
+      procedural and belong in a body — but are written against `applyToken()` / `clone()` /
+      `createComponent()` / `theme.addSet()` and **must be reworked onto our native tool names
+      before shipping**, or the agent will try to call plugin methods it does not have.
+- [ ] **Budget for the rework, not just the import.** Every workflow body carries plugin-API and
+      MCP references too (measured: 1–16 `mcp` and 1–7 `plugin` mentions *per skill*, e.g.
+      `penpot-migrate` has 16 MCP references). A verbatim `aikit.gen.cljs` import would inject
+      exactly the wrong instructions into the agent that Phase 03 just finished stripping. Decide
+      early: rework at import time, or filter at fetch time.
 - [ ] Check body sizes in the corpus: a playbook is thousands of tokens, which is exactly why
       it must not be always-on
 

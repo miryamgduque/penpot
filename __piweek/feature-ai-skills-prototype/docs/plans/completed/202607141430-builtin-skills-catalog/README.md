@@ -1,13 +1,9 @@
 # Built-in skills ship with the panel (US #7)
 
-**Status:** all phases done (01, 03, 04, 05 built; 02 closed as out-of-scope). Follow-up: retire the React `ai-skills` catalog now that the native CLJS panel is the home.
+**Status:** ✅ **done** — Phases 01, 03, 04, 05 built; 02 closed as out-of-scope. React `ai-skills` catalog kept as a prototype (not retired). See Completion Summary.
 **Created:** 2026-07-14
-
-> **Resequencing note:** Phase 03 (catalog UI) was built directly on Phase 01's pure
-> `builtinCatalog()` so it renders live standalone, ahead of Phase 02. Phase 02 (host payload +
-> persisted enabled-state) now follows: the UI already accepts an optional `enabledByName`
-> override and defaults to `defaultEnabled` until Phase 02 wires the host-resolved state.
-**Apps:** `ai-skills` (panel), `skills-core`
+**Completed:** 2026-07-14
+**Apps:** `frontend` (native workspace panel), `ai-skills` (React prototype), `skills-core`
 **Source:** [Taiga US #7 — Built-in skills ship with the panel](https://tree.taiga.io/project/miryam-all-in-penpot/us/7)
 **Dependencies:** None. Adjacent (out of scope here): #8 toggling, #9/#10 create/fork, #12/#13 team-published skills.
 
@@ -27,14 +23,14 @@ not creating/forking (#9/#10), not team-published skills (#12/#13).
 
 ### Current state (grounded in code)
 
-- The Skills tab **already exists** ([`ai-skills/src/ui/App.tsx`](../../../../../ai-skills/src/ui/App.tsx) →
-  [`Skills.tsx`](../../../../../ai-skills/src/ui/Skills.tsx)) but renders a **scope/enforcement**
+- The Skills tab **already exists** ([`ai-skills/src/ui/App.tsx`](../../../../../../ai-skills/src/ui/App.tsx) →
+  [`Skills.tsx`](../../../../../../ai-skills/src/ui/Skills.tsx)) but renders a **scope/enforcement**
   model (Effective / platform / org / project / file tabs, enforcement badges, inline
   toggles + editors) — *not* the story's catalog view.
 - **Modes already live in frontmatter** of the bundled skills
-  ([`skills-core/src/aikit.gen.ts`](../../../../../skills-core/src/aikit.gen.ts)):
+  ([`skills-core/src/aikit.gen.ts`](../../../../../../skills-core/src/aikit.gen.ts)):
   `mode: suggest` (audits + router), `mode: review` (build), `mode: autofix`
-  (rename-layers). But [`parse.ts`](../../../../../skills-core/src/parse.ts) currently **ignores
+  (rename-layers). But [`parse.ts`](../../../../../../skills-core/src/parse.ts) currently **ignores
   `mode`**, and there is no `category` or `example` field.
 - The **router + 4 shared docs** (`penpot-router`, `penpot-plugin-api-gotchas`,
   `penpot-naming-conventions`, `penpot-operating-modes`, `penpot-mcp-tool-reference`) are
@@ -85,3 +81,42 @@ the shared docs carry no `mode` and fall out naturally.
 - The existing scope/enforcement view remains reachable.
 - `make lint` / typecheck pass; skills-core unit tests cover derivation, exclusions, and
   default state.
+
+## Completion Summary
+
+**Completed:** 2026-07-14
+
+### What Shipped
+- **Catalog model** (skills-core, Phase 01): parses `mode`, derives category / example / default-enabled,
+  excludes router + shared docs; 31 unit tests. Consumed by the React panel.
+- **React `ai-skills` catalog** (Phase 03): grouped cards + curated copy in the standalone panel —
+  kept as a prototype.
+- **Native CLJS catalog** in the real workspace Agents panel (Phase 05): Audits/Build/Auto-fix cards,
+  colored mode badges, rename-layers off by default; replaces the Skills-tab placeholder.
+- **Native CLJS read-only detail view** (Phase 04): card → detail (category overline, name, mode
+  badge, example trigger phrase, what-it-does) with an "All skills" back control; in-place same-tab
+  swap; strictly read-only.
+- Catalog data shared with the agent via `frontend/.../agent_skills.cljs` (`ask/catalog`) — one
+  source for the Skills tab and the agent's routing index / `get_design_skills`.
+
+### What Changed from Original Plan
+- **Phase 02 dropped as out-of-scope.** The plan assumed a persisted enabled-state layer, but the
+  story defers on/off toggling and persistence to #8. Only the static default is in scope (already
+  covered by Phase 01/05). No code.
+- **Native CLJS became the real home.** The plan was drafted around the React `ai-skills` panel, but
+  the devenv workspace uses the native cljs Agents panel (its Skills tab was a placeholder). Phases
+  04/05 were built there; the React version (Phase 03) is kept, not retired (product-owner decision).
+- **Resequenced** — 05 (native port) and 04 (detail) followed 03, sourcing the pure catalog directly.
+
+### Lessons & Follow-ups
+- **rumext compiles only *literal* hiccup** — a helper `defn` returning a hiccup vector crashes React
+  ("Objects are not valid as a React child"); extract shared bits as `mf/defc` components. (One
+  crash-and-fix in Phase 04.)
+- **Devenv CSS glob is startup-bound** — a namespace scss added after `watch.js` started never lands
+  in `main.css` until a full re-glob (touch a file under `resources/styles`, or a cold `run-devenv`).
+- **Claude-in-Chrome can't open localhost/LAN** (blocks by resolved IP) — verify the devenv via the
+  Preview tool instead. Saved to memory.
+- **Follow-up (not blocking):** catalog copy is duplicated between skills-core (TS) and
+  `agent_skills.cljs` (CLJS). A generated `aikit.gen.cljs` would give a single source. Deferred.
+- **Follow-up:** bring full skill bodies into CLJS so `get_design_skills` returns more than metadata
+  (noted in `agent_skills.cljs`).

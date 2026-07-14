@@ -18,6 +18,7 @@
   (:require
    [app.common.data.macros :as dm]
    [app.main.data.ai-providers :as dai]
+   [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.refs :as refs]
    [app.main.store :as st]
@@ -47,38 +48,8 @@
              model (:enabled-models status)]
          {:provider (:provider status) :model model})))
 
-;; The built-in skills catalog shown on the Skills tab's first-run view. Static
-;; built-in data, mirroring skills-core's `builtinCatalog()` plus curated display
-;; copy. Grouped by category in display order; the dispatch router and the
-;; shared/core house-rule docs are intentionally excluded. Audit + build skills
-;; ship enabled; the single auto-fix skill ships off (it writes directly).
-(def ^:private skills-catalog
-  [{:category "Audits"
-    :skills [{:name "penpot-audit-accessibility" :label "Accessibility audit"
-              :blurb "WCAG 2.1/2.2 AA checks" :mode "suggest" :enabled true}
-             {:name "penpot-audit-tokens" :label "Tokens governance audit"
-              :blurb "Hardcoded values, off-grid spacing" :mode "suggest" :enabled true}
-             {:name "penpot-design-to-code-review" :label "Design-to-code review"
-              :blurb "Design vs. built code drift" :mode "suggest" :enabled true}]}
-   {:category "Build"
-    :skills [{:name "penpot-foundations" :label "Foundations"
-              :blurb "Design tokens setup" :mode "review" :enabled true}
-             {:name "penpot-component-factory" :label "Component factory"
-              :blurb "Builds full variant matrix" :mode "review" :enabled true}
-             {:name "penpot-build-screen" :label "Build screen"
-              :blurb "Designs screens from a brief" :mode "review" :enabled true}
-             {:name "penpot-build-from-code" :label "Build from code"
-              :blurb "Recreates a view on your tokens" :mode "review" :enabled true}
-             {:name "penpot-document-handoff" :label "Document handoff"
-              :blurb "Annotates a design for devs" :mode "review" :enabled true}
-             {:name "penpot-migrate" :label "Migrate"
-              :blurb "Figma → Penpot migration" :mode "review" :enabled true}]}
-   {:category "Auto-fix"
-    :skills [{:name "penpot-rename-layers" :label "Rename layers"
-              :blurb "Auto-fixes messy layer names" :mode "autofix" :enabled false}]}])
-
-(def ^:private mode-label
-  {"suggest" "suggest" "review" "review" "autofix" "auto-fix"})
+;; The built-in skills catalog is shared with the agent — see
+;; app.main.data.workspace.agent-skills (`ask/catalog`, `ask/mode-label`).
 
 (mf/defc chat-tab*
   {::mf/private true}
@@ -191,7 +162,7 @@
   {::mf/private true}
   []
   [:div {:class (stl/css :skills-tab)}
-   (for [{:keys [category skills]} skills-catalog]
+   (for [{:keys [category skills]} ask/catalog]
      [:div {:key category :class (stl/css :catalog-group)}
       [:div {:class (stl/css :catalog-group-label)} category]
       (for [{:keys [name label blurb mode enabled]} skills]
@@ -208,7 +179,7 @@
                                        :mode-suggest (= mode "suggest")
                                        :mode-review  (= mode "review")
                                        :mode-autofix (= mode "autofix"))}
-           (get mode-label mode mode)]]])])])
+           (get ask/mode-label mode mode)]]])])])
 
 (mf/defc ai-panel*
   ;; `file` / `page` are passed for future context-aware tabs; the Chat tab

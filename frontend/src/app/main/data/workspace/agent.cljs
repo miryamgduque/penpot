@@ -20,6 +20,7 @@
   declarations and the multi-round tool loop arrive in later phases (there are
   clearly-marked seams below)."
   (:require
+   [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
@@ -193,8 +194,10 @@
              "- Auto-fix without asking ONLY for the safe set: renaming auto-named layers, loss-less raw-value→token swaps, adding documentation/metadata."
              "- Never without explicit approval: deleting/restructuring components or shared assets, large destructive geometry changes."
              ""
-             ;; SEAM: Phase 07 injects the effective skills routing index, the
-             ;; rules manifest, and local skill bodies here.
+             ;; Enabled built-in skills (routing index); details on demand via
+             ;; get_design_skills. Empty string when none are enabled.
+             (or (ask/system-prompt-section) "")
+             ""
              "## Current design context"
              "```json"
              (js/JSON.stringify (clj->js context))

@@ -113,10 +113,19 @@
      (if (seq messages)
        [:div {:class (stl/css :transcript)}
         (for [[idx message] (map-indexed vector messages)]
-          [:div {:key idx
-                 :class (stl/css-case :message true
-                                      :message-user (= "user" (:role message)))}
-           (:content message)])
+          (if (= "tool" (:role message))
+            (let [error? (contains? #{"error" "rejected"} (:status message))]
+              [:div {:key idx
+                     :class (stl/css-case :tool-chip true :tool-chip-error error?)}
+               [:span {:class (stl/css :tool-chip-glyph)} (if error? "✕" "✓")]
+               [:span {:class (stl/css :tool-chip-name)} (:name message)]
+               (when error?
+                 [:span {:class (stl/css :tool-chip-detail)}
+                  (or (:rule message) (:detail message))])])
+            [:div {:key idx
+                   :class (stl/css-case :message true
+                                        :message-user (= "user" (:role message)))}
+             (:content message)]))
         (when busy?
           [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
        [:div {:class (stl/css :transcript-empty)}

@@ -63,6 +63,33 @@
                    (fnil conj []) {:role role :content content})
         state))))
 
+(defn append-tool
+  "Appends a tool-call marker to the rendered transcript (a chip)."
+  [tool-name status rule detail]
+  (ptk/reify ::append-tool
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :messages]
+                   (fnil conj []) {:role "tool"
+                                   :name tool-name
+                                   :status (some-> status name)
+                                   :rule rule
+                                   :detail detail})
+        state))))
+
+(defn- store-history
+  "Persists the canonical turn history (with tool_use/tool_result blocks) so
+  the next turn carries full context — the rendered transcript can't
+  reconstruct it."
+  [history]
+  (ptk/reify ::store-history
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (assoc-in state [:ai-panel file-id :history] history)
+        state))))
+
 (defn set-busy
   [busy?]
   (ptk/reify ::set-busy
@@ -72,33 +99,32 @@
         (assoc-in state [:ai-panel file-id :busy?] busy?)
         state))))
 
-(defn- display->canonical
-  "The rendered transcript stores `{:role \"user\"/\"assistant\" :content}`;
-  the agent's canonical history uses `{:role :user/:assistant :text}`. For the
-  text-only phase this mapping is 1:1 (tool_use/tool_result blocks arrive with
-  a dedicated canonical history in a later phase)."
-  [{:keys [role content]}]
-  {:role (keyword role) :text content})
-
 (defn send-message
-  "Runs one user turn: appends the user message, runs the agent round through
-  the backend proxy, and appends the assistant reply (or a readable error).
-  `context` is the current page + selection surfaced to the system prompt."
+  "Runs one user turn: appends the user message, runs the agent turn through
+  the backend proxy (executing native tools between rounds), and streams the
+  assistant reply + tool chips into the transcript. `context` is the current
+  page + selection surfaced to the system prompt. The full canonical history
+  (with tool_use/tool_result blocks) is threaded across turns via `:history`."
   [settings text context]
   (ptk/reify ::send-message
     ptk/WatchEvent
     (watch [_ state _]
       (let [file-id (:current-file-id state)
-            history (-> (mapv display->canonical
-                              (dm/get-in state [:ai-panel file-id :messages]))
-                        (conj {:role :user :text text}))
+            prior   (dm/get-in state [:ai-panel file-id :history])
+            history (conj (vec prior) {:role :user :text text})
             system  (agent/build-system-prompt context)]
         (rx/concat
          (rx/of (append-message "user" text)
                 (set-busy true))
          (rx/concat
-          (->> (agent/run-round settings history system)
-               (rx/map (fn [reply] (append-message "assistant" reply)))
+          (->> (agent/run-turn settings history system)
+               (rx/mapcat (fn [ev]
+                            (case (:kind ev)
+                              :assistant (rx/of (append-message "assistant" (:text ev)))
+                              :tool      (rx/of (append-tool (:name ev) (:status ev)
+                                                             (:rule ev) (:detail ev)))
+                              :done      (rx/of (store-history (:history ev)))
+                              (rx/empty))))
                (rx/catch (fn [cause]
                            (let [data (ex-data cause)
                                  msg  (or (:hint data)

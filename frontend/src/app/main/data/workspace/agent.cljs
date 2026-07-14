@@ -20,6 +20,7 @@
   declarations and the multi-round tool loop arrive in later phases (there are
   clearly-marked seams below)."
   (:require
+   [app.main.data.workspace.agent-tools :as at]
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
@@ -37,9 +38,22 @@
   [provider]
   (= provider "anthropic"))
 
-;; --- Tools (empty until Phase 02; the loop and encoders already thread them)
+;; --- Tools: declarations live in agent-tools; encode per provider here.
 
-(def ^:private tools [])
+(defn- anthropic-tools
+  []
+  (mapv (fn [t] {:name (:name t)
+                 :description (:description t)
+                 :input_schema (:input-schema t)})
+        at/tool-specs))
+
+(defn- openai-tools
+  []
+  (mapv (fn [t] {:type "function"
+                 :function {:name (:name t)
+                            :description (:description t)
+                            :parameters (:input-schema t)}})
+        at/tool-specs))
 
 ;; --- Wire encoding
 
@@ -115,11 +129,11 @@
                :system [{:type "text" :text system
                          :cache_control {:type "ephemeral"}}]
                :messages (encode-anthropic messages)}
-        (seq tools) (assoc :tools tools))
+        (seq at/tool-specs) (assoc :tools (anthropic-tools)))
       (cond-> {:model model
                :messages (encode-openai system messages)}
-        (seq tools)         (assoc :tools tools)
-        (= provider "openai") (assoc :max_completion_tokens 16000)
+        (seq at/tool-specs)      (assoc :tools (openai-tools))
+        (= provider "openai")    (assoc :max_completion_tokens 16000)
         (not= provider "openai") (assoc :max_tokens 16000))))))
 
 ;; --- Response parsing / decoding
@@ -190,24 +204,101 @@
 
 ;; --- Turn runner
 ;;
-;; Phase 01: one round, text only. `run-round` returns an rx observable of the
-;; assistant text (or errors, surfaced to the caller). The multi-round tool
-;; loop (execute tools → feed results back → repeat) is added in Phase 02.
+;; `run-turn` returns an rx observable of *turn events* consumed by the panel:
+;;   {:kind :assistant :text s}
+;;   {:kind :tool :name … :status :ok|:error|:rejected :rule … :detail …}
+;; It runs up to `max-rounds` rounds, executing each round's tool calls through
+;; `agent-tools/execute-tool`, feeding the results back, and repeating until
+;; the model stops calling tools.
 
-(defn run-round
-  [settings messages system]
-  (->> (rp/cmd! :ai-agent-round
-                {:provider (:provider settings)
-                 :payload (build-round-body settings messages system)})
-       (rx/map (fn [round]
-                 (let [parsed  (parse-round round)
-                       outcome (if (anthropic? (:provider settings))
-                                 (decode-anthropic parsed)
-                                 (decode-openai parsed))
-                       text    (:text outcome)]
-                   (cond
-                     (seq text) text
-                     (:stopped-for-length? outcome)
-                     "⚠️ I ran out of output budget before finishing — please send the request again."
-                     :else
-                     "⚠️ The model returned no visible output — try rephrasing the request."))))))
+(def ^:private max-rounds 32)
+(def ^:private max-tool-result-chars 20000)
+
+(defn- empty-reply-text
+  [outcome]
+  (if (:stopped-for-length? outcome)
+    "⚠️ I ran out of output budget before finishing — please send the request again."
+    "⚠️ The model returned no visible output — try rephrasing the request."))
+
+(defn- result->content
+  [result]
+  (let [s (js/JSON.stringify (clj->js result))]
+    (if (> (count s) max-tool-result-chars)
+      (subs s 0 max-tool-result-chars)
+      s)))
+
+(defn- tool-outcome->result
+  [o]
+  {:id (:id (:call o)) :content (:content o) :error? (:error? o)})
+
+(defn- tool-outcome->event
+  [o]
+  {:kind :tool
+   :name (:name (:call o))
+   :status (:status o)
+   :rule (:rule o)
+   :detail (:detail o)})
+
+(defn run-turn
+  [settings history system]
+  (letfn [(decode [parsed]
+            (if (anthropic? (:provider settings))
+              (decode-anthropic parsed)
+              (decode-openai parsed)))
+
+          (run-tool [call]
+            ;; → observable of one {:call :status :content :error? :rule :detail}
+            (->> (at/execute-tool (:name call) (:input call))
+                 (rx/map (fn [result]
+                           {:call call :status :ok :content (result->content result)}))
+                 (rx/catch (fn [cause]
+                             (let [rule (:rule (ex-data cause))]
+                               (rx/of {:call call
+                                       :status (if rule :rejected :error)
+                                       :rule rule
+                                       :detail (ex-message cause)
+                                       :content (or (ex-message cause) "tool error")
+                                       :error? true}))))))
+
+          (tool-round [messages' round text calls]
+            ;; emit this round's text (if any), run the tools, feed the results
+            ;; back into the next round
+            (rx/concat
+             (if (seq text) (rx/of {:kind :assistant :text text}) (rx/empty))
+             (->> (rx/from calls)
+                  (rx/mapcat run-tool)
+                  (rx/reduce conj [])
+                  (rx/mapcat
+                   (fn [outcomes]
+                     (rx/concat
+                      (rx/from (mapv tool-outcome->event outcomes))
+                      (step (conj messages' {:role :tool-results
+                                             :results (mapv tool-outcome->result outcomes)})
+                            (inc round))))))))
+
+          (step [messages round]
+            (if (>= round max-rounds)
+              (rx/empty)
+              (->> (rp/cmd! :ai-agent-round
+                            {:provider (:provider settings)
+                             :payload (build-round-body settings messages system)})
+                   (rx/mapcat
+                    (fn [round-result]
+                      (let [outcome   (decode (parse-round round-result))
+                            text      (:text outcome)
+                            calls     (:tool-calls outcome)
+                            messages' (conj messages {:role :assistant
+                                                      :text text
+                                                      :tool-calls calls})]
+                        (cond
+                          (and (empty? text) (empty? calls))
+                          (rx/of {:kind :assistant :text (empty-reply-text outcome)}
+                                 {:kind :done :history messages'})
+
+                          (empty? calls)
+                          (rx/of {:kind :assistant :text text}
+                                 {:kind :done :history messages'})
+
+                          :else
+                          (tool-round messages' round text calls))))))))]
+    (step (vec history) 0)))

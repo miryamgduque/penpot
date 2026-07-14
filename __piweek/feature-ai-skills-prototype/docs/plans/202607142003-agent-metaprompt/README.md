@@ -2,7 +2,7 @@
 
 # Agent chat metaprompt — validate the harness model, then fix what it finds
 
-**Status:** doing
+**Status:** done — 2026-07-15
 **Created:** 2026-07-14
 **Apps:** `frontend`
 **User story:** [US #26 — Agent chat metaprompt](https://tree.taiga.io/project/miryam-all-in-penpot/us/26)
@@ -99,8 +99,10 @@ agent's own output introduced.
    and consistent (`h3`/`p` vs "Heading"/"Body", 4/4 runs) but **`audit_file` is structurally
    blind to it** — it scores the floor, not the house style. The instrument, not the layer, is
    the finding.
-7. [Phase 07 — The agent must see](./todo-phase-07-render-refeed.md) — `render_region` +
-   re-feed after edits; measure the quality delta. Biggest build, gated on 01–06.
+7. [Phase 07 — The agent must see](./done-phase-07-render-refeed.md) — ⛔ **closed as superseded**
+   by [Agent vision](../202607150027-agent-vision/) (user's call, 2026-07-15). That plan already
+   answered this phase's feasibility spike, corrected its tool name (`render_region` → the WASM
+   API is per-shape, so `render_board`), and covers user-attached images too. No code here.
 
 ## Acceptance Criteria
 
@@ -116,6 +118,62 @@ agent's own output introduced.
   a reason.
 - `clj-kondo`, `cljfmt`, and `shadow-cljs compile main` stay clean; each phase is verified
   live in the devenv.
+
+## Completion Summary
+
+**Completed:** 2026-07-15
+
+### What shipped
+
+Two code changes, both small, both found by measuring rather than reasoning:
+
+- **`:zap:` Volatile context out of the cached prefix.** The per-turn `{file, page, selection}`
+  JSON sat inside the block carrying the `cache_control` marker, so **every selection change
+  rewrote the whole ~2.5k-token prefix**. Measured on `claude-opus-4-8`: 96% cached stable vs
+  **0% on every selection change**, ~9× the per-turn cost — paid on essentially every real turn,
+  since selecting the thing you want to talk about is how the panel is used. Now the system
+  prompt is stable-only and the context rides the user message: **0% → 95/92/89% cached, ~8.3×
+  cheaper per turn**, with the agent still reading the selection correctly.
+- **`:recycle:`/`:sparkles:` The two-layer knowledge split.** An always-on `inner-knowledge` tier
+  (governance, naming, native-tool notes — 0 MCP and 0 plugin-API references, non-toggleable,
+  invisible to the Skills tab) plus **real skill bodies served on demand** from a generated,
+  section-stripped corpus (−36%). Progressive disclosure went from a claim to a fact.
+
+### What we learned that changed our minds
+
+The plan's value was less the code than four results that contradicted the brief:
+
+1. **The layering hypothesis was right, and the meter caught it with zero new telemetry.** The
+   Phase 09 spend meter we had already shipped was a sufficient instrument to find a real,
+   expensive defect.
+2. **Phase 05 (per-skill `load` policy) was dropped, not built.** All four values turned out
+   redundant, default, moot, or already shipped by US #8. Two would have actively lied.
+3. **Phase 06 refuted its own hypothesis — and indicted its instrument.** Tokens get used because
+   `read_design` makes them **visible**, not because the rules layer advocates them. The layer
+   *does* work (`h3`/`p` vs "Heading"/"Body", 4/4 runs) but `audit_file` is structurally blind to
+   it: it scores the floor, not the house style.
+4. **Phase 03 stole the bodies' thunder, and that is fine.** Making conventions always-on removed
+   exactly the content that used to make playbooks valuable. What remains uniquely theirs is
+   *procedure* — order, checkpoints.
+
+### What changed from the original plan
+
+- **The plan's own table was wrong**: 4 shared docs, not 6 (`tokens-schema` / `state-management`
+  are cross-references inside bodies, not entries).
+- **The feared coordination risk evaporated** — the shared docs were never in the catalog, so
+  Phase 03 was purely additive and needed no coordination with US #7/#8.
+- **Two defects were found only by measuring**: the routing index rendered the *label* while the
+  tool keys on the *name* (agent guessed → error → retry, a wasted round); and a too-blunt
+  preamble made the agent discard a real Penpot ordering constraint along with stale API syntax.
+- **Phase 07 was closed as superseded** by [Agent vision](../202607150027-agent-vision/), which
+  answered its spike and corrected its tool name before it ever ran.
+
+### Effect on the story
+
+[US #26](https://tree.taiga.io/project/miryam-all-in-penpot/us/26) now has evidence behind it —
+and one claim to retire: it implies the rules layer drives token-first output. On this evidence
+**visibility drives it and the layer refines it**. Only the second is ours to claim. The story's
+line that "% cached is the health signal for this ordering" turned out literally true.
 
 ## Carried forward (not done)
 

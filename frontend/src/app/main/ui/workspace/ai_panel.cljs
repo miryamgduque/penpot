@@ -25,11 +25,11 @@
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
+   [app.main.ui.components.markdown :as md]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
    [app.main.ui.ds.layout.tab-switcher :refer [tab-switcher*]]
-   [app.main.ui.components.markdown :as md]
    [app.main.ui.hooks :as hooks]
    [app.util.dom :as dom]
    [app.util.keyboard :as kbd]
@@ -189,6 +189,9 @@
             :on-scroll on-scroll
             :role "log"
             :aria-live "polite"
+            ;; while a turn streams, every token would otherwise re-announce the
+            ;; whole region; `aria-busy` holds announcements until it settles
+            :aria-busy busy?
             :aria-relevant "additions text"}
       ;; `map-indexed` before the partition keeps `:key` on the stable
       ;; transcript index — appends are tail-only, so it never shifts

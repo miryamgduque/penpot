@@ -2,7 +2,7 @@
 
 # Agent chat UX — streaming, stop, scroll, collapsible tools
 
-**Status:** doing
+**Status:** done
 **Created:** 2026-07-14
 **Apps:** `frontend`, `backend`
 **User story:** [US #27 — Agent chat UI improvements](https://tree.taiga.io/project/miryam-all-in-penpot/us/27)
@@ -82,7 +82,7 @@ which can proceed in parallel (different app).
 5. [Phase 05 — Tool event payload](./done-phase-05-tool-payload.md) — `:input`/`:result`, map-arity `append-tool` ✅ **done**
 6. [Phase 06 — Collapsible tool groups](./done-phase-06-collapsible-tools.md) — render-time grouping ✅ **done**
 7. [Phase 07 — Backend streaming + abort](./done-phase-07-backend-streaming.md) — `::ai-agent-round-stream`, `events/closed?` ✅ **done**
-8. [Phase 08 — Client streaming](./todo-phase-08-client-streaming.md) — accumulators, `:assistant-delta`, batching *(needs 07)*
+8. [Phase 08 — Client streaming](./done-phase-08-client-streaming.md) — accumulators, `:assistant-delta` ✅ **done**
 
 **Suggested order:** 01 → 02 (highest quality-per-risk, pure view layer) → 03 → 04 (highest-value
 correctness fix) → 05 → 06 → 07 → 08.
@@ -100,7 +100,57 @@ correctness fix) → 05 → 06 → 07 → 08.
 - Assistant markdown renders (headings, lists, code); `javascript:` hrefs are inert.
 - The transcript is a `role="log"` live region; every control has an accessible name.
 
-## Risks
+## Completion Summary
+
+**Completed:** 2026-07-14
+
+### What shipped
+
+All 8 phases, each verified live in devenv rather than by compile alone. `npm test` ends at
+**443 tests / 1805 assertions, 0 failures** (+14 agent tests).
+
+- **The transcript can scroll at all** (01) — the actual defect behind US #27, and not what the
+  story described. Plus stick-to-bottom, a jump-to-latest pill, and a `role="log"` live region.
+- **Assistant markdown renders** (02) with `javascript:` hrefs made inert — no new dependency.
+- **A running turn can be stopped without being forgotten** (03/04) — the invisible correctness bug.
+- **Tool calls collapse into expandable groups** (05/06) showing input + result, auto-expanding on
+  rejection.
+- **Text streams token-by-token, and Stop aborts the provider** (07/08) — verified by the backend's
+  own `ai stream aborted, client gone` log line.
+
+### What changed from the original plan
+
+- **The headline was wrong.** The plan (and the story) framed scrolling as an autoscroll problem. It
+  was a `min-height: 0` problem: the panel grew past the viewport and `.workspace` clipped it, so
+  `overflow-y: auto` never engaged. No stick-to-bottom logic would have fixed it.
+- **`hooks/use-visible` was rejected** after live testing — it reports `false` until its observer
+  fires, so a fresh transcript never pinned. Fell back to a scroll handler (pre-authorised).
+- **`rx/buffer-time` batching dropped** — measured ~7 updates/sec, not the feared ~50.
+- **Bookend events dropped** — `append-delta`'s bubble-opening is the start signal.
+- **The `:tool-start` event was correctly predicted as worthless** (tools are synchronous) and never
+  built.
+- **`.close()` aborts the upstream exchange**, so the `send-async` contingency was never needed.
+
+### Lessons & follow-ups
+
+- **A green suite can be a lie.** `runner.cljs` has a `test-namespaces` list *separate* from its
+  `:require`; my tests compiled but never ran. Always confirm test names in the output.
+- **A short prompt is not a streaming test.** "Count to 12" is ~30 tokens and Haiku emits it in one
+  burst — it looked batched and nearly sent me hunting a non-bug through Caddy and nginx.
+- **The devenv SCSS watch does not pick up `.scss` edits** — run `build-app-assets.js` (~3s).
+
+Deferred, each with detail in its phase file:
+1. **DS: `icon-button*` has no accessible name until hover** (`aria-label` → an empty tooltip node).
+   App-wide, not this panel. Own ticket.
+2. **DS: no `stop` glyph** — `i/close` stands in.
+3. **Prompt caching reports 0 tokens** — identical on the buffered and streaming paths, so not a
+   streaming bug. Belongs to the metaprompt plan (US #26).
+4. **zhipu/moonshot streaming is unverified** — no keys. They are OpenAI-shaped, and
+   `ai_providers.clj` already documents zhipu deviating elsewhere, so assume nothing.
+5. **`ai-skills/` React app is now fully superseded** by this panel — retiring it is a coordinated
+   cleanup of its own.
+
+## Risks (as assessed before execution — outcome in the summary above)
 
 **Riskiest: cancellation actually reaching the provider (07).** A four-link chain — browser
 `(.cancel reader)` → Jetty write throws → `spawn-listener` closes the channel → pump sees

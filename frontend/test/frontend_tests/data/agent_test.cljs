@@ -99,6 +99,96 @@
       (t/is (= calls results)))))
 
 ;; ---------------------------------------------------------------------------
+;; Streaming accumulators — they must rebuild exactly what the buffered
+;; decoders used to return, since the turn loop still branches on that shape.
+;; ---------------------------------------------------------------------------
+
+(defn- fold-anthropic
+  [frames]
+  (reduce (fn [[acc texts] frame]
+            (let [[acc' text] (agent/accumulate-anthropic acc frame)]
+              [acc' (cond-> texts text (conj text))]))
+          [agent/empty-accumulator []]
+          frames))
+
+(def ^:private anthropic-frames
+  [{:type "message_start"
+    :message {:usage {:input_tokens 10 :cache_read_input_tokens 4 :cache_creation_input_tokens 2}}}
+   {:type "content_block_start" :index 0 :content_block {:type "text"}}
+   {:type "content_block_delta" :index 0 :delta {:type "text_delta" :text "Hel"}}
+   {:type "content_block_delta" :index 0 :delta {:type "text_delta" :text "lo"}}
+   {:type "content_block_stop" :index 0}
+   {:type "content_block_start" :index 1
+    :content_block {:type "tool_use" :id "call_1" :name "read_design"}}
+   {:type "content_block_delta" :index 1 :delta {:type "input_json_delta" :partial_json "{\"a\":"}}
+   {:type "content_block_delta" :index 1 :delta {:type "input_json_delta" :partial_json "1}"}}
+   {:type "content_block_stop" :index 1}
+   {:type "ping"}
+   {:type "message_delta" :delta {:stop_reason "tool_use"} :usage {:output_tokens 25}}
+   {:type "message_stop"}])
+
+(t/deftest anthropic-accumulator-rebuilds-text-tools-and-usage
+  (let [[acc texts] (fold-anthropic anthropic-frames)
+        outcome     (agent/accumulator->outcome acc true)]
+    (t/testing "text is reassembled from its deltas"
+      (t/is (= "Hello" (:text outcome)))
+      (t/is (= ["Hel" "lo"] texts) "each text delta is surfaced for live rendering"))
+    (t/testing "tool call json is reassembled across partial_json fragments"
+      (t/is (= [{:id "call_1" :name "read_design" :input {:a 1}}] (:tool-calls outcome))))
+    (t/testing "usage merges message_start and message_delta"
+      (t/is (= {:input-tokens 10 :output-tokens 25 :cache-read-tokens 4
+                :cache-write-tokens 2 :requests 1}
+               (:usage outcome))))
+    (t/is (false? (:stopped-for-length? outcome)))))
+
+(t/deftest anthropic-accumulator-flags-length-stop
+  (let [frames (conj (vec (butlast anthropic-frames))
+                     {:type "message_delta" :delta {:stop_reason "max_tokens"} :usage {:output_tokens 5}})
+        [acc _] (fold-anthropic frames)]
+    (t/is (true? (:stopped-for-length? (agent/accumulator->outcome acc true))))))
+
+(t/deftest anthropic-accumulator-tool-with-no-arguments
+  (t/testing "a no-arg tool streams zero json deltas — must not blow up on \"\""
+    (let [frames [{:type "content_block_start" :index 0
+                   :content_block {:type "tool_use" :id "c1" :name "audit_file"}}
+                  {:type "content_block_stop" :index 0}]
+          [acc _] (fold-anthropic frames)]
+      (t/is (= [{:id "c1" :name "audit_file" :input {}}]
+               (:tool-calls (agent/accumulator->outcome acc true)))))))
+
+(defn- fold-openai
+  [frames]
+  (reduce (fn [[acc texts] frame]
+            (let [[acc' text] (agent/accumulate-openai acc frame)]
+              [acc' (cond-> texts text (conj text))]))
+          [agent/empty-accumulator []]
+          frames))
+
+(t/deftest openai-accumulator-rebuilds-text-tools-and-usage
+  (let [frames [{:choices [{:delta {:content "Hi"}}]}
+                {:choices [{:delta {:content " there"}}]}
+                {:choices [{:delta {:tool_calls [{:index 0 :id "call_9"
+                                                  :function {:name "apply_tokens" :arguments "{\"t\":"}}]}}]}
+                ;; id/name only arrive on the first fragment per index
+                {:choices [{:delta {:tool_calls [{:index 0 :function {:arguments "\"blue\"}"}}]}}]}
+                {:choices [{:delta {} :finish_reason "tool_calls"}]}
+                ;; the include_usage tail chunk: no choices, just usage
+                {:choices [] :usage {:prompt_tokens 7 :completion_tokens 11
+                                     :prompt_tokens_details {:cached_tokens 3}}}]
+        [acc texts] (fold-openai frames)
+        outcome     (agent/accumulator->outcome acc false)]
+    (t/is (= "Hi there" (:text outcome)))
+    (t/is (= ["Hi" " there"] texts))
+    (t/is (= [{:id "call_9" :name "apply_tokens" :input {:t "blue"}}] (:tool-calls outcome)))
+    (t/is (= {:input-tokens 7 :output-tokens 11 :cache-read-tokens 3
+              :cache-write-tokens 0 :requests 1}
+             (:usage outcome)))))
+
+(t/deftest openai-accumulator-flags-length-stop
+  (let [[acc _] (fold-openai [{:choices [{:delta {:content "x"} :finish_reason "length"}]}])]
+    (t/is (true? (:stopped-for-length? (agent/accumulator->outcome acc false))))))
+
+;; ---------------------------------------------------------------------------
 ;; trim-history must not undo the fix
 ;; ---------------------------------------------------------------------------
 

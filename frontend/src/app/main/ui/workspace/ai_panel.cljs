@@ -198,31 +198,64 @@
          [:a {:href "#/settings/integrations"} "Settings → Integrations"]
          " to start chatting."]])]))
 
+(mf/defc mode-badge*
+  "The colored mode pill shared by the catalog cards and the detail view."
+  {::mf/private true}
+  [{:keys [mode]}]
+  [:span {:class (stl/css-case :mode-badge true
+                               :mode-suggest (= mode "suggest")
+                               :mode-review  (= mode "review")
+                               :mode-autofix (= mode "autofix"))}
+   (get ask/mode-label mode mode)])
+
+(mf/defc skill-detail*
+  "Read-only detail for one catalog skill, shown in place of the list within the
+  Skills tab (not a modal, not a new tab). No actions — just what the skill is."
+  {::mf/private true}
+  [{:keys [skill on-back]}]
+  (let [{:keys [label category mode example what enabled]} skill]
+    [:div {:class (stl/css :skill-detail)}
+     [:button {:type "button" :class (stl/css :detail-back) :on-click on-back}
+      "← All skills"]
+     [:div {:class (stl/css :detail-category)} category]
+     [:div {:class (stl/css :detail-name)} label]
+     [:div {:class (stl/css :detail-tags)}
+      [:> mode-badge* {:mode mode}]
+      (when-not enabled
+        [:span {:class (stl/css :catalog-off)} "off by default"])]
+     [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
+     [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
+     [:div {:class (stl/css :detail-section-label)} "What it does"]
+     [:div {:class (stl/css :detail-what)} what]]))
+
 (mf/defc skills-tab*
-  "The built-in skills catalog: the Skills-tab first-run view. Read-only at this
-  stage — cards group the bundled skills by category and show a mode badge; no
-  toggling (its own story)."
+  "The built-in skills catalog: the Skills-tab first-run view. Read-only — cards
+  group the bundled skills by category and show a mode badge; clicking a card
+  opens its detail view in place (no toggling — that's its own story)."
   {::mf/private true}
   []
-  [:div {:class (stl/css :skills-tab)}
-   (for [{:keys [category skills]} ask/catalog]
-     [:div {:key category :class (stl/css :catalog-group)}
-      [:div {:class (stl/css :catalog-group-label)} category]
-      (for [{:keys [name label blurb mode enabled]} skills]
-        [:button {:key name
-                  :type "button"
-                  :class (stl/css-case :catalog-card true :disabled (not enabled))}
-         [:div {:class (stl/css :catalog-card-head)}
-          [:span {:class (stl/css :catalog-name)} label]
-          (when-not enabled
-            [:span {:class (stl/css :catalog-off)} "off by default"])]
-         [:div {:class (stl/css :catalog-desc)}
-          [:span {:class (stl/css :catalog-blurb)} blurb]
-          [:span {:class (stl/css-case :mode-badge true
-                                       :mode-suggest (= mode "suggest")
-                                       :mode-review  (= mode "review")
-                                       :mode-autofix (= mode "autofix"))}
-           (get ask/mode-label mode mode)]]])])])
+  (let [selected* (mf/use-state nil)
+        selected  (deref selected*)
+        skill     (when selected (ask/find-skill selected))
+        on-back   (mf/use-fn #(reset! selected* nil))]
+    (if skill
+      [:> skill-detail* {:skill skill :on-back on-back}]
+      [:div {:class (stl/css :skills-tab)}
+       (for [{:keys [category skills]} ask/catalog]
+         [:div {:key category :class (stl/css :catalog-group)}
+          [:div {:class (stl/css :catalog-group-label)} category]
+          (for [{:keys [name label blurb mode enabled]} skills]
+            [:button {:key name
+                      :type "button"
+                      :class (stl/css-case :catalog-card true :disabled (not enabled))
+                      :on-click #(reset! selected* name)}
+             [:div {:class (stl/css :catalog-card-head)}
+              [:span {:class (stl/css :catalog-name)} label]
+              (when-not enabled
+                [:span {:class (stl/css :catalog-off)} "off by default"])]
+             [:div {:class (stl/css :catalog-desc)}
+              [:span {:class (stl/css :catalog-blurb)} blurb]
+              [:> mode-badge* {:mode mode}]]])])])))
 
 (mf/defc ai-panel*
   ;; `file` / `page` are passed for future context-aware tabs; the Chat tab

@@ -25,10 +25,12 @@
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
+   [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
    [app.main.ui.ds.layout.tab-switcher :refer [tab-switcher*]]
    [app.main.ui.hooks :as hooks]
    [app.util.dom :as dom]
+   [app.util.keyboard :as kbd]
    [cuerdas.core :as str]
    [rumext.v2 :as mf]))
 
@@ -229,53 +231,78 @@
    (get ask/mode-label mode mode)])
 
 (mf/defc skill-detail*
-  "Read-only detail for one catalog skill, shown in place of the list within the
-  Skills tab (not a modal, not a new tab). No actions — just what the skill is."
+  "Detail for one catalog skill, shown in place of the list within the Skills tab
+  (not a modal, not a new tab). Carries the same on/off toggle as the list card;
+  `enabled` is the resolved state and `on-toggle` receives the new boolean."
   {::mf/private true}
-  [{:keys [skill on-back]}]
-  (let [{:keys [label category mode example what enabled]} skill]
+  [{:keys [skill enabled on-toggle on-back]}]
+  (let [{:keys [label category mode example what]} skill]
     [:div {:class (stl/css :skill-detail)}
      [:button {:type "button" :class (stl/css :detail-back) :on-click on-back}
       "← All skills"]
      [:div {:class (stl/css :detail-category)} category]
-     [:div {:class (stl/css :detail-name)} label]
+     [:div {:class (stl/css :detail-head)}
+      [:div {:class (stl/css :detail-name)} label]
+      [:> switch* {:default-checked enabled
+                   :aria-label (dm/str (if enabled "Disable " "Enable ") label)
+                   :on-change on-toggle}]]
      [:div {:class (stl/css :detail-tags)}
-      [:> mode-badge* {:mode mode}]
-      (when-not enabled
-        [:span {:class (stl/css :catalog-off)} "off by default"])]
+      [:> mode-badge* {:mode mode}]]
      [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
      [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
      [:div {:class (stl/css :detail-section-label)} "What it does"]
      [:div {:class (stl/css :detail-what)} what]]))
 
 (mf/defc skills-tab*
-  "The built-in skills catalog: the Skills-tab first-run view. Read-only — cards
-  group the bundled skills by category and show a mode badge; clicking a card
-  opens its detail view in place (no toggling — that's its own story)."
+  "The built-in skills catalog: cards group the bundled skills by category with a
+  mode badge and an on/off toggle. Clicking a card opens its detail view in
+  place; toggling flips the skill for this file (per-user, instant) and drops a
+  disabled skill from the agent's router — see agent-skills/resolve-enabled."
   {::mf/private true}
   []
-  (let [selected* (mf/use-state nil)
-        selected  (deref selected*)
-        skill     (when selected (ask/find-skill selected))
-        on-back   (mf/use-fn #(reset! selected* nil))]
+  (let [selected*   (mf/use-state nil)
+        selected    (deref selected*)
+        skill       (when selected (ask/find-skill selected))
+        enabled-map (mf/deref refs/resolved-skills-enabled)
+        on-back     (mf/use-fn #(reset! selected* nil))
+        toggle      (mf/use-fn
+                     (fn [name checked]
+                       (st/emit! (skst/set-skill-enabled name checked))))]
     (if skill
-      [:> skill-detail* {:skill skill :on-back on-back}]
+      (let [enabled? (get enabled-map (:name skill) true)]
+        [:> skill-detail* {:skill skill
+                           :enabled enabled?
+                           :on-toggle #(toggle (:name skill) %)
+                           :on-back on-back}])
       [:div {:class (stl/css :skills-tab)}
        (for [{:keys [category skills]} ask/catalog]
          [:div {:key category :class (stl/css :catalog-group)}
           [:div {:class (stl/css :catalog-group-label)} category]
-          (for [{:keys [name label blurb mode enabled]} skills]
-            [:button {:key name
-                      :type "button"
-                      :class (stl/css-case :catalog-card true :disabled (not enabled))
-                      :on-click #(reset! selected* name)}
-             [:div {:class (stl/css :catalog-card-head)}
-              [:span {:class (stl/css :catalog-name)} label]
-              (when-not enabled
-                [:span {:class (stl/css :catalog-off)} "off by default"])]
-             [:div {:class (stl/css :catalog-desc)}
-              [:span {:class (stl/css :catalog-blurb)} blurb]
-              [:> mode-badge* {:mode mode}]]])])])))
+          (for [{:keys [name label blurb mode]} skills]
+            (let [enabled? (get enabled-map name true)
+                  open     #(reset! selected* name)]
+              [:div {:key name
+                     :role "button"
+                     :tab-index 0
+                     :class (stl/css-case :catalog-card true :disabled (not enabled?))
+                     :on-click open
+                     :on-key-down (fn [event]
+                                    (when (or (kbd/enter? event) (kbd/space? event))
+                                      (dom/prevent-default event)
+                                      (open)))}
+               [:div {:class (stl/css :catalog-card-head)}
+                [:span {:class (stl/css :catalog-name)} label]
+                ;; The toggle sits inside the clickable card, so swallow its
+                ;; click/keydown to keep them from opening the detail view.
+                [:span {:class (stl/css :catalog-toggle)
+                        :on-click dom/stop-propagation
+                        :on-key-down dom/stop-propagation}
+                 [:> switch* {:default-checked enabled?
+                              :aria-label (dm/str (if enabled? "Disable " "Enable ") label)
+                              :on-change #(toggle name %)}]]]
+               [:div {:class (stl/css :catalog-desc)}
+                [:span {:class (stl/css :catalog-blurb)} blurb]
+                [:> mode-badge* {:mode mode}]]]))])])))
 
 (mf/defc connect-empty*
   "Shown in place of the whole panel body (tabs included) when no AI provider

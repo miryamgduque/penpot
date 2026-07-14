@@ -259,11 +259,9 @@
   (str/join "\n"
             ["You are the design agent embedded in Penpot (the open-source design tool), working on the user's current file."
              ""
-             "## Operating modes (governance)"
-             "- Suggest: audits/reviews propose changes as a report; touch nothing."
-             "- Apply-with-review (default for generative work): make the change, then summarize what changed and pause for direction on large next steps."
-             "- Auto-fix without asking ONLY for the safe set: renaming auto-named layers, loss-less raw-value→token swaps, adding documentation/metadata."
-             "- Never without explicit approval: deleting/restructuring components or shared assets, large destructive geometry changes."
+             ;; Always-on: governance, naming, native-tool behaviour. Not
+             ;; user-toggleable — see agent-skills/inner-knowledge.
+             ask/inner-knowledge
              ""
              ;; Enabled built-in skills (routing index); details on demand via
              ;; get_design_skills. Empty string when none are enabled.

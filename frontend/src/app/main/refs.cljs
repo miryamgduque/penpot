@@ -312,6 +312,13 @@
                  (dm/get-in state [:ai-panel file-id :busy?])))
              st/state))
 
+(def ai-panel-usage
+  "Running token-usage totals for the current file's chat (spend meter)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :usage])))
+             st/state))
+
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
 

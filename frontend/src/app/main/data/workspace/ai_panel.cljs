@@ -99,6 +99,29 @@
         (assoc-in state [:ai-panel file-id :busy?] busy?)
         state))))
 
+(defn- accumulate-usage
+  "Adds one round's token usage into the file's running spend meter total."
+  [usage]
+  (ptk/reify ::accumulate-usage
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :usage] agent/add-usage usage)
+        state))))
+
+(defn clear-chat
+  "Starts a fresh session for the current file: drops the transcript, the
+  canonical history and the spend meter. Guarded against running turns by the
+  UI (the clear control is disabled while busy)."
+  []
+  (ptk/reify ::clear-chat
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id]
+                   (fn [panel] (dissoc panel :messages :history :usage)))
+        state))))
+
 (defn set-enforced-rules
   "Records which rule names are enforced for the current file — the agent's
   color tools reject raw colors when `token-only-colors` is in this set. Wired
@@ -135,6 +158,7 @@
                               :assistant (rx/of (append-message "assistant" (:text ev)))
                               :tool      (rx/of (append-tool (:name ev) (:status ev)
                                                              (:rule ev) (:detail ev)))
+                              :usage     (rx/of (accumulate-usage (:usage ev)))
                               :done      (rx/of (store-history (:history ev)))
                               (rx/empty))))
                (rx/catch (fn [cause]

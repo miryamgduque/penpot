@@ -18,6 +18,7 @@
   (:require
    [app.common.data.macros :as dm]
    [app.main.data.ai-providers :as dai]
+   [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.refs :as refs]
@@ -51,6 +52,25 @@
 ;; The built-in skills catalog is shared with the agent — see
 ;; app.main.data.workspace.agent-skills (`ask/catalog`, `ask/mode-label`).
 
+(defn- format-tokens
+  [n]
+  (let [n (or n 0)]
+    (cond
+      (>= n 1000000) (dm/str (.toFixed (/ n 1000000) 1) "M")
+      (>= n 1000)    (dm/str (.toFixed (/ n 1000) 1) "k")
+      :else          (str n))))
+
+(defn- usage-summary
+  "Compact spend line: calls · prompt tokens (cached %) · output tokens · ~$
+  (Claude models only)."
+  [{:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens requests] :as usage} model]
+  (let [prompt (+ (or input-tokens 0) (or cache-read-tokens 0) (or cache-write-tokens 0))
+        cached (if (pos? prompt) (js/Math.round (* (/ (or cache-read-tokens 0) prompt) 100)) 0)
+        cost   (agent/estimate-cost-usd model usage)]
+    (dm/str requests " calls · " (format-tokens prompt) " in (" cached "% cached) · "
+            (format-tokens output-tokens) " out"
+            (when cost (dm/str " · ~$" (.toFixed cost 2))))))
+
 (mf/defc chat-tab*
   {::mf/private true}
   []
@@ -60,6 +80,7 @@
         objects   (mf/deref refs/workspace-page-objects)
         providers (mf/deref refs/ai-providers)
         busy?     (mf/deref refs/ai-panel-busy?)
+        usage     (mf/deref refs/ai-panel-usage)
 
         pool      (mf/with-memo [providers] (provider-pool providers))
 
@@ -100,7 +121,13 @@
                        (when (and (= "Enter" (.-key event))
                                   (not (.-shiftKey event)))
                          (dom/prevent-default event)
-                         (send))))]
+                         (send))))
+
+        on-clear    (mf/use-fn
+                     (mf/deps busy?)
+                     (fn []
+                       (when-not busy?
+                         (st/emit! (dwaip/clear-chat)))))]
 
     ;; the provider pool is fetched from the settings page; make sure it is
     ;; loaded when the chat is shown
@@ -135,14 +162,30 @@
        [:div {:class (stl/css :transcript-empty)}
         "Start a conversation with the design agent."])
 
+     ;; Spend meter + clear, shown once there is a conversation to act on.
+     (when (or (seq messages) (some-> usage :requests pos?))
+       [:div {:class (stl/css :chat-status)}
+        [:span {:class (stl/css :usage-meter)
+                :title "Session token usage across all API calls from this panel. Cost is an estimate at standard list prices."}
+         (if (some-> usage :requests pos?)
+           (usage-summary usage (:model settings))
+           "Restored conversation")]
+        [:button {:class (stl/css :chat-clear)
+                  :type "button"
+                  :disabled busy?
+                  :title "Clear this file's chat history and start a fresh session"
+                  :on-click on-clear}
+         "✕ Clear"]])
+
      (if (seq pool)
        [:div {:class (stl/css :composer)}
         [:select {:class (stl/css :model-picker)
                   :value (str idx)
                   :on-change on-pick}
-         (for [[i entry] (map-indexed vector pool)]
-           [:option {:key i :value (str i)}
-            (dm/str (:provider entry) " / " (:model entry))])]
+         (for [[provider entries] (group-by #(:provider (second %)) (map-indexed vector pool))]
+           [:optgroup {:key provider :label provider}
+            (for [[i entry] entries]
+              [:option {:key i :value (str i)} (:model entry)])])]
         [:textarea {:class (stl/css :composer-input)
                     :placeholder "Ask the agent…"
                     :value input

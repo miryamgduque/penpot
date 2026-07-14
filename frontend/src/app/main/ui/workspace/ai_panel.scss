@@ -142,6 +142,88 @@
   background-color: var(--color-background-quaternary);
 }
 
+// Rendered assistant markdown. `.message` is `pre-wrap` for plain text; once
+// the blocks are real elements that would double every gap.
+.message-md {
+  white-space: normal;
+
+  // let the blocks own the spacing, but keep the bubble tight at its edges
+  > :first-child {
+    margin-block-start: 0;
+  }
+
+  > :last-child {
+    margin-block-end: 0;
+  }
+
+  p,
+  ul,
+  ol,
+  pre,
+  blockquote {
+    margin-block: deprecated.$s-8;
+  }
+
+  h3,
+  h4,
+  h5,
+  h6 {
+    @include deprecated.body-small-typography;
+
+    margin-block: deprecated.$s-8 deprecated.$s-4;
+    font-weight: 600;
+  }
+
+  // the global reset (reset.scss:137) drops markers on every list; a rendered
+  // markdown list is meaningless without them
+  ul {
+    padding-inline-start: deprecated.$s-16;
+    list-style: disc;
+  }
+
+  ol {
+    padding-inline-start: deprecated.$s-16;
+    list-style: decimal;
+  }
+
+  li {
+    margin-block: deprecated.$s-2;
+  }
+
+  a {
+    color: var(--color-accent-primary);
+    text-decoration: underline;
+  }
+
+  code {
+    padding: 0 deprecated.$s-4;
+    border-radius: deprecated.$br-4;
+    background-color: var(--color-background-quaternary);
+    font-family: monospace;
+  }
+
+  pre {
+    @extend %new-scrollbar;
+
+    padding: deprecated.$s-8;
+    border-radius: deprecated.$br-4;
+    background-color: var(--color-background-primary);
+    // long lines scroll inside the block rather than widening the panel
+    overflow-x: auto;
+
+    code {
+      padding: 0;
+      background-color: transparent;
+    }
+  }
+
+  blockquote {
+    padding-inline-start: deprecated.$s-8;
+    border-inline-start: deprecated.$s-2 solid var(--color-background-quaternary);
+    color: var(--color-foreground-secondary);
+  }
+}
+
 .message-thinking {
   color: var(--color-foreground-secondary);
   font-style: italic;

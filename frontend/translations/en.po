@@ -2453,11 +2453,9 @@ msgstr "Penpot Agent"
 
 msgid "integrations.ai-provider.description"
 msgstr ""
-"Add your own AI provider accounts to power the Penpot Agent. Keys are "
-"stored with your profile and only used from Penpot's server, so they never "
-"reach the browser. They aren't checked here — an invalid key or an account "
-"without funds only shows up when you send a message. The models you enable "
-"across all providers form the pool available in the agent chat."
+"Add your own AI provider accounts to power the Penpot Agent.\n"
+"Keys are stored with your profile and only used from Penpot's server, so they "
+"never reach the browser."
 
 msgid "integrations.ai-provider.key.label"
 msgstr "API key"
@@ -2494,6 +2492,12 @@ msgstr "Save an API key above to enable models for the agent chat."
 
 msgid "integrations.ai-provider.models.context"
 msgstr "%s context"
+
+msgid "integrations.ai-provider.models.count"
+msgstr "%s models enabled"
+
+msgid "integrations.ai-provider.models.select-placeholder"
+msgstr "Select models"
 
 msgid "integrations.ai-provider.error.generic"
 msgstr "Something went wrong while saving the key. Please try again."

@@ -661,6 +661,12 @@
         saved?*     (mf/use-state false)
         saved?      (deref saved?*)
 
+        ;; the model checkboxes live in a dropdown menu opened from a trigger
+        models-open* (mf/use-state false)
+        models-open? (deref models-open*)
+        models-ref   (mf/use-ref nil)
+        on-toggle-models (mf/use-fn #(swap! models-open* not))
+
         ;; the curated catalog, plus any enabled model no longer in it
         ;; (kept visible so the user can toggle it back off)
         catalog     (get ai-provider-models provider [])
@@ -740,23 +746,40 @@
                                 :content (tr "integrations.ai-provider.notification.disconnected" label)
                                 :timeout notification-timeout}))))]
 
+    ;; close the models dropdown on any click outside of it
+    (mf/with-effect [models-open?]
+      (when ^boolean models-open?
+        (let [on-doc (fn [event]
+                       (let [node (mf/ref-val models-ref)]
+                         (when (and node (not (.contains node (dom/get-target event))))
+                           (reset! models-open* false))))]
+          (.addEventListener js/document "pointerdown" on-doc)
+          (fn [] (.removeEventListener js/document "pointerdown" on-doc)))))
+
     [:div {:class (stl/css :provider-card)
            :data-testid (dm/str "ai-provider-" provider)}
      [:div {:class (stl/css :provider-card-header)}
       [:div {:class (stl/css :provider-card-title)}
-       [:> text* {:as "h3"
-                  :typography t/headline-small
-                  :class (stl/css :color-primary)}
-        label]
+       [:div {:class (stl/css :provider-card-name)}
+        [:> text* {:as "h3"
+                   :typography t/headline-small
+                   :class (stl/css :color-primary)}
+         label]
+        [:> text* {:as "span"
+                   :typography t/body-small
+                   :class (stl/css :color-secondary :provider-models-hint)}
+         models-hint]]
        (when ^boolean connected?
-         [:> text* {:as "span"
-                    :typography t/body-small
-                    :class (stl/css :provider-connected-tag)}
-          (tr "integrations.ai-provider.status.saved" (:key-hint status))])]
-      [:> text* {:as "div"
-                 :typography t/body-small
-                 :class (stl/css :color-secondary)}
-       models-hint]]
+         [:div {:class (stl/css :provider-connected)}
+          [:> text* {:as "span"
+                     :typography t/body-small
+                     :class (stl/css :provider-connected-tag)}
+           (tr "integrations.ai-provider.status.saved" (:key-hint status))]
+          [:> icon-button* {:variant "ghost"
+                            :icon-size "s"
+                            :aria-label (tr "integrations.ai-provider.disconnect")
+                            :icon i/delete
+                            :on-click on-disconnect}]])]]
 
      ;; the key is autosaved on blur — no explicit connect action
      [:div {:class (stl/css :provider-key-form)}
@@ -771,13 +794,13 @@
                    :on-blur on-key-blur
                    :on-key-down on-key-down}]]
 
-      [:> text* {:as "div"
-                 :typography t/body-small
-                 :class (stl/css :provider-key-status)}
-       (cond
-         pending? (tr "integrations.ai-provider.saving")
-         saved?   (tr "integrations.ai-provider.saved")
-         :else    (tr "integrations.ai-provider.autosave-hint"))]]
+      (when (or pending? saved?)
+        [:> text* {:as "div"
+                   :typography t/body-small
+                   :class (stl/css :provider-key-status)}
+         (if pending?
+           (tr "integrations.ai-provider.saving")
+           (tr "integrations.ai-provider.saved"))])]
 
      [:div {:class (stl/css :provider-models)}
       [:> text* {:as "h4"
@@ -785,36 +808,38 @@
                  :class (stl/css :color-primary)}
        (tr "integrations.ai-provider.models.title")]
 
-      (if connected?
-        (when (empty? enabled)
-          [:> text* {:as "div"
-                     :typography t/body-small
-                     :class (stl/css :provider-models-note)}
-           (tr "integrations.ai-provider.models.select-one")])
+      (when (and connected? (empty? enabled))
         [:> text* {:as "div"
                    :typography t/body-small
-                   :class (stl/css :color-secondary)}
-         (tr "integrations.ai-provider.models.save-key-first")])
+                   :class (stl/css :provider-models-note)}
+         (tr "integrations.ai-provider.models.select-one")])
 
-      [:ul {:class (stl/css :provider-models-list)}
-       (for [{:keys [id label context]} rows]
-         [:li {:key id :class (stl/css :provider-models-item)}
-          [:> checkbox* {:id (dm/str "ai-model-" provider "-" id)
-                         :label label
-                         :checked (contains? enabled-set id)
-                         :disabled (not connected?)
-                         :data-model id
-                         :on-change on-toggle-model}]
-          (when-let [ctx (format-context context)]
-            [:span {:class (stl/css :provider-models-context)}
-             (tr "integrations.ai-provider.models.context" ctx)])])]]
+      [:div {:class (stl/css :provider-models-combobox)
+             :ref models-ref}
+       [:button {:type "button"
+                 :class (stl/css-case :provider-models-trigger true
+                                      :provider-models-trigger-open models-open?)
+                 :disabled (not connected?)
+                 :on-click on-toggle-models}
+        [:span {:class (stl/css :provider-models-trigger-label)}
+         (if (seq enabled)
+           (tr "integrations.ai-provider.models.count" (count enabled))
+           (tr "integrations.ai-provider.models.select-placeholder"))]
+        [:> icon* {:icon-id i/arrow-down :class (stl/css :provider-models-caret)}]]
 
-     (when ^boolean connected?
-       [:div
-        [:> button* {:variant "ghost"
-                     :class (stl/css :fit-content)
-                     :on-click on-disconnect}
-         (tr "integrations.ai-provider.disconnect")]])]))
+       (when models-open?
+         [:ul {:class (stl/css :provider-models-menu)}
+          (for [{:keys [id label context]} rows]
+            [:li {:key id :class (stl/css :provider-models-item)}
+             [:> checkbox* {:id (dm/str "ai-model-" provider "-" id)
+                            :label label
+                            :checked (contains? enabled-set id)
+                            :disabled (not connected?)
+                            :data-model id
+                            :on-change on-toggle-model}]
+             (when-let [ctx (format-context context)]
+               [:span {:class (stl/css :provider-models-context)}
+                (tr "integrations.ai-provider.models.context" ctx)])])])]]]))
 
 (mf/defc ai-providers-section*
   {::mf/private true}
@@ -838,7 +863,7 @@
 
       [:> text* {:as "div"
                  :typography t/body-medium
-                 :class (stl/css :color-secondary)}
+                 :class (stl/css :color-secondary :ai-provider-description)}
        (tr "integrations.ai-provider.description")]]
 
      (for [{:keys [id label models-hint]} ai-provider-defs]

@@ -57,7 +57,7 @@ that has been removed from the story.)
 
 ## Phases
 
-1. [Phase 01 — Backend: skill state](./todo-phase-01-backend-skill-state.md) — `profile_skill_state` table (per-user, `file_id` NULL = account / set = per-file) + RPC to get/set `enabled`, mirroring ai-providers.
+1. [Phase 01 — Backend: skill state](./done-phase-01-backend-skill-state.md) — `profile_skill_state` table (per-user, `file_id` NULL = account / set = per-file) + RPC to get/set `enabled`, mirroring ai-providers. ✅ **done** (13-assertion test, lint clean)
 2. [Phase 02 — Frontend state + resolution](./todo-phase-02-frontend-state-resolution.md) — fetch/persist account + per-file state, effective-enabled resolution feeding the router.
 3. [Phase 03 — Toggle UI (cards + detail)](./todo-phase-03-toggle-ui.md) — a toggle on every catalog card and the detail view; instant; disabled skills drop from the router.
 

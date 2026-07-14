@@ -354,6 +354,7 @@
           'app.rpc.commands.profile
           'app.rpc.commands.projects
           'app.rpc.commands.search
+          'app.rpc.commands.skill-state
           'app.rpc.commands.teams
           'app.rpc.commands.teams-invitations
           'app.rpc.commands.verify-token

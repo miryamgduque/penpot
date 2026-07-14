@@ -503,7 +503,10 @@
     :fn mg0153/migrate}
 
    {:name "0154-add-profile-ai-provider-table"
-    :fn (mg/resource "app/migrations/sql/0154-add-profile-ai-provider-table.sql")}])
+    :fn (mg/resource "app/migrations/sql/0154-add-profile-ai-provider-table.sql")}
+
+   {:name "0155-add-profile-skill-state-table"
+    :fn (mg/resource "app/migrations/sql/0155-add-profile-skill-state-table.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]

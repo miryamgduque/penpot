@@ -34,6 +34,12 @@ than reading transcripts and forming an impression.
       backstop, not the mechanism.
 - [ ] Run each prompt ≥3× per condition — one sample of a stochastic model is an anecdote, not
       a measurement
+- [ ] **Inherited from Phase 05: measure per-skill body value while the harness is up.** Phase 04
+      showed body value is wildly uneven (the accessibility body cost ~1,250 tokens and changed
+      nothing measurable; the foundations body alone produced the phased workflow) — but that was
+      n=1. Same shape as Experiment F: ≥3 runs × body-on/body-off, per skill. Any body that earns
+      nothing should be dropped from the generated corpus — cheaper and more honest than the
+      `load` field Phase 05 declined to build.
 - [ ] If bias is weak, strengthen the rules layer and re-measure (measure-then-fix)
 - [ ] Human approval; commit `:memo: Measure token-first bias of the agent rules layer`
       (plus a `:sparkles:`/`:recycle:` commit if the rules layer changes)

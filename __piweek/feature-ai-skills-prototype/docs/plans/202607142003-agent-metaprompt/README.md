@@ -2,7 +2,7 @@
 
 # Agent chat metaprompt — validate the harness model, then fix what it finds
 
-**Status:** todo
+**Status:** doing
 **Created:** 2026-07-14
 **Apps:** `frontend`
 **User story:** [US #26 — Agent chat metaprompt](https://tree.taiga.io/project/miryam-all-in-penpot/us/26)
@@ -74,8 +74,9 @@ agent's own output introduced.
 
 ## Phases
 
-1. [Phase 01 — Measure the layering](./todo-phase-01-measure-layering.md) — per-turn cache
-   telemetry + the selection-change experiment. Confirms or kills the caching hypothesis.
+1. [Phase 01 — Measure the layering](./done-phase-01-measure-layering.md) — the
+   selection-change experiment. ✅ **done — hypothesis CONFIRMED**: stable conversation caches
+   at 96%, changing the selection drops it to **0% every turn** (~9× the per-turn cost).
 2. [Phase 02 — Fix the layering](./todo-phase-02-fix-layering.md) — volatile context out of
    the cached prefix; re-measure and prove `% cached` survives a selection change.
 3. [Phase 03 — Inner knowledge vs. user-facing skills](./todo-phase-03-inner-knowledge.md) —

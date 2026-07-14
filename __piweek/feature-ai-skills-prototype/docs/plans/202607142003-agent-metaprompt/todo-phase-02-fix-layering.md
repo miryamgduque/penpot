@@ -1,7 +1,8 @@
 # Phase 02 — Fix the layering
 
 **Status:** todo
-**Gated on:** Phase 01 confirming the hypothesis. If Phase 01 refutes it, this phase is cancelled.
+**Gated on:** ✅ [Phase 01](./done-phase-01-measure-layering.md) **confirmed** the hypothesis —
+96% cached stable vs **0% on every selection change**, ~9× the per-turn cost. Proceed.
 
 ## Goal
 
@@ -18,6 +19,11 @@ same experiments Phase 01 ran.
       both already re-encode it per provider
 - [ ] Check the design context is not needed *before* the first user message (it is not — the
       agent calls `read_design` when it wants ground truth; the chip is orientation only)
+- [ ] **Re-use Phase 01's harness verbatim** — the console runner, the single-round prompt, and
+      above all the **distinctly-named shapes** (identical names produce a byte-identical
+      prompt and would fake a pass). Same model (`claude-opus-4-8`), turns back-to-back.
+- [ ] Note Phase 01's finding that **haiku never caches at our prefix size** — do not expect
+      this fix to move haiku's numbers, and do not read that as the fix failing.
 
 ## Checklist
 
@@ -26,7 +32,15 @@ same experiments Phase 01 ran.
       block leaves it.
 - [ ] **Move context to the volatile slot.** Attach the `{file, page, selection}` orientation
       to the turn's user message (a short prefix or a separate content block) rather than the
-      system prompt, so the cached prefix is byte-identical across turns.
+      system prompt, so the cached prefix is byte-identical across turns. **This portable form
+      is the baseline** — it works on every provider and model.
+- [ ] *(Optional, Opus 4.8 only)* Anthropic supports **mid-conversation system messages** with
+      no beta header: `{"role": "system", content}` appended to `messages[]` keeps the cached
+      prefix intact *and* is the non-spoofable operator channel (text in a user turn can be
+      forged by anything that writes to user-visible input). It 400s on haiku
+      (`role 'system' is not supported on this model`), so it must degrade to the user-turn
+      form per model rather than replace it. Only worth it if the orientation is ever
+      security-relevant; otherwise the portable path alone is enough.
 - [ ] Keep the `cache_control` marker on the (now genuinely stable) system block.
 - [ ] **Re-run Phase 01's experiments A, B and C** unchanged, and fill the After column.
       Success = B's `% cached` no longer collapses on a selection change and approaches A's.

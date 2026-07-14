@@ -9,7 +9,7 @@ description: Use when creating, executing, or managing implementation plans. Enf
 
 # Planning Workflow
 
-Enforces a consistent approach to planning and executing multi-phase implementation work. Plans live in `docs/plans/` as folders with phase files that track execution progress.
+Enforces a consistent approach to planning and executing multi-phase implementation work. Plans live in `__piweek/feature-ai-skills-prototype/docs/plans/` as folders with phase files that track execution progress.
 
 ## When This Skill Applies
 
@@ -22,15 +22,21 @@ Enforces a consistent approach to planning and executing multi-phase implementat
 
 ## Plan Structure
 
-Every plan is a **folder** in `docs/plans/`:
+> **Plans root:** `__piweek/feature-ai-skills-prototype/docs/plans/` (relative to the repo
+> root). This is the canonical location for all new plans on this branch — **not** the repo's
+> top-level `docs/`, which is Penpot's published documentation site. Existing sibling plans
+> already live here; place new plans alongside them. Note code links from a plan's README reach
+> the repo root via five `../` segments (e.g. `../../../../../ai-skills/...`).
+
+Every plan is a **folder** in `__piweek/feature-ai-skills-prototype/docs/plans/`:
 
 ```
-docs/plans/{YYYYMMddHHmm}-{plan-name}/
+__piweek/feature-ai-skills-prototype/docs/plans/{YYYYMMddHHmm}-{plan-name}/
   README.md                        # Overview, status, phase index
   todo-phase-01-{name}.md          # Phase files prefixed with status
   todo-phase-02-{name}.md
   ...
-docs/plans/completed/              # Archived plans (entire folders)
+__piweek/feature-ai-skills-prototype/docs/plans/completed/              # Archived plans (entire folders)
 ```
 
 **Naming:** Timestamp prefix uses creation time (e.g., `202604121430-host-dashboard-kpis`).
@@ -155,7 +161,7 @@ When starting work on a phase:
 
 ### Step 2: Rename file to `doing-`
 ```bash
-mv docs/plans/{plan}/todo-phase-NN-{name}.md docs/plans/{plan}/doing-phase-NN-{name}.md
+mv __piweek/feature-ai-skills-prototype/docs/plans/{plan}/todo-phase-NN-{name}.md __piweek/feature-ai-skills-prototype/docs/plans/{plan}/doing-phase-NN-{name}.md
 ```
 Update the README.md link to match.
 
@@ -250,7 +256,7 @@ When all phases are `done`:
 ```
 
 3. Update README.md status to `done`
-4. Move the entire folder to `docs/plans/completed/`
+4. Move the entire folder to `__piweek/feature-ai-skills-prototype/docs/plans/completed/`
 5. Update any cross-references in other plan files
 
 ---

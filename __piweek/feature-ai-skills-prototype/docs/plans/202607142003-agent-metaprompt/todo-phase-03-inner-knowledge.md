@@ -47,6 +47,9 @@ user-facing skills the user can toggle.
 - [ ] **Measure the cost of the layer.** Always-on means always paid (albeit cached). Record
       the system-prompt token count before/after; if it balloons, that is an argument for
       Phase 05's `gated` policy rather than for cutting the knowledge.
+- [ ] **Check whether growth pushes us past the cacheable minimum** — see the note below; if it
+      does, record the before/after `% cached` on **haiku** as well as opus, because that is
+      where the win would show up.
 - [ ] Confirm `% cached` is unaffected — inner knowledge is static, so it belongs in the cached
       prefix and should cost ~10% on re-read
 - [ ] `clj-kondo`, `cljfmt`, `shadow-cljs compile main` clean
@@ -78,6 +81,14 @@ user-facing skills the user can toggle.
   the user cannot turn off, so it is also the easiest place to quietly bloat every single
   request. The discipline is that it must earn "always" — anything procedural belongs in a
   skill body (Phase 04), not here.
+- **Phase 01 inverted one assumption here, and it is worth stating plainly: on the caching
+  axis, a *bigger* always-on layer is better.** Anthropic's minimum cacheable prefix is ~4096
+  tokens for Opus 4.8 / Haiku 4.5; our tools+system prefix is only ~2.5k, and haiku
+  consequently **never caches at all** (measured: 3 identical turns, `cache-read 0` every
+  time). Growing the stable layer pushes the prefix clear of that floor, so the knowledge added
+  here could turn caching on for models that get none today — and cached tokens re-read at
+  0.1×. Do not reflexively minimise this layer to "save tokens"; below the floor you pay
+  **full price for everything, every turn**. Measure, don't assume.
 - Dropping `penpot-mcp-tool-reference` from the embedded path is not deleting it: the MCP
   server still serves external agents and still needs it. This is about which corpus the
   *embedded* agent's prompt is built from.

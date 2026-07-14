@@ -2,6 +2,17 @@
 
 **Status:** todo
 **Gated on:** Phases 01–06. Largest build in the plan; do not start it early.
+**⚠️ Overlaps:** [Agent vision](../202607150027-agent-vision/) — that plan builds this phase, plus
+user-attached images, on a shared image-block foundation. User's call (2026-07-15): **keep both,
+decide later.** Whoever reaches the render tool first wins; the other closes as superseded. **Do
+not build it twice.** If this phase runs first, adopt two corrections that plan's exploration
+already established:
+1. **The feasibility spike is answered.** `wasm.api/render-shape-pixels(shape-id, scale)`
+   (`frontend/src/app/main/data/exports/wasm.cljs:14-19`) returns PNG bytes synchronously — no
+   network, no exporter service. Gated on `:wasm-export` + `render-wasm/v1`, and it **crashes**
+   without them (`data/exports/assets.cljs:168-174`).
+2. **`render_region` is the wrong name.** The WASM API is **per-shape** — `_render_shape_pixels`
+   takes `(id, scale)`; there is no rectangle. Board/shape granularity is free, regions are not.
 
 ## Goal
 

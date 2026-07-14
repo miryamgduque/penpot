@@ -93,9 +93,12 @@ agent's own output introduced.
    reasons.** All four of `always | index | gated | off` turned out redundant, default, moot, or
    already shipped by US #8. The field would be a second mechanism disagreeing with the ones we
    have. No code; the decision is the deliverable.
-6. [Phase 06 — Token/component-first bias](./todo-phase-06-token-bias.md) — measure violations
-   per generated design with the rules layer on vs. off; strengthen the always-on rules if the
-   bias is weak.
+6. [Phase 06 — Token/component-first bias](./done-phase-06-token-bias.md) — ✅ **done, hypothesis
+   refuted as measured**: **0 → 0** violations either way. Tokens are used because `read_design`
+   makes them *visible*, not because the layer advocates them. The layer's real effect is real
+   and consistent (`h3`/`p` vs "Heading"/"Body", 4/4 runs) but **`audit_file` is structurally
+   blind to it** — it scores the floor, not the house style. The instrument, not the layer, is
+   the finding.
 7. [Phase 07 — The agent must see](./todo-phase-07-render-refeed.md) — `render_region` +
    re-feed after edits; measure the quality delta. Biggest build, gated on 01–06.
 
@@ -113,6 +116,23 @@ agent's own output introduced.
   a reason.
 - `clj-kondo`, `cljfmt`, and `shadow-cljs compile main` stay clean; each phase is verified
   live in the devenv.
+
+## Carried forward (not done)
+
+These are open, and named here so they are not lost in a `done-` file:
+
+- **Measure per-skill body value** (≥3 runs × body-on/off, per skill). Phase 04 found the
+  accessibility body cost ~1,250 tokens and changed nothing measurable while the foundations body
+  alone produced the phased workflow — but that was n=1. Any body that earns nothing should be
+  dropped from the generated corpus. Inherited from Phase 05, not reached in Phase 06.
+- **Find an instrument that can see house-style adherence.** Phase 06's central finding is that
+  `audit_file` scores the floor (no default names, no raw hex) and is blind to the ceiling (which
+  semantic vocabulary, which token tier). Scoring that needs a judge model or a convention-aware
+  linter. Without one, we cannot honestly claim the skills layer improves quality — only that it
+  changes output in ways a human can see.
+- **Re-run Experiment G against a token-less fixture.** With tokens visible the agent never
+  attempts a raw hex, so enforcement never fires and G is untestable. The interesting case is a
+  brief needing a colour no token covers.
 
 ## Open questions / risks
 

@@ -398,6 +398,44 @@
   overflow-y: auto;
 }
 
+// Segmented All / Enabled filter at the top of the Skills tab.
+.skills-filter {
+  display: flex;
+  gap: deprecated.$s-2;
+  padding: deprecated.$s-2;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  align-self: flex-start;
+}
+
+.skills-filter-option {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-2 deprecated.$s-12;
+  border: none;
+  border-radius: deprecated.$br-6;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+
+  &.selected {
+    background-color: var(--color-background-quaternary);
+    color: var(--color-foreground-primary);
+  }
+}
+
+.skills-empty {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-16 deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+  text-align: center;
+}
+
 .catalog-group {
   display: flex;
   flex-direction: column;

@@ -1,6 +1,6 @@
 # Discreet skill controls and list filtering (US #30)
 
-**Status:** todo
+**Status:** done
 **Created:** 2026-07-14
 **Apps:** `frontend`
 **Source:** [Taiga US #30 — Discreet skill controls and list filtering](https://tree.taiga.io/project/miryam-all-in-penpot/us/30)
@@ -76,8 +76,9 @@ here.
 1. [Phase 01 — Row overflow menu + legible state](./done-phase-01-row-overflow-menu.md) — replace the
    per-row `switch*` with a muted ⋯ menu (Enable/Disable wired; Fork/Promote disabled), add the
    dimmed + "Off" pill disabled state, and remove the per-row mode badge. ✅ **done** (verified live)
-2. [Phase 02 — Filter control](./todo-phase-02-filter-control.md) — an All / Enabled filter at the
+2. [Phase 02 — Filter control](./done-phase-02-filter-control.md) — an All / Enabled filter at the
    top of the Skills tab, in-memory session state defaulting to **Enabled**, filtering the list.
+   ✅ **done** (verified live)
 
 ## Acceptance Criteria
 

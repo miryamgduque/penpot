@@ -45,6 +45,21 @@
     (update [_ state]
       (set-open state (not (open? state))))))
 
+;; --- Skills-tab list filter (US #30)
+;;
+;; In-memory only, on purpose: it persists within the session (survives tab
+;; switches + panel close/reopen) but resets to :enabled on reload — deliberately
+;; unlike the localStorage-backed prefs. `refs/skills-filter` reads it, defaulting
+;; to :enabled when unset.
+
+(defn set-skills-filter
+  "Set the Skills-tab list filter for this session (`:all` | `:enabled`)."
+  [filter]
+  (ptk/reify ::set-skills-filter
+    ptk/UpdateEvent
+    (update [_ state]
+      (assoc state :skills-filter filter))))
+
 ;; --- Chat transcript
 ;;
 ;; Per-file, in-memory chat messages (`[:ai-panel <file-id> :messages]`, a

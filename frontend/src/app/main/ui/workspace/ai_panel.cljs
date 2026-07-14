@@ -21,6 +21,7 @@
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
+   [app.main.data.workspace.skill-state :as skst]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
@@ -309,9 +310,12 @@
                      {:label "Skills" :id "skills"}])]
 
     ;; Providers are configured on the settings page; load them so we know
-    ;; whether to show the panel or the connect-a-provider prompt.
+    ;; whether to show the panel or the connect-a-provider prompt. Skill state
+    ;; (per-account + this file's overrides) drives which skills the agent
+    ;; routes to, so load it up front too.
     (mf/with-effect []
-      (st/emit! (dai/fetch-ai-providers)))
+      (st/emit! (dai/fetch-ai-providers)
+                (skst/fetch-skill-states)))
 
     [:aside {:class (stl/css :ai-panel)}
      ;; Title header, sized to the workspace right-header band so the tabs

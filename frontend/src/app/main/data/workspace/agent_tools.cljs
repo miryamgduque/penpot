@@ -186,7 +186,7 @@
      :colorTokens (->> (some-> (dsh/lookup-file-data state) :tokens-lib ctob/get-tokens-in-active-sets vals)
                        (filter #(= :color (:type %)))
                        (mapv (fn [t] {:name (:name t) :value (or (:resolved-value t) (:value t))})))
-     :skills (ask/catalog-manifest)
+     :skills (ask/catalog-manifest state)
      :openViolations (count (audit-violations state))}))
 
 ;; --- Structural tools (create / modify / nest)
@@ -434,10 +434,11 @@
 
 (defn- get-design-skills
   [{:keys [name]}]
-  (rx/of (if name
-           (or (ask/catalog-manifest name)
-               {:error (dm/str "no skill named " name)})
-           (ask/catalog-manifest))))
+  (let [state @st/state]
+    (rx/of (if name
+             (or (ask/catalog-manifest state name)
+                 {:error (dm/str "no skill named " name)})
+             (ask/catalog-manifest state)))))
 
 ;; --- audit_file
 ;;

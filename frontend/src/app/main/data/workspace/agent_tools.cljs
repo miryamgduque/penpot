@@ -23,11 +23,14 @@
    [app.common.files.changes-builder :as cb]
    [app.common.types.shape :as cts]
    [app.common.types.text :as txt]
+   [app.common.types.tokens-lib :as ctob]
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.shapes :as dwsh]
+   [app.main.data.workspace.tokens.application :as dwta]
+   [app.main.data.workspace.tokens.library-edit :as dwtl]
    [app.main.data.workspace.transforms :as dwt]
    [app.main.data.workspace.undo :as dwu]
    [app.main.data.workspace.wasm-text :as dwwt]
@@ -105,7 +108,35 @@
     (str "Turns the given shapes (or the current selection if shapeIds is "
          "omitted) into a reusable component. Returns the new component id.")
     :input-schema {:type "object"
-                   :properties {:shapeIds {:type "array" :items {:type "string"}}}}}])
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}}}
+
+   {:name "create_color_token"
+    :description
+    (str "Creates a color design token in the file's token library (e.g. "
+         "name \"color.brand.primary\", value \"#6366f1\"). This is the safe, "
+         "reusable way to define colors — apply it to shapes with apply_tokens.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string" :description "e.g. color.brand.primary"}
+                                :value {:type "string" :description "hex, e.g. #6366f1"}}
+                   :required ["name" "value"]}}
+
+   {:name "apply_tokens"
+    :description
+    (str "Binds color tokens to shapes in batch — the safe coloring path "
+         "(never rejected by token-only-colors). Each application names a "
+         "shape, a token, and optionally which properties (fill and/or stroke, "
+         "default fill). Application is asynchronous — verify with read_design "
+         "or audit_file afterwards, not in the same call.")
+    :input-schema {:type "object"
+                   :properties {:applications
+                                {:type "array"
+                                 :items {:type "object"
+                                         :properties {:shapeId {:type "string"}
+                                                      :tokenName {:type "string" :description "e.g. color.brand.primary"}
+                                                      :properties {:type "array"
+                                                                   :items {:type "string" :enum ["fill" "stroke"]}}}
+                                         :required ["shapeId" "tokenName"]}}}
+                   :required ["applications"]}}])
 
 ;; --- read_design
 
@@ -277,15 +308,58 @@
         (catch :default e
           (rx/throw e))))))
 
+;; --- Token tools (the safe coloring path)
+
+(defn- create-color-token
+  [{:keys [name value]}]
+  (if (or (not (string? name)) (empty? name) (not (string? value)) (empty? value))
+    (rx/throw (ex-info "create_color_token: name and value (hex) are required" {}))
+    (let [token (ctob/make-token {:type :color :name name :value value})]
+      ;; 1-arg create-token targets the current set, creating one if none exists
+      (st/emit! (dwtl/create-token token))
+      (rx/of {:name name :value value :note "color token created"}))))
+
+(defn- attr-set
+  "Maps the requested properties to shape color attributes (default fill)."
+  [properties]
+  (into #{} (map #(if (= % "stroke") :stroke-color :fill))
+        (if (seq properties) properties ["fill"])))
+
+(defn- apply-tokens
+  [{:keys [applications]}]
+  (if (empty? applications)
+    (rx/throw (ex-info "apply_tokens: no applications given" {}))
+    (let [all-tokens (some-> (dsh/lookup-file-data @st/state) :tokens-lib ctob/get-all-tokens-map)]
+      (interrupt!)
+      (let [results
+            (mapv (fn [{:keys [shapeId tokenName properties]}]
+                    (let [id    (some-> shapeId parse-uuid)
+                          token (get all-tokens tokenName)]
+                      (if (and id token)
+                        (do (st/emit! (dwta/toggle-token {:token token
+                                                          :attrs (attr-set properties)
+                                                          :shape-ids [id]
+                                                          :expand-with-children false}))
+                            {:shapeId shapeId :token tokenName :ok true})
+                        {:shapeId shapeId :token tokenName :ok false
+                         :error (cond (nil? id) "invalid shapeId"
+                                      (nil? token) "token not found"
+                                      :else "unknown")})))
+                  applications)]
+        (rx/of {:results results
+                :note "tokens resolve asynchronously — verify with read_design or audit_file"})))))
+
 ;; --- Dispatch
 
 (defn execute-tool
   [name input]
   (case name
-    "read_design"      (rx/of (read-design))
-    "create_shape"     (create-shape input)
-    "modify_shape"     (modify-shape input)
-    "nest_shape"       (nest-shape input)
-    "create_text"      (create-text input)
-    "create_component" (create-component input)
+    "read_design"        (rx/of (read-design))
+    "create_shape"       (create-shape input)
+    "modify_shape"       (modify-shape input)
+    "nest_shape"         (nest-shape input)
+    "create_text"        (create-text input)
+    "create_component"   (create-component input)
+    "create_color_token" (create-color-token input)
+    "apply_tokens"       (apply-tokens input)
     (rx/throw (ex-info (dm/str "Unknown tool: " name) {}))))

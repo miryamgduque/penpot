@@ -80,9 +80,10 @@ agent's own output introduced.
 2. [Phase 02 — Fix the layering](./done-phase-02-fix-layering.md) — volatile context out of
    the cached prefix. ✅ **done — fixed**: selection changes went from **0% → 95/92/89% cached**
    (~8.3× cheaper per turn), with the agent still correctly reading the selection.
-3. [Phase 03 — Inner knowledge vs. user-facing skills](./todo-phase-03-inner-knowledge.md) —
-   split the corpus, rework the shared docs for the native agent (drop MCP, drop/replace the
-   plugin-API gotchas), make inner knowledge always-on and non-toggleable.
+3. [Phase 03 — Inner knowledge vs. user-facing skills](./done-phase-03-inner-knowledge.md) —
+   ✅ **done**: an always-on layer (governance + naming + native-tool notes) with **0 MCP and 0
+   plugin-API references**, invisible to the Skills tab and non-toggleable. Costs ~+$0.0006/turn
+   on opus (re-read at 0.1×) and the agent demonstrably follows it.
 4. [Phase 04 — Skill bodies on demand](./todo-phase-04-skill-bodies.md) — real bodies via
    `get_design_skills`; measure whether the index actually causes a fetch and the playbook is
    followed.

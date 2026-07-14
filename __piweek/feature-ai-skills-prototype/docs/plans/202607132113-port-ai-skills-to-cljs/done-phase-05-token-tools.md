@@ -1,6 +1,6 @@
 # Phase 05 — Token tools: create & apply
 
-**Status:** todo
+**Status:** done
 
 ## Goal
 
@@ -17,12 +17,12 @@ Port the two token tools: `create_color_token` (add a color token to the file li
 
 ## Checklist
 
-- [ ] `create_color_token` tool: input `{name, value(hex), set?}` (set defaults to the active/"core" set; create the set if missing via `create-token-set`). Build `ctob/make-token`, `dwtl/create-token`; return the token name. Validate hex (`normalizeHex` equivalent).
-- [ ] `apply_tokens` tool: input `{applications: [{shapeId, tokenName, properties?: [fill|stroke]}]}`. For each, resolve the token, `dwta/toggle-token` with the mapped attrs (default `#{:fill}`). Batch under one undo transaction.
-- [ ] Because application is async, the tool result says "tokens applied — verify with `read_design`/`audit_file` (do not assume in the same call)" — matching the source tool's contract.
-- [ ] `make lint/frontend`, `make typecheck/frontend`
-- [ ] Preview: "create a token color.brand.primary = #6366f1" → token appears; "apply it to the rectangle's fill" → rect turns indigo, bound to the token (fill shows the token ref, not a raw color).
-- [ ] Human approval; commit `feat(workspace): native create/apply color-token tools`
+- [x] `create_color_token` tool: input `{name, value(hex)}`. `ctob/make-token {:type :color …}` → **1-arg `dwtl/create-token`** (targets the current set, or auto-creates one — simpler than managing a named set). Returns the token name. *(Dropped the `set?` param for now; auto-set is fine for the prototype.)* ✓
+- [x] `apply_tokens` tool: input `{applications: [{shapeId, tokenName, properties?: [fill|stroke]}]}`. Resolves each token by name via `ctob/get-all-tokens-map`, then `dwta/toggle-token` with the mapped attrs (`#{:fill}` / `#{:stroke-color}`, default fill). Returns a per-application `:ok`/`:error` result so the model sees failures. *(No undo transaction — token application resolves asynchronously through StyleDictionary, which doesn't fit a synchronous undo batch; each application is its own history entry.)* ✓
+- [x] Async note in the result ("tokens resolve asynchronously — verify with read_design/audit_file"). ✓
+- [x] Lint / format / typecheck: `clj-kondo` 0/0, `cljfmt` clean, `shadow-cljs compile main` → **0 warnings**. ✓
+- [x] Preview (live devenv): **console** — created `color.brand.primary` (#6366f1); applied to a rect → after async settle the fill **resolved to #6366f1** and the shape gained `:applied-tokens` (token-bound, not a raw color). **LLM (Haiku)** — "Create a color token color.accent #f59e0b, then create a rectangle and apply that token to its fill" → chained **`create_color_token` → `create_shape` → `apply_tokens`**; amber rectangle on canvas; agent explained live token-linking. No crash. ✓
+- [ ] Human approval; commit `:sparkles: Native create/apply color-token tools`
 
 ## After Finish
 

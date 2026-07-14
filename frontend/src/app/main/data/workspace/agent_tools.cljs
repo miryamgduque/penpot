@@ -54,11 +54,14 @@
 
    {:name "get_design_skills"
     :description
-    (str "Returns the design skills available for this file — your playbooks "
-         "(name, category, mode, what it does). Call this before a task that "
-         "matches one and follow it. Pass a name for one skill's details.")
+    (str "Your playbooks for this file. Called with no argument it lists them "
+         "(name, category, mode, what it does) — cheap. Called with a `name` it "
+         "returns that skill's FULL playbook: the method, the order to work in, "
+         "the critical rules and the checkpoints. When a task matches a skill in "
+         "your instructions' skills list, fetch it by name and follow it — do "
+         "not guess or reconstruct its content from the blurb.")
     :input-schema {:type "object"
-                   :properties {:name {:type "string" :description "return one skill's details"}}}}
+                   :properties {:name {:type "string" :description "return this skill's full playbook"}}}}
 
    {:name "create_shape"
     :description
@@ -437,7 +440,12 @@
   (let [state @st/state]
     (rx/of (if name
              (or (ask/catalog-manifest state name)
-                 {:error (dm/str "no skill named " name)})
+                 ;; A miss is usually the human label ("Accessibility audit")
+                 ;; rather than the key ("penpot-audit-accessibility"). Hand back
+                 ;; the valid names so the retry is one round, not a guess.
+                 {:error (dm/str "No skill named \"" name "\". Use one of the names below "
+                                 "(the `name` field, not the label).")
+                  :available (mapv :name (ask/catalog-manifest state))})
              (ask/catalog-manifest state)))))
 
 ;; --- audit_file

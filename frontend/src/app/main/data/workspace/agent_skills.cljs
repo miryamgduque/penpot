@@ -26,6 +26,7 @@
   generated `aikit.gen.cljs`, like `import-aikit.mjs` does for the MCP server) is
   a follow-up; until then `get_design_skills` returns the metadata."
   (:require
+   [app.main.data.workspace.aikit-bodies :as ab]
    [app.main.data.workspace.skill-state :as skst]
    [cuerdas.core :as str]))
 
@@ -155,6 +156,53 @@
   "The always-on knowledge layer, inlined into every system prompt."
   (str/join "\n" (concat governance [""] naming-conventions [""] native-tool-notes)))
 
+;; --- Skill bodies (load-on-demand)
+;;
+;; The other half of the disclosure axis: the routing index above is always in
+;; context and costs a line per skill; the BODY is thousands of tokens and loads
+;; only when a task actually matches. `aikit-bodies/bodies` is generated (see
+;; ai-skills/scripts/import-aikit-cljs.mjs), with the MCP/plugin-API sections and
+;; the sections duplicated by `inner-knowledge` already stripped.
+;;
+;; Stripping whole sections is deterministic; what it cannot fix is prose that
+;; assumes a capability we do not have. A few bodies still say things like
+;; "`execute_code` is the only mutation path" (false — we have native tools),
+;; "call the `export_shape` MCP tool" (we have no such tool until a render tool
+;; lands), or "read the design via the Figma MCP" (we have no Figma MCP; the
+;; body's own pasted-export fallback is our only path). Rewriting that prose
+;; mechanically would be guesswork, so it is reframed at fetch time instead —
+;; the model is perfectly able to translate intent onto the tools it can see,
+;; provided it is told the playbook predates them.
+
+(def ^:private body-preamble
+  (str/join "\n"
+            ["> **How to read this playbook.** It was written for a different tool surface — an"
+             "> external MCP server driving Penpot's plugin API — which you do not have. Names like"
+             "> `execute_code`, `export_shape`, `high_level_overview`, `penpot_api_info`,"
+             "> `set.toggleActive()` or `scripts/*.js` are NOT tools you can call: reach for your"
+             "> own tools instead, and if a step needs a capability you genuinely lack, say so"
+             "> rather than pretending you used it."
+             ">"
+             "> **Separate the call from the constraint.** Where a step reads like an API call it is"
+             "> usually also stating a fact about Penpot — an ordering rule, a precondition, a"
+             "> gotcha. The call is stale; the fact is not. \"Create the set and activate it (sets"
+             "> are created inactive)\" means activation genuinely has to happen before anything"
+             "> references that set — keep that, drop the method name. Discarding the constraint"
+             "> along with the syntax is the main way to misread this document."
+             ">"
+             "> Its governance and naming sections were removed because you already carry them."
+             "> What is left is the part worth having: the method — what to build, in what order,"
+             "> where to stop for review, and what good looks like."
+             ""]))
+
+(defn skill-body
+  "The playbook text for `name`, reframed for the native tool surface, or nil if
+  the skill has no body. Served by `get_design_skills` on demand — never inlined
+  into the system prompt."
+  [name]
+  (when-let [body (get ab/bodies name)]
+    (str body-preamble "\n" body)))
+
 (defn find-skill
   "The full catalog entry for `name`, tagged with its `:category`, or nil.
   Backs the Skills-tab detail view. `:enabled` here is the built-in default;
@@ -207,26 +255,35 @@
          (assoc skill :category category))))
 
 (defn catalog-manifest
-  "Metadata for the `get_design_skills` tool: all enabled skills, or one by
-  name. Full bodies are not yet available natively (see ns docstring)."
+  "Backs the `get_design_skills` tool. Listing (1-arity) stays metadata-only and
+  cheap — it is the menu. A named fetch (2-arity) is where disclosure happens and
+  carries the skill's full `:body`; only that call pays for the playbook."
   ([state]
    (mapv #(select-keys % [:name :label :category :mode :blurb]) (enabled-skills state)))
   ([state name]
    (some #(when (= name (:name %))
-            (select-keys % [:name :label :category :mode :blurb]))
+            (-> (select-keys % [:name :label :category :mode :blurb])
+                (assoc :body (or (skill-body name)
+                                 "No playbook text is bundled for this skill; use the description above."))))
          (enabled-skills state))))
 
 (defn system-prompt-section
   "The skills routing index for the agent's system prompt — enabled skills as a
-  short list the agent consults (and fetches details for via get_design_skills)."
+  short list the agent consults, then fetches the body for via get_design_skills.
+
+  Each line carries the skill's `:name`, not just its human `:label`, because the
+  name IS the key `get_design_skills` takes. Listing only the label made the
+  agent guess (`{name: \"Accessibility audit\"}` → error → retry with the real
+  name): it recovered, but it burned a whole round doing so. An index that hints
+  at a fetch has to say what to fetch by."
   [state]
   (let [skills (enabled-skills state)]
     (when (seq skills)
       (str/join "\n"
                 (concat
                  ["## Skills available for this file"
-                  "These are your playbooks. When a task matches one, call get_design_skills to read its details and follow it — do not guess its content."]
+                  "These are your playbooks. When a task matches one, call get_design_skills with the skill's `name` (the value in backticks) to read its playbook and follow it — do not guess its content."]
                  (map (fn [s]
-                        (str "- **" (:label s) "** (" (:category s) " · "
+                        (str "- `" (:name s) "` — **" (:label s) "** (" (:category s) " · "
                              (get mode-label (:mode s) (:mode s)) "): " (:blurb s)))
                       skills))))))

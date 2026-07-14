@@ -320,10 +320,17 @@
         selected    (deref selected*)
         skill       (when selected (ask/find-skill selected))
         enabled-map (mf/deref refs/resolved-skills-enabled)
+        active      (mf/deref refs/skills-filter)
         on-back     (mf/use-fn #(reset! selected* nil))
         toggle      (mf/use-fn
                      (fn [name checked]
-                       (st/emit! (skst/set-skill-enabled name checked))))]
+                       (st/emit! (skst/set-skill-enabled name checked))))
+        ;; Under :enabled, hide disabled skills; drop groups left empty.
+        visible?    (fn [name] (or (= active :all) (get enabled-map name true)))
+        groups      (keep (fn [{:keys [category skills]}]
+                            (let [rows (filterv #(visible? (:name %)) skills)]
+                              (when (seq rows) [category rows])))
+                          ask/catalog)]
     (if skill
       (let [enabled? (get enabled-map (:name skill) true)]
         [:> skill-detail* {:skill skill
@@ -331,16 +338,27 @@
                            :on-toggle #(toggle (:name skill) %)
                            :on-back on-back}])
       [:div {:class (stl/css :skills-tab)}
-       (for [{:keys [category skills]} ask/catalog]
-         [:div {:key category :class (stl/css :catalog-group)}
-          [:div {:class (stl/css :catalog-group-label)} category]
-          (for [{:keys [name label blurb]} skills]
-            [:> skill-row* {:key name
-                            :label label
-                            :blurb blurb
-                            :enabled (get enabled-map name true)
-                            :on-open #(reset! selected* name)
-                            :on-set-enabled #(toggle name %)}])])])))
+       [:div {:class (stl/css :skills-filter)}
+        (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
+          [:button {:key (name opt)
+                    :type "button"
+                    :class (stl/css-case :skills-filter-option true
+                                         :selected (= active opt))
+                    :on-click #(st/emit! (dwaip/set-skills-filter opt))}
+           lbl])]
+       (if (seq groups)
+         (for [[category rows] groups]
+           [:div {:key category :class (stl/css :catalog-group)}
+            [:div {:class (stl/css :catalog-group-label)} category]
+            (for [{:keys [name label blurb]} rows]
+              [:> skill-row* {:key name
+                              :label label
+                              :blurb blurb
+                              :enabled (get enabled-map name true)
+                              :on-open #(reset! selected* name)
+                              :on-set-enabled #(toggle name %)}])])
+         [:div {:class (stl/css :skills-empty)}
+          "No enabled skills. Switch to All to see everything."])])))
 
 (mf/defc connect-empty*
   "Shown in place of the whole panel body (tabs included) when no AI provider

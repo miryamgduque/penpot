@@ -699,3 +699,8 @@
   the user's per-account + per-file overrides over the catalog defaults. Backs
   the Skills-tab toggles."
   (l/derived ask/resolved-enabled-map st/state))
+
+(def skills-filter
+  "The Skills-tab list filter for this session (`:all` | `:enabled`). Defaults to
+  `:enabled`; in-memory only, resets on reload (US #30)."
+  (l/derived #(get % :skills-filter :enabled) st/state))

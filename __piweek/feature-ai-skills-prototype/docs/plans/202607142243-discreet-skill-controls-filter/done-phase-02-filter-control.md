@@ -1,6 +1,6 @@
 # Phase 02 — Filter control (All / Enabled)
 
-**Status:** todo
+**Status:** done
 
 ## Goal
 
@@ -21,23 +21,22 @@ new session / hard refresh** (in-memory, per the discovery decision — *not* `l
 
 ## Checklist
 
-- [ ] **State:** hold the filter in app-db (in-memory), default `:enabled`. A ptk event to set it +
-      a `refs`/selector to read it. Resets to `:enabled` on reload because it is never persisted.
-- [ ] **Control:** render an **All / Enabled** filter at the top of the Skills tab (above the
-      groups); reflects + sets the state; clear active-option styling
-- [ ] **Filtering:** when `Enabled`, hide disabled skills (resolved-enabled = false) from the list;
-      when `All`, show everything. Category groups with no visible rows under the current filter are
-      hidden (no empty headers)
-- [ ] **Empty state:** if `Enabled` and everything is disabled (nothing to show), show a small
-      "No enabled skills — switch to All" style hint rather than a blank tab
-- [ ] Filter persists within the session: switch to Chat and back, or close/reopen the panel → the
-      choice is retained (because it lives in app-db, not component-local state)
-- [ ] `make lint` + frontend build, 0 warnings
-- [ ] Verify in a logged-in browser: defaults to Enabled on load; disabled skills hidden under
-      Enabled; All shows them; selection survives tab switch + panel reopen; **reload → back to
-      Enabled**
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] **State:** `dwaip/set-skills-filter` (ptk UpdateEvent) writes app-db `:skills-filter`;
+      `refs/skills-filter` reads it, defaulting to `:enabled`. In-memory → resets on reload.
+- [x] **Control:** segmented **All / Enabled** control at the top of the Skills tab; reflects +
+      sets state; `.selected` styling on the active option
+- [x] **Filtering:** under `:enabled`, `visible?` hides skills whose resolved-enabled is false;
+      `:all` shows everything. Groups with no visible rows are dropped (`keep`) — no empty headers
+- [x] **Empty state:** `.skills-empty` hint ("No enabled skills. Switch to All to see everything.")
+      when the filter leaves nothing to show
+- [x] Filter persists within the session (app-db, not component-local) → survives tab switch +
+      panel close/reopen; resets on reload
+- [x] `make lint` (clj-kondo 0 errors) + frontend build (live `:main` + SCSS recompiled, 0 warnings)
+- [~] Verify in a logged-in browser (hard-refresh — HMR socket is erroring on this session): defaults
+      to Enabled; disabled skills hidden under Enabled; All shows them; survives tab switch/reopen;
+      reload → back to Enabled
+- [x] Human approval received
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 

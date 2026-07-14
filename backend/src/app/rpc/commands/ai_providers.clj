@@ -18,21 +18,33 @@
   card) and only stores the key when that succeeds. `ai-agent-round` is
   the buffered chat proxy: the panel names a provider and sends a
   provider-shaped JSON payload; the backend attaches the stored key and
-  returns the provider response verbatim.
+  returns the provider response verbatim. `ai-agent-round-stream` is its
+  streaming twin, re-emitting the provider's SSE frames over ours.
+
+  Both are dumb pipes: the payload is forwarded byte-for-byte and the
+  response is never decoded, so this namespace stays free of provider
+  dialects. Only credential injection lives here.
 
   NOTE(prototype): keys are stored in plain text; encrypt with the
   instance secret before this leaves the prototype stage."
   (:require
    [app.common.exceptions :as ex]
    [app.common.json :as json]
+   [app.common.logging :as l]
    [app.common.schema :as sm]
    [app.common.time :as ct]
    [app.db :as db]
    [app.http.client :as http]
+   [app.http.sse :as sse]
    [app.rpc :as-alias rpc]
    [app.rpc.doc :as-alias doc]
+   [app.util.events :as events]
    [app.util.services :as sv]
-   [cuerdas.core :as str]))
+   [clojure.java.io :as io]
+   [cuerdas.core :as str])
+  (:import
+   java.io.BufferedReader
+   java.io.InputStream))
 
 ;; Fixed, operator-known endpoints (hence skip-ssrf-check).
 (def ^:private providers
@@ -68,15 +80,17 @@
     :openai    {"authorization" (str "Bearer " api-key)}))
 
 (defn- provider-req!
-  [cfg request provider-id]
-  (try
-    (http/req cfg request {:skip-ssrf-check? true})
-    (catch Throwable cause
-      (ex/raise :type :validation
-                :code :ai-provider-unreachable
-                :hint "could not reach the provider"
-                :provider provider-id
-                :cause cause))))
+  ([cfg request provider-id]
+   (provider-req! cfg request provider-id {}))
+  ([cfg request provider-id options]
+   (try
+     (http/req cfg request (merge {:skip-ssrf-check? true} options))
+     (catch Throwable cause
+       (ex/raise :type :validation
+                 :code :ai-provider-unreachable
+                 :hint "could not reach the provider"
+                 :provider provider-id
+                 :cause cause)))))
 
 (defn- check-auth-status!
   [provider-id status]
@@ -315,26 +329,120 @@
    ;; transit/JSON key mangling can corrupt it
    [:payload [:string {:max 4000000}]]])
 
+(defn- round-request
+  "The provider HTTP request for one agent round. Shared by the buffered and
+  streaming commands so the URI/auth knowledge lives in one place."
+  [{:keys [kind base-uri] :as pconf} api-key payload]
+  {:method :post
+   :uri (case kind
+          :anthropic (str base-uri "/v1/messages")
+          :openai    (str base-uri "/chat/completions"))
+   :headers (merge (auth-headers pconf api-key)
+                   {"content-type" "application/json"})
+   :body payload
+   :timeout (ct/duration "240s")})
+
+(defn- connected-provider-row
+  [pool profile-id provider]
+  (or (get-provider-row pool profile-id provider)
+      (ex/raise :type :validation
+                :code :ai-provider-not-connected
+                :hint "provider not connected"
+                :provider provider)))
+
 (sv/defmethod ::ai-agent-round
   {::doc/added "2.13"
    ::sm/params schema:ai-agent-round}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider payload]}]
-  (let [row (get-provider-row pool profile-id provider)]
-    (when-not row
+  (let [row      (connected-provider-row pool profile-id provider)
+        request  (round-request (get providers provider) (:api-key row) payload)
+        response (provider-req! cfg request provider)]
+    {:provider provider
+     :status (:status response)
+     :body (:body response)}))
+
+;; --- Mutation: one streaming agent round through a connected provider
+;;
+;; The streaming twin of `ai-agent-round`. A separate command rather than a
+;; flag on that one: streaming is decided per command, server-side (there is
+;; no Accept negotiation anywhere in this codebase — see `::export-binfile`),
+;; `default-options` on the client is keyed by command id, and `::doc/added`
+;; publishes `ai-agent-round` as an API method whose content-type must not
+;; change under callers. The buffered command stays for non-browser callers.
+
+(def ^:private schema:ai-agent-round-stream
+  [:map {:title "ai-agent-round-stream"}
+   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
+   ;; provider-shaped JSON, as above; it MUST carry the provider's own stream
+   ;; flag — we never decode or re-encode it
+   [:payload [:string {:max 4000000}]]])
+
+(defn- check-stream-status!
+  "Non-2xx on a streaming request: the body is a small JSON error, not a
+  stream. Surface the provider's own message as an ordinary RPC error.
+
+  This runs *before* `sse/response` — with `:response-type :input-stream` the
+  response future completes at the headers, so bad key / rate limit / bad model
+  never reach the SSE path and the panel keeps handling them exactly as it
+  does today. The buffered command lets `parse-round` dig the message out
+  client-side; an SSE client never gets that chance."
+  [provider-id {:keys [status body]}]
+  (when-not (<= 200 status 299)
+    (let [message (try
+                    (some-> body slurp (json/decode :key-fn keyword) :error :message)
+                    (catch Throwable _ nil))]
       (ex/raise :type :validation
-                :code :ai-provider-not-connected
-                :hint "provider not connected"
-                :provider provider))
-    (let [{:keys [kind base-uri] :as pconf} (get providers provider)
-          request  {:method :post
-                    :uri (case kind
-                           :anthropic (str base-uri "/v1/messages")
-                           :openai    (str base-uri "/chat/completions"))
-                    :headers (merge (auth-headers pconf (:api-key row))
-                                    {"content-type" "application/json"})
-                    :body payload
-                    :timeout (ct/duration "240s")}
-          response (provider-req! cfg request provider)]
-      {:provider provider
-       :status (:status response)
-       :body (:body response)})))
+                :code (if (contains? #{401 403} status)
+                        :ai-provider-invalid-key
+                        :ai-provider-error)
+                :hint (or message (str "unexpected provider response (status " status ")"))
+                :provider provider-id
+                :status status))))
+
+(defn- pump-provider-stream!
+  "Re-emits the provider's own SSE stream, one `delta` event per `data:` line,
+  payload verbatim — the same dumb-pipe contract as the buffered command.
+
+  Anthropic's `event:` names are dropped: every payload carries its own `type`,
+  so `data:` alone covers both dialects. Pings are passed through rather than
+  filtered — they keep nginx's read timeout at bay through a long thinking
+  pause, and a write is the only thing that surfaces a broken pipe, so they are
+  also what makes the abort below detectable while the model is quiet.
+
+  Note `sse/encode` transit-encodes each event, which escapes any newline in
+  the payload — that is what keeps raw provider JSON from shattering the SSE
+  framing. Load-bearing, and not obvious."
+  [^InputStream input provider-id]
+  ;; with-open closes the stream on every exit path — including the bail-out
+  ;; below, and closing it is what aborts the upstream exchange (verified)
+  (with-open [reader (io/reader input :encoding "UTF-8")]
+    (loop [events 0]
+      (let [line (.readLine ^BufferedReader reader)]
+        (cond
+          (nil? line)
+          {:provider provider-id :events events}
+
+          (str/starts-with? line "data:")
+          (do
+            (events/tap :delta (str/trim (subs line 5)))
+            (if (events/closed?)
+              (do
+                (l/inf :hint "ai stream aborted, client gone"
+                       :provider provider-id :events events)
+                {:provider provider-id :events events :aborted true})
+              (recur (inc events))))
+
+          ;; event:/id:/retry:/comments/blank framing we don't need
+          :else
+          (recur events))))))
+
+(sv/defmethod ::ai-agent-round-stream
+  {::doc/added "2.13"
+   ::sse/stream? true
+   ::sm/params schema:ai-agent-round-stream}
+  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider payload]}]
+  (let [row      (connected-provider-row pool profile-id provider)
+        request  (round-request (get providers provider) (:api-key row) payload)
+        response (provider-req! cfg request provider {:response-type :input-stream})]
+    (check-stream-status! provider response)
+    (sse/response #(pump-provider-stream! (:body response) provider))))

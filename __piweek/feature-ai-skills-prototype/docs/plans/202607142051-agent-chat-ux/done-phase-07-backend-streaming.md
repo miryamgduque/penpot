@@ -1,10 +1,46 @@
 # Phase 07 — Backend streaming + abort
 
-**Status:** todo
+**Status:** done
 
 Backend-only; can proceed in parallel with Phases 01–06.
 **Abort ships in this phase, not later** — it's ~5 lines, and retrofitting means re-testing the
 whole chain.
+
+## Verified
+
+### The riskiest item in the plan is now RESOLVED
+
+**`.close()` on java-http-clj 0.4.3's `:input-stream` body DOES abort the upstream exchange.** The
+plan's `send-async` + `CompletableFuture.cancel` contingency is **not needed**.
+
+Probe 1 (isolated, no credentials, local slow-body server): after `.close()` the server's chunk
+count froze (4 → 4) and it threw `SocketException` — the disconnect reached it. This is the link the
+plan flagged as unknown and silent-on-failure.
+
+**Live, end to end:** disposing the client subscription mid-stream produced, in
+`backend/logs/main-latest.log`:
+```
+I app.rpc.commands.ai-providers - hint="ai stream aborted, client gone", provider="anthropic", events=16
+```
+The client walked away at 14 events; the backend noticed at 16 — matching the predicted detection
+latency (bounded by write frequency, which is why pings are passed through). All four links of the
+cancel chain are confirmed.
+
+### Streaming
+
+| Check | Result |
+|---|---|
+| endpoint returns SSE, no error | ✅ |
+| **streams incrementally** | ✅ 28 events over **4.1s** (first 1929ms, last 6033ms, max gap 347ms) |
+| provider errors stay ordinary 400s | ✅ an invalid payload surfaced as a normal `http error`, not an SSE frame — no panel change needed |
+| buffered `::ai-agent-round` still works | ✅ no regression after the `round-request` refactor (panel replied `STILL WORKS`) |
+
+### A false alarm worth recording
+
+The first real test looked **batched** — 9 events all at t=3400ms. It was not a bug: "count to 12" is
+~30 tokens and Haiku emits that in one burst. Two probes proved each half streams independently
+(the SSE path with synthetic 500ms deltas; `:input-stream` reads with a 300ms/line local server)
+before a longer prompt showed real incremental delivery. **Short prompts are not a streaming test.**
 
 ## Before Start
 
@@ -16,20 +52,21 @@ whole chain.
 
 ## Checklist
 
-- [ ] Extract `round-request` (shared by both commands)
-- [ ] Add an options-passthrough arity to `provider-req!`
-- [ ] Add `events/closed?` to `app.util.events`
-- [ ] `check-stream-status!` — raise **before** `sse/response`
-- [ ] `pump-provider-stream!` — tap `data:` lines verbatim, pass `ping` through
-- [ ] `::ai-agent-round-stream` defmethod with `::sse/stream? true`
-- [ ] **Abort test against a local slow-body server** (no credentials needed)
-- [ ] `curl -N` against a real provider key — assert incremental frames
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] Extract `round-request` (shared by both commands) + `connected-provider-row`
+- [x] Add an options-passthrough arity to `provider-req!`
+- [x] Add `events/closed?` to `app.util.events`
+- [x] `check-stream-status!` — raise **before** `sse/response`
+- [x] `pump-provider-stream!` — tap `data:` lines verbatim, pass `ping` through
+- [x] `::ai-agent-round-stream` defmethod with `::sse/stream? true`
+- [x] `::sse/ai-agent-round-stream {:stream? true}` in `repo.cljs`
+- [x] **Abort test against a local slow-body server** (no credentials) — PASSED, contingency dropped
+- [x] Live incremental frames against a real key (28 events / 4.1s) + live abort log
+- [x] Human approval received
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 
-- [ ] Rename `todo-` → `done-`; update README links
+- [x] Rename `todo-` → `done-`; update README links
 - [ ] Record whether `.close()` actually aborted upstream (see Notes) — Phase 08 depends on it
 - [ ] Phase 08 unblocked
 

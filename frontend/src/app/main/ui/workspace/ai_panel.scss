@@ -431,8 +431,18 @@
     background-color: var(--color-background-tertiary);
   }
 
+  &:focus-visible {
+    outline: deprecated.$s-2 solid var(--color-accent-primary);
+    outline-offset: deprecated.$s-1;
+  }
+
+  // A disabled skill is dropped from the router; mute the card but keep the
+  // toggle fully legible so it can be turned back on.
   &.disabled {
-    opacity: 0.55;
+    .catalog-name,
+    .catalog-desc {
+      opacity: 0.55;
+    }
   }
 }
 
@@ -450,14 +460,13 @@
   font-weight: 600;
 }
 
-.catalog-off {
-  @include deprecated.body-small-typography;
-
-  padding: 0 deprecated.$s-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
-  color: var(--color-foreground-secondary);
-  white-space: nowrap;
+// Wraps the switch inside the clickable card; default cursor (not the card's
+// pointer) and no shrink so the toggle keeps its size next to a long name.
+.catalog-toggle {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: default;
 }
 
 .catalog-desc {
@@ -533,6 +542,13 @@
   @include deprecated.small-title-typography;
 
   color: var(--color-foreground-secondary);
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
 }
 
 .detail-name {

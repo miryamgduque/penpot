@@ -156,6 +156,14 @@
   transform: scale(1.28);
 }
 
+// 10px of breathing room on the toggle's right so it lines up with the
+// Design/Prototype/Inspect tabs below (2px more than the header's 8px padding).
+.agent-toggle {
+  display: flex;
+  align-items: center;
+  margin-inline-end: 0.125rem;
+}
+
 .history-button {
   @extend %button-tertiary;
 

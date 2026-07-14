@@ -149,6 +149,13 @@
   }
 }
 
+// The Agent bot glyph reads a touch small next to the other toolbar icons.
+// The DS icon* has no viewBox, so a width bump only adds empty space — scale it
+// up ~2px proportionally instead.
+.agent-btn svg {
+  transform: scale(1.28);
+}
+
 .history-button {
   @extend %button-tertiary;
 

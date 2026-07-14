@@ -275,9 +275,9 @@
      ;; Title header, sized to the workspace right-header band so the tabs
      ;; below line up with the sidebar's Design/Prototype/Inspect tabs.
      [:div {:class (stl/css :header)}
-      [:span {:class (stl/css :title)} "Agents"]
+      [:span {:class (stl/css :title)} "Agent"]
       [:> icon-button* {:variant "ghost"
-                        :aria-label "Close Agents panel"
+                        :aria-label "Close Agent panel"
                         :on-click on-close
                         :icon i/close}]]
 

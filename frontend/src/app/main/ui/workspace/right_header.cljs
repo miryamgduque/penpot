@@ -240,17 +240,18 @@
             :on-click open-share-dialog}
         deprecated-icon/share])
 
-     ;; All-In Penpot (Agents) panel toggle: a single button (Lucide bot
-     ;; icon) next to the View mode button, driving the file-bound open state.
-     [:div {:class (stl/css :comments-section)
-            :title (str "Agents — " (sc/get-tooltip :toggle-ai-panel))}
-      [:> icon-button* {:variant (if ai-panel-open? "primary" "ghost")
-                        :aria-label "Agents"
-                        :icon i/bot
-                        :on-click #(st/emit! (dwaip/toggle-panel))}]]
-
      [:a {:class (stl/css :viewer-btn)
           :title (tr "workspace.header.viewer" (sc/get-tooltip :open-viewer))
           :on-click nav-to-viewer}
-      deprecated-icon/play]]))
+      deprecated-icon/play]
+
+     ;; All-In Penpot (Agent) panel toggle: a single button (Lucide bot icon)
+     ;; to the right of the View mode button, driving the file-bound open state.
+     ;; Same selected treatment as the Comments toggle.
+     [:div {:class (stl/css :comments-section)}
+      [:button {:title (str "Agent — " (sc/get-tooltip :toggle-ai-panel))
+                :aria-label "Agent"
+                :class (stl/css-case :comments-btn true :agent-btn true :selected ai-panel-open?)
+                :on-click #(st/emit! (dwaip/toggle-panel))}
+       [:> i/icon* {:icon-id i/bot}]]]]))
 

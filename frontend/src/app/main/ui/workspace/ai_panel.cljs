@@ -29,6 +29,7 @@
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
    [app.main.ui.ds.layout.tab-switcher :refer [tab-switcher*]]
+   [app.main.ui.components.markdown :as md]
    [app.main.ui.hooks :as hooks]
    [app.util.dom :as dom]
    [app.util.keyboard :as kbd]
@@ -142,10 +143,15 @@
              (when error?
                [:span {:class (stl/css :tool-chip-detail)}
                 (or (:rule message) (:detail message))])])
-          [:div {:key idx
-                 :class (stl/css-case :message true
-                                      :message-user (= "user" (:role message)))}
-           (:content message)]))
+          (let [user? (= "user" (:role message))]
+            [:div {:key idx
+                   :class (stl/css-case :message true
+                                        :message-user user?
+                                        :message-md (not user?))}
+             ;; the user didn't write markdown — don't eat their asterisks
+             (if user?
+               (:content message)
+               [:> md/markdown* {:text (:content message)}])])))
       (when busy?
         [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
 

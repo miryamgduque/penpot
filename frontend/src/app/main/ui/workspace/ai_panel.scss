@@ -200,17 +200,117 @@
   color: var(--color-foreground-primary);
 }
 
+// Skills tab: the built-in catalog, grouped Audits / Build / Auto-fix.
 .skills-tab {
+  @extend %new-scrollbar;
+
   display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
   height: 100%;
-  align-items: center;
-  justify-content: center;
-  padding: deprecated.$s-16;
+  padding: deprecated.$s-8;
+  overflow-y: auto;
 }
 
-.placeholder {
+.catalog-group {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+}
+
+.catalog-group-label {
   @include deprecated.body-small-typography;
 
-  text-align: center;
+  padding: deprecated.$s-8 deprecated.$s-4 deprecated.$s-4;
   color: var(--color-foreground-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.catalog-card {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+  width: 100%;
+  padding: deprecated.$s-8 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary-muted);
+    background-color: var(--color-background-tertiary);
+  }
+
+  &.disabled {
+    opacity: 0.55;
+  }
+}
+
+.catalog-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+}
+
+.catalog-name {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.catalog-off {
+  @include deprecated.body-small-typography;
+
+  padding: 0 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+.catalog-desc {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+  flex-wrap: wrap;
+}
+
+.catalog-blurb {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+.mode-badge {
+  @include deprecated.body-small-typography;
+
+  padding: 0 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+.mode-suggest {
+  color: var(--color-accent-info);
+  border-color: color-mix(in srgb, var(--color-accent-info) 40%, transparent);
+  background-color: color-mix(in srgb, var(--color-accent-info) 14%, transparent);
+}
+
+.mode-review {
+  color: var(--color-accent-secondary);
+  border-color: color-mix(in srgb, var(--color-accent-secondary) 40%, transparent);
+  background-color: color-mix(in srgb, var(--color-accent-secondary) 14%, transparent);
+}
+
+.mode-autofix {
+  color: var(--color-accent-warning);
+  border-color: color-mix(in srgb, var(--color-accent-warning) 40%, transparent);
+  background-color: color-mix(in srgb, var(--color-accent-warning) 14%, transparent);
 }

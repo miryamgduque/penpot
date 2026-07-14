@@ -47,6 +47,39 @@
              model (:enabled-models status)]
          {:provider (:provider status) :model model})))
 
+;; The built-in skills catalog shown on the Skills tab's first-run view. Static
+;; built-in data, mirroring skills-core's `builtinCatalog()` plus curated display
+;; copy. Grouped by category in display order; the dispatch router and the
+;; shared/core house-rule docs are intentionally excluded. Audit + build skills
+;; ship enabled; the single auto-fix skill ships off (it writes directly).
+(def ^:private skills-catalog
+  [{:category "Audits"
+    :skills [{:name "penpot-audit-accessibility" :label "Accessibility audit"
+              :blurb "WCAG 2.1/2.2 AA checks" :mode "suggest" :enabled true}
+             {:name "penpot-audit-tokens" :label "Tokens governance audit"
+              :blurb "Hardcoded values, off-grid spacing" :mode "suggest" :enabled true}
+             {:name "penpot-design-to-code-review" :label "Design-to-code review"
+              :blurb "Design vs. built code drift" :mode "suggest" :enabled true}]}
+   {:category "Build"
+    :skills [{:name "penpot-foundations" :label "Foundations"
+              :blurb "Design tokens setup" :mode "review" :enabled true}
+             {:name "penpot-component-factory" :label "Component factory"
+              :blurb "Builds full variant matrix" :mode "review" :enabled true}
+             {:name "penpot-build-screen" :label "Build screen"
+              :blurb "Designs screens from a brief" :mode "review" :enabled true}
+             {:name "penpot-build-from-code" :label "Build from code"
+              :blurb "Recreates a view on your tokens" :mode "review" :enabled true}
+             {:name "penpot-document-handoff" :label "Document handoff"
+              :blurb "Annotates a design for devs" :mode "review" :enabled true}
+             {:name "penpot-migrate" :label "Migrate"
+              :blurb "Figma → Penpot migration" :mode "review" :enabled true}]}
+   {:category "Auto-fix"
+    :skills [{:name "penpot-rename-layers" :label "Rename layers"
+              :blurb "Auto-fixes messy layer names" :mode "autofix" :enabled false}]}])
+
+(def ^:private mode-label
+  {"suggest" "suggest" "review" "review" "autofix" "auto-fix"})
+
 (mf/defc chat-tab*
   {::mf/private true}
   []
@@ -151,6 +184,32 @@
          [:a {:href "#/settings/integrations"} "Settings → Integrations"]
          " to start chatting."]])]))
 
+(mf/defc skills-tab*
+  "The built-in skills catalog: the Skills-tab first-run view. Read-only at this
+  stage — cards group the bundled skills by category and show a mode badge; no
+  toggling (its own story)."
+  {::mf/private true}
+  []
+  [:div {:class (stl/css :skills-tab)}
+   (for [{:keys [category skills]} skills-catalog]
+     [:div {:key category :class (stl/css :catalog-group)}
+      [:div {:class (stl/css :catalog-group-label)} category]
+      (for [{:keys [name label blurb mode enabled]} skills]
+        [:button {:key name
+                  :type "button"
+                  :class (stl/css-case :catalog-card true :disabled (not enabled))}
+         [:div {:class (stl/css :catalog-card-head)}
+          [:span {:class (stl/css :catalog-name)} label]
+          (when-not enabled
+            [:span {:class (stl/css :catalog-off)} "off by default"])]
+         [:div {:class (stl/css :catalog-desc)}
+          [:span {:class (stl/css :catalog-blurb)} blurb]
+          [:span {:class (stl/css-case :mode-badge true
+                                       :mode-suggest (= mode "suggest")
+                                       :mode-review  (= mode "review")
+                                       :mode-autofix (= mode "autofix"))}
+           (get mode-label mode mode)]]])])])
+
 (mf/defc ai-panel*
   ;; `file` / `page` are passed for future context-aware tabs; the Chat tab
   ;; reads live context from refs.
@@ -186,6 +245,4 @@
         [:> chat-tab*]
 
         "skills"
-        [:div {:class (stl/css :skills-tab)}
-         [:div {:class (stl/css :placeholder)}
-          "Skills manager — coming in its own story."]])]]))
+        [:> skills-tab*])]]))

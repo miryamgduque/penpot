@@ -75,6 +75,87 @@
             (format-tokens output-tokens) " out"
             (when cost (dm/str " · ~$" (.toFixed cost 2))))))
 
+;; How close to the end still counts as "at the bottom", in px. Slack for
+;; sub-pixel scroll positions and the last message's bottom margin.
+(def ^:private bottom-threshold 24)
+
+(mf/defc transcript*
+  "The message list, split out so it can own its scroll ref.
+
+  Follows the latest message only while the user is already at the bottom, so
+  reading back mid-turn is never yanked away. `at-bottom?` state drives the
+  pill; the layout effect reads a ref instead, so it sees the pre-append
+  position and doesn't re-run when the state settles.
+
+  Deliberately a scroll handler rather than `hooks/use-visible`: that hook
+  reports `false` until its observer first fires, so a fresh transcript would
+  never pin to the latest — and once the content outgrows the panel the
+  sentinel is never seen, leaving it wrongly detached forever."
+  {::mf/private true}
+  [{:keys [messages busy?]}]
+  (let [scroll-ref    (mf/use-ref nil)
+        ;; a fresh transcript starts pinned to the newest message
+        at-bottom*    (mf/use-state true)
+        at-bottom?    (deref at-bottom*)
+        at-bottom-ref (hooks/use-update-ref at-bottom?)
+
+        scroll-to-end (mf/use-fn
+                       (fn []
+                         (when-let [node (mf/ref-val scroll-ref)]
+                           (dom/set-scroll-pos! node (.-scrollHeight node)))))
+
+        on-scroll     (mf/use-fn
+                       (fn [event]
+                         (let [node    (dom/get-target event)
+                               bottom? (< (- (.-scrollHeight node)
+                                             (.-scrollTop node)
+                                             (.-clientHeight node))
+                                          bottom-threshold)]
+                           ;; only on a real edge crossing — this fires per frame
+                           (when (not= bottom? (mf/ref-val at-bottom-ref))
+                             (reset! at-bottom* bottom?)))))]
+
+    ;; land on the newest message when the transcript first appears
+    (mf/with-layout-effect []
+      (scroll-to-end))
+
+    (mf/with-layout-effect [messages busy?]
+      (when ^boolean (mf/ref-val at-bottom-ref)
+        (scroll-to-end)))
+
+    ;; The pill lives outside the scrolling element, anchored to this wrapper —
+    ;; inside it, it would just scroll away with the messages.
+    [:div {:class (stl/css :transcript-wrap)}
+     [:div {:class (stl/css :transcript)
+            :ref scroll-ref
+            :on-scroll on-scroll
+            :role "log"
+            :aria-live "polite"
+            :aria-relevant "additions text"}
+      (for [[idx message] (map-indexed vector messages)]
+        (if (= "tool" (:role message))
+          (let [error? (contains? #{"error" "rejected"} (:status message))]
+            [:div {:key idx
+                   :class (stl/css-case :tool-chip true :tool-chip-error error?)}
+             [:span {:class (stl/css :tool-chip-glyph)} (if error? "✕" "✓")]
+             [:span {:class (stl/css :tool-chip-name)} (:name message)]
+             (when error?
+               [:span {:class (stl/css :tool-chip-detail)}
+                (or (:rule message) (:detail message))])])
+          [:div {:key idx
+                 :class (stl/css-case :message true
+                                      :message-user (= "user" (:role message)))}
+           (:content message)]))
+      (when busy?
+        [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
+
+     (when-not at-bottom?
+       [:> icon-button* {:class (stl/css :jump-to-latest)
+                         :variant "primary"
+                         :aria-label "Jump to latest message"
+                         :on-click scroll-to-end
+                         :icon i/arrow-down}])]))
+
 (mf/defc chat-tab*
   {::mf/private true}
   []
@@ -105,6 +186,7 @@
         picker-open* (mf/use-state false)
         picker-open? (deref picker-open*)
         picker-ref   (mf/use-ref nil)
+        trigger-ref  (mf/use-ref nil)
         on-toggle-picker (mf/use-fn #(swap! picker-open* not))
 
         send      (mf/use-fn
@@ -134,15 +216,25 @@
                        (when-not busy?
                          (st/emit! (dwaip/clear-chat)))))]
 
-    ;; close the model picker on any click outside it
+    ;; close the model picker on any click outside it, or on Escape — without
+    ;; the latter it is a keyboard trap: openable by keyboard, not closable
     (mf/with-effect [picker-open?]
       (when ^boolean picker-open?
         (let [on-doc (fn [event]
                        (let [node (mf/ref-val picker-ref)]
                          (when (and node (not (.contains node (dom/get-target event))))
-                           (reset! picker-open* false))))]
+                           (reset! picker-open* false))))
+              on-key (fn [event]
+                       (when (= "Escape" (.-key event))
+                         (dom/prevent-default event)
+                         (reset! picker-open* false)
+                         ;; focus would otherwise fall back to <body>
+                         (some-> (mf/ref-val trigger-ref) dom/focus!)))]
           (.addEventListener js/document "pointerdown" on-doc)
-          (fn [] (.removeEventListener js/document "pointerdown" on-doc)))))
+          (.addEventListener js/document "keydown" on-key)
+          (fn []
+            (.removeEventListener js/document "pointerdown" on-doc)
+            (.removeEventListener js/document "keydown" on-key)))))
 
     [:div {:class (stl/css :chat-tab)}
      ;; Current-file context surfaced to the agent: page + selection.
@@ -152,23 +244,7 @@
       [:span {:class (stl/css :context-selection)} (selection-label selected objects)]]
 
      (if (seq messages)
-       [:div {:class (stl/css :transcript)}
-        (for [[idx message] (map-indexed vector messages)]
-          (if (= "tool" (:role message))
-            (let [error? (contains? #{"error" "rejected"} (:status message))]
-              [:div {:key idx
-                     :class (stl/css-case :tool-chip true :tool-chip-error error?)}
-               [:span {:class (stl/css :tool-chip-glyph)} (if error? "✕" "✓")]
-               [:span {:class (stl/css :tool-chip-name)} (:name message)]
-               (when error?
-                 [:span {:class (stl/css :tool-chip-detail)}
-                  (or (:rule message) (:detail message))])])
-            [:div {:key idx
-                   :class (stl/css-case :message true
-                                        :message-user (= "user" (:role message)))}
-             (:content message)]))
-        (when busy?
-          [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
+       [:> transcript* {:messages messages :busy? busy?}]
        [:div {:class (stl/css :transcript-empty)}
         [:> i/icon* {:icon-id i/bot-message-square :size "m"}]])
 
@@ -180,12 +256,15 @@
          (if (some-> usage :requests pos?)
            (usage-summary usage (:model settings))
            "Restored conversation")]
+        ;; the glyph is decorative — kept out of the accessible name, which
+        ;; would otherwise read "multiplication x clear"
         [:button {:class (stl/css :chat-clear)
                   :type "button"
                   :disabled busy?
                   :title "Clear this file's chat history and start a fresh session"
                   :on-click on-clear}
-         "✕ Clear"]])
+         [:span {:aria-hidden true} "✕"]
+         "Clear"]])
 
      [:div {:class (stl/css :composer)}
       [:div {:class (stl/css :model-picker)
@@ -193,19 +272,25 @@
        [:button {:type "button"
                  :class (stl/css-case :model-picker-trigger true
                                       :model-picker-open picker-open?)
+                 :ref trigger-ref
+                 :aria-haspopup "listbox"
+                 :aria-expanded picker-open?
                  :on-click on-toggle-picker}
         [:span {:class (stl/css :model-picker-current)}
          (if settings (:model settings) "No model")]
         [:> i/icon* {:icon-id i/arrow-down :class (stl/css :model-picker-caret)}]]
 
        (when picker-open?
-         [:div {:class (stl/css :model-picker-menu)}
+         [:div {:class (stl/css :model-picker-menu)
+                :role "listbox"}
           (for [[provider entries] (group-by #(:provider (second %)) (map-indexed vector pool))]
             [:div {:key provider :class (stl/css :model-picker-group)}
              [:div {:class (stl/css :model-picker-group-label)} provider]
              (for [[i entry] entries]
                [:button {:key i
                          :type "button"
+                         :role "option"
+                         :aria-selected (= i idx)
                          :class (stl/css-case :model-picker-option true
                                               :selected (= i idx))
                          :on-click #(do (reset! picked* i)

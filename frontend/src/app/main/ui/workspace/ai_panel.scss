@@ -16,6 +16,11 @@
   flex-direction: column;
   width: deprecated.$s-360;
   height: 100%;
+  // The workspace row is `1fr`, i.e. minmax(auto, 1fr) — its *auto minimum*
+  // is the content's min-content height, so without this a long transcript
+  // grows the row past the viewport and `.workspace` (overflow:hidden) just
+  // clips it. Collapsing the minimum is what lets `.transcript` scroll.
+  min-height: 0;
   background-color: var(--panel-background-color);
   position: relative;
   z-index: deprecated.$z-index-1;
@@ -56,6 +61,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  // grid item of the DS `.tab-panel`; same auto-minimum story as `.ai-panel`
+  min-height: 0;
 }
 
 // Current-file context (page + selection) surfaced above the transcript.
@@ -83,6 +90,16 @@
   overflow: hidden;
 }
 
+// Anchors the jump-to-latest pill against the scrollport. The pill cannot live
+// inside `.transcript`: as a child of the scrolling box it scrolls away with
+// the messages (and `position: sticky` does not save it there).
+.transcript-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
 .transcript {
   @extend %new-scrollbar;
 
@@ -92,6 +109,20 @@
   gap: deprecated.$s-8;
   padding: var(--sp-m);
   overflow-y: auto;
+  // flex items default to min-height:auto, which would size us to content and
+  // silently defeat the overflow-y above
+  min-height: 0;
+  // the tab-switcher wraps us in a `scrollable-panel` (also overflow-y:auto);
+  // without this, scrolling past our end chains up to it
+  overscroll-behavior: contain;
+}
+
+.jump-to-latest {
+  position: absolute;
+  inset-block-end: deprecated.$s-8;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
 }
 
 .message {

@@ -77,7 +77,7 @@ which can proceed in parallel (different app).
 
 1. [Phase 01 — Scroll + a11y](./done-phase-01-scroll-a11y.md) — stick-to-bottom, jump-to-latest pill, live region ✅ **done**
 2. [Phase 02 — Markdown rendering](./done-phase-02-markdown.md) — `marked.lexer` → elements, safe hrefs, code highlighting ✅ **done**
-3. [Phase 03 — Cancel plumbing](./todo-phase-03-cancel-plumbing.md) — `::cancel-turn`, `take-until`, `cancel-history` + unit test
+3. [Phase 03 — Cancel plumbing](./done-phase-03-cancel-plumbing.md) — `::cancel-turn`, `take-until`, `cancel-history` + unit test ✅ **done**
 4. [Phase 04 — Composer send/stop](./todo-phase-04-composer-send-stop.md) — real button, type-while-busy *(needs 03)*
 5. [Phase 05 — Tool event payload](./todo-phase-05-tool-payload.md) — `:input`/`:result`, map-arity `append-tool`
 6. [Phase 06 — Collapsible tool groups](./todo-phase-06-collapsible-tools.md) — render-time grouping *(needs 05)*

@@ -1,8 +1,28 @@
 # Phase 03 — Cancel plumbing
 
-**Status:** todo
+**Status:** done
 
 **This is the highest-value phase in the plan.** It fixes an invisible correctness bug, not polish.
+
+## Verified
+
+**Unit** — `npm test`: **438 tests / 1793 assertions, 0 failures** (was 429/1775; +9 tests, +18
+assertions). All nine `frontend-tests.data.agent-test` vars ran — confirmed by name in the output,
+because a registered-but-skipped test is a green lie (see the runner trap below). Includes a
+deliberate sanity test, `anthropic-uncancelled-dangling-would-be-rejected`, asserting the *unfixed*
+shape really is unbalanced — otherwise the suite could pass without proving anything.
+
+**Live (devenv :3450)** — a real turn, cancelled mid-flight, then a follow-up turn:
+
+| Behaviour | Result |
+|---|---|
+| `busy?` during the turn | ✅ `true` |
+| **`busy?` after cancel** (the deadlock risk) | ✅ `false` |
+| transcript marks the interruption | ✅ `⏹ Stopped.` |
+| **user message survives the cancel** | ✅ `history` count 1 — previously the exchange was forgotten entirely |
+| **the next turn succeeds** | ✅ replied `OK`, no `⚠️` — proves `cancel-history` left a history the provider accepts |
+
+Cost: two Haiku calls.
 
 ## Before Start
 
@@ -13,14 +33,16 @@
 
 ## Checklist
 
-- [ ] **Tests first**: `frontend/test/frontend_tests/data/agent_test.cljs`, registered in `runner.cljs`
-- [ ] `cancel-history` synthesizes `tool_result`s for dangling `tool_use`s
-- [ ] `::cancel-turn` event in `data/workspace/ai_panel.cljs`
-- [ ] `rx/take-until` wired in `send-message`; `watch` binds `stream`
-- [ ] `:cancelled` turn event → `store-history`
-- [ ] `npm test` passes
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:bug:`)
+- [x] **Tests first**: `frontend/test/frontend_tests/data/agent_test.cljs`, registered in `runner.cljs`
+      (both the `:require` **and** `test-namespaces` — see trap 1)
+- [x] `cancel-history` synthesizes `tool_result`s for dangling `tool_use`s
+- [x] `::cancel-turn` event in `data/workspace/ai_panel.cljs`
+- [x] `rx/take-until` wired in `send-message`; `watch` binds `stream`
+- [x] Cancel path → `store-history` (via `:turn-history` + a deferred tail, not a `:cancelled`
+      event — `run-turn` can't detect its own cancellation; see trap 2)
+- [x] `npm test` passes (438/1793, 0 failures)
+- [x] Human approval received
+- [x] Committed with a gitmoji commit (`:bug:`)
 
 ## After Finish
 
@@ -36,6 +58,30 @@
 - `frontend/test/frontend_tests/runner.cljs` — register the ns
 
 ## Notes
+
+### Traps hit while building this
+
+**1. The test runner has a SEPARATE `test-namespaces` list.** Adding the ns to `runner.cljs`'s
+`:require` compiles it but **does not run it** — the suite went green while my tests never executed.
+`runner.cljs` has both a `:require` entry *and* a `(def test-namespaces ['…])` vector; you need both.
+Always confirm your test names appear in the output.
+
+**2. `run-turn` cannot detect its own cancellation.** `take-until` unsubscribes from the *outside*, so
+the loop simply stops — it never learns why. The turn therefore publishes `{:kind :turn-history}` after
+each round, and `send-message` keeps the latest in an atom (seeded with the user message so an early
+stop still remembers it). That published history is what `cancel-history` closes off.
+
+**3. `rx/defer` does not exist in beicon** (0 uses in-tree). The deferred tail is
+`(->> (rx/of ::end) (rx/mapcat …))` — `concat` only subscribes to it once the turn is over, so the
+atoms have settled by then.
+
+**4. `encode-anthropic` / `encode-openai` are now public.** They were `defn-`, which made the wire
+invariant — the single most valuable assertion in this plan — untestable. They are pure functions and
+the wire format is legitimately part of this ns's contract.
+
+**5. `send-message` had drifted.** The metaprompt work (US #26) moved `context` onto the user message
+and dropped the `build-system-prompt` argument while this plan was being written. Re-read before
+editing; the plan's snippet was already stale.
 
 **The bug.** `send-message` builds `history` locally (`:149`) and `store-history` fires **only** on
 `:done` (`agent.cljs:361,365`). So cancelling mid-turn reverts `:history` to the previous turn: no

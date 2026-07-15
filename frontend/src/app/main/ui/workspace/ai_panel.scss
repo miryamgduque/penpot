@@ -15,7 +15,9 @@
   grid-area: ai-panel;
   display: flex;
   flex-direction: column;
-  width: deprecated.$s-360;
+
+  // width comes as an inline style from the resize hook (drag handle on the
+  // left edge, global persistence); $s-360 stays the floor/default in cljs
   height: 100%;
   // The workspace row is `1fr`, i.e. minmax(auto, 1fr) — its *auto minimum*
   // is the content's min-content height, so without this a long transcript
@@ -28,6 +30,19 @@
 
   // Separation from the options sidebar on its left.
   border-inline-start: deprecated.$s-1 solid var(--panel-border-color);
+}
+
+// Left-edge drag handle: an invisible strip straddling the panel border, same
+// hit area and cursor as the sidebars' handles. Above the header/body so the
+// whole edge is grabbable.
+.resize-area {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: deprecated.$s-8;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: deprecated.$z-index-4;
 }
 
 // Title band. Height matches the workspace right-header so the tabs below

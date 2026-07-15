@@ -26,6 +26,7 @@
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.skill-state :as skst]
+   [app.main.data.workspace.slash-commands :as slc]
    [app.main.data.workspace.user-skills :as dusk]
    [app.main.refs :as refs]
    [app.main.store :as st]
@@ -400,9 +401,34 @@
         input     (deref input*)
         input-ref (mf/use-ref nil)
 
+        ;; --- Slash menu. Open whenever the input *starts* with "/" and
+        ;; something still matches; Esc dismisses it until the input changes.
+        slash-entries    (mf/deref refs/slash-menu-entries)
+        slash-dismissed* (mf/use-state false)
+        slash-hi*        (mf/use-state 0)
+        slash-menu-ref   (mf/use-ref nil)
+        slash-query      (slc/query input)
+        slash-matches    (mf/with-memo [slash-entries slash-query]
+                           (when (some? slash-query)
+                             (slc/filter-entries slash-entries slash-query)))
+        slash-open?      (and (seq slash-matches)
+                              (not (deref slash-dismissed*)))
+        ;; clamped at read time: the match list shrinks as the user types
+        slash-hi         (min (deref slash-hi*)
+                              (dec (count slash-matches)))
+
         on-input  (mf/use-fn
                    (fn [event]
+                     ;; typing reopens a dismissed menu and rests the highlight
+                     (reset! slash-dismissed* false)
+                     (reset! slash-hi* 0)
                      (reset! input* (dom/get-value (dom/get-target event)))))
+
+        pick-entry (mf/use-fn
+                    (fn [entry]
+                      ;; fill the composer — the user still sends it themselves
+                      (reset! input* (:insert entry))
+                      (some-> (mf/ref-val input-ref) dom/focus!)))
 
         ;; attachments live with the composer, not in app state: they belong to
         ;; the message being written and die with it
@@ -536,12 +562,33 @@
                                (reset! attach-error* nil))))))))
 
         on-key-down (mf/use-fn
-                     (mf/deps send)
+                     (mf/deps send slash-open? slash-matches slash-hi)
                      (fn [event]
-                       (when (and (= "Enter" (.-key event))
-                                  (not (.-shiftKey event)))
-                         (dom/prevent-default event)
-                         (send))))
+                       (cond
+                         ;; menu first: while it is open, Enter picks — it
+                         ;; must never send half a command to the agent
+                         slash-open?
+                         (cond
+                           (kbd/down-arrow? event)
+                           (do (dom/prevent-default event)
+                               (reset! slash-hi* (mod (inc slash-hi) (count slash-matches))))
+
+                           (kbd/up-arrow? event)
+                           (do (dom/prevent-default event)
+                               (reset! slash-hi* (mod (dec slash-hi) (count slash-matches))))
+
+                           (or (kbd/enter? event) (kbd/tab? event))
+                           (do (dom/prevent-default event)
+                               (pick-entry (nth slash-matches slash-hi)))
+
+                           (kbd/esc? event)
+                           (do (dom/prevent-default event)
+                               (reset! slash-dismissed* true)))
+
+                         (and (= "Enter" (.-key event))
+                              (not (.-shiftKey event)))
+                         (do (dom/prevent-default event)
+                             (send)))))
 
         on-clear    (mf/use-fn
                      (mf/deps busy?)
@@ -561,6 +608,15 @@
           (let [borders (- (.-offsetHeight node) (.-clientHeight node))
                 height  (min 200 (+ (.-scrollHeight node) borders))]
             (set! (.-height style) (dm/str height "px"))))))
+
+    ;; keep the keyboard-highlighted slash option in view as the arrows move
+    ;; it (an effect, not part of the key handler: the DOM only has the new
+    ;; aria-selected after the state settles)
+    (mf/with-effect [slash-hi slash-open?]
+      (when slash-open?
+        (some-> (mf/ref-val slash-menu-ref)
+                (.querySelector "[aria-selected=\"true\"]")
+                (.scrollIntoView #js {:block "nearest"}))))
 
     ;; close the model picker on any click outside it, or on Escape — without
     ;; the latter it is a keyboard trap: openable by keyboard, not closable
@@ -647,6 +703,27 @@
              :on-drag-over on-drag-over
              :on-drag-leave on-drag-leave
              :on-drop on-drop}
+       (when slash-open?
+         [:div {:class (stl/css :slash-menu)
+                :ref slash-menu-ref
+                :role "listbox"
+                :aria-label "Commands and skills"}
+          (for [[i entry] (map-indexed vector slash-matches)]
+            [:button {:key (:command entry)
+                      :type "button"
+                      :role "option"
+                      :aria-selected (= i slash-hi)
+                      :class (stl/css-case :slash-option true
+                                           :slash-option-active (= i slash-hi))
+                      ;; pointerdown would steal focus from the textarea and
+                      ;; blur it before click lands — keep the caret alive
+                      :on-pointer-down dom/prevent-default
+                      :on-pointer-enter #(reset! slash-hi* i)
+                      :on-click #(pick-entry entry)}
+             [:span {:class (stl/css :slash-command)} (dm/str "/" (:command entry))]
+             [:span {:class (stl/css :slash-title)} (:title entry)]
+             (when-let [detail (:detail entry)]
+               [:span {:class (stl/css :slash-detail)} detail])])])
        [:input {:type "file"
                 :ref file-input-ref
                 :class (stl/css :composer-file-input)

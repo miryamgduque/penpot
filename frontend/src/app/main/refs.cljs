@@ -16,6 +16,7 @@
    [app.config :as cf]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
+   [app.main.data.workspace.slash-commands :as slc]
    [app.main.data.workspace.tokens.selected-set :as dwts]
    [app.main.store :as st]
    [app.main.streams :as ms]
@@ -704,6 +705,11 @@
   "The full skills catalog — built-in groups with the user's created skills merged
   in (US #9). Backs the Skills-tab list + detail."
   (l/derived ask/full-catalog st/state))
+
+(def slash-menu-entries
+  "Entries for the chat composer's `/` menu: the special commands + every
+  enabled skill, each carrying its insertable trigger phrase."
+  (l/derived slc/menu-model st/state))
 
 (def skills-filter
   "The Skills-tab list filter for this session (`:all` | `:enabled`). Defaults to

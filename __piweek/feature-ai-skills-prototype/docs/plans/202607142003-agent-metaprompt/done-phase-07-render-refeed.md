@@ -1,7 +1,7 @@
 # Phase 07 — The agent must see
 
 **Status:** done — **closed as superseded.** No code shipped here. Superseded by
-[Agent vision — let the model see, both ways](../202607150027-agent-vision/), by the user's call
+[Agent vision — let the model see, both ways](../completed/202607150027-agent-vision/), by the user's call
 on 2026-07-15. That plan's README reserved this decision ("keep both, decide later… Do not let
 both plans build the render tool. Whoever gets there first wins; the other closes"); this is the
 decision.

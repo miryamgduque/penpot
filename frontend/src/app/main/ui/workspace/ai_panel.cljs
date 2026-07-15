@@ -343,6 +343,32 @@
          "Clear"]])
 
      [:div {:class (stl/css :composer)}
+      ;; The send/stop control lives inside the textarea (bottom-right); the
+      ;; input reserves room on that side so text never runs under it.
+      [:div {:class (stl/css :composer-row)}
+       ;; deliberately NOT disabled while busy: only *sending* needs gating,
+       ;; and being unable to even type through a long turn is the harshest
+       ;; part of the current experience
+       [:textarea {:class (stl/css :composer-input)
+                   :ref input-ref
+                   :placeholder "Ask the agent…"
+                   :value input
+                   :on-change on-input
+                   :on-key-down on-key-down}]
+       (if busy?
+         [:button {:type "button"
+                   :class (stl/css :composer-stop)
+                   :aria-label "Stop generating"
+                   :on-click on-cancel}
+          [:> i/icon* {:icon-id i/close}]]
+         [:button {:type "button"
+                   :class (stl/css :composer-send)
+                   :aria-label "Send message"
+                   :disabled (or (not settings) (empty? (str/trim input)))
+                   :on-click send}
+          [:> i/icon* {:icon-id i/forward}]])]
+
+      ;; Model picker below the composer — half width, right-aligned, borderless.
       [:div {:class (stl/css :model-picker)
              :ref picker-ref}
        [:button {:type "button"
@@ -374,31 +400,7 @@
                 (:model entry)])])
           [:a {:class (stl/css :model-picker-manage)
                :href "#/settings/integrations"}
-           "Manage your models"]])]
-      ;; The send/stop control lives inside the textarea (bottom-right); the
-      ;; input reserves room on that side so text never runs under it.
-      [:div {:class (stl/css :composer-row)}
-       ;; deliberately NOT disabled while busy: only *sending* needs gating,
-       ;; and being unable to even type through a long turn is the harshest
-       ;; part of the current experience
-       [:textarea {:class (stl/css :composer-input)
-                   :ref input-ref
-                   :placeholder "Ask the agent…"
-                   :value input
-                   :on-change on-input
-                   :on-key-down on-key-down}]
-       (if busy?
-         [:button {:type "button"
-                   :class (stl/css :composer-stop)
-                   :aria-label "Stop generating"
-                   :on-click on-cancel}
-          [:> i/icon* {:icon-id i/close}]]
-         [:button {:type "button"
-                   :class (stl/css :composer-send)
-                   :aria-label "Send message"
-                   :disabled (or (not settings) (empty? (str/trim input)))
-                   :on-click send}
-          [:> i/icon* {:icon-id i/forward}]])]]]))
+           "Manage your models"]])]]]))
 
 (mf/defc mode-badge*
   "The colored mode pill shared by the catalog cards and the detail view."

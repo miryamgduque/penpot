@@ -345,6 +345,9 @@
 // Model picker: a custom dropdown that opens upward, with a manage-models link.
 .model-picker {
   position: relative;
+  // Half width, sitting on the right below the composer.
+  width: 50%;
+  align-self: flex-end;
 }
 
 .model-picker-trigger {
@@ -357,8 +360,8 @@
   width: 100%;
   padding: deprecated.$s-6 deprecated.$s-8;
   border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  background-color: var(--color-background-primary);
+  border: none;
+  background-color: transparent;
   color: var(--color-foreground-primary);
   cursor: pointer;
 }
@@ -381,7 +384,13 @@
 .model-picker-menu {
   position: absolute;
   inset-block-end: calc(100% + deprecated.$s-4);
-  inset-inline: 0;
+  // Right-anchored so it lines up with the half-width trigger, but free to grow
+  // left to fit full model names rather than truncating to half.
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  min-inline-size: 100%;
+  inline-size: max-content;
+  max-inline-size: 260px;
   z-index: 2;
   display: flex;
   flex-direction: column;

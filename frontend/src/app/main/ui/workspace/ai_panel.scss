@@ -17,7 +17,7 @@
 // to the workspace right-header) and fixed glyph boxes like the attachment ✕.
 
 @mixin scaled-body-small {
-  @include scaled-body-small;
+  @include deprecated.body-small-typography;
 
   font-size: calc(#{deprecated.$fs-12} * var(--ai-font-scale, 1));
 }

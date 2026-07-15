@@ -18,9 +18,17 @@ The cap is ours, not the provider's: `:payload [:string {:max 4000000}]`
 (`ai_providers.clj:330`, `:378`). Overrun is an **RPC validation error**, so the user sees a
 generic failure, not "your image is too big".
 
+> **⚠️ Phase 04 measured it, and it is worse than this file assumed.** Five 1440×900 UI
+> screenshots are **2.65M base64 chars — 66% of the 4M cap in a single message**, before the
+> system prompt, tool schemas, or any history. Incompressible content (a photo, a photographic
+> mockup) is **743% — over the cap on the first message**. So the ordering below is wrong:
+> **downscale-on-attach is the load-bearing fix and should come first**; history accumulation is
+> real but arrives second. Five images is not a stress test — it is what the button invites.
+
 ## Before Start
 
-- [ ] Re-read Phase 04's recorded payload size for a 5-image message — the starting number
+- [x] Re-read Phase 04's recorded payload size for a 5-image message — the starting number
+      → 2,649,360 chars (66% of cap) realistic; 29,732,536 (743%) pathological
 - [ ] Re-read `trim-history` (`agent.cljs:353-368`) and the prior art it echoes:
       `pruneStaleToolResults` stubbed tool results >400 chars older than the last 8 messages.
       The same shape applies to images, and reusing the existing idea beats inventing one

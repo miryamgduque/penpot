@@ -69,14 +69,19 @@
 ;; `ai-skills` agent — a separate plan; this only stores/renders messages.
 
 (defn append-message
-  [role content]
-  (ptk/reify ::append-message
-    ptk/UpdateEvent
-    (update [_ state]
-      (if-let [file-id (:current-file-id state)]
-        (update-in state [:ai-panel file-id :messages]
-                   (fnil conj []) {:role role :content content})
-        state))))
+  "`images` (a vector of `{:mtype :data}`) is rendered in the user's own bubble.
+  The transcript must not lie about what was sent: if the image left the
+  browser, the user needs to see that it did."
+  ([role content] (append-message role content nil))
+  ([role content images]
+   (ptk/reify ::append-message
+     ptk/UpdateEvent
+     (update [_ state]
+       (if-let [file-id (:current-file-id state)]
+         (update-in state [:ai-panel file-id :messages]
+                    (fnil conj []) (cond-> {:role role :content content}
+                                     (seq images) (assoc :images images)))
+         state)))))
 
 (defn append-delta
   "Appends streamed text to the open assistant bubble, opening one first if the
@@ -193,59 +198,64 @@
 
   Cancellable via `cancel-turn`. A cancelled turn is still committed to the
   history — closed off by `agent/cancel-history` — because dropping it would
-  leave the agent with no memory of an exchange the transcript still shows."
-  [settings text context]
-  (ptk/reify ::send-message
-    ptk/WatchEvent
-    (watch [_ state stream]
-      (let [file-id (:current-file-id state)
-            prior   (dm/get-in state [:ai-panel file-id :history])
-            ;; context rides on the user message (the volatile slot), while the
-            ;; system prompt stays a stable, cacheable prefix built from `state`
-            history (conj (vec prior) {:role :user :text text :context context})
-            system  (agent/build-system-prompt state)
-            stopper (rx/filter (ptk/type? ::cancel-turn) stream)
+  leave the agent with no memory of an exchange the transcript still shows.
 
-            ;; the turn's history as it grows, so a cancel can close it off;
-            ;; seeded with the user message so it survives an early stop
-            latest* (atom history)
-            ;; tells "ran to completion / errored" apart from "cancelled" —
-            ;; `take-until` completes the stream either way
-            ended?* (atom false)]
-        (rx/concat
-         (rx/of (append-message "user" text)
-                (set-busy true))
+  `images` are base64 in memory and are never uploaded anywhere: they ride the
+  turn and live only in this file's in-memory history, so a reload drops them."
+  ([settings text context] (send-message settings text context nil))
+  ([settings text context images]
+   (ptk/reify ::send-message
+     ptk/WatchEvent
+     (watch [_ state stream]
+       (let [file-id (:current-file-id state)
+             prior   (dm/get-in state [:ai-panel file-id :history])
+             ;; context rides on the user message (the volatile slot), while the
+             ;; system prompt stays a stable, cacheable prefix built from `state`
+             history (conj (vec prior) (cond-> {:role :user :text text :context context}
+                                         (seq images) (assoc :images images)))
+             system  (agent/build-system-prompt state)
+             stopper (rx/filter (ptk/type? ::cancel-turn) stream)
 
-         ;; `take-until` wraps the pipeline, errors included; `set-busy false`
-         ;; must stay outside it or a cancel leaves the panel stuck busy
-         (->> (agent/run-turn settings history system)
-              (rx/mapcat (fn [ev]
-                           (case (:kind ev)
-                             :assistant       (rx/of (append-message "assistant" (:text ev)))
-                             :assistant-delta (rx/of (append-delta (:text ev)))
-                             :tool         (rx/of (append-tool (dissoc ev :kind)))
-                             :usage        (rx/of (accumulate-usage (:usage ev)))
-                             :turn-history (do (reset! latest* (:history ev))
-                                               (rx/empty))
-                             :done         (do (reset! ended?* true)
-                                               (rx/of (store-history (:history ev))))
-                             (rx/empty))))
-              (rx/catch (fn [cause]
-                          (reset! ended?* true)
-                          (let [data (ex-data cause)
-                                msg  (or (:hint data)
-                                         (some-> (:code data) name)
-                                         (ex-message cause)
-                                         "request failed")]
-                            (rx/of (append-message "assistant" (dm/str "⚠️ " msg))))))
-              (rx/take-until stopper))
+             ;; the turn's history as it grows, so a cancel can close it off;
+             ;; seeded with the user message so it survives an early stop
+             latest* (atom history)
+             ;; tells "ran to completion / errored" apart from "cancelled" —
+             ;; `take-until` completes the stream either way
+             ended?* (atom false)]
+         (rx/concat
+          (rx/of (append-message "user" text images)
+                 (set-busy true))
 
-         ;; deferred: `concat` subscribes here only once the turn is over, so
-         ;; the atoms have settled by the time this decides what happened
-         (->> (rx/of ::end)
-              (rx/mapcat (fn [_]
-                           (if @ended?*
-                             (rx/of (set-busy false))
-                             (rx/of (append-message "assistant" "⏹ Stopped.")
-                                    (store-history (agent/cancel-history @latest*))
-                                    (set-busy false)))))))))))
+          ;; `take-until` wraps the pipeline, errors included; `set-busy false`
+          ;; must stay outside it or a cancel leaves the panel stuck busy
+          (->> (agent/run-turn settings history system)
+               (rx/mapcat (fn [ev]
+                            (case (:kind ev)
+                              :assistant       (rx/of (append-message "assistant" (:text ev)))
+                              :assistant-delta (rx/of (append-delta (:text ev)))
+                              :tool         (rx/of (append-tool (dissoc ev :kind)))
+                              :usage        (rx/of (accumulate-usage (:usage ev)))
+                              :turn-history (do (reset! latest* (:history ev))
+                                                (rx/empty))
+                              :done         (do (reset! ended?* true)
+                                                (rx/of (store-history (:history ev))))
+                              (rx/empty))))
+               (rx/catch (fn [cause]
+                           (reset! ended?* true)
+                           (let [data (ex-data cause)
+                                 msg  (or (:hint data)
+                                          (some-> (:code data) name)
+                                          (ex-message cause)
+                                          "request failed")]
+                             (rx/of (append-message "assistant" (dm/str "⚠️ " msg))))))
+               (rx/take-until stopper))
+
+          ;; deferred: `concat` subscribes here only once the turn is over, so
+          ;; the atoms have settled by the time this decides what happened
+          (->> (rx/of ::end)
+               (rx/mapcat (fn [_]
+                            (if @ended?*
+                              (rx/of (set-busy false))
+                              (rx/of (append-message "assistant" "⏹ Stopped.")
+                                     (store-history (agent/cancel-history @latest*))
+                                     (set-busy false))))))))))))

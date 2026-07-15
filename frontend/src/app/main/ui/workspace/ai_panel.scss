@@ -153,6 +153,28 @@
   background-color: var(--color-background-quaternary);
 }
 
+// Images the user attached, shown in their own bubble above the text — the
+// same order the model receives them in.
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-4;
+  margin-block-end: deprecated.$s-8;
+
+  // `.message` is pre-wrap; without this the flex line inherits the newline
+  white-space: normal;
+
+  &:only-child {
+    margin-block-end: 0;
+  }
+}
+
+.message-image {
+  max-inline-size: deprecated.$s-120;
+  max-block-size: deprecated.$s-120;
+  border-radius: deprecated.$br-4;
+}
+
 // Rendered assistant markdown. `.message` is `pre-wrap` for plain text; once
 // the blocks are real elements that would double every gap.
 .message-md {
@@ -551,10 +573,103 @@
   }
 }
 
-// The input and its send/stop control share a row; the picker sits above.
-// Anchors the send/stop button over the textarea's bottom-right corner.
+// The input, with send/stop anchored over its bottom-right corner and attach
+// over its bottom-left. `position: relative` is what those absolutes hang from,
+// so the flex row the attach work originally used is gone: attach joins this
+// design rather than reinstating a row.
 .composer-row {
   position: relative;
+  border-radius: deprecated.$br-8;
+}
+
+// Drop feedback on the whole row (the row is what accepts the drop), as an
+// outline rather than a border so it cannot shift the auto-growing textarea.
+.composer-row-dragging {
+  outline: deprecated.$s-2 dashed var(--color-accent-primary);
+  outline-offset: deprecated.$s-2;
+}
+
+// The real <input type=file>: kept in the DOM (the attach button clicks it)
+// but never shown.
+.composer-file-input {
+  display: none;
+}
+
+// Mirrors .composer-send across the textarea: same size and shape, other corner.
+.composer-attach {
+  position: absolute;
+  inset-block-end: deprecated.$s-8;
+  inset-inline-start: deprecated.$s-8;
+  display: grid;
+  place-content: center;
+  width: deprecated.$s-28;
+  height: deprecated.$s-28;
+  border: none;
+  border-radius: deprecated.$br-8;
+  cursor: pointer;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-background-quaternary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-8;
+  margin-block-end: deprecated.$s-8;
+}
+
+.composer-attachment {
+  position: relative;
+  inline-size: deprecated.$s-52;
+  block-size: deprecated.$s-52;
+}
+
+.composer-attachment-img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: deprecated.$br-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.composer-attachment-remove {
+  position: absolute;
+  inset-block-start: calc(-1 * #{deprecated.$s-4});
+  inset-inline-end: calc(-1 * #{deprecated.$s-4});
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: deprecated.$fs-10;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-primary);
+
+  &:hover {
+    background-color: var(--color-accent-primary);
+    color: var(--color-background-primary);
+  }
+}
+
+// Attach rejections and the can't-read-images warning.
+.composer-hint {
+  @include deprecated.body-small-typography;
+
+  margin-block-end: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
 }
 
 .composer-send,
@@ -593,6 +708,63 @@
   }
 }
 
+// The real <input type=file>: kept in the DOM (the attach button clicks it)
+// but never shown.
+.composer-file-input {
+  display: none;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-8;
+  margin-block-end: deprecated.$s-8;
+}
+
+.composer-attachment {
+  position: relative;
+  inline-size: deprecated.$s-52;
+  block-size: deprecated.$s-52;
+}
+
+.composer-attachment-img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: deprecated.$br-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.composer-attachment-remove {
+  position: absolute;
+  inset-block-start: calc(-1 * #{deprecated.$s-4});
+  inset-inline-end: calc(-1 * #{deprecated.$s-4});
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: deprecated.$fs-10;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-primary);
+
+  &:hover {
+    background-color: var(--color-accent-primary);
+    color: var(--color-background-primary);
+  }
+}
+
+// Attach rejections and the can't-read-images warning.
+.composer-hint {
+  @include deprecated.body-small-typography;
+
+  margin-block-end: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+}
+
 .composer-input {
   @include deprecated.body-small-typography;
 
@@ -606,8 +778,10 @@
   overflow-y: auto;
   resize: none;
   padding: deprecated.$s-8;
-  // Reserve the bottom-right corner so text never runs under the send/stop button.
+  // Reserve the bottom-right corner so text never runs under the send/stop
+  // button — and the bottom-left, likewise, for attach.
   padding-inline-end: deprecated.$s-44;
+  padding-inline-start: deprecated.$s-44;
   border-radius: deprecated.$br-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);

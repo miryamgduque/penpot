@@ -19,6 +19,7 @@
    [app.common.data :as d]
    [app.common.data.macros :as dm]
    [app.common.exceptions :as ex]
+   [app.common.math :as mth]
    [app.common.media :as cm]
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent :as agent]
@@ -976,6 +977,82 @@
                  :on-click submit}
         (if busy? "Generating…" "Create skill")]])))
 
+;; --- Panel resize
+;;
+;; The workspace grid gives the panel an `auto` column, so the element's own
+;; width is authoritative and an inline style is all resizing needs. Width is
+;; a global preference (one width everywhere, localStorage-persisted) —
+;; deliberately not `use-resize-hook`, whose persistence is keyed per file.
+
+(def ^:private panel-min-width 360)
+
+(defn- clamp-panel-width
+  "Between the designed minimum (the composer's anchored controls need it) and
+  half the window, so the viewport always stays usable."
+  [width]
+  (let [max-width (max panel-min-width (* 0.5 (:width (dom/get-window-size))))]
+    (mth/clamp width panel-min-width max-width)))
+
+(defn- use-panel-resize
+  "Drag mechanics for the left-edge handle, modeled on `use-resize-hook`'s
+  pointer-capture handlers. The panel is right-docked, so dragging left grows
+  it. Returns the current width and the three handlers for the handle node."
+  []
+  (let [width*    (hooks/use-persisted-state ::panel-width panel-min-width)
+        width     (deref width*)
+        ;; nil when idle; {:x pointer-x :width panel-width} at drag start
+        start-ref (mf/use-ref nil)
+
+        on-pointer-down
+        (mf/use-fn
+         (mf/deps width)
+         (fn [event]
+           (dom/capture-pointer event)
+           (mf/set-ref-val! start-ref {:x (:x (dom/get-client-position event))
+                                       :width width})))
+
+        on-pointer-move
+        (mf/use-fn
+         (fn [event]
+           (when-let [start (mf/ref-val start-ref)]
+             (let [pos (dom/get-client-position event)]
+               (reset! width* (clamp-panel-width (+ (:width start)
+                                                    (- (:x start) (:x pos)))))))))
+
+        on-lost-pointer-capture
+        (mf/use-fn
+         (fn [event]
+           (dom/release-pointer event)
+           (mf/set-ref-val! start-ref nil)))]
+
+    ;; a window shrink can strand the saved width past the max — re-clamp
+    (mf/with-effect []
+      (let [on-resize #(swap! width* clamp-panel-width)]
+        (.addEventListener js/window "resize" on-resize)
+        (fn [] (.removeEventListener js/window "resize" on-resize))))
+
+    {:width width
+     :on-pointer-down on-pointer-down
+     :on-pointer-move on-pointer-move
+     :on-lost-pointer-capture on-lost-pointer-capture}))
+
+;; --- Text scale
+;;
+;; Discrete steps around 1 (today's sizes). The chosen step is a global
+;; reading preference, persisted like the panel width; the scss consumes it
+;; as the `--ai-font-scale` custom property set inline on the panel root.
+
+(def ^:private font-scale-steps [0.85 1 1.15 1.3 1.45])
+(def ^:private font-scale-default-step 1)
+
+(defn- valid-font-step
+  "The stored step, or the default when the stored value is out of range or
+  not an int (an old/garbage localStorage value must never break rendering)."
+  [step]
+  (if (and (int? step) (< -1 step (count font-scale-steps)))
+    step
+    font-scale-default-step))
+
 (mf/defc ai-panel*
   "The Agent panel shell. Chat is the home surface and fills the body; Skills is a
   full-panel view reached from a muted header icon (US #35). The view is in-memory
@@ -1025,7 +1102,21 @@
         providers   (mf/deref refs/ai-providers)
         pool        (mf/with-memo [providers] (provider-pool providers))
         selected-model* (hooks/use-persisted-state ::selected-model nil)
-        settings    (selected-settings pool (deref selected-model*))]
+        settings    (selected-settings pool (deref selected-model*))
+
+        {:keys [width]
+         :as   resize} (use-panel-resize)
+
+        font-step*  (hooks/use-persisted-state ::font-step font-scale-default-step)
+        font-step   (valid-font-step (deref font-step*))
+        font-scale  (nth font-scale-steps font-step)
+        on-font-dec (mf/use-fn
+                     (mf/deps font-step)
+                     #(reset! font-step* (max 0 (dec font-step))))
+        on-font-inc (mf/use-fn
+                     (mf/deps font-step)
+                     #(reset! font-step* (min (dec (count font-scale-steps))
+                                              (inc font-step))))]
 
     ;; Providers are configured on the settings page; load them so we know
     ;; whether to show the chat or the connect-a-provider prompt. Skill state
@@ -1036,7 +1127,15 @@
                 (skst/fetch-skill-states)
                 (dusk/fetch-user-skills)))
 
-    [:aside {:class (stl/css :ai-panel)}
+    [:aside {:class (stl/css :ai-panel)
+             :style #js {:width (dm/str width "px")
+                         "--ai-font-scale" (dm/str font-scale)}}
+     ;; Left-edge drag handle — the right-docked panel's resizable edge.
+     [:div {:class (stl/css :resize-area)
+            :on-pointer-down (:on-pointer-down resize)
+            :on-pointer-move (:on-pointer-move resize)
+            :on-lost-pointer-capture (:on-lost-pointer-capture resize)}]
+
      ;; Adaptive header (sized to the workspace right-header band): chat shows the
      ;; "Agent" title + the muted Skills icon; Skills swaps those for a back arrow
      ;; and a title ("Skills" for the list, "Skill info" for a detail).
@@ -1052,6 +1151,22 @@
         [:span {:class (stl/css :title)} "Agent"])
       (when-not skills?
         [:div {:class (stl/css :header-actions)}
+         ;; A−/A+ text-size stepper. The header itself deliberately doesn't
+         ;; scale, so these stay put while the body text steps.
+         [:button {:type "button"
+                   :class (stl/css :font-step-btn)
+                   :aria-label "Decrease text size"
+                   :title "Decrease text size"
+                   :disabled (zero? font-step)
+                   :on-click on-font-dec}
+          "A−"]
+         [:button {:type "button"
+                   :class (stl/css :font-step-btn)
+                   :aria-label "Increase text size"
+                   :title "Increase text size"
+                   :disabled (= font-step (dec (count font-scale-steps)))
+                   :on-click on-font-inc}
+          "A+"]
          [:> icon-button* {:variant "ghost"
                            :aria-label "Open Skills"
                            :on-click open-skills

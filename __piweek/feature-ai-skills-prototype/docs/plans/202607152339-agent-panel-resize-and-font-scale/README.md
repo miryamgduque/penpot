@@ -1,6 +1,6 @@
 # Agent Panel: Resizable Width + Font Size Stepper
 
-**Status:** todo
+**Status:** done — pending post-merge visual verification (see Completion Summary)
 **Created:** 2026-07-15
 **Apps:** `frontend`
 **Dependencies:** None
@@ -23,10 +23,48 @@ via the existing `hooks/use-persisted-state` (localStorage-backed, already used 
 this panel for the remembered model). This deliberately does *not* use
 `use-resize-hook`'s built-in persistence, which is keyed per-file.
 
+## Execution Mode (deviation, agreed 2026-07-15)
+
+Executed in a worktree (`feature/agent-panel-resize`, branched off
+`feature/ai-skills-prototype`) while other sessions work on the base branch:
+
+- **No tests** — the user waived the tests-first step for both phases.
+- **Per-phase commits happen without a stop-and-ask** — the review gate moves to
+  the end: merge into `feature/ai-skills-prototype` only with the user's explicit
+  go-ahead (they confirm no other session is mid-flight), then verify visually
+  in the running dev environment together.
+
 ## Phases
 
-1. [Phase 01 — Resizable width](./todo-phase-01-resizable-width.md) — drag handle on the left edge, min 360 / max clamped to viewport, globally persisted
-2. [Phase 02 — Font size stepper](./todo-phase-02-font-size-stepper.md) — A−/A+ control, discrete steps, CSS-variable-driven scale over the whole panel
+1. [Phase 01 — Resizable width](./done-phase-01-resizable-width.md) — drag handle on the left edge, min 360 / max clamped to viewport, globally persisted
+2. [Phase 02 — Font size stepper](./done-phase-02-font-size-stepper.md) — A−/A+ control, discrete steps, CSS-variable-driven scale over the whole panel
+
+## Completion Summary
+
+**Completed:** 2026-07-16 (implementation; visual verification pending post-merge)
+
+### What Shipped
+- Left-edge drag handle resizing the panel between 360px and half the window,
+  width persisted globally via `use-persisted-state ::panel-width`.
+- A−/A+ stepper in the chat header stepping all panel body text through
+  `[0.85 1 1.15 1.3 1.45]` of the design sizes, via a `--ai-font-scale` custom
+  property and local `scaled-*` mixin wrappers in `ai_panel.scss`; step
+  persisted globally via `::font-step`.
+
+### What Changed from Original Plan
+- Tests waived and per-phase approval folded into the merge gate (user
+  decision — see "Execution Mode").
+- The header band (title + stepper buttons) deliberately does not scale, to
+  stay aligned with the workspace right-header.
+
+### Lessons & Follow-ups
+- No Clojure lint tooling exists outside devenv on this machine; cljs changes
+  got manual review + paren-balance only — the shadow-cljs watch compile at
+  first post-merge run is the real syntax gate.
+- **Pending:** post-merge visual verification (both features, persistence,
+  extremes) in the user's dev environment; then move this folder to
+  `completed/`. Revisit whether the stepper should also appear in the Skills
+  header.
 
 ## Key Code
 

@@ -695,10 +695,15 @@
   (l/derived :ai-providers st/state))
 
 (def resolved-skills-enabled
-  "Map of built-in skill-name → effective on/off for the current file, resolving
-  the user's per-account + per-file overrides over the catalog defaults. Backs
-  the Skills-tab toggles."
+  "Map of skill-name → effective on/off for the current file, resolving the user's
+  per-account + per-file overrides over the catalog defaults. Backs the Skills-tab
+  toggles."
   (l/derived ask/resolved-enabled-map st/state))
+
+(def skills-catalog
+  "The full skills catalog — built-in groups with the user's created skills merged
+  in (US #9). Backs the Skills-tab list + detail."
+  (l/derived ask/full-catalog st/state))
 
 (def skills-filter
   "The Skills-tab list filter for this session (`:all` | `:enabled`). Defaults to

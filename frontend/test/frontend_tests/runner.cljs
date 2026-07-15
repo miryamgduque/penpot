@@ -22,6 +22,7 @@
    [frontend-tests.data.workspace-skill-state-test]
    [frontend-tests.data.workspace-texts-test]
    [frontend-tests.data.workspace-thumbnails-test]
+   [frontend-tests.data.workspace-user-skills-test]
    [frontend-tests.errors-test]
    [frontend-tests.helpers-shapes-test]
    [frontend-tests.logic.comp-remove-swap-slots-test]
@@ -97,6 +98,7 @@
    'frontend-tests.data.workspace-shortcuts-test
    'frontend-tests.data.workspace-skill-state-test
    'frontend-tests.data.workspace-texts-test
+   'frontend-tests.data.workspace-user-skills-test
    'frontend-tests.data.workspace-thumbnails-test
    'frontend-tests.errors-test
    'frontend-tests.helpers-shapes-test

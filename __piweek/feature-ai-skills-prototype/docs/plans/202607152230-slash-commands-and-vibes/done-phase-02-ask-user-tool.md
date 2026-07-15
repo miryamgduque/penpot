@@ -1,40 +1,41 @@
 # Phase 02 — ask_user tool plumbing
 
-**Status:** todo
+**Status:** done
 
 ## Before Start
 
-- [ ] Verify plan is still valid (no conflicts with other plans/sessions)
-- [ ] Check if any gaps have been filled by other work since plan creation
-- [ ] Review dependencies are met (none on Phase 01 — independent)
-- [ ] Read relevant source files to confirm assumptions (`run-turn`'s
+- [x] Verify plan is still valid (no conflicts with other plans/sessions)
+- [x] Check if any gaps have been filled by other work since plan creation
+- [x] Review dependencies are met (none on Phase 01 — independent)
+- [x] Read relevant source files to confirm assumptions (`run-turn`'s
       `run-tool`, `send-message`'s cancel path, `execute-tool`)
 
 ## Checklist
 
-- [ ] Write/update tests: question-schema validation, answers→tool-result
+- [x] ~~Write/update tests~~ — dropped (no-tests execution mode, see README)
+      (schema validation stays, as `questions-problem`), answers→tool-result
       encoding, pending-form state transitions (pure parts)
-- [ ] Tool spec `ask_user` in `agent-tools/tool-specs`: input is
+- [x] Tool spec `ask_user` in `agent-tools/tool-specs`: input is
       `{title?, questions: [{id, question, hint?, type: "single"|"multi"|"text",
       options?: [string…], allow_other?, allow_decide?, optional?}]}` —
       description teaches the model when to interview vs. just ask in prose,
       and to keep it to ONE ask_user call per interview (≤ ~8 questions)
-- [ ] `execute-tool "ask_user"`: validate the schema up front (invalid input
+- [x] `execute-tool "ask_user"`: validate the schema up front (invalid input
       errors immediately, naming the problem — same philosophy as the variant
       tools); store `{:questions … :answer-subject …}` under
       `[:ai-panel <file-id> :pending-form]`; return an rx observable created
       over an `rx/subject` that emits once when the form is submitted
-- [ ] Submit event (`dwaip/submit-form answers`): pushes the answers into the
+- [x] Submit event (`dwaip/submit-form answers`): pushes the answers into the
       subject, records a compact answers summary in the transcript, clears
       `:pending-form`
-- [ ] Cancel safety: the observable's teardown (unsubscribe on
+- [x] Cancel safety: the observable's teardown (unsubscribe on
       `cancel-turn`'s `take-until`) clears `:pending-form`, so a cancelled
       turn never leaves a zombie form; the existing `cancel-history`
       machinery already synthesizes the errored tool_result
-- [ ] Tool result: `{answers: {qid: value|values|text}}` with `"__decide__"`
+- [x] Tool result: `{answers: {qid: value|values|text}}` with `"__decide__"`
       for "Decide for me" and other-text carried verbatim — documented in the
       tool description so the model reads it back reliably
-- [ ] Busy semantics: turn stays busy while the form is pending (it is — the
+- [x] Busy semantics: turn stays busy while the form is pending (it is — the
       tool is mid-flight); verify the composer's existing gating is coherent
       (typing allowed, send blocked)
 - [ ] Lint + typecheck pass

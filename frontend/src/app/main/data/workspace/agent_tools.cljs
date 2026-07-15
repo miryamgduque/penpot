@@ -23,8 +23,10 @@
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
    [app.common.files.variant :as cfv]
+   [app.common.geom.point :as gpt]
    [app.common.path-names :as cpn]
    [app.common.types.component :as ctc]
+   [app.common.types.components-list :as ctkl]
    [app.common.types.container :as ctn]
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
@@ -266,6 +268,21 @@
                                 :minHeight {:type "number"} :maxHeight {:type "number"}}
                    :required ["shapeId"]}}
 
+   {:name "create_instance"
+    :description
+    (str "Places an instance of an existing component at a point, and returns "
+         "its id. The instance stays linked to its main, so editing the main "
+         "updates every instance — this is what makes a component library worth "
+         "building. PREFER THIS over redrawing a part from primitives whenever a "
+         "component already matches: see the components listed by read_design. "
+         "For a component from a connected library, pass its fileId too.")
+    :input-schema {:type "object"
+                   :properties {:componentId {:type "string"}
+                                :fileId {:type "string"
+                                         :description "only for a connected library's component"}
+                                :x {:type "number"} :y {:type "number"}}
+                   :required ["componentId" "x" "y"]}}
+
    {:name "create_variant"
     :description
     (str "Combines two or more main components into a Penpot variant set — the "
@@ -417,6 +434,26 @@
              {}
              (group-by :type tokens)))
 
+(defn library-components
+  "Every component the agent can instantiate — this file's and every connected
+  library's. Variant members are omitted: they are already listed under
+  `:variants` with their component ids, and repeating them here would double the
+  payload on a set-heavy file."
+  [libraries current-file-id]
+  (->> libraries
+       (mapcat (fn [[file-id file]]
+                 (->> (ctkl/components-seq (:data file))
+                      (remove ctc/is-variant?)
+                      (map (fn [component]
+                             (cond-> {:componentId (dm/str (:id component))
+                                      :name (:name component)}
+                               ;; the local file is the default target, so saying
+                               ;; so on every entry is payload for nothing
+                               (not= file-id current-file-id)
+                               (assoc :fileId (dm/str file-id)
+                                      :library (:name file))))))))
+       (vec)))
+
 (defn variant-sets
   "Every variant container on the page with its members and their properties —
   the structural view `create_variant` writes and Phase 03/04 target.
@@ -455,6 +492,7 @@
      :selection (mapv #(summarize-shape objects %) selected)
      :shapes (mapv #(summarize-shape objects %) top-ids)
      :variants variants
+     :components (library-components (dsh/lookup-libraries state) file-id)
      :tokens (tokens-by-type (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals))
      :skills (ask/catalog-manifest state)
      :openViolations (count (audit-violations state))}))
@@ -1286,6 +1324,61 @@
                                      "set_variant_property. Verify with read_design.")}
                    new-id (assoc :shapeId (dm/str new-id)))))))))
 
+;; --- Component instances
+;;
+;; Without this a design system the agent builds is write-only: it can author a
+;; component and never place one, so it redraws from primitives every time and
+;; the library it just made goes unused.
+
+(defn instance-problem
+  "Why `create_instance` cannot place this component, or nil. Pure.
+
+  `instantiate-component` asserts on `file-id`, `component-id` and
+  `(gpt/point? position)` — an assert throws rather than returning a message the
+  agent can read, so everything is checked here first."
+  [libraries current-file-id {:keys [componentId fileId x y]}]
+  (let [file-id (or (some-> fileId parse-uuid) current-file-id)
+        cid     (some-> componentId parse-uuid)
+        found   (some-> (get-in libraries [file-id :data])
+                        (ctkl/components)
+                        (get cid))]
+    (cond
+      (nil? cid)
+      "create_instance: componentId is required — see the components in read_design"
+
+      ;; not truthiness: 0 is a legitimate coordinate
+      (or (nil? x) (nil? y))
+      "create_instance: x and y are required — a component is placed at a point"
+
+      (nil? found)
+      (dm/str "create_instance: no component " componentId
+              (if fileId
+                (dm/str " in library " fileId)
+                " in this file")
+              " — check the components listed by read_design"
+              (when-not fileId
+                ", and pass fileId if it belongs to a connected library")))))
+
+(defn- create-instance
+  [{:keys [componentId fileId x y] :as input}]
+  (let [state     @st/state
+        libraries (dsh/lookup-libraries state)
+        cur-id    (:current-file-id state)]
+    (if-let [problem (instance-problem libraries cur-id input)]
+      (rx/throw (ex-info problem {}))
+      (let [id-ref (atom nil)]
+        (interrupt!)
+        (st/emit! (dwl/instantiate-component (or (some-> fileId parse-uuid) cur-id)
+                                             (parse-uuid componentId)
+                                             (gpt/point x y)
+                                             {:id-ref id-ref
+                                              :origin "agent:create_instance"}))
+        (let [new-id (deref id-ref)]
+          (rx/of (cond-> {:note (str "instance placed — it stays linked to its main, "
+                                     "so editing the main updates it. Verify with "
+                                     "read_design.")}
+                   new-id (assoc :shapeId (dm/str new-id)))))))))
+
 ;; --- Variant properties
 ;;
 ;; `dwv/update-property-name` guards on `valid-pos?` and does nothing when the
@@ -1623,6 +1716,7 @@
     "ungroup_shapes"     (ungroup-shapes input)
     "set_layout"         (set-layout input)
     "set_layout_child"   (set-layout-child input)
+    "create_instance"    (create-instance input)
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)
     "set_variant_property" (set-variant-property input)

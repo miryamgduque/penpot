@@ -38,6 +38,26 @@ code fences) against supply (the ten registered tools):
 | Handoff codegen | 25 mentions, 1 skill (its whole method) | **none** | 8 |
 | Variants | `createVariantFromComponents` ×12 | **none** | 1 |
 
+### Second sweep (2026-07-15)
+
+A re-survey of the playbooks against the now-21-tool registry, done while Wave 5 was in
+flight. Four gaps hold up under context-reading (raw symbol counts mislead here — see the
+non-findings below):
+
+| Capability | Demand evidence | Agent tools today | Phase |
+|---|---|---|---|
+| Text: edit content + typography | `heading` ×8, `label` ×10; design-to-code audits family/size/weight/line-height/letter-spacing; foundations' type scale | `create_text` only — no edit, no font anything | 19 |
+| Token sets + themes (dark mode) | foundations' whole method: `modes/light`/`modes/dark` + `addTheme` (`theme` ×16, `dark` ×15) | `create_token` targets the library's *first* set, always | 20 |
+| Detach instance | `detach()` ×5, always governance-wrapped; our own rejections say "detach the copy first" | **none** — we recommend a tool that doesn't exist | 21 |
+| Grid layout | "flex/**grid** Board" is the skills' prescribed alternative to x/y; `addGridLayout` ×1 | `set_layout` is flex-only | 22 |
+
+Checked and deliberately **not** phases — the counts collapse on reading context:
+prototyping/interactions (every `flow` is "workflow"/"reflow"), component swap (every `swap`
+is a *token* swap — noted in Phase 21 as a sibling if demand appears), boolean ops, pages,
+rotation/flip, and z-order (`nest_shape`'s `index` already covers it, and layout order is
+append order). Stroke depth (width/style/alignment) has near-zero mentions; if it surfaces,
+it belongs in Phase 14's widening, not its own phase.
+
 Three patterns explain the transcript better than any single missing tool does:
 
 **The agent can create, barely modify, and cannot delete.** `create_shape` has no counterpart —
@@ -100,7 +120,8 @@ and get fleshed out at their Before Start rather than guessed at now.
 
 ### Wave 5 — Components as a system
 
-13. [Phase 13 — Place a component](./todo-phase-13-place-a-component.md) — `create_instance`, so a built library is no longer write-only
+13. [Phase 13 — Place a component](./done-phase-13-place-a-component.md) — `create_instance`, so a built library is no longer write-only
+21. [Phase 21 — Detach an instance](./todo-phase-21-detach-an-instance.md) — `detach_instance`, the move our own rejection messages already recommend; the guards (never a variant member) are the phase
 
 ### Wave 6 — Styling depth
 
@@ -131,6 +152,18 @@ shape's paint or effects for the model to copy, and image fills are unreachable 
 17. [Phase 17 — Inspect fills and image content](./todo-phase-17-inspect-fill-and-image.md) — `read_design` reports each shape's fills (solid / gradient / **image** with its ref); image-fill write is scope-gated
 18. [Phase 18 — Inspect effects and filters](./todo-phase-18-inspect-effects-and-filters.md) — `read_design` reports present shadow / blur / opacity / radius, mirroring Phase 14's write params so read → copy → write is a straight path
 
+### Wave 10 — Text (from the second sweep)
+
+19. [Phase 19 — Edit the words](./todo-phase-19-edit-the-words.md) — `set_text` + a widened `create_text`: content and typography (size, family, weight, align), so a heading can be a heading
+
+### Wave 11 — Sets and themes (dark mode)
+
+20. [Phase 20 — Sets and themes](./todo-phase-20-sets-and-themes.md) — token sets as targets, themes as switches; the foundations skill's light/dark method becomes possible
+
+### Wave 12 — Grid layout
+
+22. [Phase 22 — Grid layout](./todo-phase-22-grid-layout.md) — `set_layout` learns grid tracks; the smaller half of Wave 2's escape from absolute positioning
+
 ## Sequencing notes
 
 - **Waves 1–3 are the spine.** Variants first: small, planned, closes a demo-able loop end to
@@ -145,6 +178,11 @@ shape's paint or effects for the model to copy, and image fills are unreachable 
   board is exactly the mistake that wants a delete.
 - **Waves 5–8 are ranked but not scheduled.** Re-read the demand table before starting one — the
   tally is a snapshot of the current aikit import and can move.
+- **Of the second-sweep waves (10–12), text first.** Phase 19 blocks every screen-building
+  skill in a way the model cannot route around (there is no workaround for "all text is the
+  same size"); Phase 20 unlocks one skill's headline feature; Phase 21 is small and
+  policy-shaped, and closes rejection messages that currently point at a missing tool; Phase 22
+  waits for demand. None depend on each other.
 
 ## Acceptance Criteria
 
@@ -158,6 +196,9 @@ skills already tell it to do:
 - Combine main components into a **real variant set** with named axes.
 - **Place** an instance of a component it built.
 - **Remove** a shape it created.
+- Give a screen real **typography** — a heading sized like one, and text it can rewrite later.
+- Build the foundations skill's **light/dark** structure: tokens in mode sets, themes that
+  switch them, and a bound shape that visibly changes.
 - Fail loudly on invalid input with a message naming the corrective action — never silently, and
   never by emulating a capability in layer names.
 

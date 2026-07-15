@@ -21,13 +21,16 @@
    [app.common.exceptions :as ex]
    [app.common.math :as mth]
    [app.common.media :as cm]
+   [app.common.uuid :as uuid]
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.media :as dwm]
+   [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.skill-state :as skst]
    [app.main.data.workspace.user-skills :as dusk]
+   [app.main.data.workspace.zoom :as dwz]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
@@ -370,6 +373,90 @@
                          :on-click scroll-to-end
                          :icon i/arrow-down}])]))
 
+;; --- Affected strip (auto-fix watcher)
+;;
+;; Surfaces the live violations set kept by the data-layer watcher
+;; (`dwaip/start-watcher`): a one-line summary between the context chip and
+;; the transcript, expandable into a per-rule breakdown. Zero violations
+;; renders nothing at all — the strip is presence, not chrome.
+
+(def ^:private rule-labels
+  {"layer-naming"      "Layer naming"
+   "token-only-colors" "Token-only colors"})
+
+(def ^:private max-strip-shapes 8)
+
+(defn- group-violations
+  "violations → [{:rule :label :n :shapes}] — biggest group first, then by
+  rule name so equal counts render stably."
+  [violations]
+  (->> violations
+       (group-by :rule)
+       (map (fn [[rule vs]]
+              {:rule   rule
+               :label  (get rule-labels rule rule)
+               :n      (count vs)
+               :shapes vs}))
+       (sort-by (juxt (comp - :n) :rule))
+       (vec)))
+
+(defn- strip-summary
+  "\"12 layers need attention · 2 rules\" — layers counted distinct (one shape
+  can violate several rules)."
+  [violations]
+  (let [shapes (count (into #{} (map :shapeId) violations))
+        rules  (count (into #{} (map :rule) violations))]
+    (dm/str shapes (if (= 1 shapes) " layer needs attention · " " layers need attention · ")
+            rules (if (= 1 rules) " rule" " rules"))))
+
+(mf/defc affected-strip*
+  {::mf/private true}
+  []
+  (let [violations (mf/deref refs/ai-panel-violations)
+        expanded*  (mf/use-state false)
+        expanded?  (deref expanded*)
+        on-toggle  (mf/use-fn #(swap! expanded* not))
+
+        ;; click a layer name → select + zoom on canvas, so the strip doubles
+        ;; as navigation to the offending shape
+        on-shape-click
+        (mf/use-fn
+         (fn [event]
+           (when-let [id (-> (dom/get-current-target event)
+                             (dom/get-data "id")
+                             (uuid/parse*))]
+             (st/emit! (dws/select-shape id)
+                       dwz/zoom-to-selected-shape))))]
+    (when (seq violations)
+      [:div {:class (stl/css :affected-strip)}
+       [:button {:type "button"
+                 :class (stl/css :affected-summary)
+                 :aria-expanded expanded?
+                 :on-click on-toggle}
+        [:span {:aria-hidden true :class (stl/css :affected-bolt)} "⚡"]
+        [:span {:class (stl/css :affected-text)} (strip-summary violations)]
+        [:span {:aria-hidden true :class (stl/css :affected-chevron)}
+         (if expanded? "▾" "▸")]]
+       (when expanded?
+         [:div {:class (stl/css :affected-detail)}
+          (for [{:keys [rule label n shapes]} (group-violations violations)]
+            [:div {:key rule :class (stl/css :affected-group)}
+             [:div {:class (stl/css :affected-group-head)}
+              [:span {:class (stl/css :affected-group-label)} label]
+              [:span {:class (stl/css :affected-group-count)} n]]
+             [:ul {:class (stl/css :affected-shapes)}
+              (for [v (take max-strip-shapes shapes)]
+                [:li {:key (:shapeId v)}
+                 [:button {:type "button"
+                           :class (stl/css :affected-shape)
+                           :title (:reason v)
+                           :data-id (:shapeId v)
+                           :on-click on-shape-click}
+                  (:shapeName v)]])
+              (when (> n max-strip-shapes)
+                [:li {:class (stl/css :affected-more)}
+                 (dm/str "+" (- n max-strip-shapes) " more")])]])])])))
+
 (mf/defc chat-tab*
   {::mf/private true}
   [{:keys [on-create-skill]}]
@@ -589,6 +676,8 @@
       [:span {:class (stl/css :context-page)} (:name page)]
       [:span {:class (stl/css :context-sep)} "·"]
       [:span {:class (stl/css :context-selection)} (selection-label selected objects)]]
+
+     [:> affected-strip* {}]
 
      (if (seq messages)
        [:> transcript* {:messages messages :busy? busy?}]
@@ -852,12 +941,12 @@
        [:div {:class (stl/css :skills-toolbar)}
         [:div {:class (stl/css :skills-filter)}
          (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
-          [:button {:key (name opt)
-                    :type "button"
-                    :class (stl/css-case :skills-filter-option true
-                                         :selected (= active opt))
-                    :on-click #(st/emit! (dwaip/set-skills-filter opt))}
-           lbl])]
+           [:button {:key (name opt)
+                     :type "button"
+                     :class (stl/css-case :skills-filter-option true
+                                          :selected (= active opt))
+                     :on-click #(st/emit! (dwaip/set-skills-filter opt))}
+            lbl])]
         [:button {:class (stl/css :create-skill-btn)
                   :type "button"
                   :on-click on-create}

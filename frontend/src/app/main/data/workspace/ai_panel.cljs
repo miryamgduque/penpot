@@ -16,6 +16,7 @@
   separately (phase 05; hard-refresh survival is story #5)."
   (:require
    [app.common.data.macros :as dm]
+   [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent :as agent]
@@ -222,6 +223,11 @@
 
 (def ^:private watcher-debounce-ms 500)
 
+;; the semantic tick's idle window and per-request shape cap (see the
+;; "Semantic audit tick" section below)
+(def ^:private tick-idle-ms 4000)
+(def ^:private max-tick-shapes 50)
+
 (defn- touched-shape-ids
   "Shape ids named by a commit's redo-changes (`:id` on add/mod/del forms,
   `:shapes` on mov/reg forms)."
@@ -236,7 +242,7 @@
 (defn refresh-violations
   "Recompute the deterministic violations for the current file. Prunes ids
   from `:dirty-ids` that no longer exist (deleted shapes must not ride into
-  a semantic tick)."
+  a semantic tick) and semantic verdicts whose shape is gone."
   []
   (ptk/reify ::refresh-violations
     ptk/UpdateEvent
@@ -250,7 +256,11 @@
                              (assoc :violations (at/audit-violations state))
                              (update :dirty-ids
                                      (fn [ids]
-                                       (into #{} (filter #(contains? objects %)) ids)))))))
+                                       (into #{} (filter #(contains? objects %)) ids)))
+                             (update :semantic-violations
+                                     (fn [old]
+                                       (filterv #(contains? objects (uuid/parse* (:shapeId %)))
+                                                (or old []))))))))
           state)))))
 
 (defn- track-dirty
@@ -268,11 +278,15 @@
   []
   (ptk/reify ::stop-watcher))
 
+(declare run-semantic-tick)
+
 (defn- start-watcher
   "Subscribe to commits until `::stop-watcher`. Emits an immediate initial
   scan (a file can already be messy when the panel opens), tracks dirty ids
   per commit, and re-scans debounced. Also re-scans when the enforced-rules
-  set changes, so toggling a rule updates the live set without an edit."
+  set changes, so toggling a rule updates the live set without an edit.
+  A longer idle debounce drives the semantic tick — its own guards decide
+  whether a request actually goes out."
   []
   (ptk/reify ::start-watcher
     ptk/WatchEvent
@@ -289,8 +303,176 @@
               (->> (rx/merge commits
                              (rx/filter (ptk/type? ::set-enforced-rules) stream))
                    (rx/debounce watcher-debounce-ms)
-                   (rx/map (fn [_] (refresh-violations)))))
+                   (rx/map (fn [_] (refresh-violations))))
+              (->> commits
+                   (rx/debounce tick-idle-ms)
+                   (rx/map (fn [_] (run-semantic-tick)))))
              (rx/take-until stopper))))))
+
+;; --- Semantic audit tick (model-backed detection)
+;;
+;; Judgement the deterministic scan cannot make — "is `final-v2-copy` a good
+;; layer name?" — under a hard request budget: AT MOST ONE detection request
+;; in flight, ever. When the file has been idle `tick-idle-ms` and nothing is
+;; outstanding, one buffered call on the skill's declared cheap model carries
+;; ALL dirty shapes × ALL `detect: \"model\"` skills; edits that land
+;; mid-flight simply rejoin the dirty set for the next tick. Request rate is
+;; bounded by quiet periods, never by edit volume — if this ever feels
+;; chatty, lengthen the idle window; never parallelize ticks.
+;;
+;; The tick asks for a verdict on EVERY dirty shape (passes included), so a
+;; previously-flagged shape the user fixed is cleared by the same response
+;; that judged it — evaluation is the invalidation path; there is no second
+;; bookkeeping mechanism.
+
+(defn- model-detect-skills
+  [state]
+  (->> (ask/enabled-skills state)
+       (filter #(= "model" (:detect %)))
+       (vec)))
+
+(defn- state-pool
+  "The enabled provider models as `{:provider :model}` entries — the
+  data-side twin of the panel's `provider-pool`."
+  [state]
+  (vec (for [[_ status] (:ai-providers state)
+             model (:enabled-models status)]
+         {:provider (:provider status) :model model})))
+
+(defn- tick-settings
+  "The pool entry for the first model a model-detect skill declares; nil when
+  none is connected+enabled — and then no tick fires at all: the semantic
+  tier never silently falls back to an expensive chat model."
+  [state skills]
+  (->> skills
+       (keep :model)
+       (distinct)
+       (keep (fn [m] (some #(when (= m (:model %)) %) (state-pool state))))
+       (first)))
+
+(def ^:private tick-system
+  (str "You audit design-file shapes against rules. Judge only; never chat. "
+       "Reply with a raw JSON array and nothing else — no prose, no code fences."))
+
+(defn- tick-user-text
+  [skills shapes]
+  (str "Evaluate every shape against every skill below. Return a JSON array "
+       "with one entry PER shape PER skill: "
+       "[{\"shapeId\": \"…\", \"skill\": \"<skill name>\", \"ok\": true|false, "
+       "\"reason\": \"…\"}]. `ok` is true when the shape passes; keep reasons "
+       "under 12 words.\n\nSkills:\n"
+       (str/join "\n" (map (fn [s] (str "- " (:name s) ": " (:what s))) skills))
+       "\n\nShapes:\n"
+       (js/JSON.stringify (clj->js shapes))))
+
+(defn- parse-verdicts
+  "The model's reply → verdict maps; nil when it is not the JSON we asked
+  for. Tolerates code fences (models add them under protest)."
+  [text]
+  (try
+    (let [text (-> (or text "")
+                   (str/replace #"^\s*```(json)?" "")
+                   (str/replace #"```\s*$" "")
+                   (str/trim))
+          data (js->clj (js/JSON.parse text) :keywordize-keys true)]
+      (when (sequential? data)
+        (vec data)))
+    (catch :default _ nil)))
+
+(defn- set-tick-busy
+  [busy?]
+  (ptk/reify ::set-tick-busy
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (assoc-in state [:ai-panel file-id :tick-busy?] (boolean busy?))
+        state))))
+
+(defn- consume-dirty
+  [ids]
+  (ptk/reify ::consume-dirty
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :dirty-ids]
+                   (fn [dirty] (reduce disj (or dirty #{}) ids)))
+        state))))
+
+(defn- apply-semantic-verdicts
+  "Replace the semantic violations for the evaluated ids with what the tick
+  found: failing verdicts become violations (tagged `:semantic`), passing
+  ones clear any previous flag on that shape."
+  [evaluated-ids verdicts skills]
+  (ptk/reify ::apply-semantic-verdicts
+    ptk/UpdateEvent
+    (update [_ state]
+      (let [file-id (:current-file-id state)]
+        (if-not file-id
+          state
+          (let [objects   (dsh/lookup-page-objects state)
+                rule-of   (into {} (map (juxt :name :rule)) skills)
+                evaluated (into #{} (map str) evaluated-ids)
+                fresh     (->> verdicts
+                               (keep (fn [{:keys [shapeId skill ok reason]}]
+                                       (when (and (false? ok)
+                                                  (contains? evaluated shapeId))
+                                         (when-let [rule (get rule-of skill)]
+                                           (when-let [shape (get objects (uuid/parse* shapeId))]
+                                             {:rule rule
+                                              :shapeId shapeId
+                                              :shapeName (:name shape)
+                                              :reason (or reason "flagged by semantic check")
+                                              :semantic true})))))
+                               (vec))]
+            (update-in state [:ai-panel file-id :semantic-violations]
+                       (fn [old]
+                         (-> (remove #(contains? evaluated (:shapeId %)) (or old []))
+                             (concat fresh)
+                             (vec))))))))))
+
+(defn- run-semantic-tick
+  "Fire ONE batched detection request if — and only if — there is something
+  to judge and nothing already in flight. Re-arms itself after a response so
+  overflow (>`max-tick-shapes`) and mid-flight edits drain without waiting
+  for another idle window; the guards end the loop when the set runs dry."
+  []
+  (ptk/reify ::run-semantic-tick
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [file-id  (:current-file-id state)
+            panel    (dm/get-in state [:ai-panel file-id])
+            skills   (model-detect-skills state)
+            settings (tick-settings state skills)]
+        (if-not (and file-id (open? state) (seq (:dirty-ids panel))
+                     (seq skills) settings (not (:tick-busy? panel)))
+          (rx/empty)
+          (let [objects (dsh/lookup-page-objects state)
+                ids     (vec (take max-tick-shapes (:dirty-ids panel)))
+                shapes  (->> ids
+                             (keep (fn [id]
+                                     (when-let [shape (get objects id)]
+                                       {:shapeId (str id)
+                                        :name (:name shape)
+                                        :type (name (:type shape))})))
+                             (vec))]
+            (if-not (seq shapes)
+              ;; everything dirty was deleted in the meantime — just consume
+              (rx/of (consume-dirty ids))
+              (rx/concat
+               (rx/of (set-tick-busy true) (consume-dirty ids))
+               (->> (agent/detect-round settings tick-system (tick-user-text skills shapes))
+                    (rx/mapcat
+                     (fn [{:keys [text usage]}]
+                       (let [verdicts (parse-verdicts text)]
+                         (rx/from
+                          (cond-> [(accumulate-usage usage)]
+                            verdicts (conj (apply-semantic-verdicts ids verdicts skills)))))))
+                    ;; a background tick must never toast: log and move on —
+                    ;; the shapes stay judged-by-regex-only until the next one
+                    (rx/catch (fn [cause]
+                                (.warn js/console "semantic tick failed" cause)
+                                (rx/empty))))
+               (rx/of (set-tick-busy false) (run-semantic-tick))))))))))
 
 ;; --- Fix it now
 ;;

@@ -77,7 +77,7 @@ Grounding (verified in code, 2026-07-16):
 2. [Phase 02 — Affected strip UI](./done-phase-02-affected-strip-ui.md) — collapsed one-liner below the context chip, expandable per-rule breakdown
 3. [Phase 03 — Fix it now](./done-phase-03-fix-it-now.md) — visible pre-resolved message into the current session; pending queue when a turn is running
 4. [Phase 04 — Per-skill detect/model fields](./done-phase-04-per-skill-detect-model.md) — catalog fields; Fix-it-now turns route to the skill's declared model (Haiku) when available
-5. [Phase 05 — Semantic audit tick](./todo-phase-05-semantic-audit-tick.md) — single-in-flight batched Haiku detection over the dirty set; verdicts merge into the strip; spend in the meter *(may slip past the demo)*
+5. [Phase 05 — Semantic audit tick](./done-phase-05-semantic-audit-tick.md) — single-in-flight batched Haiku detection over the dirty set; verdicts merge into the strip; spend in the meter *(may slip past the demo)*
 
 ## Acceptance Criteria
 

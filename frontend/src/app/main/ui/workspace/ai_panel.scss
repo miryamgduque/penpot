@@ -7,6 +7,46 @@
 @use "refactor/common-refactor.scss" as deprecated;
 @use "ds/typography.scss" as t;
 
+// --- Text scale
+//
+// The A−/A+ stepper sets `--ai-font-scale` inline on the panel root. The DS
+// typography mixins pin explicit rem font sizes, so no root font-size can
+// reach them by inheritance; these wrappers re-state font-size against the
+// variable instead. Every wrapped mixin's line-height is unitless, so leading
+// follows the size for free. Deliberately not scaled: the header band (aligned
+// to the workspace right-header) and fixed glyph boxes like the attachment ✕.
+
+@mixin scaled-body-small {
+  @include scaled-body-small;
+
+  font-size: calc(#{deprecated.$fs-12} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-small-title {
+  @include deprecated.small-title-typography;
+
+  font-size: calc(#{deprecated.$fs-14} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-title-small {
+  @include t.use-typography("title-small");
+
+  // the DS sheet's `$_fs-14` is private; it and the refactor `$fs-14` are both 14px-as-rem
+  font-size: calc(#{deprecated.$fs-14} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-med-title {
+  @include deprecated.med-title-typography;
+
+  font-size: calc(#{deprecated.$fs-20} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-big-title {
+  @include deprecated.big-title-typography;
+
+  font-size: calc(#{deprecated.$fs-24} * var(--ai-font-scale, 1));
+}
+
 // Native right-docked AI panel. The workspace grid gives it the `ai-panel`
 // column; this element fills that column's height. Like the sidebars and the
 // plugin dock, it sits above the absolutely-positioned bottom palette wrapper
@@ -70,11 +110,34 @@
   gap: deprecated.$s-4;
 }
 
-// Right of the header: the Skills icon (chat only) + close.
+// Right of the header: the A−/A+ stepper + Skills icon (chat only).
 .header-actions {
   display: flex;
   align-items: center;
   gap: deprecated.$s-2;
+}
+
+// The text-size stepper buttons. Plain (unscaled) body-small type: they live
+// in the fixed header band and must not move as the body text steps.
+.font-step-btn {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-4 deprecated.$s-6;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-background-quaternary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
 }
 
 // Fills the panel below the flex-none header; the chat/skills bodies size to it.
@@ -93,7 +156,7 @@
 
 // Current-file context (page + selection) surfaced above the transcript.
 .context-chip {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   display: flex;
   gap: deprecated.$s-6;
@@ -152,7 +215,7 @@
 }
 
 .message {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   max-width: 85%;
   padding: deprecated.$s-8 deprecated.$s-12;
@@ -216,7 +279,7 @@
   h4,
   h5,
   h6 {
-    @include deprecated.body-small-typography;
+    @include scaled-body-small;
 
     margin-block: deprecated.$s-8 deprecated.$s-4;
     font-weight: 600;
@@ -279,7 +342,7 @@
 
 // Tool-call marker chip (e.g. read_design ✓)
 .tool-chip {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   display: flex;
   align-items: center;
@@ -342,7 +405,7 @@
 }
 
 .tool-detail-name {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   color: var(--color-foreground-primary);
   font-weight: 600;
@@ -357,7 +420,7 @@
   background-color: var(--color-background-primary);
   color: var(--color-foreground-secondary);
   font-family: monospace;
-  font-size: deprecated.$fs-11;
+  font-size: calc(#{deprecated.$fs-11} * var(--ai-font-scale, 1));
   // a long JSON payload must scroll inside its box, never widen the panel
   overflow-x: auto;
   max-height: deprecated.$s-160;
@@ -370,7 +433,7 @@
 }
 
 .transcript-empty {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   flex: 1;
   display: flex;
@@ -427,7 +490,7 @@
 }
 
 .model-picker-trigger {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   display: flex;
   align-items: center;
@@ -481,7 +544,7 @@
 }
 
 .model-picker-group-label {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   padding: deprecated.$s-4 deprecated.$s-8;
   color: var(--color-foreground-secondary);
@@ -490,7 +553,7 @@
 }
 
 .model-picker-option {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   display: block;
   width: 100%;
@@ -512,7 +575,7 @@
 }
 
 .model-picker-manage {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   display: block;
   margin-block-start: deprecated.$s-4;
@@ -557,13 +620,13 @@
 }
 
 .connect-title {
-  @include deprecated.big-title-typography;
+  @include scaled-big-title;
 
   color: var(--color-foreground-primary);
 }
 
 .connect-subtitle {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   margin: 0;
   max-inline-size: 34ch;
@@ -571,7 +634,7 @@
 }
 
 .connect-button {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   margin-block-start: deprecated.$s-8;
   padding: deprecated.$s-8 deprecated.$s-16;
@@ -681,7 +744,7 @@
 
 // Attach rejections and the can't-read-images warning.
 .composer-hint {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   margin-block-end: deprecated.$s-8;
   color: var(--color-foreground-secondary);
@@ -774,14 +837,14 @@
 
 // Attach rejections and the can't-read-images warning.
 .composer-hint {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   margin-block-end: deprecated.$s-8;
   color: var(--color-foreground-secondary);
 }
 
 .composer-input {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   display: block;
   box-sizing: border-box;
@@ -814,7 +877,7 @@
 }
 
 .usage-meter {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   flex: 1;
   min-width: 0;
@@ -825,7 +888,7 @@
 }
 
 .chat-clear {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   flex-shrink: 0;
   padding: deprecated.$s-2 deprecated.$s-6;
@@ -869,7 +932,7 @@
 }
 
 .skills-filter-option {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   padding: deprecated.$s-2 deprecated.$s-12;
   border: none;
@@ -889,7 +952,7 @@
 }
 
 .skills-empty {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   padding: deprecated.$s-16 deprecated.$s-8;
   color: var(--color-foreground-secondary);
@@ -905,7 +968,7 @@
 }
 
 .create-skill-btn {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   flex: none;
   padding: deprecated.$s-4 deprecated.$s-12;
@@ -934,13 +997,13 @@
 
 .create-intro,
 .create-guard {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   color: var(--color-foreground-secondary);
 }
 
 .create-label {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   margin-block-start: deprecated.$s-8;
   color: var(--color-foreground-primary);
@@ -948,7 +1011,7 @@
 }
 
 .create-input {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   box-sizing: border-box;
   width: 100%;
@@ -971,7 +1034,7 @@ textarea.create-input {
 }
 
 .create-mode {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   flex: 1;
   padding: deprecated.$s-6 deprecated.$s-4;
@@ -996,13 +1059,13 @@ textarea.create-input {
 }
 
 .create-error {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   color: var(--color-accent-warning);
 }
 
 .create-submit {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   align-self: flex-start;
   margin-block-start: deprecated.$s-8;
@@ -1027,7 +1090,7 @@ textarea.create-input {
 }
 
 .catalog-group-label {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   padding: deprecated.$s-8 deprecated.$s-4 deprecated.$s-4;
   color: var(--color-foreground-secondary);
@@ -1081,7 +1144,7 @@ textarea.create-input {
 }
 
 .catalog-name {
-  @include t.use-typography("title-small");
+  @include scaled-title-small;
 
   // Push the "Off" pill + ⋯ menu to the trailing edge, whatever the name length.
   margin-inline-end: auto;
@@ -1090,7 +1153,7 @@ textarea.create-input {
 
 // Small state pill on a disabled row — legible on its own, no control needed.
 .catalog-off {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   flex-shrink: 0;
   padding: 0 deprecated.$s-6;
@@ -1152,7 +1215,7 @@ textarea.create-input {
 }
 
 .menu-option {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   padding: deprecated.$s-6 deprecated.$s-8;
   border-radius: deprecated.$br-6;
@@ -1182,13 +1245,13 @@ textarea.create-input {
 }
 
 .catalog-blurb {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   color: var(--color-foreground-secondary);
 }
 
 .mode-badge {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   padding: 0 deprecated.$s-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
@@ -1228,7 +1291,7 @@ textarea.create-input {
 }
 
 .detail-category {
-  @include deprecated.small-title-typography;
+  @include scaled-small-title;
 
   color: var(--color-foreground-secondary);
 }
@@ -1241,7 +1304,7 @@ textarea.create-input {
 }
 
 .detail-name {
-  @include deprecated.med-title-typography;
+  @include scaled-med-title;
 
   color: var(--color-foreground-primary);
 }
@@ -1254,7 +1317,7 @@ textarea.create-input {
 }
 
 .detail-section-label {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   margin-block-start: deprecated.$s-8;
   color: var(--color-foreground-secondary);
@@ -1264,7 +1327,7 @@ textarea.create-input {
 }
 
 .detail-example {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   padding: deprecated.$s-8 deprecated.$s-12;
   border-radius: deprecated.$br-8;
@@ -1274,7 +1337,7 @@ textarea.create-input {
 }
 
 .detail-what {
-  @include deprecated.body-small-typography;
+  @include scaled-body-small;
 
   color: var(--color-foreground-primary);
   line-height: 1.5;

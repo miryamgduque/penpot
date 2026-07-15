@@ -1033,6 +1033,23 @@
      :on-pointer-move on-pointer-move
      :on-lost-pointer-capture on-lost-pointer-capture}))
 
+;; --- Text scale
+;;
+;; Discrete steps around 1 (today's sizes). The chosen step is a global
+;; reading preference, persisted like the panel width; the scss consumes it
+;; as the `--ai-font-scale` custom property set inline on the panel root.
+
+(def ^:private font-scale-steps [0.85 1 1.15 1.3 1.45])
+(def ^:private font-scale-default-step 1)
+
+(defn- valid-font-step
+  "The stored step, or the default when the stored value is out of range or
+  not an int (an old/garbage localStorage value must never break rendering)."
+  [step]
+  (if (and (int? step) (< -1 step (count font-scale-steps)))
+    step
+    font-scale-default-step))
+
 (mf/defc ai-panel*
   "The Agent panel shell. Chat is the home surface and fills the body; Skills is a
   full-panel view reached from a muted header icon (US #35). The view is in-memory
@@ -1085,7 +1102,18 @@
         settings    (selected-settings pool (deref selected-model*))
 
         {:keys [width]
-         :as   resize} (use-panel-resize)]
+         :as   resize} (use-panel-resize)
+
+        font-step*  (hooks/use-persisted-state ::font-step font-scale-default-step)
+        font-step   (valid-font-step (deref font-step*))
+        font-scale  (nth font-scale-steps font-step)
+        on-font-dec (mf/use-fn
+                     (mf/deps font-step)
+                     #(reset! font-step* (max 0 (dec font-step))))
+        on-font-inc (mf/use-fn
+                     (mf/deps font-step)
+                     #(reset! font-step* (min (dec (count font-scale-steps))
+                                              (inc font-step))))]
 
     ;; Providers are configured on the settings page; load them so we know
     ;; whether to show the chat or the connect-a-provider prompt. Skill state
@@ -1097,7 +1125,8 @@
                 (dusk/fetch-user-skills)))
 
     [:aside {:class (stl/css :ai-panel)
-             :style {:width (dm/str width "px")}}
+             :style #js {:width (dm/str width "px")
+                         "--ai-font-scale" (dm/str font-scale)}}
      ;; Left-edge drag handle — the right-docked panel's resizable edge.
      [:div {:class (stl/css :resize-area)
             :on-pointer-down (:on-pointer-down resize)
@@ -1119,6 +1148,22 @@
         [:span {:class (stl/css :title)} "Agent"])
       (when-not skills?
         [:div {:class (stl/css :header-actions)}
+         ;; A−/A+ text-size stepper. The header itself deliberately doesn't
+         ;; scale, so these stay put while the body text steps.
+         [:button {:type "button"
+                   :class (stl/css :font-step-btn)
+                   :aria-label "Decrease text size"
+                   :title "Decrease text size"
+                   :disabled (zero? font-step)
+                   :on-click on-font-dec}
+          "A−"]
+         [:button {:type "button"
+                   :class (stl/css :font-step-btn)
+                   :aria-label "Increase text size"
+                   :title "Increase text size"
+                   :disabled (= font-step (dec (count font-scale-steps)))
+                   :on-click on-font-inc}
+          "A+"]
          [:> icon-button* {:variant "ghost"
                            :aria-label "Open Skills"
                            :on-click open-skills

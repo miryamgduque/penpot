@@ -81,6 +81,7 @@ and the preview reviews skipped per phase).
 5. [Phase 05 — The vibes skill + /vibes](./done-phase-05-vibes-skill.md) — built-in skill that drives the interview and writes the doc; wire `/vibes`; live end-to-end verify.
 6. [Phase 06 — Vibes lifecycle UI](./done-phase-06-vibes-lifecycle.md) — view/edit/re-run/delete the doc from the panel; docs update.
 7. [Phase 07 — Interview image attachments](./done-phase-07-interview-attachments.md) — reference images as interview answers, riding the ask_user tool result (added mid-execution on user direction).
+8. [Phase 08 — Edit & delete user-created skills](./done-phase-08-edit-generated-skills.md) — the generated playbooks become editable (label/trigger/mode/body) and deletable from the detail view (added at the merge gate on user direction).
 
 ## Acceptance Criteria
 
@@ -130,6 +131,10 @@ and the preview reviews skipped per phase).
   `allow_images` text questions accept reference images through the
   composer's recompression pipeline; they ride the ask_user tool result as
   image blocks with per-question counts.
+- Edit & delete for user-created skills (Phase 08, user-requested at the
+  merge gate): update-skill/delete-skill RPC (ownership in the WHERE), the
+  detail view shows the generated playbook and edits label/trigger/mode/
+  body (the name slug stays immutable — it keys the enable state).
 
 ### What Changed from Original Plan
 - Executed in worktree `feature/vibes-slash-commands`, no unit tests,

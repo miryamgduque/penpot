@@ -14,6 +14,7 @@
   `design_skill`, which is the app/team registry."
   (:require
    [app.common.schema :as sm]
+   [app.common.time :as ct]
    [app.db :as db]
    [app.rpc :as-alias rpc]
    [app.rpc.doc :as-alias doc]
@@ -90,3 +91,44 @@
                      :description (or description "")
                      :body body})
         (row->skill))))
+
+;; --- Mutation: update a skill (US: edit the generated playbook)
+;;
+;; The `name` slug stays immutable: it is the key the enable/disable state
+;; (profile_skill_state) and the agent's routing index point at — renaming
+;; would orphan both. The human-facing `label` is what edits.
+
+(def ^:private schema:update-skill
+  [:map {:title "update-skill"}
+   [:id ::sm/uuid]
+   [:label [:string {:min 1 :max 200}]]
+   [:mode [:enum "suggest" "review" "autofix"]]
+   [:trigger {:optional true} [:maybe [:string {:max 2000}]]]
+   [:description {:optional true} [:maybe [:string {:max 4000}]]]
+   [:body [:string {:min 1 :max 100000}]]])
+
+(sv/defmethod ::update-skill
+  {::doc/added "2.13"
+   ::sm/params schema:update-skill}
+  [{:keys [::db/pool]} {:keys [::rpc/profile-id id label mode trigger description body]}]
+  ;; profile-id in the WHERE is the ownership check: someone else's id
+  ;; matches zero rows and updates nothing
+  (-> (db/update! pool :profile-skill
+                  {:label label
+                   :mode mode
+                   :trigger-on trigger
+                   :description (or description "")
+                   :body body
+                   :updated-at (ct/now)}
+                  {:id id :profile-id profile-id}
+                  {::db/return-keys true})
+      (row->skill)))
+
+;; --- Mutation: delete a skill
+
+(sv/defmethod ::delete-skill
+  {::doc/added "2.13"
+   ::sm/params [:map {:title "delete-skill"} [:id ::sm/uuid]]}
+  [{:keys [::db/pool]} {:keys [::rpc/profile-id id]}]
+  (db/delete! pool :profile-skill {:id id :profile-id profile-id})
+  nil)

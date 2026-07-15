@@ -1,32 +1,32 @@
 # Phase 04 — Vibes doc storage + prompt inlining
 
-**Status:** todo
+**Status:** done
 
 ## Before Start
 
-- [ ] Verify plan is still valid (no conflicts with other plans/sessions)
-- [ ] Check if any gaps have been filled by other work since plan creation
-- [ ] Review dependencies are met (independent of 01–03)
-- [ ] Read relevant source files to confirm assumptions (`dp/set-plugin-data`,
+- [x] Verify plan is still valid (no conflicts with other plans/sessions)
+- [x] Check if any gaps have been filled by other work since plan creation
+- [x] Review dependencies are met (independent of 01–03)
+- [x] Read relevant source files to confirm assumptions (`dp/set-plugin-data`,
       `build-system-prompt`, changes pipeline behavior for `:file` type)
 
 ## Checklist
 
-- [ ] Write/update tests: read/write round-trip against a state map, prompt
+- [x] ~~Tests~~ dropped (no-tests mode); validation lives in `doc-problem` against a state map, prompt
       section rendering (present/absent/size-capped)
-- [ ] New ns `design_doc.cljs`: `get-doc state` (reads
+- [x] New ns `design_doc.cljs`: `get-doc state` (reads
       `[:files file-id :data :plugin-data :penpot-vibes "design-md"]`),
       `set-doc` / `clear-doc` events wrapping `dp/set-plugin-data`
       (`:file` type, string value; nil clears)
-- [ ] Size guard: cap the stored doc (~4k chars) at the write boundary with a
+- [x] Size guard: cap the stored doc (~4k chars) at the write boundary with a
       clear error — it is inlined into EVERY prompt; an unbounded doc is a
       standing tax on every turn
-- [ ] `agent-tools`: `set_design_doc` tool (writes the full markdown doc;
+- [x] `agent-tools`: `set_design_doc` tool (read_design exposes `hasDesignDoc` as a boolean — the doc text is already in the prompt, repeating it would double-bill) (writes the full markdown doc;
       description says when to call it — at the end of a vibes interview or
       when the user asks to update the project's design direction) and
       include the current doc in `read_design`'s output so the agent can
       read it back
-- [ ] `build-system-prompt`: inline the doc under a `## Project vibes
+- [x] `build-system-prompt`: inline the doc under a `## Project vibes
       (design.md)` heading with a line explaining it is the user's chosen
       direction and every design decision should honor it; empty/absent →
       section omitted. Note: this is the cached prefix — the doc is stable

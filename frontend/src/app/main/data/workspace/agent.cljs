@@ -21,6 +21,7 @@
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
+   [app.main.data.workspace.design-doc :as dd]
    [app.main.repo :as rp]
    [app.util.sse :as sse]
    [beicon.v2.core :as rx]
@@ -488,6 +489,11 @@
              ;; Enabled built-in skills (routing index); details on demand via
              ;; get_design_skills. Empty string when none are enabled.
              (or (ask/system-prompt-section state) "")
+             ""
+             ;; The project vibes doc (design.md), when the file has one. Also
+             ;; always-on: vibes shape every response, and the doc is stable
+             ;; per file, so it lives in the cached prefix like the rest.
+             (or (dd/system-prompt-section state) "")
              ""
              "Each turn opens with the current design context (file, page, selection). Treat it as orientation only — call read_design when you need ground truth."
              ""

@@ -1,6 +1,6 @@
 # Slash commands + Project vibes interview
 
-**Status:** doing
+**Status:** done
 **Created:** 2026-07-15
 **Apps:** `frontend`
 **Dependencies:** None (builds on the shipped agent panel + skills catalog)
@@ -100,3 +100,54 @@ and the preview reviews skipped per phase).
   and deleted from the panel.
 - Lint + typecheck green; new pure logic unit-tested; UI verified in the
   devenv preview.
+
+## Completion Summary
+
+**Completed:** 2026-07-15 (code-complete; live verification pending — see below)
+
+### What Shipped
+- Slash-command menu in the agent composer: `/` opens a filterable,
+  keyboard-navigable popover of special commands + enabled skills; picking
+  fills the composer with the trigger phrase (user still sends).
+- `ask_user` agent tool: a generic elicitation widget. The tool observable
+  publishes the form into app state and completes on submit, so the turn
+  loop pauses on it with zero changes; cancel teardown clears the form.
+- In-transcript interview form: single/multi chips, Other… free text,
+  Decide for me (`__decide__` on the wire), textareas, required-gating;
+  collapses to an answers-summary bubble on submit.
+- Project vibes doc (design.md) in file plugin-data (`:penpot-vibes` /
+  `"design-md"`): shared, synced, undoable, 4k-char cap, inlined into every
+  system prompt; `set_design_doc` tool writes/clears it; `read_design`
+  reports `hasDesignDoc`.
+- `penpot-project-vibes` built-in skill (new Setup category, native `:body`
+  served without the aikit preamble) driving read_design → one adaptive
+  ask_user interview → doc synthesis → save; `/vibes` fronts it and obeys
+  its enable toggle.
+- Vibes lifecycle UI: pinned card in Skills, full view with rendered
+  markdown, capped editor, re-run interview (seeds the composer), two-click
+  undoable delete, empty state.
+- Interview image attachments (Phase 07, user-requested mid-execution):
+  `allow_images` text questions accept reference images through the
+  composer's recompression pipeline; they ride the ask_user tool result as
+  image blocks with per-question counts.
+
+### What Changed from Original Plan
+- Executed in worktree `feature/vibes-slash-commands`, no unit tests,
+  per-phase container compile checks instead; preview/live verification
+  deferred to post-merge (user direction).
+- Phase 07 added mid-execution on user direction.
+- The reactive design-doc ref lives in `design-doc/doc-ref`, NOT
+  `app.main.refs` — refs requiring it closes a circular dependency
+  (event → refs → design-doc → plugins → changes → event).
+
+### Lessons & Follow-ups
+- LIVE-VERIFY (the deferred "test it"): slash menu behavior; console-driven
+  `ask_user` (every control, cancel mid-form, second-form rejection); /vibes
+  end-to-end on Claude incl. an attached reference image; doc persistence
+  across reload + a collaborator tab; vibes influencing a subsequent design
+  task; SCSS needs `build-app-assets.js` after merge.
+- The interview questions live in the skill body (model-adapted), so other
+  skills get interviews for free by calling ask_user.
+- Vision gating: the form offers attach regardless of the active model;
+  text-only models get the existing "images omitted" note. Consider hiding
+  the attach control when `dai/vision?` is false (small follow-up).

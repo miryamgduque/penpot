@@ -30,6 +30,43 @@
    [app.main.data.workspace.skill-state :as skst]
    [cuerdas.core :as str]))
 
+;; The project-vibes playbook is NATIVE-BORN — written for this agent's own
+;; tools — so it carries a `:body` right on its catalog entry and `skill-body`
+;; serves it verbatim, without the aikit "written for another surface"
+;; preamble. The interview questions live HERE, in prose the model adapts,
+;; not hardcoded in the form UI: that is what lets the same ask_user widget
+;; drop the logistics question for a portfolio site or rephrase chips into
+;; the project's own domain.
+(def ^:private vibes-body
+  (str/join "\n"
+            ["Set (or refresh) this project's vibes: a short design.md the whole file is designed against."
+             ""
+             "## Method"
+             ""
+             "1. **Look first.** Call `read_design`. If the file already has content, react to it — name what exists and let it inform the options you offer. If `hasDesignDoc` is true, say you'll be replacing the current vibes (they are in your instructions under 'Project vibes') and keep what still holds unless the new answers contradict it."
+             "2. **Interview with ONE `ask_user` call** (title it after the project). Adapt the questions to what you saw — drop what's irrelevant, rephrase options into the project's domain, and give every choice question `allow_decide: true`. Cover roughly:"
+             "   - What should I design first? Offer the concrete surfaces you'd actually start with, plus an \"Explore a few options\" chip. (single)"
+             "   - Primary platform: mobile app / desktop web / both responsive. (single)"
+             "   - ONE domain question that shapes the whole UX — invent the right one (a marketplace: how goods reach buyers; a SaaS tool: solo or team workspaces; a game: session length). Skip it if nothing qualifies. (single)"
+             "   - Overall vibe: 5–7 adjective-pair chips like \"Warm & homey / handcrafted\", \"Clean & minimal / utility\", \"Premium / artisanal\", \"Playful & colorful\", \"Editorial / magazine-like\" — tuned to the project. (multi)"
+             "   - What makes this different from the obvious competitor? (text, optional)"
+             "   - Who is it for — both sides if it's a marketplace? (text, optional)"
+             "   - How many design directions: one strong direction / 2–3 to compare. (single)"
+             "   - A name, if there is one — say you'll use a placeholder otherwise. (text, optional)"
+             "3. **Write the doc** from the answers, as concise markdown:"
+             "   - `# <Name>` and the identity in one sentence."
+             "   - `## Vibe` — the chosen words made CONCRETE: what they mean for palette temperature, corner radius, density, type direction. This section must be able to settle a color/spacing argument."
+             "   - `## Audience`, `## Platform`, `## Design first`, `## Directions`."
+             "   - `## Voice & copy` — tone, capitalization, how playful the microcopy gets."
+             "   - `## Do / Don't` — 4–6 bullets each, grounded in the vibe words."
+             "   Where an answer was `__decide__`, decide well and mark it \"(my call — say the word to change it)\". Where an optional question was skipped, leave its section out. Keep the whole doc under 3500 characters."
+             "4. **Save it** with `set_design_doc`, then confirm in 2–3 sentences: the vibe in one line, what you decided on their behalf, and the natural next step (usually designing the first screen)."
+             ""
+             "## Rules"
+             "- One ask_user call per interview — never re-interview question by question in prose."
+             "- The doc is a contract, not a mood board: every future design task in this file follows it, so write it concrete enough to constrain real choices."
+             "- Do not start designing screens in this task; end at the saved doc + summary."]))
+
 ;; Grouped by category in display order; the dispatch router and the shared/core
 ;; house-rule docs are intentionally excluded. Every built-in skill ships
 ;; enabled (US #8 — the story is about removing what you don't want, so the
@@ -38,7 +75,13 @@
 ;; Each skill also carries an `:example` (a natural trigger phrase) and `:what`
 ;; (a one-paragraph "what it does"), surfaced by the Skills-tab detail view.
 (def catalog
-  [{:category "Audits"
+  [{:category "Setup"
+    :skills [{:name "penpot-project-vibes" :label "Set project vibes"
+              :blurb "Interview → a design.md the agent designs against" :mode "review" :enabled true
+              :example "Set the design vibes for this project."
+              :what "Runs a short kickoff interview as an in-chat form (what to design first, platform, vibe words, audience…) and distills the answers into a design.md stored on this file. The agent then honors it in every design task, and collaborators share it."
+              :body vibes-body}]}
+   {:category "Audits"
     :skills [{:name "penpot-audit-accessibility" :label "Accessibility audit"
               :blurb "WCAG 2.1/2.2 AA checks" :mode "suggest" :enabled true
               :example "Check this screen for accessibility problems."
@@ -239,12 +282,17 @@
 (defn skill-body
   "The playbook text for `name` served by `get_design_skills` on demand — never
   inlined into the system prompt. A user skill returns its stored body as-is; a
-  built-in returns its aikit body reframed for the native tool surface."
+  built-in with a native `:body` on its catalog entry (written for these tools,
+  e.g. project-vibes) is served verbatim; the remaining built-ins return their
+  aikit body reframed for the native tool surface."
   [state name]
   (if-let [us (some #(when (= name (:name %)) %) (user-skills state))]
     (:body us)
-    (when-let [body (get ab/bodies name)]
-      (str body-preamble "\n" body))))
+    (or (some (fn [{:keys [skills]}]
+                (some #(when (= name (:name %)) (:body %)) skills))
+              catalog)
+        (when-let [body (get ab/bodies name)]
+          (str body-preamble "\n" body)))))
 
 (defn find-skill
   "The full catalog entry for `name` (built-in or user-created), tagged with its

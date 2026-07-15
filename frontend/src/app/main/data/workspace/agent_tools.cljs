@@ -28,6 +28,7 @@
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
    [app.common.types.text :as txt]
+   [app.common.types.token :as cto]
    [app.common.types.tokens-lib :as ctob]
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
@@ -49,6 +50,23 @@
    [cuerdas.core :as str]))
 
 (declare audit-violations)
+
+;; Composite types carry structured values (typography is a map of font
+;; attributes, shadow a vector of shadow maps). `:value` is `::sm/any`, so
+;; `make-token` would accept a plain string for one and author something
+;; malformed without complaint — better to not offer them than to offer a lie.
+(def ^:private composite-token-types #{:typography :shadow})
+
+(def token-type-names
+  "The DTCG type names `create_token` offers, derived from
+  `cto/token-type->dtcg-token-type` rather than retyped — a hand-copied list
+  drifts the next time Penpot adds a type. Declared here because `tool-specs`
+  reads it for the enum."
+  (->> cto/token-type->dtcg-token-type
+       (remove (fn [[k _]] (contains? composite-token-types k)))
+       (map second)
+       (sort)
+       (vec)))
 
 ;; --- Tool declarations (provider-agnostic; encoded per provider in agent.cljs)
 
@@ -257,15 +275,21 @@
                                 :value {:type "string" :description "this member's value, e.g. Compact"}}
                    :required ["variantId" "property"]}}
 
-   {:name "create_color_token"
+   {:name "create_token"
     :description
-    (str "Creates a color design token in the file's token library (e.g. "
-         "name \"color.brand.primary\", value \"#6366f1\"). This is the safe, "
-         "reusable way to define colors — apply it to shapes with apply_tokens.")
+    (str "Creates a design token of any type in the file's token library — "
+         "color, spacing, borderRadius, sizing, opacity, fontSizes and more. "
+         "This is how a value becomes reusable: author it here, then bind it to "
+         "shapes with apply_tokens. Prefer a token over a literal for any value "
+         "that repeats — a spacing token on a layout's gap is as much a token as "
+         "a color on a fill. A value may reference another token, e.g. "
+         "\"{color.blue.500}\".")
     :input-schema {:type "object"
-                   :properties {:name {:type "string" :description "e.g. color.brand.primary"}
-                                :value {:type "string" :description "hex, e.g. #6366f1"}}
-                   :required ["name" "value"]}}
+                   :properties {:type {:type "string" :enum token-type-names
+                                       :description "e.g. color, spacing, borderRadius"}
+                                :name {:type "string" :description "e.g. spacing.md, color.brand.primary"}
+                                :value {:type "string" :description "e.g. 16, #6366f1, {color.blue.500}"}}
+                   :required ["type" "name" "value"]}}
 
    {:name "audit_file"
     :description
@@ -504,7 +528,7 @@
 ;; Port of skills-core/src/guard.ts. When the file enforces `token-only-colors`,
 ;; the color-setting tools accept only colors that are a design token value or a
 ;; library color; a raw hex is rejected with a rule-tagged error the agent
-;; recovers from by using create_color_token + apply_tokens. Which rules are
+;; recovers from by using create_token + apply_tokens. Which rules are
 ;; enforced is read from `[:ai-panel <file-id> :enforced-rules]` (populated by
 ;; the backend skills resolution — phase 07).
 
@@ -547,8 +571,8 @@
     (let [allowed (allowed-colors state)]
       (when-not (contains? allowed (normalize-hex hex))
         (ex-info (dm/str "token-only-colors: raw color " hex " is not a design token. "
-                         "Create it with create_color_token and bind it with apply_tokens, "
-                         "or use an existing token"
+                         "Create it with create_token (type: color) and bind it with "
+                         "apply_tokens, or use an existing token"
                          (when (seq allowed)
                            (dm/str " (allowed: " (str/join ", " (take 20 allowed)) ")"))
                          ".")
@@ -1091,14 +1115,44 @@
 
 ;; --- Token tools (the safe coloring path)
 
-(defn- create-color-token
-  [{:keys [name value]}]
-  (if (or (not (string? name)) (empty? name) (not (string? value)) (empty? value))
-    (rx/throw (ex-info "create_color_token: name and value (hex) are required" {}))
-    (let [token (ctob/make-token {:type :color :name name :value value})]
+(defn token-type
+  "The internal token type for a public DTCG name, or nil. Accepts the
+  back-compat singular aliases (`fontSize`, `fontWeight`, …) that
+  `cto/dtcg-token-type->token-type` already knows."
+  [name]
+  (get cto/dtcg-token-type->token-type name))
+
+(defn token-problem
+  "Why `create_token` cannot author this token, or nil. Pure."
+  [{:keys [type name value]}]
+  (let [t (token-type type)]
+    (cond
+      (or (not (string? name)) (str/blank? name))
+      "create_token: name is required, e.g. \"spacing.md\" or \"color.brand.primary\""
+
+      ;; not `blank?`: "0" is a legitimate spacing value
+      (or (nil? value) (and (string? value) (empty? value)))
+      "create_token: value is required, e.g. \"16\", \"#6366f1\" or \"{color.blue.500}\""
+
+      (nil? t)
+      (dm/str "create_token: \"" type "\" is not a token type — use one of: "
+              (str/join ", " token-type-names))
+
+      (contains? composite-token-types t)
+      (dm/str "create_token: " type " tokens need a structured value, which this"
+              " tool cannot express yet — author it in the tokens panel")
+
+      :else nil)))
+
+(defn- create-token
+  [{:keys [type name value] :as input}]
+  (if-let [problem (token-problem input)]
+    (rx/throw (ex-info problem {}))
+    (let [token (ctob/make-token {:type (token-type type) :name name :value value})]
       ;; 1-arg create-token targets the current set, creating one if none exists
       (st/emit! (dwtl/create-token token))
-      (rx/of {:name name :value value :note "color token created"}))))
+      (rx/of {:name name :type type :value value
+              :note "token created — bind it to shapes with apply_tokens"}))))
 
 (defn- attr-set
   "Maps the requested properties to shape color attributes (default fill)."
@@ -1223,6 +1277,6 @@
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)
     "set_variant_property" (set-variant-property input)
-    "create_color_token" (create-color-token input)
+    "create_token"       (create-token input)
     "apply_tokens"       (apply-tokens input)
     (rx/throw (ex-info (dm/str "Unknown tool: " name) {}))))

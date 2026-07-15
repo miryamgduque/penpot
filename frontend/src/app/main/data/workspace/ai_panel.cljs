@@ -21,6 +21,7 @@
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-tools :as at]
    [beicon.v2.core :as rx]
+   [cuerdas.core :as str]
    [potok.v2.core :as ptk]))
 
 (defn- open?
@@ -289,6 +290,68 @@
                    (rx/debounce watcher-debounce-ms)
                    (rx/map (fn [_] (refresh-violations)))))
              (rx/take-until stopper))))))
+
+;; --- Fix it now
+;;
+;; The strip's action: a VISIBLE user-style message into the current
+;; conversation (user decision 2026-07-16 — the transcript stays honest about
+;; what ran and where the spend went; never a second session, never a hidden
+;; turn). Shape ids are resolved at click time so the agent fixes the listed
+;; shapes instead of spending a tool round re-discovering them. If a turn is
+;; already running the composed message parks in a one-slot pending queue
+;; that the panel drains when the turn ends.
+
+(def ^:private max-fix-ids 20)
+
+(def ^:private fix-instructions
+  {"layer-naming"
+   "Rename each to a semantic layer name (auto-fix safe set) and apply directly."
+   "token-only-colors"
+   (str "Where a raw color exactly equals an existing token's resolved value, "
+        "swap it for that token and apply directly (loss-less); anything that "
+        "needs a judgement call, propose it and wait for approval.")})
+
+(defn compose-fix-message
+  "The Fix-it-now message for a violations subset, grouped per rule. The id
+  list is capped — overflow is named explicitly so truncation never reads as
+  \"that was everything\"; `audit_file` at the end is verification, not
+  discovery."
+  [violations]
+  (let [body (->> violations
+                  (group-by :rule)
+                  (sort-by key)
+                  (map (fn [[rule vs]]
+                         (let [n    (count vs)
+                               ids  (map :shapeId (take max-fix-ids vs))
+                               more (- n max-fix-ids)]
+                           (str "Fix the " n " " rule " violation" (when (> n 1) "s")
+                                " on these shapes: " (str/join ", " ids)
+                                (when (pos? more)
+                                  (str " (+" more " more — find them with audit_file)"))
+                                ". " (get fix-instructions rule "Fix them according to the rule.")))))
+                  (str/join "\n\n"))]
+    (str body "\n\nWhen done, run audit_file to confirm the set is clear.")))
+
+(defn set-pending-fix
+  "Park a Fix-it-now message composed while a turn is running; the panel
+  drains it when the turn ends. One slot — a newer fix replaces the queued
+  one rather than stacking."
+  [text]
+  (ptk/reify ::set-pending-fix
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (assoc-in state [:ai-panel file-id :pending-fix] text)
+        state))))
+
+(defn clear-pending-fix
+  []
+  (ptk/reify ::clear-pending-fix
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id] dissoc :pending-fix)
+        state))))
 
 (defn cancel-turn
   "Stops the running turn. `send-message` watches the event stream for this."

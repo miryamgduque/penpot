@@ -85,7 +85,7 @@ and get fleshed out at their Before Start rather than guessed at now.
 ### Wave 2 — Layout (the biggest gap)
 
 6. [Phase 06 — Give boards a layout](./done-phase-06-give-boards-a-layout.md) — `set_layout`: flex on a board (dir, gaps, padding, align/justify)
-7. [Phase 07 — Place the children](./todo-phase-07-place-the-children.md) — `set_layout_child`: grow, align-self, margins, absolute, min/max
+7. [Phase 07 — Place the children](./done-phase-07-place-the-children.md) — `set_layout_child`: grow, align-self, margins, absolute, min/max
 
 ### Wave 3 — Tokens beyond color (mostly un-narrowing)
 

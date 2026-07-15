@@ -461,6 +461,88 @@
     (t/is (some? problem))))
 
 ;; ---------------------------------------------------------------------------
+;; layout-child-attrs — public params -> internal :layout-item-* keys
+;; ---------------------------------------------------------------------------
+
+(t/deftest sizing-maps-to-layout-item-sizing
+  (let [out (at/layout-child-attrs {:horizontalSizing "fill" :verticalSizing "auto"})]
+    (t/is (= :fill (:layout-item-h-sizing out)))
+    (t/is (= :auto (:layout-item-v-sizing out)))))
+
+(t/deftest align-self-and-absolute-and-z-index-map
+  (let [out (at/layout-child-attrs {:alignSelf "center" :absolute true :zIndex 3})]
+    (t/is (= :center (:layout-item-align-self out)))
+    (t/is (true? (:layout-item-absolute out)))
+    (t/is (= 3 (:layout-item-z-index out)))))
+
+(t/deftest margin-maps-to-m1-m4-clockwise-from-top
+  (let [out (at/layout-child-attrs {:margin {:top 1 :right 2 :bottom 3 :left 4}})]
+    (t/is (= {:m1 1 :m2 2 :m3 3 :m4 4} (:layout-item-margin out)))))
+
+(t/deftest min-max-map-to-w-h-keys
+  (let [out (at/layout-child-attrs {:minWidth 10 :maxWidth 20 :minHeight 30 :maxHeight 40})]
+    (t/is (= 10 (:layout-item-min-w out)))
+    (t/is (= 20 (:layout-item-max-w out)))
+    (t/is (= 30 (:layout-item-min-h out)))
+    (t/is (= 40 (:layout-item-max-h out)))))
+
+(t/deftest absolute-false-is-kept-not-dropped
+  ;; `false` is a real instruction ("rejoin the flow"), not an absent param —
+  ;; a `some?` check keeps it, a truthiness check would silently drop it.
+  (t/is (= {:layout-item-absolute false} (at/layout-child-attrs {:absolute false}))))
+
+(t/deftest absent-child-params-produce-no-keys
+  (t/is (= {} (at/layout-child-attrs {}))))
+
+;; ---------------------------------------------------------------------------
+;; layout-child-problem
+;; ---------------------------------------------------------------------------
+
+(def ^:private board-id (uuid/custom 5 1))
+
+(defn- laid-out-board
+  [id child-ids]
+  {:id id :name "Row" :type :frame :layout :flex :shapes child-ids})
+
+(t/deftest a-child-of-a-laid-out-board-is-fine
+  (let [objs (objects (laid-out-board board-id [id-a])
+                      (assoc (plain-frame id-a "Item") :parent-id board-id))]
+    (t/is (nil? (at/layout-child-problem objs id-a {:horizontalSizing "fill"})))))
+
+(t/deftest a-child-whose-parent-has-no-layout-is-rejected
+  ;; update-layout-child writes the attrs anyway: they persist, do nothing, and
+  ;; spring to life later. A silent no-op wearing a success message.
+  (let [objs    (objects (assoc (plain-frame board-id "Plain") :shapes [id-a])
+                         (assoc (plain-frame id-a "Item") :parent-id board-id))
+        problem (at/layout-child-problem objs id-a {:horizontalSizing "fill"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "set_layout"))))
+
+(t/deftest the-rejection-names-the-parent-to-fix
+  (let [objs    (objects (assoc (plain-frame board-id "Plain") :shapes [id-a])
+                         (assoc (plain-frame id-a "Item") :parent-id board-id))
+        problem (at/layout-child-problem objs id-a {:horizontalSizing "fill"})]
+    (t/is (str/includes? problem (str board-id)))))
+
+(t/deftest a-top-level-shape-is-rejected
+  (let [objs    (objects (plain-frame id-a "Loose"))
+        problem (at/layout-child-problem objs id-a {:horizontalSizing "fill"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "nest_shape"))))
+
+(t/deftest a-css-flavoured-sizing-is-rejected-with-the-real-options
+  (let [objs    (objects (laid-out-board board-id [id-a])
+                         (assoc (plain-frame id-a "Item") :parent-id board-id))
+        problem (at/layout-child-problem objs id-a {:horizontalSizing "grow"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "fill"))))
+
+(t/deftest a-child-call-with-nothing-to-change-is-rejected
+  (let [objs (objects (laid-out-board board-id [id-a])
+                      (assoc (plain-frame id-a "Item") :parent-id board-id))]
+    (t/is (some? (at/layout-child-problem objs id-a {})))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

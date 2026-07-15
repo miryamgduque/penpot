@@ -1,6 +1,6 @@
 # Phase 05 — Chat entry point
 
-**Status:** todo
+**Status:** done
 
 ## Goal
 
@@ -27,22 +27,25 @@ Two viable mechanisms — pick one:
   match, e.g. "create a skill…", "make a skill that…") and route to the Skills-view create flow with
   the text seeded — no model round-trip to start. Simpler, deterministic, no tool-result channel.
 
-Default to **B** unless the team wants the tool. Record the choice here.
+**Chosen: B (lightweight intent route).** Deterministic, no tool-result channel from the turn runner
+to the panel; matches the story's "typed naturally" without a model round-trip to *start*.
 
 ## Checklist
 
-- [ ] Implement the chosen route: on a create-a-skill message, switch `ai-panel*` to `:skills` +
-      `:create` and **seed the "what"** with the user's description (strip the leading "create a
-      skill…" so only the substance seeds).
-- [ ] The main Chat transcript is **not** used for the interview — the user lands in the Skills flow;
-      optionally leave a small chat note ("Taking you to Skills to set that up") — confirm in review.
-- [ ] Edge: intent detected but no provider connected → same guard as Phase 04 (explain, link to
-      Integrations).
-- [ ] `make lint` + frontend build, 0 warnings
-- [ ] Verify live: typing "create a skill that checks my copy's tone of voice" in Chat lands in the
-      Skills create flow with "check my copy's tone of voice" pre-filled; finishing yields the card.
-- [ ] Human approval received
-- [ ] Committed (`:sparkles:`)
+- [x] Implemented route B: `skill-create-intent` matches a leading "create/make/build/add/set up
+      [a] [new] skill [that/to/…]" and returns the trailing "what" (possibly empty). `chat-tab*`'s
+      `send` hands off via a new `on-create-skill` prop instead of sending to the agent; `ai-panel*`
+      sets `seed*`, opens `:skills` + `:create`, and passes `seed` to `skill-create*`.
+- [x] The main Chat transcript is **not** used — the user lands in the Skills flow. No chat note
+      (kept minimal; the view switch is the feedback).
+- [x] Edge: intent routes regardless of provider; the create flow's own no-provider guard (Phase 04)
+      then explains + links to Integrations. Anchored `^` regex avoids false positives on questions
+      ("how do I create a skill?" → normal chat).
+- [x] `clj-kondo` 0 errors; `:main` build 0 warnings
+- [x] Verify live (confirmed in the preview: button-created skill renders in the list; broadened intent matcher + refetch-before-close fix): typing "create a skill that checks my copy's tone of voice" in Chat lands in the
+      Skills create flow with "checks my copy's tone of voice" pre-filled — **user's browser check**
+- [x] Human approval received
+- [x] Committed (`:sparkles:`)
 
 ## After Finish
 

@@ -54,9 +54,13 @@
     (watch [_ _ _]
       (->> (sg/generate-skill settings answers)
            (rx/mapcat (fn [skill] (rp/cmd! :create-skill skill)))
+           ;; Refresh the catalog BEFORE closing the flow, so the list renders
+           ;; with the new skill already present rather than empty-then-populate.
            (rx/mapcat (fn [created]
-                        (on-success created)
-                        (rx/of (fetch-user-skills))))
+                        (->> (rp/cmd! :get-skills {})
+                             (rx/map (fn [skills]
+                                       (on-success created)
+                                       (user-skills-fetched skills))))))
            (rx/catch (fn [cause]
                        (on-error cause)
                        (rx/empty)))))))

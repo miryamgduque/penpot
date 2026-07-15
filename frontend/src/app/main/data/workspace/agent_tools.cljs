@@ -147,9 +147,13 @@
 
    {:name "modify_shape"
     :description
-    (str "Modifies an existing shape: rename, move (x/y), resize (width/"
-         "height), and/or set a solid fill/stroke color (hex). Only the given "
-         "fields change. Geometry settles asynchronously — re-read to confirm.")
+    (str "Modifies an existing shape: rename, move (x/y), resize (width/height), "
+         "set a solid fill/stroke color, corner radius, opacity, or a shadow. "
+         "Only the given fields change. A shadow is the real answer for depth or "
+         "a hover state — reach for it instead of faking elevation with a paler "
+         "fill. Radius and opacity can also be bound to tokens with apply_tokens, "
+         "which is preferred for any value that repeats. Geometry settles "
+         "asynchronously — re-read to confirm.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
                                 :name {:type "string"}
@@ -158,7 +162,18 @@
                                 :width {:type "number"}
                                 :height {:type "number"}
                                 :fill {:type "string" :description "hex, e.g. #6366f1"}
-                                :stroke {:type "string" :description "hex, e.g. #111111"}}
+                                :stroke {:type "string" :description "hex, e.g. #111111"}
+                                :radius {:type "number" :description "corner radius, all four corners"}
+                                :opacity {:type "number" :description "0–1"}
+                                :shadow {:type "object"
+                                         :description "a drop shadow; omit to leave shadows alone"
+                                         :properties {:style {:type "string" :enum ["drop-shadow" "inner-shadow"]}
+                                                      :offsetX {:type "number"}
+                                                      :offsetY {:type "number"}
+                                                      :blur {:type "number"}
+                                                      :spread {:type "number"}
+                                                      :color {:type "string" :description "hex"}
+                                                      :opacity {:type "number" :description "0–1"}}}}
                    :required ["shapeId"]}}
 
    {:name "nest_shape"
@@ -787,6 +802,17 @@
   (when-let [file-id (:current-file-id state)]
     (contains? (dm/get-in state [:ai-panel file-id :enforced-rules]) rule)))
 
+(defn input-colors
+  "Every raw color a `create_shape` / `modify_shape` call would put on a shape.
+
+  The shadow is why this exists. `token-only-colors` watched only `fill` and
+  `stroke`, so widening `modify_shape` to shadows would have opened a second,
+  unwatched path for raw hex — and the most-used one, since a shadow is exactly
+  where a designer reaches for a one-off color. One collector, so both tools are
+  guarded by construction and a param added later cannot slip past."
+  [{:keys [fill stroke shadow]}]
+  (into [] (keep identity) [fill stroke (:color shadow)]))
+
 (defn- color-violation
   "Returns a token-only-colors ex-info when `hex` is a raw color that the rule
   forbids, or nil when it is allowed / the rule is not enforced."
@@ -806,7 +832,9 @@
 
 (defn- create-shape
   [{:keys [type x y width height fill parentId] :as input}]
-  (if-let [violation (color-violation @st/state fill)]
+  ;; via input-colors, not `fill` directly: both colour-setting tools share one
+  ;; collector, so a param added later cannot quietly bypass the guard
+  (if-let [violation (some #(color-violation @st/state %) (input-colors input))]
     (rx/throw violation)
     (let [nm      (:name input)
           state   @st/state
@@ -832,20 +860,47 @@
               :parentId (when parent? (dm/str pid))
               :note "created — verify geometry with read_design"}))))
 
+(defn shadow->shape
+  "A shadow as Penpot stores it. `:color` is a *map* (`schema:color`), not a hex
+  string — a bare string fails the schema."
+  [{:keys [style offsetX offsetY blur spread color opacity]}]
+  {:id (uuid/next)
+   :style (if (= style "inner-shadow") :inner-shadow :drop-shadow)
+   :offset-x (or offsetX 0)
+   :offset-y (or offsetY 0)
+   :blur (or blur 4)
+   :spread (or spread 0)
+   :hidden false
+   :color (cond-> {:color (or color "#000000")}
+            (some? opacity) (assoc :opacity opacity))})
+
+(defn style-attrs
+  "The plain shape attrs for the styling params. Only keys given are emitted, and
+  presence is `some?` — `opacity 0` is a real instruction."
+  [{:keys [radius opacity]}]
+  (cond-> {}
+    (some? radius) (assoc :r1 radius :r2 radius :r3 radius :r4 radius)
+    (some? opacity) (assoc :opacity opacity)))
+
 (defn- modify-shape
-  [{:keys [shapeId x y width height fill stroke] :as input}]
+  [{:keys [shapeId x y width height fill stroke shadow] :as input}]
   (let [nm    (:name input)
         id    (some-> shapeId parse-uuid)
         state @st/state]
-    (if-let [violation (or (color-violation state fill) (color-violation state stroke))]
+    (if-let [violation (some #(color-violation state %) (input-colors input))]
       (rx/throw violation)
       (if (nil? id)
         (rx/throw (ex-info "modify_shape: missing or invalid shapeId" {}))
-        (let [tx (random-uuid)]
+        (let [tx     (random-uuid)
+              styles (style-attrs input)]
           (interrupt!)
           (st/emit! (dwu/start-undo-transaction tx))
           (when nm
             (st/emit! (dwsh/update-shapes [id] #(assoc % :name nm))))
+          (when (seq styles)
+            (st/emit! (dwsh/update-shapes [id] #(merge % styles))))
+          (when shadow
+            (st/emit! (dwsh/update-shapes [id] #(assoc % :shadow [(shadow->shape shadow)]))))
           (when (or (some? x) (some? y))
             (st/emit! (dwt/update-position id (cond-> {}
                                                 (some? x) (assoc :x x)

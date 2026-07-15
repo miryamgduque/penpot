@@ -51,6 +51,7 @@
    [app.main.features :as features]
    [app.main.store :as st]
    [app.render-wasm.api :as wasm.api]
+   [app.util.code-gen :as cg]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
 
@@ -296,6 +297,21 @@
                                 :minWidth {:type "number"} :maxWidth {:type "number"}
                                 :minHeight {:type "number"} :maxHeight {:type "number"}}
                    :required ["shapeId"]}}
+
+   {:name "generate_code"
+    :description
+    (str "Returns Penpot's own markup and CSS for shapes — what the design "
+         "actually IS, rather than what it looks like. Use it to compare a "
+         "design against shipped code: the canvas shows you the picture, this "
+         "shows you the rules. Defaults to the selection and to html markup "
+         "(svg is the alternative), and includes children unless you say "
+         "otherwise. Large subtrees may be refused as oversized — inspect fewer "
+         "shapes or pass includeChildren: false rather than retrying.")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}
+                                           :description "defaults to the selection"}
+                                :type {:type "string" :enum ["html" "svg"]}
+                                :includeChildren {:type "boolean" :description "default true"}}}}
 
    {:name "create_instance"
     :description
@@ -1495,6 +1511,57 @@
                                      "set_variant_property. Verify with read_design.")}
                    new-id (assoc :shapeId (dm/str new-id)))))))))
 
+;; --- Handoff codegen
+;;
+;; The whole method of `penpot-design-to-code-review`: read what Penpot says this
+;; design IS, compare it to the code that shipped. Its own script calls
+;; generateMarkup AND generateStyle together and returns `{markup, style, …}`, so
+;; this is one tool returning both rather than two the agent must pair up.
+;;
+;; Comparison is why size matters here more than elsewhere: a half stylesheet
+;; does not degrade the review, it produces confident findings about rules that
+;; were never truncated in reality. Phase 15's backstop refuses oversized results
+;; outright, so the failure is loud — this tool just narrows the ask first.
+
+(def ^:private markup-types #{"html" "svg"})
+
+(defn code-problem
+  "Why `generate_code` cannot run, or nil. Pure."
+  [objects ids type]
+  (or (when (empty? ids)
+        (str "generate_code: nothing to inspect — pass shapeIds, or select the"
+             " shapes you want the markup for"))
+      (ids-problem "generate_code" objects ids)
+      (when (and (some? type) (not (contains? markup-types type)))
+        (dm/str "generate_code: \"" type "\" is not a markup type — use one of: "
+                (str/join ", " (sort markup-types))))))
+
+(defn- generate-code
+  [{:keys [shapeIds type includeChildren]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (if (seq shapeIds)
+                  (into [] (comp (keep parse-uuid) (distinct)) shapeIds)
+                  (vec (dsh/get-selected-ids state)))
+        type    (or type "html")]
+    (if-let [problem (code-problem objects ids type)]
+      (rx/throw (ex-info problem {}))
+      (let [roots    (mapv #(get objects %) ids)
+            ;; children? defaults true, as the plugin's does — a component's own
+            ;; styles without its children is rarely what a review wants
+            kids?    (not (false? includeChildren))
+            resolved (cond->> (cfh/clean-loops objects roots)
+                       kids? (mapcat #(cfh/get-children-with-self objects (:id %))))
+            markup   (cg/generate-formatted-markup-code objects type resolved)
+            style    (cg/generate-style-code objects "css" roots resolved nil)]
+        (rx/of {:markup markup
+                :style style
+                :shapes (count resolved)
+                :note (str "Penpot's own view of these shapes — compare it against "
+                           "the shipped code rather than reading the canvas. If the "
+                           "result is refused as too large, inspect fewer shapes or "
+                           "pass includeChildren: false.")})))))
+
 ;; --- Component instances
 ;;
 ;; Without this a design system the agent builds is write-only: it can author a
@@ -1888,6 +1955,7 @@
     "ungroup_shapes"     (ungroup-shapes input)
     "set_layout"         (set-layout input)
     "set_layout_child"   (set-layout-child input)
+    "generate_code"      (generate-code input)
     "create_instance"    (create-instance input)
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)

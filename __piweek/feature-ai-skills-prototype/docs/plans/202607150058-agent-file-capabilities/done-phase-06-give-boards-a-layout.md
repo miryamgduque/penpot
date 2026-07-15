@@ -1,6 +1,6 @@
 # Phase 06 — Give boards a layout
 
-**Status:** todo
+**Status:** done
 
 The single biggest gap: 76 mentions across 8 skills, zero tools. Grepping `agent_tools.cljs`
 for flex/layout returns three hits, all the word "group" in prose. This phase adds
@@ -8,20 +8,20 @@ for flex/layout returns three hits, all the word "group" in prose. This phase ad
 
 ## Before Start
 
-- [ ] Re-read `create-layout-from-id` ([shape_layout.cljs:149](../../../../../frontend/src/app/main/data/workspace/shape_layout.cljs)) — signature `(id type & {:keys [from-frame? calculate-params?]})`, `type` ∈ `:flex | :grid`
-- [ ] Re-read `update-layout` (:290) — `(ids changes)`; `changes` is a map of `:layout-*` attrs
-- [ ] Re-read `remove-layout` (:234)
-- [ ] Check `get-layout-initializer` (used at :161) for what `calculate-params?` infers from existing children — it may already do the sensible thing, which would let the tool pass fewer params
-- [ ] Confirm the layout attr keys and their allowed values in `common/src/app/common/types/shape/layout.cljc`
+- [x] Re-read `create-layout-from-id` — `(id type & {:keys [from-frame? calculate-params?]})`, `type` ∈ `:flex | :grid`
+- [x] Re-read `update-layout` (:290) — `(ids changes)`, patches via `d/patch-object`
+- [x] Re-read `remove-layout` (:234)
+- [x] Check `get-layout-initializer` — `calculate-params?` defaults true and seeds sensible params, so the tool can pass only what the caller asked for
+- [x] Confirm the layout attr keys and allowed values in `common/src/app/common/types/shape/layout.cljc` — **the plan's spec was wrong about one** (see Notes)
 
 ## Checklist
 
-- [ ] Write tests for param mapping + validation
-- [ ] Add the `set_layout` spec to `tool-specs`
-- [ ] Implement `set-layout`
-- [ ] Wire into the `execute-tool` dispatch `case`
-- [ ] Lint pass (`lint:clj` + `check-fmt:clj`, in the devenv — there is no Makefile)
-- [ ] Preview review: build a board with 3 children, apply a flex row with a gap, confirm children reflow
+- [x] Write tests for param mapping + validation
+- [x] Add the `set_layout` spec to `tool-specs`
+- [x] Implement `set-layout`
+- [x] Wire into the `execute-tool` dispatch `case`
+- [x] Lint pass — clj-kondo 0/0, cljfmt clean
+- [x] Preview review: three children at messy absolute coords reflowed to one row, live
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit (`:sparkles:`)
 
@@ -94,7 +94,52 @@ open. Note it, don't build it.
 - `frontend/src/app/main/data/workspace/agent_tools.cljs` — spec, `set-layout`, param mapping, dispatch entry, `[app.main.data.workspace.shape-layout :as dwsl]`
 - `frontend/test/frontend_tests/data/agent_tools_test.cljs` — mapping and validation tests
 
-## Notes
+## Notes — what execution found
+
+**Reading the schema instead of the plugin paid off immediately.** The plan's draft spec gave
+`justifyContent` five values; `justify-content-types` (`layout.cljc:63`) has **seven** — it also
+accepts `:stretch`, and `align-content` differs from `justify-content` in its set. Had the enum
+been copied from the plan, `justifyContent: "stretch"` would have been rejected by our own
+validation as invalid while Penpot accepts it perfectly well. The enums are now taken from the
+schema.
+
+**`wrap` is not a boolean internally.** `:layout-wrap-type` is `:wrap`/`:nowrap`. The tool takes
+a boolean (what the agent expects) and maps it; passing the raw boolean through would have
+failed the schema. Pinned by a test.
+
+**Only-what-was-asked, deliberately.** `update-layout` patches with `d/patch-object`, so any key
+present is applied. `layout-changes` emits only keys actually supplied — a nil default would
+silently clobber a value the caller never mentioned. `absent-params-produce-no-keys` guards it.
+
+**Verified live — this is the phase's whole point.** A board with three children hand-placed at
+y = 210 / 241 / 272 (deliberately messy, exactly what the agent does today):
+
+```
+set_layout {dir: "row", columnGap: 12, padding: {…16}, alignItems: "center"}
+  → children y = 280, 280, 280        (reflowed — they no longer hold their own positions)
+  → children x spaced exactly 72 apart (60 width + 12 gap)
+  → board: :flex, :row, {:column-gap 12 :row-gap 0}, {:p1..:p4 16}, :center
+```
+
+Every rejection fires, and the two that matter most are the agent's CSS instincts:
+
+```
+dir: "horizontal"       → not valid — use one of: column, column-reverse, row, row-reverse
+alignItems: "flex-start" → not valid — use one of: center, end, start, stretch
+on a rect                → "Rectangle" (…) is a rect, and only boards can have a layout —
+                           create one with create_shape type=board and nest these shapes into it
+remove twice             → "Toolbar" (…) has no layout to remove
+nothing to change        → pass dir, alignItems, … (or remove: true)
+```
+
+`horizontal` and `flex-start` are what a model trained on CSS reaches for first. Listing the
+real vocabulary turns each into a correct retry rather than a silent nothing.
+
+**Child order note, not a bug:** children lay out in `(:shapes board)` order, which is reverse
+z-order, so the first-created child ends up rightmost in a `:row`. Penpot's own behaviour; worth
+knowing for Phase 07, which addresses individual children.
+
+## Notes — from planning
 
 `create-layout-from-id` dissocs `:constraints-h`/`:constraints-v` from children (:166) —
 constraints and layout are mutually exclusive in Penpot. Worth knowing when a later phase

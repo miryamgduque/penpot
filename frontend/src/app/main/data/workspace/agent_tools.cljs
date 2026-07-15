@@ -21,6 +21,7 @@
   (:require
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
+   [app.common.files.helpers :as cfh]
    [app.common.files.variant :as cfv]
    [app.common.path-names :as cpn]
    [app.common.types.component :as ctc]
@@ -32,6 +33,7 @@
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.libraries :as dwl]
+   [app.main.data.workspace.shape-layout :as dwsl]
    [app.main.data.workspace.shapes :as dwsh]
    [app.main.data.workspace.tokens.application :as dwta]
    [app.main.data.workspace.tokens.library-edit :as dwtl]
@@ -150,6 +152,31 @@
          "omitted) into a reusable component. Returns the new component id.")
     :input-schema {:type "object"
                    :properties {:shapeIds {:type "array" :items {:type "string"}}}}}
+
+   {:name "set_layout"
+    :description
+    (str "Gives a board a flex layout, or updates the one it has — this is how "
+         "you arrange children in Penpot. They reflow automatically, so prefer "
+         "this over positioning each child with x/y: a laid-out board survives "
+         "content changes, hand-placed coordinates do not. Gaps and padding "
+         "accept spacing tokens via apply_tokens (rowGap, columnGap, paddingTop…). "
+         "Only boards can have a layout. Asynchronous: verify with read_design.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string" :description "board id"}
+                                :dir {:type "string" :enum ["row" "column" "row-reverse" "column-reverse"]}
+                                :alignItems {:type "string" :enum ["start" "end" "center" "stretch"]}
+                                :justifyContent {:type "string"
+                                                 :enum ["start" "center" "end" "space-between"
+                                                        "space-around" "space-evenly" "stretch"]}
+                                :rowGap {:type "number"}
+                                :columnGap {:type "number"}
+                                :padding {:type "object"
+                                          :description "px; any of top/right/bottom/left"
+                                          :properties {:top {:type "number"} :right {:type "number"}
+                                                       :bottom {:type "number"} :left {:type "number"}}}
+                                :wrap {:type "boolean"}
+                                :remove {:type "boolean" :description "strip the layout instead"}}
+                   :required ["shapeId"]}}
 
    {:name "create_variant"
     :description
@@ -625,6 +652,113 @@
         (catch :default e
           (rx/throw e))))))
 
+(defn- shape-label
+  "How a shape is named back to the agent: \"Name\" (id). Both halves matter —
+  the name so the message is readable, the id so it is actionable."
+  [shape]
+  (dm/str "\"" (:name shape) "\" (" (dm/str (:id shape)) ")"))
+
+;; --- Layout (flex)
+;;
+;; The single widest gap in the tool surface: the skills' central method is
+;; "create a board, give it a flex layout, apply spacing tokens to the gaps", and
+;; only the first step was reachable — which is why the agent positioned
+;; everything by absolute x/y.
+;;
+;; Names and values are mapped from `common/types/shape/layout.cljc`, NOT from
+;; the plugin's `flex.cljs`: the plugin proxy does its own aliasing, and copying
+;; its public names without its translation layer would silently miss.
+
+(def ^:private layout-dirs #{"row" "row-reverse" "column" "column-reverse"})
+(def ^:private layout-align-items #{"start" "end" "center" "stretch"})
+(def ^:private layout-justify-content
+  #{"start" "center" "end" "space-between" "space-around" "space-evenly" "stretch"})
+
+(defn layout-changes
+  "The `:layout-*` patch for `update-layout`, from the tool's public params.
+
+  Only keys actually given are emitted — `update-layout` patches whatever it
+  receives, so a stray nil would clobber a value the caller never mentioned."
+  [{:keys [dir alignItems justifyContent rowGap columnGap padding wrap]}]
+  (let [gap (cond-> {}
+              (some? rowGap)    (assoc :row-gap rowGap)
+              (some? columnGap) (assoc :column-gap columnGap))
+        pad (cond-> {}
+              (some? (:top padding))    (assoc :p1 (:top padding))
+              (some? (:right padding))  (assoc :p2 (:right padding))
+              (some? (:bottom padding)) (assoc :p3 (:bottom padding))
+              (some? (:left padding))   (assoc :p4 (:left padding)))]
+    (cond-> {}
+      (some? dir)            (assoc :layout-flex-dir (keyword dir))
+      (some? alignItems)     (assoc :layout-align-items (keyword alignItems))
+      (some? justifyContent) (assoc :layout-justify-content (keyword justifyContent))
+      (some? wrap)           (assoc :layout-wrap-type (if wrap :wrap :nowrap))
+      (seq gap)              (assoc :layout-gap gap)
+      (seq pad)              (assoc :layout-padding pad))))
+
+(defn- enum-problem
+  [tool param value allowed]
+  (when (and (some? value) (not (contains? allowed value)))
+    (dm/str tool ": " param " \"" value "\" is not valid — use one of: "
+            (str/join ", " (sort allowed)))))
+
+(defn layout-problem
+  "Why `set_layout` cannot be applied to `id`, as a message the agent can act on,
+  or nil. Pure."
+  [objects id {:keys [dir alignItems justifyContent remove] :as input}]
+  (let [shape (get objects id)]
+    (cond
+      (nil? id)
+      "set_layout: shapeId is required"
+
+      (nil? shape)
+      (dm/str "set_layout: no shape on this page with id " (str id)
+              " — check read_design")
+
+      (not (cfh/frame-shape? shape))
+      (dm/str "set_layout: " (shape-label shape) " is a "
+              (some-> (:type shape) name)
+              ", and only boards can have a layout — create one with"
+              " create_shape type=board and nest these shapes into it")
+
+      (and remove (nil? (:layout shape)))
+      (dm/str "set_layout: " (shape-label shape) " has no layout to remove")
+
+      :else
+      (or (enum-problem "set_layout" "dir" dir layout-dirs)
+          (enum-problem "set_layout" "alignItems" alignItems layout-align-items)
+          (enum-problem "set_layout" "justifyContent" justifyContent layout-justify-content)
+          (when (and (not remove) (empty? (layout-changes input)))
+            (dm/str "set_layout: nothing to change — pass dir, alignItems,"
+                    " justifyContent, rowGap, columnGap, padding or wrap"
+                    " (or remove: true)"))))))
+
+(defn- set-layout
+  [{:keys [shapeId remove] :as input}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        id      (some-> shapeId parse-uuid)]
+    (if-let [problem (layout-problem objects id input)]
+      (rx/throw (ex-info problem {}))
+      (let [shape    (get objects id)
+            changes  (layout-changes input)]
+        (interrupt!)
+        (cond
+          remove
+          (do (st/emit! (dwsl/remove-layout #{id}))
+              (rx/of {:note "layout removed — children keep their positions"}))
+
+          :else
+          (do
+            ;; a board with no layout needs one created before it can be patched
+            (when (nil? (:layout shape))
+              (st/emit! (dwsl/create-layout-from-id id :flex)))
+            (when (seq changes)
+              (st/emit! (dwsl/update-layout [id] changes)))
+            (rx/of {:note (str "flex layout applied — children now reflow, so stop "
+                               "setting their x/y. Gaps and padding accept spacing "
+                               "tokens via apply_tokens. Verify with read_design.")})))))))
+
 ;; --- Variants
 ;;
 ;; `dwv/combine-as-variants` filters out ids that are not main instances or are
@@ -633,10 +767,6 @@
 ;; something that resembles the capability (frames named `Card=Size=Compact`).
 ;; So the eligibility rules are checked here first, mirroring the event's own
 ;; filter, and rejected with a message that names the corrective action.
-
-(defn- shape-label
-  [shape]
-  (dm/str "\"" (:name shape) "\" (" (dm/str (:id shape)) ")"))
 
 (defn- labels
   [shapes]
@@ -986,6 +1116,7 @@
     "nest_shape"         (nest-shape input)
     "create_text"        (create-text input)
     "create_component"   (create-component input)
+    "set_layout"         (set-layout input)
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)
     "set_variant_property" (set-variant-property input)

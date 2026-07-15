@@ -380,6 +380,87 @@
   (t/is (some? (at/add-variant-problem {} nil))))
 
 ;; ---------------------------------------------------------------------------
+;; layout-changes — public param names -> internal :layout-* keys
+;;
+;; The mapping is the substance of the tool. Derived from
+;; common/types/shape/layout.cljc, NOT from the plugin's flex.cljs, which does
+;; its own aliasing.
+;; ---------------------------------------------------------------------------
+
+(t/deftest dir-maps-to-layout-flex-dir
+  (t/is (= :column (:layout-flex-dir (at/layout-changes {:dir "column"})))))
+
+(t/deftest gaps-map-into-one-layout-gap-map
+  (let [out (at/layout-changes {:rowGap 8 :columnGap 16})]
+    (t/is (= {:row-gap 8 :column-gap 16} (:layout-gap out)))))
+
+(t/deftest one-gap-alone-still-nests
+  (t/is (= {:column-gap 16} (:layout-gap (at/layout-changes {:columnGap 16})))))
+
+(t/deftest padding-maps-to-p1-p4-clockwise-from-top
+  (let [out (at/layout-changes {:padding {:top 1 :right 2 :bottom 3 :left 4}})]
+    (t/is (= {:p1 1 :p2 2 :p3 3 :p4 4} (:layout-padding out)))))
+
+(t/deftest a-partial-padding-only-sets-what-was-given
+  (t/is (= {:p1 10} (:layout-padding (at/layout-changes {:padding {:top 10}})))))
+
+(t/deftest alignment-maps-to-keywords
+  (let [out (at/layout-changes {:alignItems "center" :justifyContent "space-between"})]
+    (t/is (= :center (:layout-align-items out)))
+    (t/is (= :space-between (:layout-justify-content out)))))
+
+(t/deftest wrap-maps-to-a-type-not-a-boolean
+  ;; :layout-wrap-type is :wrap/:nowrap — a raw boolean would fail the schema
+  (t/is (= :wrap (:layout-wrap-type (at/layout-changes {:wrap true}))))
+  (t/is (= :nowrap (:layout-wrap-type (at/layout-changes {:wrap false})))))
+
+(t/deftest absent-params-produce-no-keys
+  ;; update-layout patches whatever it is given; a stray nil would clobber.
+  (t/is (= {} (at/layout-changes {}))))
+
+;; ---------------------------------------------------------------------------
+;; layout-problem
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-board-can-take-a-layout
+  (t/is (nil? (at/layout-problem (objects (plain-frame id-a "Hero")) id-a {:dir "row"}))))
+
+(t/deftest a-rect-cannot-take-a-layout
+  (let [objs    (objects {:id id-a :name "Box" :type :rect})
+        problem (at/layout-problem objs id-a {:dir "row"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "board"))))
+
+(t/deftest an-unknown-layout-shape-is-rejected
+  (t/is (some? (at/layout-problem {} id-missing {:dir "row"}))))
+
+(t/deftest a-css-flavoured-dir-is-rejected-with-the-real-options
+  ;; The agent's instinct is CSS: "horizontal", "flex-start". Listing the valid
+  ;; values turns a wrong guess into a correct retry.
+  (let [problem (at/layout-problem (objects (plain-frame id-a "Hero")) id-a {:dir "horizontal"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "row"))))
+
+(t/deftest a-css-flavoured-align-is-rejected
+  (let [problem (at/layout-problem (objects (plain-frame id-a "Hero")) id-a
+                                   {:alignItems "flex-start"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "start"))))
+
+(t/deftest removing-a-layout-that-is-not-there-is-rejected
+  (let [problem (at/layout-problem (objects (plain-frame id-a "Hero")) id-a {:remove true})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "no layout"))))
+
+(t/deftest removing-an-existing-layout-is-allowed
+  (let [objs (objects (assoc (plain-frame id-a "Hero") :layout :flex))]
+    (t/is (nil? (at/layout-problem objs id-a {:remove true})))))
+
+(t/deftest a-call-with-nothing-to-change-is-rejected
+  (let [problem (at/layout-problem (objects (plain-frame id-a "Hero")) id-a {})]
+    (t/is (some? problem))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

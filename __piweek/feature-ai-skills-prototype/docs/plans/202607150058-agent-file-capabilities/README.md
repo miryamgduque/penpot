@@ -80,7 +80,7 @@ and get fleshed out at their Before Start rather than guessed at now.
 3. [Phase 03 — Name the axes](./done-phase-03-name-the-axes.md) — `set_variant_property` renames the placeholder axis `Property 1` to `Size` (values already come from the component names — see Phase 01 notes)
 3b. [Phase 03b — Call it something](./done-phase-03b-call-it-something.md) — naming IS the matrix: a shared path prefix names the set, each further segment adds an axis (added during execution; its premise was refuted — see the file)
 4. [Phase 04 — Grow the set](./done-phase-04-grow-the-set.md) — `add_variant` adds a member to an existing set
-5. [Phase 05 — Does the skill drive it?](./todo-phase-05-does-the-skill-drive-it.md) — verify `penpot-component-factory` reaches the new tools; patch only if it doesn't
+5. [Phase 05 — Does the skill drive it?](./done-phase-05-does-the-skill-drive-it.md) — **verified: it does.** haiku-4-5 self-corrected off a rejection message and built a real 4-member set. No patch needed
 
 ### Wave 2 — Layout (the biggest gap)
 

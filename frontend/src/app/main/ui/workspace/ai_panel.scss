@@ -504,27 +504,61 @@
 }
 
 // The input and its send/stop control share a row; the picker sits above.
+// Anchors the send/stop button over the textarea's bottom-right corner.
 .composer-row {
-  display: flex;
-  align-items: flex-end;
-  gap: deprecated.$s-8;
+  position: relative;
 }
 
-.composer-action {
-  flex: none;
+.composer-send,
+.composer-stop {
+  position: absolute;
+  inset-block-end: deprecated.$s-8;
+  inset-inline-end: deprecated.$s-8;
+  display: grid;
+  place-content: center;
+  width: deprecated.$s-28;
+  height: deprecated.$s-28;
+  border: none;
+  border-radius: deprecated.$br-8;
+  cursor: pointer;
+}
+
+// Send: the icon in the accent colour over a clear background.
+.composer-send {
+  background-color: transparent;
+  color: var(--color-accent-primary);
+
+  &:disabled {
+    color: var(--color-foreground-secondary);
+    cursor: default;
+    opacity: 0.5;
+  }
+}
+
+// Stop: a gray icon over a gray background.
+.composer-stop {
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
 }
 
 .composer-input {
   @include deprecated.body-small-typography;
 
-  flex: 1;
-  min-width: 0;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
   min-height: deprecated.$s-52;
   // Auto-grows with content (JS sets the height) up to here, then scrolls.
   max-height: 200px;
   overflow-y: auto;
   resize: none;
   padding: deprecated.$s-8;
+  // Reserve the bottom-right corner so text never runs under the send/stop button.
+  padding-inline-end: deprecated.$s-44;
   border-radius: deprecated.$br-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);

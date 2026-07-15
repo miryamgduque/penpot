@@ -375,6 +375,8 @@
           [:a {:class (stl/css :model-picker-manage)
                :href "#/settings/integrations"}
            "Manage your models"]])]
+      ;; The send/stop control lives inside the textarea (bottom-right); the
+      ;; input reserves room on that side so text never runs under it.
       [:div {:class (stl/css :composer-row)}
        ;; deliberately NOT disabled while busy: only *sending* needs gating,
        ;; and being unable to even type through a long turn is the harshest
@@ -386,19 +388,17 @@
                    :on-change on-input
                    :on-key-down on-key-down}]
        (if busy?
-         ;; the DS has no stop glyph — `close` is the closest; a filled square
-         ;; would need a new DS icon, which is its own change
-         [:> icon-button* {:class (stl/css :composer-action)
-                           :variant "destructive"
-                           :aria-label "Stop generating"
-                           :on-click on-cancel
-                           :icon i/close}]
-         [:> icon-button* {:class (stl/css :composer-action)
-                           :variant "primary"
-                           :aria-label "Send message"
-                           :disabled (or (not settings) (empty? (str/trim input)))
-                           :on-click send
-                           :icon i/arrow-up}])]]]))
+         [:button {:type "button"
+                   :class (stl/css :composer-stop)
+                   :aria-label "Stop generating"
+                   :on-click on-cancel}
+          [:> i/icon* {:icon-id i/close}]]
+         [:button {:type "button"
+                   :class (stl/css :composer-send)
+                   :aria-label "Send message"
+                   :disabled (or (not settings) (empty? (str/trim input)))
+                   :on-click send}
+          [:> i/icon* {:icon-id i/forward}]])]]]))
 
 (mf/defc mode-badge*
   "The colored mode pill shared by the catalog cards and the detail view."

@@ -979,6 +979,63 @@
   (t/is (not (at/shape-matches? (plain-frame id-a "Hero") {}))))
 
 ;; ---------------------------------------------------------------------------
+;; shadow->shape / style-attrs — Phase 14's widening of modify_shape
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-shadow-maps-to-penpots-shape
+  (let [s (at/shadow->shape {:offsetX 0 :offsetY 4 :blur 8 :spread 0 :color "#000000" :opacity 0.25})]
+    (t/is (= 0 (:offset-x s)))
+    (t/is (= 4 (:offset-y s)))
+    (t/is (= 8 (:blur s)))
+    (t/is (= :drop-shadow (:style s)))
+    (t/is (false? (:hidden s)))))
+
+(t/deftest a-shadows-colour-is-a-map-not-a-string
+  ;; schema:color is a map — a bare hex string would fail the schema.
+  (let [s (at/shadow->shape {:offsetY 4 :blur 8 :color "#112233" :opacity 0.5})]
+    (t/is (= "#112233" (:color (:color s))))
+    (t/is (= 0.5 (:opacity (:color s))))))
+
+(t/deftest an-inner-shadow-is-selectable
+  (t/is (= :inner-shadow (:style (at/shadow->shape {:style "inner-shadow" :blur 4})))))
+
+(t/deftest shadow-defaults-are-sane
+  (let [s (at/shadow->shape {})]
+    (t/is (= 0 (:offset-x s)))
+    (t/is (= 0 (:spread s)))
+    (t/is (some? (:id s)))))
+
+(t/deftest radius-maps-to-r1-through-r4
+  (let [out (at/style-attrs {:radius 12})]
+    (t/is (= 12 (:r1 out)))
+    (t/is (= 12 (:r4 out)))))
+
+(t/deftest opacity-zero-is-kept
+  ;; 0 is a legitimate opacity — the same trap as `absolute false` and "0" spacing.
+  (t/is (= {:opacity 0} (at/style-attrs {:opacity 0}))))
+
+(t/deftest absent-style-params-produce-no-keys
+  (t/is (= {} (at/style-attrs {}))))
+
+;; --- the guard: this is the phase, not an afterthought
+
+(t/deftest shadow-colours-are-collected-for-the-guard
+  ;; token-only-colors watches fills and strokes. A shadow carries a colour too —
+  ;; widening modify_shape without widening the guard opens a second, unwatched
+  ;; path for raw hex, and it would be the MOST used one.
+  (t/is (= ["#ff0000"] (at/input-colors {:shadow {:color "#ff0000"}}))))
+
+(t/deftest fill-and-stroke-are-still-collected
+  (t/is (= #{"#111111" "#222222"} (set (at/input-colors {:fill "#111111" :stroke "#222222"})))))
+
+(t/deftest every-colour-in-one-call-is-collected
+  (let [out (set (at/input-colors {:fill "#111111" :stroke "#222222" :shadow {:color "#333333"}}))]
+    (t/is (= #{"#111111" "#222222" "#333333"} out))))
+
+(t/deftest a-call-with-no-colours-collects-none
+  (t/is (empty? (at/input-colors {:radius 8 :opacity 0.5}))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

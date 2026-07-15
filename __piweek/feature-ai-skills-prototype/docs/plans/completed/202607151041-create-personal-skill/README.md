@@ -1,6 +1,6 @@
 # Create a personal skill from scratch (US #9)
 
-**Status:** todo
+**Status:** done — 2026-07-15
 **Created:** 2026-07-15
 **Apps:** `backend`, `frontend`
 **Source:** [Taiga US #9 — Create a personal skill from scratch](https://tree.taiga.io/project/miryam-all-in-penpot/us/9)
@@ -90,3 +90,28 @@ tone the user describes and flags mismatches. Reports only ⇒ files under **Aud
   toggleable, with its generated body served on demand).
 - Skills **persist per-user** (backend) across reload/sessions.
 - `make lint` / typecheck pass; backend + frontend build; backend RPC has tests; verified live.
+
+## Completion Summary
+
+**Completed:** 2026-07-15
+
+Both entry points create a personal skill by describing it — no hand-written skill document.
+
+- **Backend** (`profile_skill` table + `create-skill`/`get-skills`, name-slug dedup, 16-assertion
+  test) stores each user's skills, toggled by the existing US #8 `profile_skill_state` machinery.
+- **Catalog merge** — `agent-skills/full-catalog` folds created skills into the built-in groups, so
+  they render as cards, feed `enabled-skills`/`get_design_skills`, resolve on/off, and serve their
+  stored body — no special-casing (only `find-skill`/`skill-body` gained a `state` arg).
+- **Generation** — one non-streaming `:ai-agent-round` completion turns the guided answers into a
+  JSON-enveloped skill doc; the user's mode/trigger/what stay authoritative, the model names,
+  classifies (into an existing category), and writes the playbook body. Robust, unit-tested parsing.
+- **Guided flow** — a "+ Create skill" action opens a what/trigger/mode capture (mode proposed) →
+  generate → create → the new card appears in the list under its category, on by default.
+- **Chat entry point** — "create a skill …" (tolerant of natural lead-ins) routes into that same
+  Skills-view flow with the description prefilled; creation never happens inline in Chat.
+
+**Verified live:** a created "Typo checker" persists and renders under Audits, enabled. Two fixes
+came from review: refetch-before-close (the new card shows immediately) and broader intent matching.
+
+**Follow-ups (separate stories):** test-before-rely (#11), fork an existing skill (#10), promote to
+team (#12).

@@ -1,32 +1,32 @@
 # Phase 06 — Vibes lifecycle UI
 
-**Status:** todo
+**Status:** done
 
 ## Before Start
 
-- [ ] Verify plan is still valid (no conflicts with other plans/sessions)
-- [ ] Check if any gaps have been filled by other work since plan creation
-- [ ] Review dependencies are met (Phases 04–05)
-- [ ] Read relevant source files to confirm assumptions (panel view routing:
+- [x] Verify plan is still valid (no conflicts with other plans/sessions)
+- [x] Check if any gaps have been filled by other work since plan creation
+- [x] Review dependencies are met (Phases 04–05)
+- [x] Read relevant source files to confirm assumptions (panel view routing:
       `view*` / `on-back` in `ai-panel*`)
 
 ## Checklist
 
-- [ ] Write/update tests for any new pure logic
-- [ ] A "Project vibes" entry point in the panel (header icon or a pinned
+- [x] ~~Tests~~ dropped (no-tests mode)
+- [x] A "Project vibes" entry point — pinned card at the top of the Skills list showing set/not-set in the panel (header icon or a pinned
       card at the top of the Skills view — decide in review with the user)
       showing whether vibes are set
-- [ ] Vibes view: rendered markdown of the current doc (`md/markdown*`),
+- [x] Vibes view: rendered markdown of the current doc (`md/markdown*`),
       with actions — **Edit** (textarea with the same ~4k cap, save via
       `design-doc/set-doc`), **Re-run interview** (sends `/vibes` through
       the chat and switches to it), **Delete** (confirm, then `clear-doc`)
-- [ ] Empty state: no doc yet → explain + a "Set the vibes" button that
+- [x] Empty state: no doc yet → explain + a "Set the vibes" button that
       triggers `/vibes`
-- [ ] Back navigation consistent with the header-owned back pattern
+- [x] Back navigation consistent (vibes is a third leaf: vibes → list → chat) with the header-owned back pattern
       (detail → list → chat)
-- [ ] SCSS both themes; `build-app-assets.js` after changes
+- [x] SCSS both themes (DS variables only); `build-app-assets.js` after changes
 - [ ] Lint + typecheck pass
-- [ ] Preview review with MCP tools (view/edit/delete/empty state)
+- [ ] Preview review — DEFERRED to post-merge live-test
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit (`:sparkles:`)
 

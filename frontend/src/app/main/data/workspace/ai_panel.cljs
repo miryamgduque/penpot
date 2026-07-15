@@ -564,6 +564,21 @@
         (update-in state [:ai-panel file-id] dissoc :pending-fix)
         state))))
 
+(defn seed-composer
+  "Prefills the chat composer with `text` (nil clears the seed) — how the
+  vibes view's \"set the vibes\" / \"re-run interview\" buttons hand the chat
+  a ready-to-send trigger. The user still sends it themselves; nothing fires
+  behind their back."
+  [text]
+  (ptk/reify ::seed-composer
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (if (some? text)
+          (assoc-in state [:ai-panel file-id :composer-seed] text)
+          (update-in state [:ai-panel file-id] dissoc :composer-seed))
+        state))))
+
 (defn cancel-turn
   "Stops the running turn. `send-message` watches the event stream for this."
   []

@@ -1,6 +1,6 @@
 # Slash commands + Project vibes interview
 
-**Status:** todo
+**Status:** doing
 **Created:** 2026-07-15
 **Apps:** `frontend`
 **Dependencies:** None (builds on the shipped agent panel + skills catalog)
@@ -36,6 +36,18 @@ Decisions from the discovery interview (2026-07-15):
 - **Scope:** no demo pressure — build the full lifecycle (create, view,
   edit, re-run, delete) properly.
 
+### Revised execution mode (user direction, 2026-07-15)
+
+Executed in worktree `feature/vibes-slash-commands` (branched from
+`feature/ai-skills-prototype`) while other sessions work the main checkout.
+**No unit tests** — test checklist items are dropped. Each phase still gets a
+container compile check (`shadow-cljs compile main` pointed at the worktree)
+and a per-phase commit **without** a human-approval pause. When all phases
+are done: stop, confirm with the user that no other session is mid-flight,
+merge into `feature/ai-skills-prototype`, then live-verify everything in the
+devenv (the deferred "test it" step — includes the Phase 05 end-to-end run
+and the preview reviews skipped per phase).
+
 ### Key architecture facts (from codebase exploration)
 
 - Composer: [`chat-tab*`](../../../../../frontend/src/app/main/ui/workspace/ai_panel.cljs)
@@ -62,7 +74,7 @@ Decisions from the discovery interview (2026-07-15):
 
 ## Phases
 
-1. [Phase 01 — Slash-command menu](./todo-phase-01-slash-menu.md) — `/` autocomplete in the composer: enabled skills + command registry.
+1. [Phase 01 — Slash-command menu](./done-phase-01-slash-menu.md) — `/` autocomplete in the composer: enabled skills + command registry.
 2. [Phase 02 — ask_user tool plumbing](./todo-phase-02-ask-user-tool.md) — the elicitation tool: schema, pending-form state, submit/cancel resolution.
 3. [Phase 03 — Elicitation form UI](./todo-phase-03-elicitation-form-ui.md) — the in-transcript form: chips, multi-select, "Other…", "Decide for me", free text.
 4. [Phase 04 — Vibes doc storage + prompt inlining](./todo-phase-04-vibes-storage.md) — design-doc ns over plugin-data, `set_design_doc` tool, system-prompt section.

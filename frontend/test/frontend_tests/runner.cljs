@@ -9,6 +9,7 @@
    [frontend-tests.composable-tests.comp.sync-test]
    [frontend-tests.copy-as-svg-test]
    [frontend-tests.data.agent-test]
+   [frontend-tests.data.agent-tools-test]
    [frontend-tests.data.ai-providers-test]
    [frontend-tests.data.nitrate-test]
    [frontend-tests.data.repo-test]
@@ -88,6 +89,7 @@
    'frontend-tests.composable-tests.comp.sync-test
    'frontend-tests.copy-as-svg-test
    'frontend-tests.data.agent-test
+   'frontend-tests.data.agent-tools-test
    'frontend-tests.data.ai-providers-test
    'frontend-tests.data.nitrate-test
    'frontend-tests.data.repo-test

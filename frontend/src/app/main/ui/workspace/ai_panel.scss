@@ -560,7 +560,8 @@
   display: block;
   box-sizing: border-box;
   width: 100%;
-  min-height: deprecated.$s-52;
+  // Starts as a single line; the JS auto-grow takes it from here up to the cap.
+  min-height: deprecated.$s-40;
   // Auto-grows with content (JS sets the height) up to here, then scrolls.
   max-height: 200px;
   overflow-y: auto;

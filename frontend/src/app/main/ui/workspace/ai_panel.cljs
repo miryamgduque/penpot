@@ -351,6 +351,10 @@
        ;; part of the current experience
        [:textarea {:class (stl/css :composer-input)
                    :ref input-ref
+                   ;; one row so the auto-grow's "reset to auto" baseline (which
+                   ;; scrollHeight is measured against) is a single line, not the
+                   ;; browser default of two
+                   :rows 1
                    :placeholder "Ask the agent…"
                    :value input
                    :on-change on-input

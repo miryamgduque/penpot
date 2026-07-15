@@ -343,6 +343,43 @@
     (t/is (nil? (at/axis-pos (assoc axes pos "Mode") "State")))))
 
 ;; ---------------------------------------------------------------------------
+;; add-variant-problem
+;;
+;; `add-new-variant` takes EITHER a member or the container (variants.cljs:360
+;; resolves a container to `(last (:shapes …))`, its primary) — so both are
+;; accepted here. The plan expected the container to be an error; it isn't.
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-member-can-be-grown-from
+  (let [objs (objects (variant-member id-a "Card" vid))]
+    (t/is (nil? (at/add-variant-problem objs id-a)))))
+
+(t/deftest the-container-can-be-grown-from
+  (let [objs (objects (container vid "Card" [id-a id-b]))]
+    (t/is (nil? (at/add-variant-problem objs vid)))))
+
+(t/deftest a-plain-frame-cannot-be-grown-from
+  (let [objs    (objects (plain-frame id-a "Hero"))
+        problem (at/add-variant-problem objs id-a)]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "create_variant"))))
+
+(t/deftest a-lone-main-component-cannot-be-grown-from
+  ;; A main component that isn't in a set yet: the fix is create_variant with a
+  ;; second component, not add_variant.
+  (let [objs    (objects (main-instance id-a "Card"))
+        problem (at/add-variant-problem objs id-a)]
+    (t/is (str/includes? problem "create_variant"))))
+
+(t/deftest an-unknown-id-is-rejected
+  (let [problem (at/add-variant-problem (objects (variant-member id-a "Card" vid)) id-missing)]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "page"))))
+
+(t/deftest a-missing-id-is-rejected
+  (t/is (some? (at/add-variant-problem {} nil))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

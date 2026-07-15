@@ -329,6 +329,19 @@
                  (dm/get-in state [:ai-panel file-id :pending-form])))
              st/state))
 
+(def ai-panel-composer-seed
+  "Text waiting to prefill the chat composer (set by the vibes view), or nil.
+  The composer consumes and clears it."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :composer-seed])))
+             st/state))
+
+;; NOTE: the design-doc (project vibes) reactive ref lives in
+;; app.main.data.workspace.design-doc/doc-ref — that ns reaches the changes
+;; pipeline, and requiring it from here closes a circular dependency through
+;; app.main.data.event.
+
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
 

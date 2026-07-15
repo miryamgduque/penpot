@@ -21,7 +21,9 @@
   future turn in the file."
   (:require
    [app.main.data.plugins :as dp]
-   [cuerdas.core :as str]))
+   [app.main.store :as st]
+   [cuerdas.core :as str]
+   [okulary.core :as l]))
 
 (def ^:private data-ns :penpot-vibes)
 (def ^:private data-key "design-md")
@@ -62,6 +64,14 @@
   "The event removing the file's vibes doc (also undoable)."
   [file-id]
   (dp/set-plugin-data file-id :file data-ns data-key nil))
+
+;; The reactive view lives HERE, not in app.main.refs: this ns reaches the
+;; changes pipeline for its writes (plugins → changes → data.event), and
+;; data.event requires refs — refs requiring us would close that loop into
+;; a circular dependency. UI derefs `doc-ref` directly instead.
+(def doc-ref
+  "Reactive view of the current file's vibes doc (nil when unset)."
+  (l/derived get-doc st/state))
 
 (defn system-prompt-section
   "The always-on prompt section carrying the vibes doc, or nil when the file

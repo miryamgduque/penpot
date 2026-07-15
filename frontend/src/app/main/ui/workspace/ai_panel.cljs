@@ -24,6 +24,7 @@
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
+   [app.main.data.workspace.design-doc :as dd]
    [app.main.data.workspace.elicitation :as el]
    [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.skill-state :as skst]
@@ -515,6 +516,7 @@
         busy?     (mf/deref refs/ai-panel-busy?)
         usage     (mf/deref refs/ai-panel-usage)
         pending-form (mf/deref refs/ai-panel-pending-form)
+        composer-seed (mf/deref refs/ai-panel-composer-seed)
 
         pool      (mf/with-memo [providers] (provider-pool providers))
 
@@ -743,6 +745,14 @@
           (let [borders (- (.-offsetHeight node) (.-clientHeight node))
                 height  (min 200 (+ (.-scrollHeight node) borders))]
             (set! (.-height style) (dm/str height "px"))))))
+
+    ;; consume a composer seed left by the vibes view: prefill, clear, focus.
+    ;; Prefill-not-send on purpose — the user presses Enter themselves.
+    (mf/with-effect [composer-seed]
+      (when (seq composer-seed)
+        (reset! input* composer-seed)
+        (st/emit! (dwaip/seed-composer nil))
+        (some-> (mf/ref-val input-ref) dom/focus!)))
 
     ;; keep the keyboard-highlighted slash option in view as the arrows move
     ;; it (an effect, not part of the key handler: the DOM only has the new
@@ -1026,6 +1036,99 @@
      [:div {:class (stl/css :catalog-desc)}
       [:span {:class (stl/css :catalog-blurb)} blurb]]]))
 
+(mf/defc vibes-view*
+  "The project vibes document: rendered markdown with Edit / Re-run interview /
+  Delete, an editor with the same size cap the tool enforces, and an empty
+  state that starts the interview. Deleting is a two-click inline confirm —
+  and it goes through the changes pipeline, so it is undoable like any edit.
+  `on-interview` seeds the chat composer with the vibes trigger and switches
+  to the chat view."
+  {::mf/private true}
+  [{:keys [on-interview]}]
+  (let [doc       (mf/deref dd/doc-ref)
+        editing?* (mf/use-state false)
+        editing?  (deref editing?*)
+        draft*    (mf/use-state "")
+        draft     (deref draft*)
+        confirm?* (mf/use-state false)
+        confirm?  (deref confirm?*)
+
+        problem   (when editing? (dd/doc-problem draft))
+
+        on-edit   (mf/use-fn
+                   (mf/deps doc)
+                   (fn []
+                     (reset! draft* (or doc ""))
+                     (reset! confirm?* false)
+                     (reset! editing?* true)))
+        on-draft  (mf/use-fn
+                   #(reset! draft* (dom/get-value (dom/get-target %))))
+        on-cancel (mf/use-fn #(reset! editing?* false))
+        on-save   (mf/use-fn
+                   (mf/deps draft problem)
+                   (fn []
+                     (when-not problem
+                       (when-let [file-id (:current-file-id @st/state)]
+                         (st/emit! (dd/set-doc file-id (str/trim draft)))
+                         (reset! editing?* false)))))
+        on-delete (mf/use-fn
+                   (mf/deps confirm?)
+                   (fn []
+                     (if confirm?
+                       (do (when-let [file-id (:current-file-id @st/state)]
+                             (st/emit! (dd/clear-doc file-id)))
+                           (reset! confirm?* false))
+                       (reset! confirm?* true))))]
+
+    (cond
+      editing?
+      [:div {:class (stl/css :vibes-view)}
+       [:textarea {:class (stl/css :vibes-editor)
+                   :value draft
+                   :rows 18
+                   :on-change on-draft}]
+       [:div {:class (stl/css-case :vibes-counter true
+                                   :vibes-counter-over (some? problem))}
+        (dm/str (count draft) " / " dd/max-doc-chars)]
+       (when problem
+         [:p {:class (stl/css :vibes-problem)} problem])
+       [:div {:class (stl/css :vibes-actions)}
+        [:button {:type "button"
+                  :class (stl/css :vibes-button-primary)
+                  :disabled (some? problem)
+                  :on-click on-save}
+         "Save"]
+        [:button {:type "button"
+                  :class (stl/css :vibes-button)
+                  :on-click on-cancel}
+         "Cancel"]]]
+
+      (some? doc)
+      [:div {:class (stl/css :vibes-view)}
+       [:div {:class (stl/css :vibes-doc :message-md)}
+        [:> md/markdown* {:text doc}]]
+       [:div {:class (stl/css :vibes-actions)}
+        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
+         "Edit"]
+        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
+         "Re-run interview"]
+        [:button {:type "button"
+                  :class (stl/css-case :vibes-button true
+                                       :vibes-button-danger true
+                                       :vibes-button-confirm confirm?)
+                  :on-click on-delete}
+         (if confirm? "Really delete? (undoable)" "Delete")]]]
+
+      :else
+      [:div {:class (stl/css :vibes-empty)}
+       [:div {:class (stl/css :vibes-empty-title)} "No vibes set yet"]
+       [:p {:class (stl/css :vibes-empty-text)}
+        "A short interview pins down this project's design direction — vibe, audience, platform, do/don't — as a design.md on this file. The agent then designs against it, and collaborators share it."]
+       [:button {:type "button"
+                 :class (stl/css :vibes-button-primary)
+                 :on-click on-interview}
+        "Set the vibes"]])))
+
 (mf/defc skills-tab*
   "The built-in skills catalog: rows grouped by category. Each row opens its
   detail view on click and carries a discreet ⋯ menu (Enable/Disable + Fork /
@@ -1037,8 +1140,9 @@
   `on-select` opens one, `on-create` opens the creation flow (US #9). Back
   navigation lives in the panel header (US #35)."
   {::mf/private true}
-  [{:keys [selected on-select on-create]}]
-  (let [catalog     (mf/deref refs/skills-catalog)
+  [{:keys [selected on-select on-create on-open-vibes]}]
+  (let [vibes-set?  (some? (mf/deref dd/doc-ref))
+        catalog     (mf/deref refs/skills-catalog)
         skill       (when selected
                       (some (fn [{:keys [category skills]}]
                               (some #(when (= selected (:name %)) (assoc % :category category)) skills))
@@ -1060,6 +1164,16 @@
                            :enabled enabled?
                            :on-toggle #(toggle (:name skill) %)}])
       [:div {:class (stl/css :skills-tab)}
+       ;; Project vibes: pinned above the catalog — it is file-level state,
+       ;; not a toggleable skill, so it gets a place rather than a row.
+       [:button {:type "button"
+                 :class (stl/css :vibes-card)
+                 :on-click on-open-vibes}
+        [:span {:class (stl/css :vibes-card-title)} "✦ Project vibes"]
+        [:span {:class (stl/css :vibes-card-status)}
+         (if vibes-set?
+           "Set — view or edit the design.md"
+           "Not set — run the kickoff interview")]]
        [:div {:class (stl/css :skills-toolbar)}
         [:div {:class (stl/css :skills-filter)}
          (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
@@ -1205,13 +1319,26 @@
         skill       (deref skill*)
         creating*   (mf/use-state false)
         creating?   (deref creating*)
+        ;; the Project vibes view within Skills (a third leaf next to
+        ;; detail/create — the header back pops it to the list)
+        vibes?*     (mf/use-state false)
+        vibes?      (deref vibes?*)
         ;; description carried over when creation is started from Chat (US #9).
         seed*       (mf/use-state nil)
 
-        open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! view* :skills)))
+        open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! vibes?* false) (reset! view* :skills)))
         on-select   (mf/use-fn #(reset! skill* %))
         open-create (mf/use-fn (fn [] (reset! seed* nil) (reset! creating* true)))
         on-created  (mf/use-fn #(reset! creating* false))
+        open-vibes  (mf/use-fn #(reset! vibes?* true))
+        ;; "Set the vibes" / "Re-run interview": hand the chat a ready-to-send
+        ;; trigger and land there — the user presses Enter themselves.
+        on-vibes-interview
+        (mf/use-fn
+         (fn []
+           (st/emit! (dwaip/seed-composer "Set the design vibes for this project."))
+           (reset! vibes?* false)
+           (reset! view* :chat)))
         ;; Chat "create a skill …" → take the user to the Skills create flow with
         ;; the described "what" prefilled.
         on-create-skill (mf/use-fn
@@ -1224,10 +1351,11 @@
         ;; `skill`/`creating?` (in deps) — reading the atoms from a no-deps
         ;; callback captures their initial nil/false and jumps straight to chat.
         on-back     (mf/use-fn
-                     (mf/deps skill creating?)
+                     (mf/deps skill creating? vibes?)
                      (fn []
                        (cond
                          creating?     (reset! creating* false) ;; create → list
+                         vibes?        (reset! vibes?* false)   ;; vibes → list
                          (some? skill) (reset! skill* nil)      ;; detail → list
                          :else         (reset! view* :chat))))  ;; list → chat
 
@@ -1257,7 +1385,7 @@
                            :on-click on-back
                            :icon i/arrow-left}]
          [:span {:class (stl/css :title)}
-          (cond creating? "New skill" skill "Skill info" :else "Skills")]]
+          (cond creating? "New skill" vibes? "Project vibes" skill "Skill info" :else "Skills")]]
         [:span {:class (stl/css :title)} "Agent"])
       (when-not skills?
         [:div {:class (stl/css :header-actions)}
@@ -1269,8 +1397,12 @@
      [:div {:class (stl/css :body)}
       (cond
         ;; Skills is a static catalog — reachable even before a provider is set up.
-        skills?       (if creating?
-                        [:> skill-create* {:settings settings :seed (deref seed*) :on-created on-created}]
-                        [:> skills-tab* {:selected skill :on-select on-select :on-create open-create}])
+        skills?       (cond
+                        creating? [:> skill-create* {:settings settings :seed (deref seed*) :on-created on-created}]
+                        vibes?    [:> vibes-view* {:on-interview on-vibes-interview}]
+                        :else     [:> skills-tab* {:selected skill
+                                                   :on-select on-select
+                                                   :on-create open-create
+                                                   :on-open-vibes open-vibes}])
         (empty? pool) [:> connect-empty*]
         :else         [:> chat-tab* {:on-create-skill on-create-skill}])]]))

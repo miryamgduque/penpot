@@ -74,6 +74,14 @@ user already sent; guessing `false` only greys out a button on a model that migh
 
 ## Findings — the catalog, verified 2026-07-15
 
+> **⚠️ Superseded the same day.** The table below is what this phase *found*; finding it is what
+> triggered the catalog refresh (separate commit, same day). Two of its conclusions no longer
+> describe the shipped catalog: **"half the catalog is text-only" is now 2 of 14** (only Zhipu's
+> `glm-5.2` and `glm-4.7`), because Moonshot's current models turned out to be natively
+> multimodal and Zhipu gained `glm-5v-turbo`. The *mechanism* this phase built is unaffected —
+> and arguably better exercised now, since within Zhipu one model sees and another does not.
+> Read `data/ai-providers` for the live catalog; read this for why it got looked at.
+
 Verified against provider documentation. The Anthropic Models API
 (`capabilities.image_input.supported`) is the authoritative source for Claude, but this machine
 has no API key and no `ant` CLI, so the vision docs page was used instead.

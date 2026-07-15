@@ -22,45 +22,65 @@
 ;;
 ;; Hand-maintained: there is no cross-provider capability API, and the one
 ;; provider that does expose one (Anthropic's /v1/models) only covers its own
-;; models. Verified against provider documentation on 2026-07-15.
+;; models. Every id, context size, and `:vision` value below was verified
+;; against provider documentation on 2026-07-15. Nothing here is inferred.
 ;;
 ;; `:vision` is the load-bearing field and the easy one to get wrong, because
-;; the answer does not follow from the model's name or reputation:
+;; the answer does not follow from the model's name or reputation — and the
+;; rule differs per provider, so there is no single instinct that works:
 ;;
-;;   Anthropic, OpenAI — every current model reads images; there is no separate
-;;     vision SKU to pick.
-;;   Zhipu, Moonshot   — vision ships as SEPARATE model ids (`glm-4.5v`,
-;;     `moonshot-v1-128k-vision-preview`). Every base model below is text-only,
-;;     however capable the family sounds.
+;;   Anthropic, OpenAI — every current model reads images. No vision SKU to
+;;     hunt for; looking for one wastes time.
+;;   Moonshot          — the CURRENT models (Kimi K2.x) are natively
+;;     multimodal. The base/`-vision-preview` split only ever applied to the
+;;     retired moonshot-v1 line.
+;;   Zhipu             — vision still ships as SEPARATE ids. `glm-5.2` is
+;;     text-only and there is no `glm-5.2v`; `glm-5v-turbo` is the vision model.
 ;;
 ;; Getting one wrong is not a local mistake: the model is chosen per turn, so a
-;; false `:vision true` is a provider error in the user's face mid-conversation.
+;; false `:vision true` is a provider error in the user's face mid-conversation,
+;; and a false `:vision false` silently hides the attach button.
 ;; `frontend-tests.data.ai-providers-test` pins each of these down.
+;;
+;; This list will rot. Providers ship roughly quarterly and retire on ~6-month
+;; notice; three ids here were dead or dying when this pass ran. Re-verify
+;; before trusting it, and prefer deleting a row over leaving a stale one — the
+;; settings UI keeps enabled-but-uncatalogued models visible, so nobody is
+;; stranded by a removal.
 
 (def ai-provider-models
   {"anthropic"
-   ;; opus-4.8 and sonnet-5 are 1M-context models — the 200K these two carried
-   ;; until 2026-07-15 was a placeholder, not a measurement.
-   [{:id "claude-opus-4-8"            :label "Claude Opus 4.8"  :context 1000000 :vision true}
+   ;; every current Claude model reads images (per the models overview)
+   [{:id "claude-fable-5"             :label "Claude Fable 5"   :context 1000000 :vision true}
+    {:id "claude-opus-4-8"            :label "Claude Opus 4.8"  :context 1000000 :vision true}
     {:id "claude-sonnet-5"            :label "Claude Sonnet 5"  :context 1000000 :vision true}
     {:id "claude-haiku-4-5-20251001"  :label "Claude Haiku 4.5" :context 200000  :vision true}]
    "openai"
-   [{:id "gpt-5"      :label "GPT-5"      :context 400000  :vision true}
-    {:id "gpt-5-mini" :label "GPT-5 mini" :context 400000  :vision true}
-    {:id "gpt-4.1"    :label "GPT-4.1"    :context 1000000 :vision true}]
+   ;; the 5.6 tiers share one generation, context, and capability set — they
+   ;; differ only on the cost/speed ladder, so switching between them cannot
+   ;; surprise the user with a capability cliff. `gpt-5.6` is an ALIAS that
+   ;; routes to Sol; the explicit id is pinned, the alias is not.
+   [{:id "gpt-5.6-sol"   :label "GPT-5.6 Sol"   :context 1050000 :vision true}
+    {:id "gpt-5.6-terra" :label "GPT-5.6 Terra" :context 1050000 :vision true}
+    {:id "gpt-5.6-luna"  :label "GPT-5.6 Luna"  :context 1050000 :vision true}
+    ;; a generation behind, but cheaper than Luna's "cheap" tier
+    ;; ($0.75/$4.50 vs $1/$6) at the cost of context
+    {:id "gpt-5.4-mini"  :label "GPT-5.4 mini"  :context 400000  :vision true}]
    "zhipu"
-   ;; the vision line is GLM-4.5V / GLM-4.6V — not offered here
-   [{:id "glm-4.6"     :label "GLM-4.6"     :context 200000 :vision false}
-    {:id "glm-4.5"     :label "GLM-4.5"     :context 128000 :vision false}
-    {:id "glm-4.5-air" :label "GLM-4.5 Air" :context 128000 :vision false}]
+   ;; ⚠ `glm-5-turbo` (text) and `glm-5v-turbo` (vision) differ by one
+   ;; character. The `v` is the whole difference; do not "fix" a typo here.
+   [{:id "glm-5.2"      :label "GLM-5.2"      :context 1000000 :vision false}
+    {:id "glm-4.7"      :label "GLM-4.7"      :context 200000  :vision false}
+    {:id "glm-5v-turbo" :label "GLM-5V Turbo" :context 200000  :vision true}]
    "moonshot"
-   ;; the vision line is moonshot-v1-*-vision-preview — not offered here
-   ;; TODO: kimi-k2-0905-preview was discontinued 2026-05-25; it is kept listed
-   ;; only so anyone who already enabled it still sees a labelled row. Needs a
-   ;; product call on the replacement (kimi-k2.6), not a silent swap.
-   [{:id "kimi-k2-0905-preview" :label "Kimi K2"          :context 256000 :vision false}
-    {:id "moonshot-v1-128k"     :label "Moonshot v1 128K" :context 128000 :vision false}
-    {:id "moonshot-v1-32k"      :label "Moonshot v1 32K"  :context 32000  :vision false}]})
+   ;; K2.6 is the general-purpose flagship. There is no plain `kimi-k2.7` —
+   ;; K2.7 shipped only as coding variants, and Moonshot routes general work
+   ;; back to K2.6. Note the ids use a DOT (`kimi-k2.6`, not `kimi-k2-6`).
+   [{:id "kimi-k2.6"      :label "Kimi K2.6"      :context 262144 :vision true}
+    {:id "kimi-k2.5"      :label "Kimi K2.5"      :context 262144 :vision true}
+    ;; vision confirmed via the pricing page, kimi.com, and Cloudflare Workers
+    ;; AI; the model-list entry omits it, but is terse rather than contradictory
+    {:id "kimi-k2.7-code" :label "Kimi K2.7 Code" :context 262144 :vision true}]})
 
 (defn vision?
   "Whether `model` accepts image input.

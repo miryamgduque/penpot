@@ -5,41 +5,59 @@
 ;; Copyright (c) KALEIDOS INC Sucursal en España SL
 
 (ns frontend-tests.data.ai-providers-test
-  "Locks in the vision capability of the curated model catalog.
+  "Locks in the curated model catalog against provider reality.
 
-  These assertions are not testing our code so much as pinning down external
-  facts that were verified against provider documentation on 2026-07-15 — the
-  catalog is hand-maintained, and the failure mode of getting one wrong is a
-  provider error the user sees as a generic red bubble. The split is the whole
-  point: GLM and Moonshot ship vision as *separate* model IDs (`glm-4.5v`,
-  `moonshot-v1-*-vision-preview`), so the base models named here are text-only
-  no matter how capable the family sounds."
+  These assertions are not really testing our code — they pin down external
+  facts verified against provider documentation on 2026-07-15. The catalog is
+  hand-maintained, and the failure mode of getting a row wrong is a provider
+  error the user sees as a generic red bubble.
+
+  The point is that no single instinct gets vision right across providers:
+  Anthropic and OpenAI read images on every current model; Moonshot's current
+  models are natively multimodal (the base/`-vision-preview` split died with
+  the retired moonshot-v1 line); while Zhipu STILL ships vision as separate
+  ids — `glm-5.2` is text-only and there is no `glm-5.2v`."
   (:require
    [app.main.data.ai-providers :as dai]
    [cljs.test :as t :include-macros true]))
 
 (t/deftest anthropic-models-all-see
-  (t/is (true? (dai/vision? "anthropic" "claude-opus-4-8")))
-  (t/is (true? (dai/vision? "anthropic" "claude-sonnet-5")))
-  (t/is (true? (dai/vision? "anthropic" "claude-haiku-4-5-20251001"))))
+  (t/testing "every current Claude model takes image input"
+    (t/is (true? (dai/vision? "anthropic" "claude-fable-5")))
+    (t/is (true? (dai/vision? "anthropic" "claude-opus-4-8")))
+    (t/is (true? (dai/vision? "anthropic" "claude-sonnet-5")))
+    (t/is (true? (dai/vision? "anthropic" "claude-haiku-4-5-20251001")))))
 
 (t/deftest openai-models-all-see
   (t/testing "OpenAI has no separate vision SKU — every current model takes images"
-    (t/is (true? (dai/vision? "openai" "gpt-5")))
-    (t/is (true? (dai/vision? "openai" "gpt-5-mini")))
-    (t/is (true? (dai/vision? "openai" "gpt-4.1")))))
+    (t/is (true? (dai/vision? "openai" "gpt-5.6-sol")))
+    (t/is (true? (dai/vision? "openai" "gpt-5.6-terra")))
+    (t/is (true? (dai/vision? "openai" "gpt-5.6-luna")))
+    (t/is (true? (dai/vision? "openai" "gpt-5.4-mini")))))
 
-(t/deftest zhipu-models-are-text-only
-  (t/testing "the GLM vision line is glm-4.xV — these base models cannot see"
-    (t/is (false? (dai/vision? "zhipu" "glm-4.6")))
-    (t/is (false? (dai/vision? "zhipu" "glm-4.5")))
-    (t/is (false? (dai/vision? "zhipu" "glm-4.5-air")))))
+(t/deftest zhipu-splits-vision-into-separate-models
+  (t/testing "the base GLM models are text-only however capable they sound"
+    (t/is (false? (dai/vision? "zhipu" "glm-5.2")))
+    (t/is (false? (dai/vision? "zhipu" "glm-4.7"))))
+  (t/testing "glm-5v-turbo is the vision one — one character away from
+              glm-5-turbo, which is text-only and deliberately not offered"
+    (t/is (true? (dai/vision? "zhipu" "glm-5v-turbo")))
+    (t/is (false? (dai/vision? "zhipu" "glm-5-turbo")) "not in the catalog")))
 
-(t/deftest moonshot-models-are-text-only
-  (t/testing "only moonshot-v1-*-vision-preview accepts images"
-    (t/is (false? (dai/vision? "moonshot" "kimi-k2-0905-preview")))
-    (t/is (false? (dai/vision? "moonshot" "moonshot-v1-128k")))
-    (t/is (false? (dai/vision? "moonshot" "moonshot-v1-32k")))))
+(t/deftest moonshot-current-models-are-natively-multimodal
+  (t/testing "the base/-vision-preview split died with the moonshot-v1 line"
+    (t/is (true? (dai/vision? "moonshot" "kimi-k2.6")))
+    (t/is (true? (dai/vision? "moonshot" "kimi-k2.5")))
+    (t/is (true? (dai/vision? "moonshot" "kimi-k2.7-code")))))
+
+(t/deftest retired-models-are-not-offered
+  (t/testing "an id that fails at the provider must not be in the picker"
+    (doseq [[provider id reason]
+            [["moonshot" "kimi-k2-0905-preview" "discontinued 2026-05-25"]
+             ["openai" "gpt-5" "deprecated 2026-06-11, shutdown 2026-12-11"]
+             ["openai" "gpt-5-mini" "deprecated 2026-06-11, shutdown 2026-12-11"]]]
+      (t/is (not (contains? (set (map :id (get dai/ai-provider-models provider))) id))
+            (str id ": " reason)))))
 
 (t/deftest unknown-models-are-assumed-blind
   (t/testing "a user can enable a model that is not in the catalog; guessing
@@ -47,8 +65,15 @@
               guessing wrong toward `false` only greys out a button"
     (t/is (false? (dai/vision? "anthropic" "claude-some-future-model")))
     (t/is (false? (dai/vision? "openai" "gpt-6")))
-    (t/is (false? (dai/vision? "no-such-provider" "gpt-5")))
+    (t/is (false? (dai/vision? "no-such-provider" "gpt-5.6-sol")))
     (t/is (false? (dai/vision? nil nil)))))
+
+(t/deftest every-provider-offers-at-least-one-vision-model
+  (t/testing "image attachments are dead on a provider with no vision model —
+              if this fails, that provider's users silently lose the feature"
+    (doseq [[provider models] dai/ai-provider-models]
+      (t/is (some :vision models)
+            (str provider " offers no vision-capable model")))))
 
 (t/deftest catalog-entries-are-well-formed
   (t/testing "every row carries the keys both the settings UI and the agent read"
@@ -56,5 +81,12 @@
             model models]
       (t/is (string? (:id model)) (str provider " model id"))
       (t/is (string? (:label model)) (str provider " " (:id model) " label"))
+      (t/is (pos-int? (:context model)) (str provider " " (:id model) " context"))
       (t/is (boolean? (:vision model))
             (str provider " " (:id model) " must state vision explicitly")))))
+
+(t/deftest catalog-ids-are-unique-within-a-provider
+  (doseq [[provider models] dai/ai-provider-models]
+    (let [ids (map :id models)]
+      (t/is (= (count ids) (count (distinct ids)))
+            (str provider " has a duplicate model id")))))

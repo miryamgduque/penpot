@@ -126,10 +126,12 @@ or the viewport-only `capture-canvas-snapshot`. This plan therefore builds **`re
 3. [Phase 03 — Vision capability per model](./done-phase-03-vision-capability.md) — ✅ **done**:
    a `:vision` flag on the catalog (moved to `data/ai-providers` so the agent can read it too),
    plus `strip-images` so a mid-conversation switch to a text-only model degrades instead of
-   failing the whole history. **All 12 models verified against provider docs — half the catalog
-   is text-only** (all of Zhipu and Moonshot ship vision as separate model ids). Verification
-   also caught two wrong context values (opus-4.8/sonnet-5 are 1M, not 200K) and one
-   **discontinued** model still in the picker.
+   failing the whole history. Every model verified against provider docs — which also caught two
+   wrong context values (opus-4.8/sonnet-5 are 1M, not 200K) and **three dead or dying model
+   ids** still in the picker. That triggered a **catalog refresh** (same day, separate commit):
+   the lineup is now current, and **12 of 14 models see** — only Zhipu's `glm-5.2` and `glm-4.7`
+   are text-only, so degradation is now an in-provider distinction rather than a whole-provider
+   one.
 4. [Phase 04 — Attach images in the composer](./todo-phase-04-composer-attach.md) — pick, paste,
    drop; ≤5; thumbnails; remove. The first end-to-end proof that an image reaches the model.
 5. [Phase 05 — Fit the budget](./todo-phase-05-fit-the-budget.md) — downscale on attach, and

@@ -787,6 +787,65 @@
   color: var(--color-foreground-secondary);
 }
 
+// Reference-image attachments on a text question.
+.eform-attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: deprecated.$s-6;
+}
+
+.eform-thumb {
+  position: relative;
+}
+
+.eform-thumb-img {
+  inline-size: 48px;
+  block-size: 48px;
+  object-fit: cover;
+  border-radius: deprecated.$br-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.eform-thumb-remove {
+  position: absolute;
+  inset-block-start: calc(-1 * deprecated.$s-6);
+  inset-inline-end: calc(-1 * deprecated.$s-6);
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
+  border: none;
+  border-radius: 50%;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-primary);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.eform-attach-btn {
+  @include deprecated.body-small-typography;
+
+  display: inline-flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-foreground-secondary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
 // Project vibes: the pinned card in the Skills list…
 .vibes-card {
   display: flex;

@@ -80,7 +80,7 @@ and the preview reviews skipped per phase).
 4. [Phase 04 — Vibes doc storage + prompt inlining](./done-phase-04-vibes-storage.md) — design-doc ns over plugin-data, `set_design_doc` tool, system-prompt section.
 5. [Phase 05 — The vibes skill + /vibes](./done-phase-05-vibes-skill.md) — built-in skill that drives the interview and writes the doc; wire `/vibes`; live end-to-end verify.
 6. [Phase 06 — Vibes lifecycle UI](./done-phase-06-vibes-lifecycle.md) — view/edit/re-run/delete the doc from the panel; docs update.
-7. [Phase 07 — Interview image attachments](./todo-phase-07-interview-attachments.md) — reference images as interview answers, riding the ask_user tool result (added mid-execution on user direction).
+7. [Phase 07 — Interview image attachments](./done-phase-07-interview-attachments.md) — reference images as interview answers, riding the ask_user tool result (added mid-execution on user direction).
 
 ## Acceptance Criteria
 

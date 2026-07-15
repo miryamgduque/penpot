@@ -283,12 +283,26 @@
   a \"Decide for me\" chip, or a free textarea. `qstate` is this question's
   ui-state map; the handlers close over the question id."
   {::mf/private true}
-  [{:keys [question qstate on-toggle on-other-text on-text]}]
-  (let [{:keys [id type options hint optional allow-decide allow-other]} question
+  [{:keys [question qstate room on-toggle on-other-text on-text
+           on-add-images on-remove-image]}]
+  (let [{:keys [id type options hint optional allow-decide allow-other
+                allow-images]} question
         selected   (or (:selected qstate) #{})
         other-on?  (contains? selected :other)
         multi?     (= "multi" type)
-        text-type? (= "text" type)]
+        text-type? (= "text" type)
+        images     (or (:images qstate) [])
+        file-ref   (mf/use-ref nil)
+        on-pick-images
+        (mf/use-fn
+         (mf/deps id on-add-images)
+         (fn [event]
+           (let [target (dom/get-target event)]
+             (on-add-images id (array-seq (.-files ^js target)))
+             ;; re-picking the same file must re-fire `change`
+             (dom/set-value! target ""))))
+        on-attach-click
+        (mf/use-fn #(some-> (mf/ref-val file-ref) (.click)))]
     [:div {:class (stl/css :eform-question)}
      [:div {:class (stl/css :eform-prompt)}
       (:question question)
@@ -340,7 +354,37 @@
                 ;; Enter must not bubble into anything submit-like; the form
                 ;; sends only from its own button
                 :on-key-down #(when (kbd/enter? %) (dom/prevent-default %))
-                :on-change #(on-other-text id (dom/get-value (dom/get-target %)))}])]))
+                :on-change #(on-other-text id (dom/get-value (dom/get-target %)))}])
+
+     ;; reference images on a text question (allow_images): thumbnails + an
+     ;; attach control, reusing the composer's recompression pipeline
+     (when (and text-type? allow-images)
+       [:div {:class (stl/css :eform-attach-row)}
+        [:input {:type "file"
+                 :ref file-ref
+                 :class (stl/css :composer-file-input)
+                 :accept dwm/accept-image-types
+                 :multiple true
+                 :on-change on-pick-images}]
+        (for [[i image] (map-indexed vector images)]
+          [:div {:key i :class (stl/css :eform-thumb)}
+           [:img {:class (stl/css :eform-thumb-img)
+                  :src (image-src image)
+                  :alt (dm/str "Reference image " (inc i))}]
+           [:button {:type "button"
+                     :class (stl/css :eform-thumb-remove)
+                     :aria-label (dm/str "Remove reference image " (inc i))
+                     :on-click #(on-remove-image id i)}
+            [:span {:aria-hidden true} "✕"]]])
+        [:button {:type "button"
+                  :class (stl/css :eform-attach-btn)
+                  :disabled (zero? room)
+                  :title (if (pos? room)
+                           "Attach reference images"
+                           "Image limit reached")
+                  :on-click on-attach-click}
+         [:> i/icon* {:icon-id i/img}]
+         "Add reference"]])]))
 
 (mf/defc elicitation-form*
   "The ask_user interview, rendered at the tail of the transcript while a
@@ -360,7 +404,9 @@
                             (assoc q
                                    :allow-other (and (not= "text" (:type q))
                                                      (not (false? (:allow_other q))))
-                                   :allow-decide (true? (:allow_decide q))))
+                                   :allow-decide (true? (:allow_decide q))
+                                   :allow-images (and (= "text" (:type q))
+                                                      (true? (:allow_images q)))))
                           questions))
         state*    (mf/use-state {})
         state     (deref state*)
@@ -376,14 +422,46 @@
         on-text       (mf/use-fn
                        (fn [id text]
                          (swap! state* assoc-in [id :text] text)))
+        on-add-images (mf/use-fn
+                       (fn [id files]
+                         (let [pictures (filterv image-file? (vec files))]
+                           (when (seq pictures)
+                             (->> (read-images pictures)
+                                  (rx/subs!
+                                   (fn [read]
+                                     ;; room is re-measured inside the swap —
+                                     ;; two async reads racing must not
+                                     ;; overshoot the caps
+                                     (swap! state*
+                                            (fn [s]
+                                              (let [room (el/image-room s id)]
+                                                (if (pos? room)
+                                                  (update-in s [id :images]
+                                                             (fnil into [])
+                                                             (take room read))
+                                                  s)))))))))))
+        on-remove-image
+        (mf/use-fn
+         (fn [id i]
+           (swap! state* update-in [id :images]
+                  (fn [v]
+                    (vec (concat (subvec v 0 i) (subvec v (inc i))))))))
 
         on-submit (mf/use-fn
                    (mf/deps questions state ready?)
                    (fn []
                      (when ready?
-                       (st/emit! (dwaip/submit-form
-                                  (el/answers questions state)
-                                  (el/summary questions state))))))]
+                       (let [{:keys [images counts]} (el/form-images questions state)
+                             payload (cond-> {:answers (el/answers questions state)}
+                                       (seq images)
+                                       (assoc :attachments counts
+                                              :images images
+                                              :note (str "the user attached reference images; they follow "
+                                                         "this result in question order — `attachments` "
+                                                         "holds the per-question counts")))]
+                         (st/emit! (dwaip/submit-form
+                                    payload
+                                    (el/summary questions state)))))))]
 
     [:div {:class (stl/css :eform)}
      (when (seq title)
@@ -392,9 +470,12 @@
        [:> elicitation-question* {:key (:id q)
                                   :question q
                                   :qstate (get state (:id q))
+                                  :room (el/image-room state (:id q))
                                   :on-toggle on-toggle
                                   :on-other-text on-other-text
-                                  :on-text on-text}])
+                                  :on-text on-text
+                                  :on-add-images on-add-images
+                                  :on-remove-image on-remove-image}])
      [:div {:class (stl/css :eform-actions)}
       [:button {:type "button"
                 :class (stl/css :eform-submit)

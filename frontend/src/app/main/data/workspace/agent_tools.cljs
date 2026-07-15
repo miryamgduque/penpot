@@ -110,7 +110,11 @@
          "words when they picked Other…), `multi` an array of them, `text` a "
          "string; the literal value \"__decide__\" means the user delegated that "
          "decision to you — choose well and say what you chose. Skipped optional "
-         "questions are omitted from the answers.")
+         "questions are omitted from the answers. A text question with "
+         "allow_images lets the user attach reference images (moodboards, "
+         "competitor screens); they arrive as images ON this tool's result, in "
+         "question order, with {attachments: {id: count}} tying each to its "
+         "question — read them before answering-dependent steps.")
     :input-schema {:type "object"
                    :properties
                    {:title {:type "string"
@@ -128,6 +132,7 @@
                                         :description "the choices, for single/multi"}
                               :allow_other {:type "boolean" :description "offer an Other… free-text chip (default true)"}
                               :allow_decide {:type "boolean" :description "offer a \"Decide for me\" chip (default false)"}
+                              :allow_images {:type "boolean" :description "text questions only: let the user attach reference images"}
                               :optional {:type "boolean" :description "the user may leave this unanswered"}}
                              :required ["id" "question" "type"]}}}
                    :required ["questions"]}}
@@ -1780,12 +1785,15 @@
         state))))
 
 (defn submit-pending-form!
-  "Resolves the open ask_user call with `answers` (a map of question id →
-  value). Called by the panel's form UI; a no-op when nothing is pending."
-  [answers]
+  "Resolves the open ask_user call with `payload` — the full tool result:
+  {:answers {id value}}, plus :attachments/:images/:note when the user
+  attached references (`run-tool` lifts :images into image blocks, exactly
+  as for render_board). Called by the panel's form UI; a no-op when nothing
+  is pending."
+  [payload]
   (when-let [resolve @pending-form-resolve*]
     (reset! pending-form-resolve* nil)
-    (resolve answers)))
+    (resolve payload)))
 
 (def ^:private max-questions 10)
 
@@ -1832,8 +1840,8 @@
     (rx/create
      (fn [subs]
        (reset! pending-form-resolve*
-               (fn [answers]
-                 (rx/push! subs {:answers answers})
+               (fn [payload]
+                 (rx/push! subs payload)
                  (rx/end! subs)))
        (st/emit! (set-pending-form (select-keys input [:title :questions])))
        (fn []

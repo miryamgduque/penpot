@@ -23,6 +23,38 @@
 
 (def decide-sentinel "__decide__")
 
+;; Reference-image caps: per question and for the whole form — the images
+;; ride the ask_user tool result onto the wire, so the composer's own
+;; restraint (5 per message) applies here too.
+(def max-images-per-question 3)
+(def max-form-images 5)
+
+(defn image-count
+  "How many reference images the whole form currently holds."
+  [form-state]
+  (transduce (map (comp count :images)) + 0 (vals form-state)))
+
+(defn image-room
+  "How many more images question `id` may take, honoring both caps."
+  [form-state id]
+  (max 0 (min (- max-images-per-question (count (get-in form-state [id :images])))
+              (- max-form-images (image-count form-state)))))
+
+(defn form-images
+  "Every attached reference image in form order, plus the per-question tally:
+  {:images […] :counts {qid n}}. `:counts` is what lets the model tie each
+  image block on the tool result back to the question it answers."
+  [questions form-state]
+  (reduce (fn [acc {:keys [id]}]
+            (let [imgs (get-in form-state [id :images])]
+              (if (seq imgs)
+                (-> acc
+                    (update :images into imgs)
+                    (assoc-in [:counts id] (count imgs)))
+                acc)))
+          {:images [] :counts {}}
+          questions))
+
 (defn- clean
   [s]
   (when (string? s)
@@ -32,11 +64,14 @@
   "The submitted value of one `question` given its ui `qstate`, or nil while
   it is unanswered: single → its option string (the user's own words when
   they picked Other…), multi → a vector of them, text → the string."
-  [{:keys [type options]} {:keys [selected other-text text]}]
+  [{:keys [type options]} {:keys [selected other-text text images]}]
   (let [selected (or selected #{})
         other    (clean other-text)]
     (case type
-      "text"   (clean text)
+      ;; a reference image with no words is still an answer — the images
+      ;; themselves ride the tool result; this line is their stand-in here
+      "text"   (or (clean text)
+                   (when (seq images) "(see the attached reference images)"))
       "single" (cond
                  (contains? selected :decide) decide-sentinel
                  (contains? selected :other)  other

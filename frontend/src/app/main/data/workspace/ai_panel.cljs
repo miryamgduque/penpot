@@ -204,23 +204,27 @@
   (ptk/reify ::cancel-turn))
 
 (defn submit-form
-  "Resolves the open ask_user form with the user's `answers` (question id →
-  value) and leaves `summary` — a compact human rendering of those answers,
-  built by the form UI — in the transcript as the user's bubble. The pending
-  turn resumes with the answers as the tool result; the form state itself is
+  "Resolves the open ask_user form with `payload` — the full tool result the
+  form UI assembled ({:answers …}, plus :attachments/:images/:note when
+  references were attached) — and leaves `summary`, its compact human
+  rendering, in the transcript as the user's bubble (with the attached
+  thumbnails: the transcript must not hide what was sent). The pending turn
+  resumes with the payload as the tool result; the form state itself is
   cleared by the tool observable's own completion path."
-  [answers summary]
+  [payload summary]
   (ptk/reify ::submit-form
     ptk/UpdateEvent
     (update [_ state]
       (if-let [file-id (:current-file-id state)]
         (update-in state [:ai-panel file-id :messages]
-                   (fnil conj []) {:role "user" :content summary})
+                   (fnil conj []) (cond-> {:role "user" :content summary}
+                                    (seq (:images payload))
+                                    (assoc :images (:images payload))))
         state))
 
     ptk/EffectEvent
     (effect [_ _ _]
-      (at/submit-pending-form! answers))))
+      (at/submit-pending-form! payload))))
 
 (defn send-message
   "Runs one user turn: appends the user message, runs the agent turn through

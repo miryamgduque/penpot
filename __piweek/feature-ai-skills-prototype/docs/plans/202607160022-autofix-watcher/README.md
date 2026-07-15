@@ -11,6 +11,21 @@
 > pauses are collapsed into one review at merge time: when all phases are done
 > AND no other session is updating the main checkout (user confirms), merge into
 > `feature/ai-skills-prototype` and live-test the whole loop in devenv there.
+>
+> **State 2026-07-16:** all five phases built and committed on
+> `feature/autofix-watcher` (5 commits, each compile/lint/format-clean).
+> AWAITING: merge gate + the post-merge live checklist below. The plan moves to
+> `completed/` only after live testing passes.
+>
+> **Post-merge live checklist:** panel open → create default-named rect → strip
+> within ~1s, zero requests; rename → entry leaves; panel closed → no work;
+> expand/collapse + click-to-select+zoom; Fix it now idle → visible message →
+> agent fixes → strip empties; Fix it now mid-turn → pending chip (+"via
+> claude-haiku…" note) → auto-sends → ✕ cancel works; rules toggle refreshes
+> strip; semantic tick: burst of edits → ONE request after ~4s idle (network
+> tab), ✦ verdicts appear, fixing/deleting clears them, meter increments,
+> record per-tick cost in phase-05 notes; strip + pending chip look right in
+> both themes (run `build-app-assets.js` first — the SCSS watch is broken).
 **Apps:** `frontend`
 **Dependencies:** None (builds on the native agent panel; the deferred "live violations ledger + change-watcher" item from the CLJS-port plan becomes this plan)
 

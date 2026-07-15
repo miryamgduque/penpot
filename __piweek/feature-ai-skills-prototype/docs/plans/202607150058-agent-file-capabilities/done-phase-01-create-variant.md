@@ -132,11 +132,11 @@ full self-correcting loop works: two plain frames → rejected naming both → c
   history invariants. Registering a test ns needs edits in **two** places in `runner.cljs`
   (the `:require` *and* the `test-namespaces` vector); require-only compiles but silently
   never runs.
-- `create_component` renames the source board to "Component", so the assets panel lists the
-  sets as "Component" rather than "Card". Pre-existing `dwl/add-component` behaviour, not
-  introduced here, but it makes a library of agent-built components unreadable. Candidate
-  follow-up; `dwv/rename-variant` (`variants.cljs:554`) is the lever, and Phase 03 is the
-  natural home.
+- ~~`create_component` renames the source board to "Component"~~ — **wrong, refuted in
+  [Phase 03b](./done-phase-03b-call-it-something.md).** `create_component` keeps the name;
+  `transform-in-variant` renames the set to "Component" only when the members share no common
+  *path* prefix. Name them `Card / Compact` and `Card / Large` and the set is called "Card".
+  Naming is the whole mechanism — path depth even sets the number of axes.
 
 ## Notes — from planning
 

@@ -22,6 +22,7 @@
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.variant :as cfv]
+   [app.common.path-names :as cpn]
    [app.common.types.component :as ctc]
    [app.common.types.shape :as cts]
    [app.common.types.text :as txt]
@@ -155,11 +156,20 @@
     (str "Combines two or more main components into a Penpot variant set — the "
          "real thing: a variant container whose members switch by property. The "
          "shapes must already be main components (create_component first) and "
-         "must not already belong to a variant set. Input order determines "
-         "variant order. Never emulate variants by naming layers \"Prop=Value\" "
-         "— that is not a variant set. The new set gets one unnamed axis "
-         "(\"Property 1\") whose values come from the component names. "
-         "Asynchronous: verify with read_design.")
+         "must not already belong to a variant set.\n\n"
+         "NAME THE COMPONENTS FIRST — the set's name and its properties are "
+         "derived from their names, so this is how you design the matrix:\n"
+         "  \"Badge / Compact\" + \"Badge / Large\"  -> set \"Badge\", one axis "
+         "(Compact | Large)\n"
+         "  \"Chip / Small / Hover\" + \"Chip / Large / Default\" -> set \"Chip\", "
+         "TWO axes (Small|Large, Hover|Default)\n"
+         "The shared leading path becomes the set name; each further segment "
+         "becomes another property. Components sharing no path give a set named "
+         "\"Component\" — valid, but unreadable. Use create_shape/modify_shape "
+         "to name them before combining.\n\n"
+         "Input order determines variant order. Never emulate variants by naming "
+         "layers \"Prop=Value\" — that is not a variant set. Asynchronous: verify "
+         "with read_design.")
     :input-schema {:type "object"
                    :properties {:shapeIds {:type "array" :items {:type "string"}
                                            :description
@@ -625,6 +635,34 @@
   [shapeIds]
   (into [] (comp (keep parse-uuid) (distinct)) shapeIds))
 
+(defn variant-naming-hint
+  "Nil when `names` share a path prefix; otherwise a note explaining what the
+  agent is about to get and how to ask for better.
+
+  `combine-as-variants` derives the set's name from the common *path* prefix of
+  its members (`variants.cljs:667`). With no shared prefix, `transform-in-variant`
+  falls back to `\"Component/\" + name` (`:413`), so the set is called
+  \"Component\" and the member's own name becomes the first property's value.
+  Path depth also decides how many axes the set gets — `num-props` is
+  `(max 1 (dec (count cpath)))` at `:426`.
+
+  So `Badge / Compact` + `Badge / Large` gives a set named \"Badge\" with one
+  axis, and `Chip / Small / Hover` gives \"Chip\" with two. The operation is
+  valid either way — this is a hint, not a rejection."
+  [names]
+  (let [paths  (mapv #(cpn/split-path (or % "")) names)
+        shared (->> (apply map vector paths)
+                    (take-while #(apply = %))
+                    (map first)
+                    (vec))]
+    (when (empty? shared)
+      (dm/str "note: these components share no common path, so Penpot named the set"
+              " \"Component\" and used each member's own name as its first property"
+              " value. To get a named set, name the components with a shared path"
+              " first — e.g. \"Badge / Compact\" and \"Badge / Large\" produce a set"
+              " called \"Badge\". Each extra path segment adds another property:"
+              " \"Chip / Small / Hover\" gives two."))))
+
 (defn variant-members-problem
   "Why `ids` cannot become a variant set, as a message the agent can act on, or
   nil when they can. Pure: `objects` is the current page's shape map."
@@ -673,15 +711,17 @@
       (rx/throw (ex-info problem {}))
       ;; the container's id *is* the variant-id, so pre-generating it lets us
       ;; return the id without awaiting the event chain (as api.cljs does)
-      (let [variant-id (uuid/next)]
+      (let [variant-id (uuid/next)
+            hint       (variant-naming-hint (map #(:name (get objects %)) ids))]
         (interrupt!)
         (st/emit! (dwv/combine-as-variants
                    ids {:trigger "agent:create_variant" :variant-id variant-id}))
-        (rx/of {:variantId (dm/str variant-id)
-                :members (count ids)
-                :note (str "variant set created — the members share one axis named "
-                           "\"Property 1\", and each took its value from its own "
-                           "component name. Verify with read_design.")})))))
+        (rx/of (cond-> {:variantId (dm/str variant-id)
+                        :members (count ids)
+                        :note (str "variant set created — its name and properties come from "
+                                   "the members' names. Axes are called \"Property 1\"…; "
+                                   "name them with set_variant_property. Verify with read_design.")}
+                 hint (assoc :namingHint hint)))))))
 
 ;; --- Variant properties
 ;;

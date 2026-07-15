@@ -246,6 +246,39 @@
     (t/is (= 1 (count (at/variant-sets one-set-data objs))))))
 
 ;; ---------------------------------------------------------------------------
+;; variant-naming-hint — the path convention
+;;
+;; combine-as-variants derives the set name from the common PATH prefix of the
+;; member names. No shared prefix and it falls back to "Component/" + the name,
+;; so the set is called "Component". Names like "Badge / Compact" give a set
+;; called "Badge"; path depth sets the number of axes.
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-shared-path-prefix-needs-no-hint
+  (t/is (nil? (at/variant-naming-hint ["Badge / Compact" "Badge / Large"]))))
+
+(t/deftest a-deeper-shared-prefix-needs-no-hint
+  (t/is (nil? (at/variant-naming-hint ["Chip / Small / Hover" "Chip / Large / Default"]))))
+
+(t/deftest no-shared-prefix-is-hinted
+  (let [hint (at/variant-naming-hint ["Card" "Card Large"])]
+    (t/is (some? hint))
+    (t/is (str/includes? hint "Component"))))
+
+(t/deftest the-hint-suggests-a-concrete-rename
+  ;; A hint the agent can't act on is noise. It has to show the shape of the fix.
+  (let [hint (at/variant-naming-hint ["Card" "Card Large"])]
+    (t/is (str/includes? hint "/"))))
+
+(t/deftest a-partial-word-overlap-is-not-a-path-prefix
+  ;; "Card" and "Card Large" LOOK related but share no path SEGMENT — the
+  ;; distinction that decides whether the set is called "Card" or "Component".
+  (t/is (some? (at/variant-naming-hint ["Card" "Card Large"]))))
+
+(t/deftest one-name-being-a-prefix-path-of-another-still-counts
+  (t/is (nil? (at/variant-naming-hint ["Card / A" "Card / B" "Card / C"]))))
+
+;; ---------------------------------------------------------------------------
 ;; variant-property-problem
 ;; ---------------------------------------------------------------------------
 

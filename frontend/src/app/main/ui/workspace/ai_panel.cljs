@@ -18,6 +18,7 @@
   (:require
    [app.common.data :as d]
    [app.common.data.macros :as dm]
+   [app.common.exceptions :as ex]
    [app.common.media :as cm]
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent :as agent]
@@ -36,6 +37,7 @@
    [app.main.ui.hooks :as hooks]
    [app.util.dom :as dom]
    [app.util.keyboard :as kbd]
+   [app.util.object :as obj]
    [app.util.webapi :as wapi]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
@@ -48,6 +50,22 @@
 ;; the turn and are gone on reload; that is the deal, not an oversight.
 
 (def ^:private max-images 5)
+
+;; Long-edge cap. 1568 is not a round number picked for feel: it is Anthropic's
+;; standard-tier resolution limit, above which the provider downscales the image
+;; server-side anyway — so a bigger upload buys nothing but bytes. (The
+;; high-resolution tier goes to 2576, but the payload budget is the binding
+;; constraint here, and 1568 is ample for a screenshot.) It also stops a phone
+;; photo or a 4K capture dead.
+(def ^:private max-image-edge 1568)
+
+;; The cap alone does not save us — a 1440×900 screenshot is already under it,
+;; and five of those as PNG are 66% of the request budget (measured, Phase 04).
+;; Re-encoding is what actually pays. WebP over JPEG because it holds flat UI
+;; colour and text edges far better at the same size, and text legibility is the
+;; thing we cannot trade away: an unreadable screenshot is worse than none.
+(def ^:private image-mtype "image/webp")
+(def ^:private image-quality 0.85)
 
 (def ^:private data-uri-re #"^data:([^;,]+);base64,(.*)$")
 
@@ -63,6 +81,48 @@
   [file]
   (contains? cm/image-types (.-type ^js file)))
 
+(defn- load-image
+  "data-uri → a decoded `js/Image`, so its natural size can be measured."
+  [duri]
+  (rx/create
+   (fn [subs]
+     (let [img (js/Image.)]
+       (obj/set! img "onload" #(do (rx/push! subs img) (rx/end! subs)))
+       (obj/set! img "onerror" #(rx/error! subs (ex/error :type :validation
+                                                          :code :unreadable-image)))
+       (obj/set! img "src" duri)
+       (fn [] (obj/set! img "src" ""))))))
+
+(defn- recompress
+  "Draws the image at (at most) `max-image-edge` and re-encodes it, → a blob."
+  [img]
+  (let [w      (.-naturalWidth ^js img)
+        h      (.-naturalHeight ^js img)
+        ;; only ever shrink: upscaling a small image would invent detail and
+        ;; cost bytes for it
+        scale  (min 1 (/ max-image-edge (max w h)))
+        tw     (js/Math.round (* w scale))
+        th     (js/Math.round (* h scale))
+        canvas (js/OffscreenCanvas. tw th)
+        ctx    (.getContext canvas "2d")]
+    (.drawImage ^js ctx img 0 0 tw th)
+    (rx/from (wapi/create-blob-from-canvas canvas #js {:type image-mtype
+                                                       :quality image-quality}))))
+
+(defn- prepare-image
+  "File → a compact `{:mtype :data}`.
+
+  The mimetype is read back off the re-encoded blob rather than assumed: if a
+  browser cannot write WebP it silently hands back PNG, and claiming otherwise
+  would put a lie on the wire."
+  [file]
+  (->> (wapi/read-file-as-data-url file)
+       (rx/mapcat load-image)
+       (rx/mapcat recompress)
+       (rx/mapcat wapi/read-file-as-data-url)
+       (rx/map data-uri->image)
+       (rx/filter some?)))
+
 (defn- read-images
   "Files → a stream of one `[{:mtype :data}]` vector, in the order given.
   `read-file-as-data-url` carries a Safari repeated-mimetype fix, which is why
@@ -71,9 +131,7 @@
   (->> (rx/from files)
        ;; beicon's `mapcat` is rxjs `concatMap`, so the reads stay in order and
        ;; the user's first image is still first. `merge-map` would interleave.
-       (rx/mapcat wapi/read-file-as-data-url)
-       (rx/map data-uri->image)
-       (rx/filter some?)
+       (rx/mapcat prepare-image)
        (rx/reduce conj [])))
 
 (defn- image-src

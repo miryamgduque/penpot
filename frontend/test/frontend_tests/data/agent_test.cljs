@@ -351,3 +351,71 @@
                    {:role :assistant :text "hello" :tool-calls []}
                    {:role :tool-results :results [{:id "c1" :content "{}"}]}]]
       (t/is (= history (agent/strip-images history))))))
+
+;; ---------------------------------------------------------------------------
+;; Pruning images out of an ageing history.
+;;
+;; Every round re-encodes the WHOLE conversation, so an image sent on turn 1 is
+;; re-uploaded on turn 12. Five downscaled screenshots are cheap once and
+;; ruinous twelve times, and the failure arrives with no new user action — the
+;; conversation simply stops working. This is the second of the two leaks;
+;; downscale-on-attach is the first.
+;; ---------------------------------------------------------------------------
+
+(defn- user-turn
+  [n & {:keys [images]}]
+  [{:role :user :text (str "turn " n) :images images}
+   {:role :assistant :text (str "reply " n) :tool-calls []}])
+
+(defn- images-per-turn
+  "→ image count per user message, oldest first."
+  [messages]
+  (->> messages
+       (filter #(= :user (:role %)))
+       (mapv #(count (:images %)))))
+
+(t/deftest prune-keeps-the-recent-turns-images
+  (t/testing "a short conversation is untouched — the common case must not pay"
+    (let [history (vec (mapcat #(user-turn % :images [png]) (range 2)))]
+      (t/is (= history (agent/prune-history-images history))))))
+
+(t/deftest prune-drops-images-from-older-turns
+  (let [history (vec (mapcat #(user-turn % :images [png jpg]) (range 5)))
+        out     (agent/prune-history-images history)]
+    (t/testing "only the most recent turns keep their images"
+      (t/is (= [0 0 0 2 2] (images-per-turn out))))
+    (t/testing "and the stripped ones say so rather than vanishing"
+      (t/is (str/includes? (:text (first out)) "omitted"))
+      (t/is (str/includes? (:text (first out)) "turn 0") "the user's words survive"))))
+
+(t/deftest prune-leaves-the-newest-turn-alone
+  (t/testing "the turn being asked about right now must keep its picture"
+    (let [history (vec (mapcat #(user-turn % :images [png]) (range 6)))
+          out     (agent/prune-history-images history)
+          newest  (last (filter #(= :user (:role %)) out))]
+      (t/is (= [png] (:images newest))))))
+
+(t/deftest prune-is-a-no-op-without-images
+  (t/testing "a text-only conversation must come back identical, not rebuilt"
+    (let [history (vec (mapcat #(user-turn %) (range 8)))]
+      (t/is (= history (agent/prune-history-images history))))))
+
+(t/deftest prune-counts-turns-not-messages
+  (t/testing "a turn with many tool rounds is still ONE turn — counting raw
+              messages would strip the current turn's own image"
+    (let [history (into [{:role :user :text "look" :images [png]}]
+                        (mapcat (fn [i]
+                                  [{:role :assistant :text "" :tool-calls [{:id (str "c" i) :name "read_design" :input {}}]}
+                                   {:role :tool-results :results [{:id (str "c" i) :content "{}"}]}])
+                                (range 10)))
+          out     (agent/prune-history-images history)]
+      (t/is (= [1] (images-per-turn out))))))
+
+(t/deftest prune-then-encode-drops-the-blocks
+  (t/testing "the point of all this: old images leave the wire"
+    (let [history (vec (mapcat #(user-turn % :images [png]) (range 5)))
+          blocks  (->> (agent/encode-anthropic (agent/prune-history-images history))
+                       (mapcat :content)
+                       (filter map?)
+                       (filter #(= "image" (:type %))))]
+      (t/is (= 2 (count blocks)) "5 turns of images encode down to the recent 2"))))

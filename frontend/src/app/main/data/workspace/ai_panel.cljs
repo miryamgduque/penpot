@@ -19,6 +19,7 @@
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent :as agent]
+   [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
@@ -332,16 +333,31 @@
                   (str/join "\n\n"))]
     (str body "\n\nWhen done, run audit_file to confirm the set is clear.")))
 
+(defn fix-settings
+  "Settings for a Fix-it-now turn: the first violated rule whose auto-fix
+  skill declares a `:model` present in the user's pool wins — so ambient
+  fixes run on the cheap model the skill asked for — otherwise the panel's
+  current settings. Pure; nil pool entries never match."
+  [violations pool panel-settings]
+  (or (->> violations
+           (map :rule)
+           (distinct)
+           (keep ask/rule-fix-model)
+           (keep (fn [model] (some #(when (= model (:model %)) %) pool)))
+           (first))
+      panel-settings))
+
 (defn set-pending-fix
   "Park a Fix-it-now message composed while a turn is running; the panel
   drains it when the turn ends. One slot — a newer fix replaces the queued
-  one rather than stacking."
-  [text]
+  one rather than stacking. `settings` are resolved at compose time so the
+  queued fix still runs on the skill's declared model."
+  [text settings]
   (ptk/reify ::set-pending-fix
     ptk/UpdateEvent
     (update [_ state]
       (if-let [file-id (:current-file-id state)]
-        (assoc-in state [:ai-panel file-id :pending-fix] text)
+        (assoc-in state [:ai-panel file-id :pending-fix] {:text text :settings settings})
         state))))
 
 (defn clear-pending-fix

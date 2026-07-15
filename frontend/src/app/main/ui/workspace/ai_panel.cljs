@@ -647,16 +647,18 @@
                              (reset! images* [])
                              (reset! attach-error* nil)))))))
 
-        ;; Fix it now: compose the visible message from the clicked subset; if
-        ;; a turn is running, park it in the one-slot pending queue instead
+        ;; Fix it now: compose the visible message from the clicked subset and
+        ;; resolve which model runs it (the skill's declared cheap model when
+        ;; the pool has it); if a turn is running, park both in the pending slot
         on-fix    (mf/use-fn
-                   (mf/deps settings busy? page selected objects)
+                   (mf/deps settings busy? pool page selected objects)
                    (fn [violations]
                      (when (and settings (seq violations))
-                       (let [text (dwaip/compose-fix-message violations)]
+                       (let [text   (dwaip/compose-fix-message violations)
+                             fix-st (dwaip/fix-settings violations pool settings)]
                          (if busy?
-                           (st/emit! (dwaip/set-pending-fix text))
-                           (st/emit! (dwaip/send-message settings text (chat-context page selected objects))))))))
+                           (st/emit! (dwaip/set-pending-fix text fix-st))
+                           (st/emit! (dwaip/send-message fix-st text (chat-context page selected objects))))))))
 
         on-cancel-pending (mf/use-fn #(st/emit! (dwaip/clear-pending-fix)))
 
@@ -709,10 +711,13 @@
 
     ;; drain the pending Fix-it-now once the running turn ends: the queued
     ;; message becomes a normal visible send, with fresh page/selection context
+    ;; but the settings resolved when it was queued (the skill's model)
     (mf/with-effect [busy? pending-fix settings page selected objects]
-      (when (and (not busy?) (seq pending-fix) settings)
+      (when (and (not busy?) (seq (:text pending-fix)) settings)
         (st/emit! (dwaip/clear-pending-fix)
-                  (dwaip/send-message settings pending-fix (chat-context page selected objects)))))
+                  (dwaip/send-message (or (:settings pending-fix) settings)
+                                      (:text pending-fix)
+                                      (chat-context page selected objects)))))
 
     [:div {:class (stl/css :chat-tab)}
      ;; Current-file context surfaced to the agent: page + selection.
@@ -750,12 +755,17 @@
 
      ;; A Fix-it-now queued behind the running turn: visible, cancellable,
      ;; sends itself when the turn ends (drain effect above).
-     (when (seq pending-fix)
+     (when (seq (:text pending-fix))
        [:div {:class (stl/css :pending-fix)}
         [:div {:class (stl/css :pending-fix-body)}
          [:span {:class (stl/css :pending-fix-label)}
-          "Queued — sends when the current turn ends"]
-         [:span {:class (stl/css :pending-fix-text)} pending-fix]]
+          (dm/str "Queued — sends when the current turn ends"
+                  ;; name the model only when it is not the one the user is
+                  ;; chatting with — that divergence is worth a heads-up
+                  (when-let [m (get-in pending-fix [:settings :model])]
+                    (when (not= m (:model settings))
+                      (dm/str " · via " m))))]
+         [:span {:class (stl/css :pending-fix-text)} (:text pending-fix)]]
         [:button {:type "button"
                   :class (stl/css :pending-fix-cancel)
                   :aria-label "Cancel the queued fix"

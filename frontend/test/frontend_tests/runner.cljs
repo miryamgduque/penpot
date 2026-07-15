@@ -32,6 +32,7 @@
    [frontend-tests.data.workspace-skill-state-test]
    [frontend-tests.data.workspace-texts-test]
    [frontend-tests.data.workspace-thumbnails-test]
+   [frontend-tests.data.workspace-skill-gen-test]
    [frontend-tests.data.workspace-user-skills-test]
    [frontend-tests.data.workspace-versions-test]
    [frontend-tests.errors-test]
@@ -150,6 +151,7 @@
    'frontend-tests.data.workspace-shortcuts-test
    'frontend-tests.data.workspace-skill-state-test
    'frontend-tests.data.workspace-texts-test
+   'frontend-tests.data.workspace-skill-gen-test
    'frontend-tests.data.workspace-user-skills-test
    'frontend-tests.data.workspace-thumbnails-test
    'frontend-tests.data.workspace-versions-test

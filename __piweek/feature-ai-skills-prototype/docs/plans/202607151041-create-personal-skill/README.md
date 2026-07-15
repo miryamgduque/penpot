@@ -70,8 +70,9 @@ tone the user describes and flags mismatches. Reports only ⇒ files under **Aud
 2. [Phase 02 — Frontend data + state-aware catalog](./done-phase-02-frontend-catalog-merge.md) —
    fetch user skills, merge into a state-aware catalog so they render/route/toggle via existing paths.
    ✅ **done** (3 deftests / 13 assertions; test build clean)
-3. [Phase 03 — LLM skill-doc generation](./todo-phase-03-generation.md) — answers → one model
+3. [Phase 03 — LLM skill-doc generation](./done-phase-03-generation.md) — answers → one model
    completion → structured skill doc (name/label/category/mode/trigger/body), category classified.
+   ✅ **done** (5 deftests / 21 assertions)
 4. [Phase 04 — Skills-view guided creation flow](./todo-phase-04-creation-flow-ui.md) — "Create
    skill" action + guided capture (what/trigger/mode) → generate → create → card (default on).
 5. [Phase 05 — Chat entry point](./todo-phase-05-chat-entry-point.md) — natural-language "create a

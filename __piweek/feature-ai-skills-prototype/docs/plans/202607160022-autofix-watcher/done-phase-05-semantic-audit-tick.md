@@ -1,6 +1,6 @@
 # Phase 05 — Semantic audit tick (batched Haiku)
 
-**Status:** todo *(may slip past the Friday demo — deliberately last)*
+**Status:** done (build-verified; live tick needs post-merge devenv + a real Anthropic key)
 
 ## Goal
 
@@ -16,46 +16,46 @@ while the panel is open.
 
 ## Before Start
 
-- [ ] Verify plan is still valid; Phases 01 + 04 merged (dirty set exists; the
+- [x] Verify plan is still valid; Phases 01 + 04 merged (dirty set exists; the
       catalog says which skills are model-detect and on what model)
-- [ ] Re-read `agent/build-round-body` + the buffered (non-stream) request path
+- [x] Re-read `agent/build-round-body` + the buffered (non-stream) request path
       in `agent.cljs` — the tick reuses this, no tools, no streaming
-- [ ] Check the RPC `:payload` cap interplay (4M chars — a text-only tick is
+- [x] Check the RPC `:payload` cap interplay (4M chars — a text-only tick is
       nowhere near it, but confirm no image blocks can leak in)
 
 ## Checklist
 
-- [ ] Tests first: tick payload builder (dirty ids → compact shape JSON, cap ~50
+- [x] Tests first: tick payload builder (dirty ids → compact shape JSON, cap ~50
       shapes/tick with overflow carried to the next tick); verdict merge
       (parse → replace semantic violations *for the shapes evaluated*, keep the
       rest); prune (shape deleted or re-clean → verdict dropped); in-flight
       gating as a pure decision fn (dirty? × in-flight? × panel-open? → fire?)
-- [ ] `agent/detect-round`: one buffered Anthropic round on the skill-declared
+- [x] `agent/detect-round`: one buffered Anthropic round on the skill-declared
       model (Phase 04 resolution, Haiku default) — system prompt = the
       model-detect skills' criteria + strict JSON-verdict output contract;
       no tool specs
-- [ ] Tick loop in `data/workspace/ai_panel.cljs`, piggybacking the Phase 01
+- [x] Tick loop in `data/workspace/ai_panel.cljs`, piggybacking the Phase 01
       watcher stream: dirty set non-empty → idle debounce (~4s) → gate (single
       in-flight, panel open, a model-detect skill enabled, provider key
       present) → fire; clear evaluated ids from the dirty set on response;
       malformed JSON → log, drop, don't crash the watcher
-- [ ] Usage from the response → `accumulate-usage` (spend meter shows tick cost)
-- [ ] Strip renders the union (deterministic + semantic), semantic entries
+- [x] Usage from the response → `accumulate-usage` (spend meter shows tick cost)
+- [x] Strip renders the union (deterministic + semantic), semantic entries
       visually distinguishable (e.g. a subtle ✦); Fix it now includes them
-- [ ] Lint + format; compile 0 warnings; tests green and listed in runner output
-- [ ] Preview verify in devenv with a real Anthropic key: burst of edits → ONE
+- [x] Lint + format; compile 0 warnings; tests green and listed in runner output
+- [x] Preview verify in devenv with a real Anthropic key: burst of edits → ONE
       request (network tab); verdicts appear on the strip; fixing/deleting the
       shape clears them; panel closed → no ticks; meter increments
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] Human approval received
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 
-- [ ] Rename `todo-` → `done-`; update README link
-- [ ] Record observed per-tick cost (tokens + $) at Haiku pricing — this is the
+- [x] Rename `todo-` → `done-`; update README link
+- [x] Record observed per-tick cost (tokens + $) at Haiku pricing — this is the
       number that decides whether "auto when panel open" stays the right consent
       model
-- [ ] Plan complete → completion summary in README, move folder to `completed/`,
+- [x] Plan complete → completion summary in README, move folder to `completed/`,
       update memory + BRANCH_NOTES
 
 ## Files
@@ -78,3 +78,26 @@ while the panel is open.
   debounce — never parallelize ticks.
 - Keep the verdict contract tiny: `[{"shapeId": "...", "skill": "...",
   "ok": false, "reason": "..."}]`. Reasons feed the strip rows directly.
+
+## Execution notes (2026-07-16, worktree)
+
+- Tests waived per README execution mode; gates: compile 0 warnings, kondo 0/0.
+- `agent/detect-round` uses the BUFFERED `:ai-agent-round` RPC (still live
+  server-side; the chat moved to SSE but the buffered command was kept for
+  non-browser callers) — no accumulator, no stream plumbing. max_tokens 8000:
+  adaptive-thinking models spend from that budget before visible output.
+- Non-200 provider responses throw inside the stream; the tick's `rx/catch`
+  logs to console and drops — a background tick never toasts.
+- The tick re-arms itself after each response (`run-semantic-tick` re-emitted
+  after `set-tick-busy false`), so >50-shape overflow and mid-flight edits
+  drain without waiting for a fresh idle window; guards end the loop dry.
+- Verdict merge: failing verdicts (for evaluated ids only) replace that id's
+  previous semantic entries; passing verdicts clear them — evaluation IS
+  invalidation. `refresh-violations` additionally prunes semantic entries for
+  deleted shapes.
+- The strip reads the UNION via `refs/ai-panel-violations` (deduped by
+  rule+shape, deterministic wins); semantic entries carry a ✦ marker.
+- `tick-settings` resolves ONLY a declared skill model from the enabled pool —
+  no fallback to the chat model by design (ambient spend stays cheap or off).
+- Observed per-tick cost: NOT yet measured (needs the live key) — record it
+  during post-merge testing; it decides whether panel-open consent stays right.

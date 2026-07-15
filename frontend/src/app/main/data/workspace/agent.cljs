@@ -727,3 +727,44 @@
                              :else
                              (tool-round messages' round text calls))))))))))]
     (step (vec history) 0)))
+
+;; --- Semantic detect round (auto-fix watcher tick)
+
+(defn detect-round
+  "One buffered, tool-less provider round for the semantic audit tick.
+  Anthropic-only by design: the tick only fires when it resolves a skill's
+  declared fix model, and those are Anthropic. Returns a stream of one
+  `{:text :usage}`; provider/HTTP failures surface as stream errors for the
+  caller to log and drop — a background tick must never toast the user.
+
+  Buffered (`:ai-agent-round`) rather than SSE on purpose: nobody watches a
+  background tick type, and the buffered command needs no accumulator."
+  [{:keys [provider model]} system user-text]
+  (let [payload (js/JSON.stringify
+                 (clj->js {:model model
+                           ;; adaptive-thinking models spend from this same
+                           ;; budget before any visible output — too small
+                           ;; yields a silent empty reply (learned the hard
+                           ;; way on the chat path)
+                           :max_tokens 8000
+                           :system [{:type "text" :text system}]
+                           :messages [{:role "user"
+                                       :content [{:type "text" :text user-text}]}]}))]
+    (->> (rp/cmd! :ai-agent-round {:provider provider :payload payload})
+         (rx/map
+          (fn [{:keys [status body]}]
+            (let [data (js->clj (js/JSON.parse body) :keywordize-keys true)]
+              (when (not= 200 status)
+                (throw (ex-info (or (get-in data [:error :message])
+                                    (str "provider status " status))
+                                {:status status})))
+              {:text (->> (:content data)
+                          (filter #(= "text" (:type %)))
+                          (map :text)
+                          (str/join ""))
+               :usage (let [u (:usage data)]
+                        {:input-tokens (or (:input_tokens u) 0)
+                         :output-tokens (or (:output_tokens u) 0)
+                         :cache-read-tokens (or (:cache_read_input_tokens u) 0)
+                         :cache-write-tokens (or (:cache_creation_input_tokens u) 0)
+                         :requests 1})}))))))

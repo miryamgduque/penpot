@@ -480,6 +480,9 @@
                            :title (:reason v)
                            :data-id (:shapeId v)
                            :on-click on-shape-click}
+                  ;; ✦ = flagged by the semantic tick, not the native scan
+                  (when (:semantic v)
+                    [:span {:aria-hidden true :class (stl/css :affected-semantic)} "✦ "])
                   (:shapeName v)]])
               (when (> n max-strip-shapes)
                 [:li {:class (stl/css :affected-more)}

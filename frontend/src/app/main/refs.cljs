@@ -321,11 +321,17 @@
              st/state))
 
 (def ai-panel-violations
-  "Live auto-fix violations for the current file (kept current by the
-  panel's change watcher while the panel is open)."
+  "Live auto-fix violations for the current file: the deterministic scan
+  plus the semantic tick's verdicts (tagged `:semantic`), deduped by
+  rule+shape with the deterministic entry winning."
   (l/derived (fn [state]
                (when-let [file-id (:current-file-id state)]
-                 (dm/get-in state [:ai-panel file-id :violations])))
+                 (let [det  (dm/get-in state [:ai-panel file-id :violations])
+                       sem  (dm/get-in state [:ai-panel file-id :semantic-violations])
+                       seen (into #{} (map (juxt :rule :shapeId)) det)]
+                   (into (vec det)
+                         (remove #(contains? seen [(:rule %) (:shapeId %)]))
+                         sem))))
              st/state))
 
 (def ai-panel-pending-fix

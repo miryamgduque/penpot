@@ -325,6 +325,10 @@
   color: var(--color-foreground-secondary);
 }
 
+.affected-semantic {
+  color: var(--color-accent-primary);
+}
+
 // A Fix-it-now parked behind the running turn.
 .pending-fix {
   display: flex;

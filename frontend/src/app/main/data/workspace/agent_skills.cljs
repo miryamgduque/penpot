@@ -195,22 +195,65 @@
              "> where to stop for review, and what good looks like."
              ""]))
 
+;; --- User-created skills (US #9)
+;;
+;; The user's own skills (from the `profile_skill` backend, fetched into
+;; `[:user-skills]`) are shaped like catalog entries and MERGED into the built-in
+;; catalog, so every consumer below — cards, resolve-enabled, the router index,
+;; get_design_skills — treats them the same as built-ins with no special-casing.
+;; Their stored `:enabled` is the creation default the resolve chain starts from,
+;; and their generated `:body` (written for the native tools already) is served
+;; verbatim, without the built-in bodies' "written for another surface" preamble.
+
+(defn- user-skill->entry
+  [us]
+  {:name     (:name us)
+   :label    (:label us)
+   :blurb    (:description us)
+   :mode     (:mode us)
+   :category (:category us)
+   :enabled  (:enabled us)
+   :example  (:trigger us)
+   :what     (:description us)
+   :body     (:body us)
+   :user?    true})
+
+(defn user-skills
+  "The user's created skills (from app-db) shaped as catalog entries."
+  [state]
+  (mapv user-skill->entry (get state :user-skills)))
+
+(defn full-catalog
+  "The built-in `catalog` with the user's created skills merged into their
+  category — a new group is appended for any category the built-ins don't have."
+  [state]
+  (let [by-cat    (group-by :category (user-skills state))
+        base-cats (into #{} (map :category) catalog)]
+    (concat
+     (for [{:keys [category skills]} catalog]
+       {:category category :skills (into (vec skills) (get by-cat category))})
+     (for [[category skills] by-cat
+           :when (not (contains? base-cats category))]
+       {:category category :skills (vec skills)}))))
+
 (defn skill-body
-  "The playbook text for `name`, reframed for the native tool surface, or nil if
-  the skill has no body. Served by `get_design_skills` on demand — never inlined
-  into the system prompt."
-  [name]
-  (when-let [body (get ab/bodies name)]
-    (str body-preamble "\n" body)))
+  "The playbook text for `name` served by `get_design_skills` on demand — never
+  inlined into the system prompt. A user skill returns its stored body as-is; a
+  built-in returns its aikit body reframed for the native tool surface."
+  [state name]
+  (if-let [us (some #(when (= name (:name %)) %) (user-skills state))]
+    (:body us)
+    (when-let [body (get ab/bodies name)]
+      (str body-preamble "\n" body))))
 
 (defn find-skill
-  "The full catalog entry for `name`, tagged with its `:category`, or nil.
-  Backs the Skills-tab detail view. `:enabled` here is the built-in default;
-  the resolved on/off comes from `resolve-enabled`."
-  [name]
+  "The full catalog entry for `name` (built-in or user-created), tagged with its
+  `:category`, or nil. Backs the Skills-tab detail view. `:enabled` here is the
+  creation default; the resolved on/off comes from `resolve-enabled`."
+  [state name]
   (some (fn [{:keys [category skills]}]
           (some #(when (= name (:name %)) (assoc % :category category)) skills))
-        catalog))
+        (full-catalog state)))
 
 (defn resolve-enabled
   "Effective on/off for one skill: built-in `default` → account default →
@@ -229,7 +272,7 @@
   (let [file-id (:current-file-id state)
         account (skst/account-states state)
         file    (skst/file-states state file-id)]
-    (for [group catalog]
+    (for [group (full-catalog state)]
       (update group :skills
               (fn [skills]
                 (mapv (fn [s]
@@ -263,7 +306,7 @@
   ([state name]
    (some #(when (= name (:name %))
             (-> (select-keys % [:name :label :category :mode :blurb])
-                (assoc :body (or (skill-body name)
+                (assoc :body (or (skill-body state name)
                                  "No playbook text is bundled for this skill; use the description above."))))
          (enabled-skills state))))
 

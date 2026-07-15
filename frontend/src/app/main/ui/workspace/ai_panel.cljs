@@ -22,6 +22,7 @@
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.skill-state :as skst]
+   [app.main.data.workspace.user-skills :as dusk]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
@@ -517,7 +518,11 @@
   `on-select` opens one. Back navigation lives in the panel header (US #35)."
   {::mf/private true}
   [{:keys [selected on-select]}]
-  (let [skill       (when selected (ask/find-skill selected))
+  (let [catalog     (mf/deref refs/skills-catalog)
+        skill       (when selected
+                      (some (fn [{:keys [category skills]}]
+                              (some #(when (= selected (:name %)) (assoc % :category category)) skills))
+                            catalog))
         enabled-map (mf/deref refs/resolved-skills-enabled)
         active      (mf/deref refs/skills-filter)
         toggle      (mf/use-fn
@@ -528,7 +533,7 @@
         groups      (keep (fn [{:keys [category skills]}]
                             (let [rows (filterv #(visible? (:name %)) skills)]
                               (when (seq rows) [category rows])))
-                          ask/catalog)]
+                          catalog)]
     (if skill
       (let [enabled? (get enabled-map (:name skill) true)]
         [:> skill-detail* {:skill skill
@@ -608,11 +613,12 @@
 
     ;; Providers are configured on the settings page; load them so we know
     ;; whether to show the chat or the connect-a-provider prompt. Skill state
-    ;; (per-account + this file's overrides) drives which skills the agent
-    ;; routes to, so load it up front too.
+    ;; (per-account + this file's overrides) and the user's created skills drive
+    ;; which skills the agent routes to, so load them up front too.
     (mf/with-effect []
       (st/emit! (dai/fetch-ai-providers)
-                (skst/fetch-skill-states)))
+                (skst/fetch-skill-states)
+                (dusk/fetch-user-skills)))
 
     [:aside {:class (stl/css :ai-panel)}
      ;; Adaptive header (sized to the workspace right-header band): chat shows the

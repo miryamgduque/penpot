@@ -74,10 +74,10 @@
   [{:name "read_design"
     :description
     (str "One-call orientation: the current file, page, selection, the page's "
-         "top-level shapes, and its variant sets (each with its members and "
-         "their properties). Call this FIRST each task to see what is in the "
-         "file instead of guessing — including whether a variant set already "
-         "exists before building another.")
+         "top-level shapes, its variant sets (with members and properties), and "
+         "its design tokens grouped by type. Call this FIRST each task to see "
+         "what is in the file instead of guessing — including whether a token "
+         "or variant set already exists before authoring another.")
     :input-schema {:type "object" :properties {}}}
 
    {:name "get_design_skills"
@@ -351,6 +351,27 @@
       (:variant-error shape)
       (assoc :variantError (:variant-error shape)))))
 
+(defn- token-summary
+  [t]
+  (let [value    (str (:value t))
+        resolved (some-> (:resolved-value t) str)]
+    (cond-> {:name (:name t) :value value}
+      ;; only when it differs: an alias's reference is the interesting half, and
+      ;; showing only the resolved value hides that this is a reference at all
+      (and (some? resolved) (not= resolved value))
+      (assoc :resolvedValue resolved))))
+
+(defn tokens-by-type
+  "The file's active tokens, grouped under the same public DTCG type names
+  `create_token` accepts — so a type read here can be passed straight back.
+  Types with no tokens are absent rather than empty."
+  [tokens]
+  (reduce-kv (fn [acc type toks]
+               (assoc acc (get cto/token-type->dtcg-token-type type (name type))
+                      (mapv token-summary toks)))
+             {}
+             (group-by :type tokens)))
+
 (defn variant-sets
   "Every variant container on the page with its members and their properties —
   the structural view `create_variant` writes and Phase 03/04 target.
@@ -389,9 +410,7 @@
      :selection (mapv #(summarize-shape objects %) selected)
      :shapes (mapv #(summarize-shape objects %) top-ids)
      :variants variants
-     :colorTokens (->> (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals)
-                       (filter #(= :color (:type %)))
-                       (mapv (fn [t] {:name (:name t) :value (or (:resolved-value t) (:value t))})))
+     :tokens (tokens-by-type (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals))
      :skills (ask/catalog-manifest state)
      :openViolations (count (audit-violations state))}))
 
@@ -1153,13 +1172,37 @@
 
       :else nil)))
 
+(defn existing-token-set-id
+  "The id of a set already in the library, or nil when it genuinely has none.
+
+  This exists because `dwtl/create-token`'s 1-arity resolves its target through
+  `lookup-token-set`, which reads `[:workspace-tokens :selected-token-set-id]` —
+  the *UI selection*, not the library. Nobody has opened the Tokens panel in an
+  agent session, so that is nil, and the nil branch runs `create-token-with-set`,
+  which builds a fresh \"Global\" set and replaces the existing one — silently
+  wiping every token in it. The first authored token after any page load would
+  destroy the file's token library.
+
+  So the set is resolved from the library and passed explicitly; the
+  set-creating branch is left for the case it is actually named for."
+  [state]
+  (some-> (dsh/lookup-file-data state)
+          :tokens-lib
+          (ctob/get-sets)
+          (first)
+          (ctob/get-id)))
+
 (defn- create-token
   [{:keys [type name value] :as input}]
   (if-let [problem (token-problem input)]
     (rx/throw (ex-info problem {}))
-    (let [token (ctob/make-token {:type (token-type type) :name name :value value})]
-      ;; 1-arg create-token targets the current set, creating one if none exists
-      (st/emit! (dwtl/create-token token))
+    (let [state  @st/state
+          set-id (existing-token-set-id state)
+          token  (ctob/make-token {:type (token-type type) :name name :value value})]
+      (st/emit! (if set-id
+                  (dwtl/create-token set-id token)
+                  ;; no sets at all: this is the branch that legitimately makes one
+                  (dwtl/create-token token)))
       (rx/of {:name name :type type :value value
               :note "token created — bind it to shapes with apply_tokens"}))))
 

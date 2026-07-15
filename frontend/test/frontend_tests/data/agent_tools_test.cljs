@@ -674,6 +674,50 @@
     (t/is (str/includes? problem "gap"))))
 
 ;; ---------------------------------------------------------------------------
+;; tokens-by-type — read_design's token section
+;; ---------------------------------------------------------------------------
+
+(defn- tok
+  ([type name value] (tok type name value nil))
+  ([type name value resolved]
+   (cond-> {:type type :name name :value value}
+     (some? resolved) (assoc :resolved-value resolved))))
+
+(t/deftest tokens-are-grouped-by-their-public-type-name
+  ;; DTCG names, the same ones create_token takes — the agent should be able to
+  ;; read a type here and pass it straight back.
+  (let [out (at/tokens-by-type [(tok :color "color.brand" "#6366f1")
+                                (tok :spacing "spacing.md" "16")
+                                (tok :border-radius "radius.card" "12")])]
+    (t/is (= #{"color" "spacing" "borderRadius"} (set (keys out))))))
+
+(t/deftest several-tokens-of-one-type-group-together
+  (let [out (at/tokens-by-type [(tok :spacing "spacing.sm" "8")
+                                (tok :spacing "spacing.md" "16")])]
+    (t/is (= 2 (count (get out "spacing"))))))
+
+(t/deftest a-type-with-no-tokens-is-absent-not-empty
+  (let [out (at/tokens-by-type [(tok :color "color.brand" "#6366f1")])]
+    (t/is (= ["color"] (keys out)))
+    (t/is (not (contains? out "spacing")))))
+
+(t/deftest no-tokens-yields-nothing
+  (t/is (empty? (at/tokens-by-type []))))
+
+(t/deftest a-literal-token-shows-just-its-value
+  (let [[t] (get (at/tokens-by-type [(tok :spacing "spacing.md" "16" "16")]) "spacing")]
+    (t/is (= "16" (:value t)))
+    (t/is (not (contains? t :resolvedValue)))))
+
+(t/deftest an-alias-shows-both-its-reference-and-what-it-resolves-to
+  ;; An agent that sees only "#6366f1" cannot tell a literal from a reference —
+  ;; and that distinction is most of what penpot-audit-tokens looks for.
+  (let [[t] (get (at/tokens-by-type [(tok :color "color.brand" "{color.blue.500}" "#6366f1")])
+                 "color")]
+    (t/is (= "{color.blue.500}" (:value t)))
+    (t/is (= "#6366f1" (:resolvedValue t)))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

@@ -26,6 +26,7 @@
    [app.common.path-names :as cpn]
    [app.common.types.component :as ctc]
    [app.common.types.shape :as cts]
+   [app.common.types.shape.layout :as ctl]
    [app.common.types.text :as txt]
    [app.common.types.tokens-lib :as ctob]
    [app.common.uuid :as uuid]
@@ -176,6 +177,30 @@
                                                        :bottom {:type "number"} :left {:type "number"}}}
                                 :wrap {:type "boolean"}
                                 :remove {:type "boolean" :description "strip the layout instead"}}
+                   :required ["shapeId"]}}
+
+   {:name "set_layout_child"
+    :description
+    (str "Controls how ONE child behaves inside its parent's flex layout: "
+         "whether it grows to fill the row, hugs its content, aligns differently "
+         "from its siblings, or leaves the flow entirely (absolute). Penpot's "
+         "words are fill / fix / auto — \"fill\" is CSS flex-grow, \"auto\" is "
+         "hug-contents. The parent must already have a layout (set_layout); "
+         "without one these settings are stored and do nothing. Margins accept "
+         "spacing tokens via apply_tokens. Asynchronous.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string"}
+                                :horizontalSizing {:type "string" :enum ["fill" "fix" "auto"]}
+                                :verticalSizing {:type "string" :enum ["fill" "fix" "auto"]}
+                                :alignSelf {:type "string" :enum ["start" "end" "center" "stretch"]}
+                                :margin {:type "object"
+                                         :description "px; any of top/right/bottom/left"
+                                         :properties {:top {:type "number"} :right {:type "number"}
+                                                      :bottom {:type "number"} :left {:type "number"}}}
+                                :absolute {:type "boolean" :description "leave the layout flow"}
+                                :zIndex {:type "number"}
+                                :minWidth {:type "number"} :maxWidth {:type "number"}
+                                :minHeight {:type "number"} :maxHeight {:type "number"}}
                    :required ["shapeId"]}}
 
    {:name "create_variant"
@@ -759,6 +784,83 @@
                                "setting their x/y. Gaps and padding accept spacing "
                                "tokens via apply_tokens. Verify with read_design.")})))))))
 
+(def ^:private layout-sizing #{"fill" "fix" "auto"})
+(def ^:private layout-align-self #{"start" "end" "center" "stretch"})
+
+(defn layout-child-attrs
+  "The `:layout-item-*` patch for `update-layout-child`, from the tool's public
+  params. Only keys actually given are emitted — but note `absolute false` is a
+  real instruction (\"rejoin the flow\"), so presence is tested with `some?`
+  rather than truthiness."
+  [{:keys [horizontalSizing verticalSizing alignSelf margin absolute zIndex
+           minWidth maxWidth minHeight maxHeight]}]
+  (let [m (cond-> {}
+            (some? (:top margin))    (assoc :m1 (:top margin))
+            (some? (:right margin))  (assoc :m2 (:right margin))
+            (some? (:bottom margin)) (assoc :m3 (:bottom margin))
+            (some? (:left margin))   (assoc :m4 (:left margin)))]
+    (cond-> {}
+      (some? horizontalSizing) (assoc :layout-item-h-sizing (keyword horizontalSizing))
+      (some? verticalSizing)   (assoc :layout-item-v-sizing (keyword verticalSizing))
+      (some? alignSelf)        (assoc :layout-item-align-self (keyword alignSelf))
+      (some? absolute)         (assoc :layout-item-absolute absolute)
+      (some? zIndex)           (assoc :layout-item-z-index zIndex)
+      (some? minWidth)         (assoc :layout-item-min-w minWidth)
+      (some? maxWidth)         (assoc :layout-item-max-w maxWidth)
+      (some? minHeight)        (assoc :layout-item-min-h minHeight)
+      (some? maxHeight)        (assoc :layout-item-max-h maxHeight)
+      (seq m)                  (assoc :layout-item-margin m))))
+
+(defn layout-child-problem
+  "Why `set_layout_child` cannot be applied to `id`, or nil. Pure.
+
+  The parent-has-no-layout branch is why this is a separate tool rather than part
+  of `modify_shape`: `update-layout-child` writes `:layout-item-*` onto any shape
+  quite happily. The attrs persist, do nothing, and spring to life the moment
+  someone adds a layout later — a silent no-op wearing a success message."
+  [objects id {:keys [horizontalSizing verticalSizing alignSelf] :as input}]
+  (let [shape  (get objects id)
+        parent (some->> (:parent-id shape) (get objects))]
+    (cond
+      (nil? id)
+      "set_layout_child: shapeId is required"
+
+      (nil? shape)
+      (dm/str "set_layout_child: no shape on this page with id " (str id)
+              " — check read_design")
+
+      (or (nil? parent) (= uuid/zero (:parent-id shape)))
+      (dm/str "set_layout_child: " (shape-label shape) " is not inside a board"
+              " — nest it with nest_shape first")
+
+      (not (ctl/any-layout? parent))
+      (dm/str "set_layout_child: the parent of " (shape-label shape)
+              " has no layout, so these settings would be stored and do nothing"
+              " — call set_layout on board " (dm/str (:parent-id shape)) " first")
+
+      :else
+      (or (enum-problem "set_layout_child" "horizontalSizing" horizontalSizing layout-sizing)
+          (enum-problem "set_layout_child" "verticalSizing" verticalSizing layout-sizing)
+          (enum-problem "set_layout_child" "alignSelf" alignSelf layout-align-self)
+          (when (empty? (layout-child-attrs input))
+            (dm/str "set_layout_child: nothing to change — pass horizontalSizing,"
+                    " verticalSizing, alignSelf, margin, absolute, zIndex or"
+                    " min/max width/height"))))))
+
+(defn- set-layout-child
+  [{:keys [shapeId] :as input}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        id      (some-> shapeId parse-uuid)]
+    (if-let [problem (layout-child-problem objects id input)]
+      (rx/throw (ex-info problem {}))
+      (do
+        (interrupt!)
+        (st/emit! (dwsl/update-layout-child [id] (layout-child-attrs input)))
+        (rx/of {:note (str "layout applied to the child — its parent reflows. "
+                           "Margins accept spacing tokens via apply_tokens. "
+                           "Verify with read_design.")})))))
+
 ;; --- Variants
 ;;
 ;; `dwv/combine-as-variants` filters out ids that are not main instances or are
@@ -1117,6 +1219,7 @@
     "create_text"        (create-text input)
     "create_component"   (create-component input)
     "set_layout"         (set-layout input)
+    "set_layout_child"   (set-layout-child input)
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)
     "set_variant_property" (set-variant-property input)

@@ -184,6 +184,19 @@
       (re-find #"build|create|generate|design|make|add|produce" w) "review"
       :else "suggest")))
 
+(defn- skill-create-intent
+  "When a chat message asks to create a skill, the described 'what' with the
+  leading phrase stripped (possibly empty); nil when it isn't such a request.
+  Tolerates natural lead-ins (\"let's…\", \"I want to…\", \"can you…\") before the
+  verb, but ignores questions *about* skills (\"how do I…\"). Creation always
+  happens in the Skills view (US #9), so Chat only routes there."
+  [text]
+  (let [t (str/trim (or text ""))]
+    (when-not (re-find #"(?i)^(?:how|what|why|when|where|is|are|does)\b" t)
+      (some-> (re-find #"(?i)(?:create|make|build|add|set\s?up|generate)\s+(?:me\s+)?(?:a\s+|an\s+|my\s+|new\s+|custom\s+)*skill\b(?:\s+(?:that|which|to|for|called|named|:|-))?\s*(.*)$" t)
+              (second)
+              (str/trim)))))
+
 ;; The built-in skills catalog is shared with the agent — see
 ;; app.main.data.workspace.agent-skills (`ask/catalog`, `ask/mode-label`).
 
@@ -358,7 +371,7 @@
 
 (mf/defc chat-tab*
   {::mf/private true}
-  []
+  [{:keys [on-create-skill]}]
   (let [messages  (mf/deref refs/ai-panel-messages)
         page      (mf/deref refs/workspace-page)
         selected  (mf/deref refs/selected-shapes)
@@ -498,21 +511,29 @@
         on-toggle-picker (mf/use-fn #(swap! picker-open* not))
 
         send      (mf/use-fn
-                   (mf/deps input images settings busy? page selected objects)
+                   (mf/deps input images settings busy? page selected objects on-create-skill)
                    (fn []
                      (let [text (str/trim input)]
                        ;; an image on its own is a legitimate message — "what is
                        ;; this?" is often carried entirely by the picture
-                       (when (and (or (seq text) (seq images)) settings (not busy?))
-                         (let [context {:file (:name page)
-                                        :page (:name page)
-                                        :selection (->> selected
-                                                        (map #(select-keys (get objects %) [:name :type]))
-                                                        (vec))}]
-                           (st/emit! (dwaip/send-message settings text context images))
-                           (reset! input* "")
-                           (reset! images* [])
-                           (reset! attach-error* nil))))))
+                       (when (and (or (seq text) (seq images)) (not busy?))
+                         (if-let [seed (skill-create-intent text)]
+                           ;; "create a skill …" → hand off to the Skills view
+                           ;; creation flow rather than sending to the agent.
+                           (do (when on-create-skill (on-create-skill seed))
+                               (reset! input* "")
+                               (reset! images* [])
+                               (reset! attach-error* nil))
+                           (when settings
+                             (let [context {:file (:name page)
+                                            :page (:name page)
+                                            :selection (->> selected
+                                                            (map #(select-keys (get objects %) [:name :type]))
+                                                            (vec))}]
+                               (st/emit! (dwaip/send-message settings text context images))
+                               (reset! input* "")
+                               (reset! images* [])
+                               (reset! attach-error* nil))))))))
 
         on-key-down (mf/use-fn
                      (mf/deps send)
@@ -972,11 +993,21 @@
         skill       (deref skill*)
         creating*   (mf/use-state false)
         creating?   (deref creating*)
+        ;; description carried over when creation is started from Chat (US #9).
+        seed*       (mf/use-state nil)
 
         open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! view* :skills)))
         on-select   (mf/use-fn #(reset! skill* %))
-        open-create (mf/use-fn #(reset! creating* true))
+        open-create (mf/use-fn (fn [] (reset! seed* nil) (reset! creating* true)))
         on-created  (mf/use-fn #(reset! creating* false))
+        ;; Chat "create a skill …" → take the user to the Skills create flow with
+        ;; the described "what" prefilled.
+        on-create-skill (mf/use-fn
+                         (fn [seed]
+                           (reset! seed* seed)
+                           (reset! skill* nil)
+                           (reset! creating* true)
+                           (reset! view* :skills)))
         ;; Pop one level: create/detail → list → chat. Branch on the deref'd
         ;; `skill`/`creating?` (in deps) — reading the atoms from a no-deps
         ;; callback captures their initial nil/false and jumps straight to chat.
@@ -1027,7 +1058,7 @@
       (cond
         ;; Skills is a static catalog — reachable even before a provider is set up.
         skills?       (if creating?
-                        [:> skill-create* {:settings settings :on-created on-created}]
+                        [:> skill-create* {:settings settings :seed (deref seed*) :on-created on-created}]
                         [:> skills-tab* {:selected skill :on-select on-select :on-create open-create}])
         (empty? pool) [:> connect-empty*]
-        :else         [:> chat-tab*])]]))
+        :else         [:> chat-tab* {:on-create-skill on-create-skill}])]]))

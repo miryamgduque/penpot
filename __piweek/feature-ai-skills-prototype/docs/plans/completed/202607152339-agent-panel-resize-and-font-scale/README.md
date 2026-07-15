@@ -81,6 +81,13 @@ verified live in devenv (localhost:3450, Chrome): drag 360→654 pixel-exact, ma
   *container's* computed style passed. Lesson: when scaling by inheritance,
   measure the innermost text element, and expect bare element selectors in
   legacy globals to defeat inheritance.
+- Same pattern, second instance (also user-caught): the app-level
+  `.workspace ::placeholder { font-size: $fs12 }` pinned the composer
+  placeholder at 12px while the typed text scaled. Fixed with a
+  class+element+pseudo rule on the panel root (out-ranks class+pseudo) setting
+  `font-size: inherit`. Audit checklist for scaled surfaces: innermost
+  elements, pseudo-elements (`::placeholder`), and anything a global element
+  rule can reach.
 - Follow-up candidates: show the stepper in the Skills header too (currently
   chat-only, though the scale applies panel-wide); double-click the drag
   handle to reset width to default.

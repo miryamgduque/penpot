@@ -35,6 +35,7 @@
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.libraries :as dwl]
+   [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.shape-layout :as dwsl]
    [app.main.data.workspace.shapes :as dwsh]
    [app.main.data.workspace.tokens.application :as dwta]
@@ -171,6 +172,28 @@
          "omitted) into a reusable component. Returns the new component id.")
     :input-schema {:type "object"
                    :properties {:shapeIds {:type "array" :items {:type "string"}}}}}
+
+   {:name "delete_shape"
+    :description
+    (str "Deletes shapes and their children. The counterpart to create_shape — "
+         "use it to clean up your own mistakes rather than leaving them in the "
+         "file, and to remove what the user asks you to remove. Undoable by the "
+         "user with ⌘Z as a single step.")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["shapeIds"]}}
+
+   {:name "duplicate_shape"
+    :description
+    (str "Duplicates shapes, exactly as ⌘D does — which means a duplicated "
+         "BOARD lands to the right of its original, while any other shape lands "
+         "exactly ON TOP of the one it copied and must be moved to be seen. "
+         "Cheaper and more faithful than rebuilding a copy with create_shape. To "
+         "add a variant to an existing set use add_variant instead — that keeps "
+         "the copy inside the set.")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["shapeIds"]}}
 
    {:name "set_layout"
     :description
@@ -735,6 +758,93 @@
   [shape]
   (dm/str "\"" (:name shape) "\" (" (dm/str (:id shape)) ")"))
 
+(defn- labels
+  "Several shapes named back to the agent, so one message can list every
+  offender and cost one retry instead of one per shape."
+  [shapes]
+  (str/join ", " (map shape-label shapes)))
+
+;; --- Delete / duplicate
+;;
+;; `create_shape` shipped without a counterpart, so the agent could make a mess
+;; and not clean it up. Both events filter silently — `delete-shapes` asserts a
+;; set, and `duplicate-shapes` drops anything `allow-duplicate?` refuses and then
+;; no-ops on the empty set, which reads as success.
+
+(defn- ids-problem
+  [tool objects ids]
+  (let [missing (remove #(contains? objects %) ids)]
+    (cond
+      (empty? ids)
+      (dm/str tool ": shapeIds is required — pass the ids to act on (see read_design)")
+
+      (seq missing)
+      (dm/str tool ": no shape on this page with id "
+              (str/join ", " (map str missing))
+              " — it may be on another page, or already gone; check read_design"))))
+
+(defn delete-problem
+  "Why `delete_shape` cannot run, or nil. Pure."
+  [objects ids]
+  (ids-problem "delete_shape" objects ids))
+
+(defn duplicate-problem
+  "Why `duplicate_shape` cannot run, or nil. Pure."
+  [objects ids]
+  (or (ids-problem "duplicate_shape" objects ids)
+      (let [blocked (remove #(ctc/allow-duplicate? objects (get objects %)) ids)]
+        (when (seq blocked)
+          (dm/str "duplicate_shape: " (labels (map #(get objects %) blocked))
+                  (if (= 1 (count blocked)) " is" " are")
+                  " inside a component copy, whose structure is owned by the main"
+                  " component — duplicate the main instead, or detach the copy first")))))
+
+(defn- delete-shape
+  [{:keys [shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (delete-problem objects ids)]
+      (rx/throw (ex-info problem {}))
+      (do
+        (interrupt!)
+        ;; delete-shapes asserts a set; combine-as-variants wanted a vector.
+        ;; Two conventions live in this file — convert at the boundary.
+        (st/emit! (dwsh/delete-shapes (set ids)))
+        (rx/of {:deleted (count ids)
+                :note "deleted — undo with ⌘Z (it is one undo step)"})))))
+
+(defn- duplicate-shape
+  [{:keys [shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (duplicate-problem objects ids)]
+      (rx/throw (ex-info problem {}))
+      (let [id-ref (atom nil)]
+        (interrupt!)
+        (st/emit! (dws/duplicate-shapes (set ids)
+                                        ;; offset like ⌘D: a copy exactly on top of
+                                        ;; its original is invisible to the agent
+                                        :move-delta? true
+                                        ;; never move the user's selection
+                                        :change-selection? false
+                                        :return-ref id-ref))
+        ;; `return-ref` gets ONE id — the representative duplicate — not a
+        ;; collection, and it is reset from an `rx/tap` on the emitted stream, so
+        ;; it can still be nil here. Report it only when it is both present and
+        ;; unambiguous; never guess an id.
+        (let [new-id (deref id-ref)]
+          (rx/of (cond-> {:duplicated (count ids)
+                          :note (str "duplicated. Penpot places a duplicated BOARD to "
+                                     "the right of its original, but leaves every other "
+                                     "shape exactly on top of the one it copied — so "
+                                     "unless you duplicated a board, move it with "
+                                     "modify_shape or nest it with nest_shape, or it is "
+                                     "invisible. Verify with read_design.")}
+                   (and new-id (= 1 (count ids)))
+                   (assoc :shapeId (dm/str new-id)))))))))
+
 ;; --- Layout (flex)
 ;;
 ;; The single widest gap in the tool surface: the skills' central method is
@@ -922,9 +1032,6 @@
 ;; So the eligibility rules are checked here first, mirroring the event's own
 ;; filter, and rejected with a message that names the corrective action.
 
-(defn- labels
-  [shapes]
-  (str/join ", " (map shape-label shapes)))
 
 (defn variant-member-ids
   "The parsed, de-duplicated member ids from a `create_variant` input, in the
@@ -1396,6 +1503,8 @@
     "nest_shape"         (nest-shape input)
     "create_text"        (create-text input)
     "create_component"   (create-component input)
+    "delete_shape"       (delete-shape input)
+    "duplicate_shape"    (duplicate-shape input)
     "set_layout"         (set-layout input)
     "set_layout_child"   (set-layout-child input)
     "create_variant"     (create-variant input)

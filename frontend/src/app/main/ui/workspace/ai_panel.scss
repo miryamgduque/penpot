@@ -822,6 +822,47 @@
   cursor: pointer;
 }
 
+// User-skill playbook: read view + inline editor.
+.detail-body {
+  @include deprecated.body-small-typography;
+
+  max-block-size: 320px;
+  overflow: auto;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  color: var(--color-foreground-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.skill-edit {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  overflow-y: auto;
+}
+
+.skill-edit-body {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  min-block-size: 220px;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  font-family: monospace;
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+}
+
 .eform-attach-btn {
   @include deprecated.body-small-typography;
 

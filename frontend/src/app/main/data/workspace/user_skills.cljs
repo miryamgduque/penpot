@@ -43,6 +43,26 @@
       (->> (rp/cmd! :create-skill params)
            (rx/map (fn [_] (fetch-user-skills)))))))
 
+(defn update-skill
+  "Saves an edit of one of the caller's skills (id + label/mode/trigger/
+  description/body — the name slug is immutable, it keys the enable state)
+  and refetches so the catalog and the agent's router see the new text."
+  [params]
+  (ptk/reify ::update-skill
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :update-skill params)
+           (rx/map (fn [_] (fetch-user-skills)))))))
+
+(defn delete-skill
+  "Deletes one of the caller's skills by id and refetches."
+  [id]
+  (ptk/reify ::delete-skill
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :delete-skill {:id id})
+           (rx/map (fn [_] (fetch-user-skills)))))))
+
 (defn create-from-answers
   "The creation flow's one action: generate the skill doc from the guided
   answers (through `settings`' provider/model), persist it, and refetch so the

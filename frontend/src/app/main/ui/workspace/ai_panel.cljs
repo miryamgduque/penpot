@@ -1041,27 +1041,125 @@
                                :mode-autofix (= mode "autofix"))}
    (get ask/mode-label mode mode)])
 
+(mf/defc skill-edit*
+  "Inline editor for a USER-CREATED skill: label, trigger phrase, mode and the
+  generated playbook body. The name slug is deliberately absent — it keys the
+  enable state and the router, so it never changes after creation."
+  {::mf/private true}
+  [{:keys [skill on-saved on-cancel]}]
+  (let [label*   (mf/use-state (or (:label skill) ""))
+        trigger* (mf/use-state (or (:example skill) ""))
+        mode*    (mf/use-state (:mode skill))
+        body*    (mf/use-state (or (:body skill) ""))
+        label    (deref label*)
+        trigger  (deref trigger*)
+        mode     (deref mode*)
+        body     (deref body*)
+        ready?   (and (seq (str/trim label)) (seq (str/trim body)))
+        on-save  (mf/use-fn
+                  (mf/deps skill label trigger mode body ready?)
+                  (fn []
+                    (when ready?
+                      (st/emit! (dusk/update-skill
+                                 {:id (:id skill)
+                                  :label (str/trim label)
+                                  :mode mode
+                                  :trigger (str/trim trigger)
+                                  :description (:what skill)
+                                  :body body}))
+                      (on-saved))))]
+    [:div {:class (stl/css :skill-edit)}
+     [:label {:class (stl/css :create-label)} "Name"]
+     [:input {:class (stl/css :create-input)
+              :value label
+              :on-change #(reset! label* (dom/get-value (dom/get-target %)))}]
+
+     [:label {:class (stl/css :create-label)} "Trigger phrase"]
+     [:input {:class (stl/css :create-input)
+              :value trigger
+              :on-change #(reset! trigger* (dom/get-value (dom/get-target %)))}]
+
+     [:label {:class (stl/css :create-label)} "Mode"]
+     [:div {:class (stl/css :create-modes)}
+      (for [[m lbl] [["suggest" "🔍 Suggest"] ["review" "✏️ Review"] ["autofix" "⚡ Auto-fix"]]]
+        [:button {:key m
+                  :type "button"
+                  :class (stl/css-case :create-mode true :selected (= m mode))
+                  :on-click #(reset! mode* m)}
+         lbl])]
+
+     [:label {:class (stl/css :create-label)} "Playbook (what the agent follows)"]
+     [:textarea {:class (stl/css :skill-edit-body)
+                 :value body
+                 :rows 14
+                 :on-change #(reset! body* (dom/get-value (dom/get-target %)))}]
+
+     [:div {:class (stl/css :vibes-actions)}
+      [:button {:type "button"
+                :class (stl/css :vibes-button-primary)
+                :disabled (not ready?)
+                :on-click on-save}
+       "Save"]
+      [:button {:type "button"
+                :class (stl/css :vibes-button)
+                :on-click on-cancel}
+       "Cancel"]]]))
+
 (mf/defc skill-detail*
   "Detail for one catalog skill, shown in place of the list within the Skills
   view. Back navigation lives in the panel header (US #35), so there is no in-body
   back button here. Carries the same on/off toggle as the list card; `enabled` is
-  the resolved state and `on-toggle` receives the new boolean."
+  the resolved state and `on-toggle` receives the new boolean.
+
+  A user-created skill (`:user?`) additionally shows its generated playbook and
+  can be edited (label/trigger/mode/body) or deleted — built-ins are shared and
+  regenerated from the aikit, so they stay read-only. `on-close` returns to the
+  list after a delete."
   {::mf/private true}
-  [{:keys [skill enabled on-toggle]}]
-  (let [{:keys [label category mode example what]} skill]
-    [:div {:class (stl/css :skill-detail)}
-     [:div {:class (stl/css :detail-category)} category]
-     [:div {:class (stl/css :detail-head)}
-      [:div {:class (stl/css :detail-name)} label]
-      [:> switch* {:default-checked enabled
-                   :aria-label (dm/str (if enabled "Disable " "Enable ") label)
-                   :on-change on-toggle}]]
-     [:div {:class (stl/css :detail-tags)}
-      [:> mode-badge* {:mode mode}]]
-     [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
-     [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
-     [:div {:class (stl/css :detail-section-label)} "What it does"]
-     [:div {:class (stl/css :detail-what)} what]]))
+  [{:keys [skill enabled on-toggle on-close]}]
+  (let [{:keys [label category mode example what user? body]} skill
+        editing?* (mf/use-state false)
+        editing?  (deref editing?*)
+        confirm?* (mf/use-state false)
+        confirm?  (deref confirm?*)
+        on-edit   (mf/use-fn (fn [] (reset! confirm?* false) (reset! editing?* true)))
+        on-saved  (mf/use-fn #(reset! editing?* false))
+        on-cancel (mf/use-fn #(reset! editing?* false))
+        on-delete (mf/use-fn
+                   (mf/deps confirm? skill on-close)
+                   (fn []
+                     (if confirm?
+                       (do (st/emit! (dusk/delete-skill (:id skill)))
+                           (on-close))
+                       (reset! confirm?* true))))]
+    (if editing?
+      [:> skill-edit* {:skill skill :on-saved on-saved :on-cancel on-cancel}]
+      [:div {:class (stl/css :skill-detail)}
+       [:div {:class (stl/css :detail-category)} category]
+       [:div {:class (stl/css :detail-head)}
+        [:div {:class (stl/css :detail-name)} label]
+        [:> switch* {:default-checked enabled
+                     :aria-label (dm/str (if enabled "Disable " "Enable ") label)
+                     :on-change on-toggle}]]
+       [:div {:class (stl/css :detail-tags)}
+        [:> mode-badge* {:mode mode}]]
+       [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
+       [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
+       [:div {:class (stl/css :detail-section-label)} "What it does"]
+       [:div {:class (stl/css :detail-what)} what]
+       (when user?
+         [:*
+          [:div {:class (stl/css :detail-section-label)} "Playbook"]
+          [:pre {:class (stl/css :detail-body)} body]
+          [:div {:class (stl/css :vibes-actions)}
+           [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
+            "Edit"]
+           [:button {:type "button"
+                     :class (stl/css-case :vibes-button true
+                                          :vibes-button-danger true
+                                          :vibes-button-confirm confirm?)
+                     :on-click on-delete}
+            (if confirm? "Really delete?" "Delete")]]])])))
 
 (mf/defc skill-row*
   "One catalog row: name + description, a muted \"Off\" pill when disabled, and a
@@ -1243,7 +1341,8 @@
       (let [enabled? (get enabled-map (:name skill) true)]
         [:> skill-detail* {:skill skill
                            :enabled enabled?
-                           :on-toggle #(toggle (:name skill) %)}])
+                           :on-toggle #(toggle (:name skill) %)
+                           :on-close #(on-select nil)}])
       [:div {:class (stl/css :skills-tab)}
        ;; Project vibes: pinned above the catalog — it is file-level state,
        ;; not a toggleable skill, so it gets a place rather than a row.

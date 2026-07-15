@@ -250,7 +250,8 @@
 
 (defn- user-skill->entry
   [us]
-  {:name     (:name us)
+  {:id       (:id us)
+   :name     (:name us)
    :label    (:label us)
    :blurb    (:description us)
    :mode     (:mode us)

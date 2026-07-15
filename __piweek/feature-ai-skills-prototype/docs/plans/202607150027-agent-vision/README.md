@@ -123,8 +123,13 @@ or the viewport-only `capture-canvas-snapshot`. This plan therefore builds **`re
    string exactly as before. **10 tests, written failing first.** Verified against the
    *documented* wire shapes only — **no image has reached a live model yet**; Phase 04 is the
    real proof.
-3. [Phase 03 — Vision capability per model](./todo-phase-03-vision-capability.md) — a `:vision`
-   flag in the curated catalog; text-only models degrade gracefully instead of erroring.
+3. [Phase 03 — Vision capability per model](./done-phase-03-vision-capability.md) — ✅ **done**:
+   a `:vision` flag on the catalog (moved to `data/ai-providers` so the agent can read it too),
+   plus `strip-images` so a mid-conversation switch to a text-only model degrades instead of
+   failing the whole history. **All 12 models verified against provider docs — half the catalog
+   is text-only** (all of Zhipu and Moonshot ship vision as separate model ids). Verification
+   also caught two wrong context values (opus-4.8/sonnet-5 are 1M, not 200K) and one
+   **discontinued** model still in the picker.
 4. [Phase 04 — Attach images in the composer](./todo-phase-04-composer-attach.md) — pick, paste,
    drop; ≤5; thumbnails; remove. The first end-to-end proof that an image reaches the model.
 5. [Phase 05 — Fit the budget](./todo-phase-05-fit-the-budget.md) — downscale on attach, and

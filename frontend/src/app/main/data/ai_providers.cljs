@@ -8,11 +8,70 @@
   "Account-level AI provider connections (see app.rpc.commands.ai-providers).
   Several providers can be connected in parallel; state holds a map of
   provider-id → status ({:provider :connected :key-hint :enabled-models}).
-  Keys are write-only from the client."
+  Keys are write-only from the client.
+
+  Also home to the curated model catalog, which lives here rather than in the
+  settings UI because the agent needs it too: whether the selected model can
+  read an image decides how a turn is encoded, not just how a button renders."
   (:require
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
    [potok.v2.core :as ptk]))
+
+;; --- Model catalog
+;;
+;; Hand-maintained: there is no cross-provider capability API, and the one
+;; provider that does expose one (Anthropic's /v1/models) only covers its own
+;; models. Verified against provider documentation on 2026-07-15.
+;;
+;; `:vision` is the load-bearing field and the easy one to get wrong, because
+;; the answer does not follow from the model's name or reputation:
+;;
+;;   Anthropic, OpenAI — every current model reads images; there is no separate
+;;     vision SKU to pick.
+;;   Zhipu, Moonshot   — vision ships as SEPARATE model ids (`glm-4.5v`,
+;;     `moonshot-v1-128k-vision-preview`). Every base model below is text-only,
+;;     however capable the family sounds.
+;;
+;; Getting one wrong is not a local mistake: the model is chosen per turn, so a
+;; false `:vision true` is a provider error in the user's face mid-conversation.
+;; `frontend-tests.data.ai-providers-test` pins each of these down.
+
+(def ai-provider-models
+  {"anthropic"
+   ;; opus-4.8 and sonnet-5 are 1M-context models — the 200K these two carried
+   ;; until 2026-07-15 was a placeholder, not a measurement.
+   [{:id "claude-opus-4-8"            :label "Claude Opus 4.8"  :context 1000000 :vision true}
+    {:id "claude-sonnet-5"            :label "Claude Sonnet 5"  :context 1000000 :vision true}
+    {:id "claude-haiku-4-5-20251001"  :label "Claude Haiku 4.5" :context 200000  :vision true}]
+   "openai"
+   [{:id "gpt-5"      :label "GPT-5"      :context 400000  :vision true}
+    {:id "gpt-5-mini" :label "GPT-5 mini" :context 400000  :vision true}
+    {:id "gpt-4.1"    :label "GPT-4.1"    :context 1000000 :vision true}]
+   "zhipu"
+   ;; the vision line is GLM-4.5V / GLM-4.6V — not offered here
+   [{:id "glm-4.6"     :label "GLM-4.6"     :context 200000 :vision false}
+    {:id "glm-4.5"     :label "GLM-4.5"     :context 128000 :vision false}
+    {:id "glm-4.5-air" :label "GLM-4.5 Air" :context 128000 :vision false}]
+   "moonshot"
+   ;; the vision line is moonshot-v1-*-vision-preview — not offered here
+   ;; TODO: kimi-k2-0905-preview was discontinued 2026-05-25; it is kept listed
+   ;; only so anyone who already enabled it still sees a labelled row. Needs a
+   ;; product call on the replacement (kimi-k2.6), not a silent swap.
+   [{:id "kimi-k2-0905-preview" :label "Kimi K2"          :context 256000 :vision false}
+    {:id "moonshot-v1-128k"     :label "Moonshot v1 128K" :context 128000 :vision false}
+    {:id "moonshot-v1-32k"      :label "Moonshot v1 32K"  :context 32000  :vision false}]})
+
+(defn vision?
+  "Whether `model` accepts image input.
+
+  A model outside the catalog answers `false`. That is the deliberate direction
+  to be wrong in: guessing `true` costs a provider error mid-conversation on
+  content the user already sent, while guessing `false` only greys out the
+  attach button on a model that might have coped."
+  [provider model]
+  (boolean (some (fn [entry] (when (= model (:id entry)) (:vision entry)))
+                 (get ai-provider-models provider))))
 
 (defn- ai-providers-fetched
   [statuses]

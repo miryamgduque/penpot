@@ -18,6 +18,7 @@
   providers). That is what lets a user switch models — even across providers —
   mid-conversation and carry the whole history."
   (:require
+   [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.repo :as rp]
@@ -85,6 +86,33 @@
                     images)
         (seq text) (conj {:type "text" :text text}))
       text)))
+
+(defn- images-omitted-note
+  [n]
+  (str "[" n " image" (when (> n 1) "s")
+       " omitted: the selected model cannot read images]"))
+
+(defn strip-images
+  "Drops every image in the history, leaving a note where each set stood.
+
+  Needed because the model is chosen per turn and the whole history is
+  re-encoded on every round: switching to a text-only model does not just
+  affect the next message, it retroactively re-encodes images sent ten turns
+  ago. Stripping is what makes that switch degrade instead of failing the
+  conversation outright.
+
+  The note matters. A silent disappearance leaves the model answering questions
+  about an image it can no longer see and no longer knows existed — better it
+  reads that something was withheld than confabulate what was in it."
+  [messages]
+  (mapv (fn [{:keys [images text] :as message}]
+          (if (seq images)
+            (let [note (images-omitted-note (count images))]
+              (-> message
+                  (dissoc :images)
+                  (assoc :text (if (seq text) (str text "\n\n" note) note))))
+            message))
+        messages))
 
 (defn- anthropic?
   "Providers that speak the Anthropic Messages API; the rest are
@@ -174,29 +202,34 @@
   proxy: the backend forwards the payload byte-for-byte and never decodes it,
   and OpenAI's usage opt-in is dialect-specific anyway."
   [{:keys [provider model]} messages system stream?]
-  (js/JSON.stringify
-   (clj->js
-    (if (anthropic? provider)
-      (cond-> {:model model
-               ;; generous budget: adaptive-thinking models can spend a chunk
-               ;; reasoning before any visible output; a small budget yields a
-               ;; silent empty reply
-               :max_tokens 32000
-               ;; the ephemeral marker caches tools+system across rounds
-               :system [{:type "text" :text system
-                         :cache_control {:type "ephemeral"}}]
-               :messages (encode-anthropic messages)}
-        (seq at/tool-specs) (assoc :tools (anthropic-tools))
-        stream?             (assoc :stream true))
-      (cond-> {:model model
-               :messages (encode-openai system messages)}
-        (seq at/tool-specs)      (assoc :tools (openai-tools))
-        (= provider "openai")    (assoc :max_completion_tokens 16000)
-        (not= provider "openai") (assoc :max_tokens 16000)
-        stream?                  (assoc :stream true)
-        ;; without this opt-in the final chunk carries no usage at all and the
-        ;; spend meter silently reads zero
-        stream?                  (assoc :stream_options {:include_usage true}))))))
+  (let [messages (cond-> messages
+                   ;; the model can change between rounds, so this is decided
+                   ;; per round rather than when the message was composed
+                   (not (dai/vision? provider model))
+                   (strip-images))]
+    (js/JSON.stringify
+     (clj->js
+      (if (anthropic? provider)
+        (cond-> {:model model
+                 ;; generous budget: adaptive-thinking models can spend a chunk
+                 ;; reasoning before any visible output; a small budget yields a
+                 ;; silent empty reply
+                 :max_tokens 32000
+                 ;; the ephemeral marker caches tools+system across rounds
+                 :system [{:type "text" :text system
+                           :cache_control {:type "ephemeral"}}]
+                 :messages (encode-anthropic messages)}
+          (seq at/tool-specs) (assoc :tools (anthropic-tools))
+          stream?             (assoc :stream true))
+        (cond-> {:model model
+                 :messages (encode-openai system messages)}
+          (seq at/tool-specs)      (assoc :tools (openai-tools))
+          (= provider "openai")    (assoc :max_completion_tokens 16000)
+          (not= provider "openai") (assoc :max_tokens 16000)
+          stream?                  (assoc :stream true)
+          ;; without this opt-in the final chunk carries no usage at all and the
+          ;; spend meter silently reads zero
+          stream?                  (assoc :stream_options {:include_usage true})))))))
 
 ;; --- Usage
 ;;

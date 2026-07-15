@@ -193,6 +193,7 @@
 (def ^:icon-id justify-content-row-start "justify-content-row-start")
 (def ^:icon-id layers "layers")
 (def ^:icon-id library "library")
+(def ^:icon-id list-checks "list-checks")
 (def ^:icon-id locate "locate")
 (def ^:icon-id lock "lock")
 (def ^:icon-id margin "margin")

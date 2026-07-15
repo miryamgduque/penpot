@@ -1,6 +1,6 @@
 # Phase 02 — See the set
 
-**Status:** todo
+**Status:** done
 
 `create_variant` (Phase 01) is write-only until the agent can read the result back.
 `read_design` currently reports `id/name/type/x/y/width/height` per shape — a variant
@@ -9,17 +9,17 @@ that loop is what makes the agent's self-check honest instead of hopeful.
 
 ## Before Start
 
-- [ ] Phase 01 merged
-- [ ] Re-read `read-design` and `summarize-shape` in `agent_tools.cljs`
-- [ ] Re-read `cfv/find-variant-components` in `common/src/app/common/files/variant.cljc` — note it **reverses** `(:shapes container)`, and does not filter `:components`, to preserve child order
+- [x] Phase 01 merged
+- [x] Re-read `read-design` and `summarize-shape` in `agent_tools.cljs`
+- [x] Re-read `cfv/find-variant-components` — **it takes file `data`, not just `objects`** (see Notes)
 
 ## Checklist
 
-- [ ] Write tests for the summarizer (see Tests below)
-- [ ] Extend `summarize-shape` (or add a variant-aware branch) to mark containers and members
-- [ ] Add a `variants` section to the `read_design` payload
-- [ ] Lint pass (`lint:clj` + `check-fmt:clj`, in the devenv — there is no Makefile)
-- [ ] Preview review: build a set with `create_variant`, confirm `read_design` describes it
+- [x] Write tests for the summarizer (see Tests below)
+- [x] Extend `summarize-shape` (or add a variant-aware branch) to mark containers and members
+- [x] Add a `variants` section to the `read_design` payload
+- [x] Lint pass — clj-kondo 0/0, cljfmt clean
+- [x] Preview review: `read_design` describes both sets built in Phase 01, live
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit (`:sparkles:`)
 
@@ -84,8 +84,42 @@ property names at top level and let the agent drill in — but measure before op
 - `frontend/src/app/main/data/workspace/agent_tools.cljs` — `summarize-shape`, `read-design`, requires (`ctc`, `cfv`)
 - `frontend/test/frontend_tests/data/agent_tools_test.cljs` — summarizer tests
 
-## Notes
+## Notes — what execution found
 
-`find-variant-components` needs the file's components list as well as `objects` — check its
-arity and source the components via `dsh/lookup-file-data` rather than assuming `read-design`
-already has them in scope.
+**The plan's snippet passed the wrong argument.** `cfv/find-variant-components` is
+`(data variant-id)` or `(data objects variant-id)` — the first arg is the **file data**, not
+the components list, because it resolves each child's `:component-id` through
+`ctcl/get-component`. `read-design` now takes `data` from `dsh/lookup-file-data` once and
+threads it to both `variant-sets` and the token section (which was re-looking it up).
+
+**Payload measured, as the plan asked.** The whole `read_design` result is **5,701 chars =
+29% of the 20k truncation budget** on a 55-shape file with 2 variant sets. Not close to the
+wall, so no counts-plus-drill-in fallback was needed. Worth re-measuring in Phase 15, which
+adds depth — that's the change likely to blow it, not this one.
+
+**Payload economy holds, verified live**: a non-variant shape comes back with exactly
+`id, name, type, x, y, width, height` and no variant keys. Files without variants pay nothing.
+
+**The "Component" naming problem is worse than it looked from Phase 01.** `read_design` now
+reports, verbatim:
+
+```json
+{"variantId":"…","name":"Component",
+ "members":[{"name":"Component","properties":[{"name":"Property 1","value":"Tag"}]},
+            {"name":"Component","properties":[{"name":"Property 1","value":"Tag Solid"}]}]}
+```
+
+Every set *and* every member is called "Component", because `create_component` renames the
+source board. Only the property values distinguish them. The agent can just about cope — the
+values disambiguate — but a library of a dozen agent-built sets would be unreadable, and this
+is the payload it reasons from. This is now the strongest argument for the rename follow-up
+noted in Phase 01; `dwv/rename-variant` (`variants.cljs:554`) is the lever and **Phase 03 is
+the right home**.
+
+**Primary-variant ordering left alone, deliberately.** The plan claimed "the last element of
+that reversed seq is the primary variant". Reading the source, `is-secondary-variant?`
+compares against `(last (:shapes container))` on the **raw** child vector, and
+`find-variant-components` returns `(reverse …)` — so the primary is the **first** element of
+what it returns, not the last. Rather than encode a claim I hadn't verified at runtime, the
+tool preserves `find-variant-components`' order and flags nothing as primary. Phase 04 needs
+this settled (it duplicates a member); verify it there against a real set.

@@ -162,6 +162,28 @@
   [{:keys [provider model]}]
   (str provider "/" model))
 
+(defn- selected-settings
+  "The pool entry the user remembered (`selected-key`), or the first — nil pool
+  yields nil. Shared by the chat composer and the skill-creation flow."
+  [pool selected-key]
+  (let [idx (or (when selected-key
+                  (->> pool
+                       (keep-indexed (fn [i entry]
+                                       (when (= selected-key (model-key entry)) i)))
+                       first))
+                0)]
+    (nth pool idx nil)))
+
+(defn- propose-mode
+  "A default mode guessed from the description — a report-ish skill suggests, a
+  direct-fix one auto-fixes, generative work is review. The user can override."
+  [what]
+  (let [w (str/lower (or what ""))]
+    (cond
+      (re-find #"rename|clean up|fix|correct|format|tidy" w) "autofix"
+      (re-find #"build|create|generate|design|make|add|produce" w) "review"
+      :else "suggest")))
+
 ;; The built-in skills catalog is shared with the agent — see
 ;; app.main.data.workspace.agent-skills (`ask/catalog`, `ask/mode-label`).
 
@@ -359,7 +381,7 @@
                                              (when (= selected-key (model-key entry)) i)))
                              first))
                       0)
-        settings  (nth pool idx nil)
+        settings  (selected-settings pool selected-key)
 
         input*    (mf/use-state "")
         input     (deref input*)
@@ -778,10 +800,11 @@
   instant) and drops a disabled skill from the agent's router — see
   agent-skills/resolve-enabled.
 
-  Controlled by the panel: `selected` is the open skill's name (nil = list) and
-  `on-select` opens one. Back navigation lives in the panel header (US #35)."
+  Controlled by the panel: `selected` is the open skill's name (nil = list),
+  `on-select` opens one, `on-create` opens the creation flow (US #9). Back
+  navigation lives in the panel header (US #35)."
   {::mf/private true}
-  [{:keys [selected on-select]}]
+  [{:keys [selected on-select on-create]}]
   (let [catalog     (mf/deref refs/skills-catalog)
         skill       (when selected
                       (some (fn [{:keys [category skills]}]
@@ -804,14 +827,19 @@
                            :enabled enabled?
                            :on-toggle #(toggle (:name skill) %)}])
       [:div {:class (stl/css :skills-tab)}
-       [:div {:class (stl/css :skills-filter)}
-        (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
+       [:div {:class (stl/css :skills-toolbar)}
+        [:div {:class (stl/css :skills-filter)}
+         (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
           [:button {:key (name opt)
                     :type "button"
                     :class (stl/css-case :skills-filter-option true
                                          :selected (= active opt))
                     :on-click #(st/emit! (dwaip/set-skills-filter opt))}
            lbl])]
+        [:button {:class (stl/css :create-skill-btn)
+                  :type "button"
+                  :on-click on-create}
+         "+ Create skill"]]
        (if (seq groups)
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
@@ -841,6 +869,89 @@
         :href "#/settings/integrations"}
     "Connect a provider"]])
 
+(mf/defc skill-create*
+  "The guided creation flow (US #9): capture what / trigger / mode (with a
+  proposed default), then generate the skill doc and persist it. Lives in the
+  Skills view; the header owns the back nav. `seed` prefills the description when
+  started from Chat. `on-created` closes the flow (the new card shows in the list)."
+  {::mf/private true}
+  [{:keys [settings seed on-created]}]
+  (let [what*     (mf/use-state (or seed ""))
+        trigger*  (mf/use-state "")
+        mode*     (mf/use-state nil)
+        status*   (mf/use-state :idle)
+
+        what      (deref what*)
+        trigger   (deref trigger*)
+        proposed  (propose-mode what)
+        mode      (or (deref mode*) proposed)
+        status    (deref status*)
+        busy?     (= status :generating)
+        ready?    (and (seq (str/trim what)) (some? settings) (not busy?))
+
+        on-what    (mf/use-fn #(reset! what* (dom/get-value (dom/get-target %))))
+        on-trigger (mf/use-fn #(reset! trigger* (dom/get-value (dom/get-target %))))
+
+        submit
+        (mf/use-fn
+         (mf/deps what trigger mode settings busy?)
+         (fn []
+           (when (and (seq (str/trim what)) settings (not busy?))
+             (reset! status* :generating)
+             (st/emit!
+              (dusk/create-from-answers
+               settings
+               {:what (str/trim what) :trigger (str/trim trigger) :mode mode}
+               {:on-success (fn [created] (reset! status* :idle) (on-created created))
+                :on-error   (fn [_] (reset! status* :error))})))))]
+
+    (if (nil? settings)
+      [:div {:class (stl/css :skill-create)}
+       [:p {:class (stl/css :create-guard)}
+        "Connect an AI model to create skills."]
+       [:a {:class (stl/css :connect-button) :href "#/settings/integrations"}
+        "Connect a provider"]]
+
+      [:div {:class (stl/css :skill-create)}
+       [:p {:class (stl/css :create-intro)}
+        "Describe the skill in your words — the agent writes the playbook."]
+
+       [:label {:class (stl/css :create-label)} "What should it do?"]
+       [:textarea {:class (stl/css :create-input)
+                   :value what
+                   :placeholder "e.g. Check all the copy on a screen against a tone of voice I describe, and flag anything that doesn't match."
+                   :disabled busy?
+                   :on-change on-what}]
+
+       [:label {:class (stl/css :create-label)} "When should it trigger? An example phrase."]
+       [:input {:class (stl/css :create-input)
+                :value trigger
+                :placeholder "e.g. Check the tone of voice on this screen."
+                :disabled busy?
+                :on-change on-trigger}]
+
+       [:label {:class (stl/css :create-label)} "Mode"]
+       [:div {:class (stl/css :create-modes)}
+        (for [[m lbl] [["suggest" "🔍 Suggest"] ["review" "✏️ Review"] ["autofix" "⚡ Auto-fix"]]]
+          [:button {:key m
+                    :type "button"
+                    :class (stl/css-case :create-mode true :selected (= m mode))
+                    :disabled busy?
+                    :on-click #(reset! mode* m)}
+           lbl
+           (when (= m proposed)
+             [:span {:class (stl/css :create-mode-hint)} " · suggested"])])]
+
+       (when (= status :error)
+         [:p {:class (stl/css :create-error)}
+          "Couldn't generate that skill — try rephrasing and create again."])
+
+       [:button {:class (stl/css :create-submit)
+                 :type "button"
+                 :disabled (not ready?)
+                 :on-click submit}
+        (if busy? "Generating…" "Create skill")]])))
+
 (mf/defc ai-panel*
   "The Agent panel shell. Chat is the home surface and fills the body; Skills is a
   full-panel view reached from a muted header icon (US #35). The view is in-memory
@@ -855,25 +966,32 @@
         view        (deref view*)
         skills?     (= view :skills)
 
-        ;; The open skill within the Skills view (nil = the list). Lifted here so
-        ;; the header back can pop it before leaving Skills.
+        ;; The open skill within the Skills view (nil = the list) and whether the
+        ;; create flow is open. Both lifted here so the header back pops one level.
         skill*      (mf/use-state nil)
         skill       (deref skill*)
+        creating*   (mf/use-state false)
+        creating?   (deref creating*)
 
-        open-skills (mf/use-fn (fn [] (reset! skill* nil) (reset! view* :skills)))
+        open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! view* :skills)))
         on-select   (mf/use-fn #(reset! skill* %))
-        ;; Pop one level: detail → list → chat. Branch on the deref'd `skill`
-        ;; (with it in deps) — reading @skill* from a no-deps callback captures
-        ;; the initial nil and always jumps straight to chat.
+        open-create (mf/use-fn #(reset! creating* true))
+        on-created  (mf/use-fn #(reset! creating* false))
+        ;; Pop one level: create/detail → list → chat. Branch on the deref'd
+        ;; `skill`/`creating?` (in deps) — reading the atoms from a no-deps
+        ;; callback captures their initial nil/false and jumps straight to chat.
         on-back     (mf/use-fn
-                     (mf/deps skill)
+                     (mf/deps skill creating?)
                      (fn []
-                       (if (some? skill)
-                         (reset! skill* nil)     ;; detail → list
-                         (reset! view* :chat)))) ;; list → chat
+                       (cond
+                         creating?     (reset! creating* false) ;; create → list
+                         (some? skill) (reset! skill* nil)      ;; detail → list
+                         :else         (reset! view* :chat))))  ;; list → chat
 
         providers   (mf/deref refs/ai-providers)
-        pool        (mf/with-memo [providers] (provider-pool providers))]
+        pool        (mf/with-memo [providers] (provider-pool providers))
+        selected-model* (hooks/use-persisted-state ::selected-model nil)
+        settings    (selected-settings pool (deref selected-model*))]
 
     ;; Providers are configured on the settings page; load them so we know
     ;; whether to show the chat or the connect-a-provider prompt. Skill state
@@ -895,7 +1013,8 @@
                            :aria-label "Back"
                            :on-click on-back
                            :icon i/arrow-left}]
-         [:span {:class (stl/css :title)} (if skill "Skill info" "Skills")]]
+         [:span {:class (stl/css :title)}
+          (cond creating? "New skill" skill "Skill info" :else "Skills")]]
         [:span {:class (stl/css :title)} "Agent"])
       (when-not skills?
         [:div {:class (stl/css :header-actions)}
@@ -907,6 +1026,8 @@
      [:div {:class (stl/css :body)}
       (cond
         ;; Skills is a static catalog — reachable even before a provider is set up.
-        skills?       [:> skills-tab* {:selected skill :on-select on-select}]
+        skills?       (if creating?
+                        [:> skill-create* {:settings settings :on-created on-created}]
+                        [:> skills-tab* {:selected skill :on-select on-select :on-create open-create}])
         (empty? pool) [:> connect-empty*]
         :else         [:> chat-tab*])]]))

@@ -73,8 +73,9 @@ tone the user describes and flags mismatches. Reports only ⇒ files under **Aud
 3. [Phase 03 — LLM skill-doc generation](./done-phase-03-generation.md) — answers → one model
    completion → structured skill doc (name/label/category/mode/trigger/body), category classified.
    ✅ **done** (5 deftests / 21 assertions)
-4. [Phase 04 — Skills-view guided creation flow](./todo-phase-04-creation-flow-ui.md) — "Create
+4. [Phase 04 — Skills-view guided creation flow](./done-phase-04-creation-flow-ui.md) — "Create
    skill" action + guided capture (what/trigger/mode) → generate → create → card (default on).
+   ✅ **done** (compile/lint clean; live create is the user's check)
 5. [Phase 05 — Chat entry point](./todo-phase-05-chat-entry-point.md) — natural-language "create a
    skill…" routes into the Skills-view flow, seeding the description.
 

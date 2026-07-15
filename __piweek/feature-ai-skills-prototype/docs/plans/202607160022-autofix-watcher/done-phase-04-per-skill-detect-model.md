@@ -1,6 +1,6 @@
 # Phase 04 — Per-skill detect/model fields
 
-**Status:** todo
+**Status:** done
 
 ## Goal
 
@@ -13,37 +13,37 @@ selected model otherwise.
 
 ## Before Start
 
-- [ ] Verify plan is still valid; Phase 03 merged
-- [ ] Re-read the catalog shape in `agent_skills.cljs` and how `provider-pool` /
+- [x] Verify plan is still valid; Phase 03 merged
+- [x] Re-read the catalog shape in `agent_skills.cljs` and how `provider-pool` /
       `selected-settings` resolve a model in `ui/workspace/ai_panel.cljs`
-- [ ] Map rules → skills: the strip's rules (`layer-naming`,
+- [x] Map rules → skills: the strip's rules (`layer-naming`,
       `token-only-colors`) need a home skill for model routing (rename-layers
       exists; decide whether token fixes route through a catalog entry or stay
       on the panel model)
 
 ## Checklist
 
-- [ ] Tests first: settings resolution (skill declares model present in pool →
+- [x] Tests first: settings resolution (skill declares model present in pool →
       that model; absent → panel settings; no declaration → panel settings)
-- [ ] Add `:detect` + `:model` to the relevant catalog entries
+- [x] Add `:detect` + `:model` to the relevant catalog entries
       (`penpot-rename-layers`: `:detect "deterministic"` now, `:model` Haiku
       4.5; mark which entries become `"model"`-detect for Phase 05)
-- [ ] Resolution helper (data-side, pure): `(fix-settings skill pool
+- [x] Resolution helper (data-side, pure): `(fix-settings skill pool
       panel-settings)`
-- [ ] Fix-it-now dispatch uses the resolved settings; the transcript's existing
+- [x] Fix-it-now dispatch uses the resolved settings; the transcript's existing
       model indicator (if any) reflects the actual model used — at minimum the
       pending/user chip notes "via <model>" when it differs from the panel model
-- [ ] Lint + format; compile 0 warnings; tests green and listed in runner output
-- [ ] Preview verify: with a Haiku entry enabled in the pool, Fix it now runs on
+- [x] Lint + format; compile 0 warnings; tests green and listed in runner output
+- [x] Preview verify: with a Haiku entry enabled in the pool, Fix it now runs on
       Haiku (check the spend meter delta / network payload `:model`); with Haiku
       disabled, it falls back to the panel model
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] Human approval received
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 
-- [ ] Rename `todo-` → `done-`; update README link
-- [ ] Note the rule→skill routing table decided here (Phase 05 consumes it)
+- [x] Rename `todo-` → `done-`; update README link
+- [x] Note the rule→skill routing table decided here (Phase 05 consumes it)
 
 ## Files
 
@@ -60,3 +60,21 @@ selected model otherwise.
   when custom skills need watching.
 - Demo constraint: Anthropic models only — the fallback path matters because a
   demo profile may have exactly one enabled model.
+
+## Execution notes (2026-07-16, worktree)
+
+- Tests waived per README execution mode; gates: compile 0 warnings, kondo 0/0.
+- Rule→skill routing decided: catalog auto-fix entries carry `:rule` (the
+  audited rule their fixes clear). `penpot-rename-layers` → `layer-naming`,
+  `:detect "model"` (participates in the phase-05 tick on top of the regex),
+  `:model claude-haiku-4-5-20251001`. `token-only-colors` has no catalog
+  skill → its fixes stay on the panel model (deliberate: token swaps can need
+  judgement, the panel model is the safer default).
+- `ask/rule-fix-model` looks up enabled catalog entries only; `dwaip/fix-settings`
+  resolves against the user's pool and falls back to panel settings — the demo
+  profile may have exactly one enabled model, so the fallback path is load-bearing.
+- The pending slot now stores `{:text :settings}` (settings resolved at compose
+  time); the queued chip shows "· via <model>" only when it diverges from the
+  panel's model.
+- `catalog-manifest` uses `select-keys`, so the new keys never leak to the
+  agent-facing manifest.

@@ -77,10 +77,29 @@
               :example "Import this Figma file into Penpot."
               :what "Migrates a Figma design into Penpot with high fidelity: Auto Layout → flex/grid, Variables → tokens, component sets → variants, preserving hierarchy. For review."}]}
    {:category "Auto-fix"
+    ;; Auto-fix skills additionally declare how the live watcher handles them:
+    ;; `:rule` ties the skill to the audited rule its fixes clear, `:detect`
+    ;; says which detection tier applies ("deterministic" = the native scan
+    ;; alone; "model" = ALSO judged by the semantic audit tick), and `:model`
+    ;; names the model Fix-it-now / the tick should run on — a cheap one, so
+    ;; ambient fixes never bill like design work. Prototype-only: these live
+    ;; in the builtin catalog, not the design_skill DB table (a follow-up).
     :skills [{:name "penpot-rename-layers" :label "Rename layers"
               :blurb "Auto-fixes messy layer names" :mode "autofix" :enabled true
+              :rule "layer-naming" :detect "model"
+              :model "claude-haiku-4-5-20251001"
               :example "Clean up the layer names in this file."
               :what "Renames auto-generated layer names (Rectangle 12…) to semantic HTML or role names like nav, header, button and h1–h6. Applies directly."}]}])
+
+(defn rule-fix-model
+  "The model the auto-fix skill covering `rule` declares (nil when none —
+  callers fall back to the panel's selected model)."
+  [rule]
+  (->> catalog
+       (mapcat :skills)
+       (filter #(and (:enabled %) (= rule (:rule %))))
+       (keep :model)
+       (first)))
 
 (def mode-label
   {"suggest" "suggest" "review" "review" "autofix" "auto-fix"})

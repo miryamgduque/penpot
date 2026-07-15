@@ -92,8 +92,21 @@
   (str "[" n " image" (when (> n 1) "s")
        " omitted: the selected model cannot read images]"))
 
+(defn- strip-result-images
+  "The same treatment for `render_board` output: a rendered board is an image
+  like any other, and left alone it would be re-uploaded on every round."
+  [results]
+  (mapv (fn [{:keys [images content] :as result}]
+          (if (seq images)
+            (-> result
+                (dissoc :images)
+                (assoc :content (str content "\n\n" (images-omitted-note (count images)))))
+            result))
+        results))
+
 (defn strip-images
-  "Drops every image in the history, leaving a note where each set stood.
+  "Drops every image in the history — the user's attachments and the agent's own
+  renders alike — leaving a note where each set stood.
 
   Needed because the model is chosen per turn and the whole history is
   re-encoded on every round: switching to a text-only model does not just
@@ -105,13 +118,18 @@
   about an image it can no longer see and no longer knows existed — better it
   reads that something was withheld than confabulate what was in it."
   [messages]
-  (mapv (fn [{:keys [images text] :as message}]
-          (if (seq images)
+  (mapv (fn [{:keys [images text results] :as message}]
+          (cond
+            (seq images)
             (let [note (images-omitted-note (count images))]
               (-> message
                   (dissoc :images)
                   (assoc :text (if (seq text) (str text "\n\n" note) note))))
-            message))
+
+            (some :images results)
+            (assoc message :results (strip-result-images results))
+
+            :else message))
         messages))
 
 ;; How many of the most recent user turns keep their images. Two, because an
@@ -193,10 +211,24 @@
 
                  :tool-results
                  {:role "user"
-                  :content (mapv (fn [r]
+                  :content (mapv (fn [{:keys [images] :as r}]
                                    (cond-> {:type "tool_result"
                                             :tool_use_id (:id r)
-                                            :content (:content r)}
+                                            ;; a tool result may carry image blocks —
+                                            ;; this is what lets `render_board` hand the
+                                            ;; model a picture rather than describe one.
+                                            ;; Text first here (unlike a user message,
+                                            ;; where images lead): it is the caption for
+                                            ;; the images under it.
+                                            :content (if (seq images)
+                                                       (into [{:type "text" :text (:content r)}]
+                                                             (map (fn [{:keys [mtype data]}]
+                                                                    {:type "image"
+                                                                     :source {:type "base64"
+                                                                              :media_type mtype
+                                                                              :data data}}))
+                                                             images)
+                                                       (:content r))}
                                      (:error? r) (assoc :is_error true)))
                                  results)})))))
 
@@ -221,8 +253,20 @@
                                     tool-calls)))]
 
                     :tool-results
-                    (mapv (fn [r]
-                            {:role "tool" :tool_call_id (:id r) :content (:content r)})
+                    (mapv (fn [{:keys [images] :as r}]
+                            {:role "tool"
+                             :tool_call_id (:id r)
+                             ;; This dialect has nowhere to put an image in a
+                             ;; `tool` message. Say so rather than hand back a
+                             ;; result that talks about pictures the model was
+                             ;; never shown — it would answer as if it had seen
+                             ;; them.
+                             :content (cond-> (:content r)
+                                        (seq images)
+                                        (str "\n\n[" (count images)
+                                             " image(s) were rendered, but this model's API"
+                                             " cannot be shown images from a tool. Describe"
+                                             " what you know from read_design instead.]"))})
                           results))))
         messages))
 
@@ -494,7 +538,8 @@
 
 (defn- tool-outcome->result
   [o]
-  {:id (:id (:call o)) :content (:content o) :error? (:error? o)})
+  (cond-> {:id (:id (:call o)) :content (:content o) :error? (:error? o)}
+    (seq (:images o)) (assoc :images (:images o))))
 
 (defn- cancelled-result
   [call]
@@ -589,10 +634,17 @@
 (defn run-turn
   [settings history system]
   (letfn [(run-tool [call]
-            ;; → observable of one {:call :status :content :error? :rule :detail}
+            ;; → observable of one {:call :status :content :images :error? :rule :detail}
             (->> (at/execute-tool (:name call) (:input call))
                  (rx/map (fn [result]
-                           {:call call :status :ok :content (result->content result)}))
+                           ;; images ride beside the content, never through it:
+                           ;; `result->content` stringifies and then truncates at
+                           ;; 20k chars, which would shred a 200kB render into a
+                           ;; meaningless base64 prefix
+                           {:call call
+                            :status :ok
+                            :images (:images result)
+                            :content (result->content (dissoc result :images))}))
                  (rx/catch (fn [cause]
                              (let [rule (:rule (ex-data cause))]
                                (rx/of {:call call

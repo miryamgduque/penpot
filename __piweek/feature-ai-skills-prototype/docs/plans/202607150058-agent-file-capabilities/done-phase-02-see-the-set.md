@@ -109,12 +109,14 @@ reports, verbatim:
             {"name":"Component","properties":[{"name":"Property 1","value":"Tag Solid"}]}]}
 ```
 
-Every set *and* every member is called "Component", because `create_component` renames the
-source board. Only the property values distinguish them. The agent can just about cope — the
-values disambiguate — but a library of a dozen agent-built sets would be unreadable, and this
-is the payload it reasons from. This is now the strongest argument for the rename follow-up
-noted in Phase 01; `dwv/rename-variant` (`variants.cljs:554`) is the lever and **Phase 03 is
-the right home**.
+Every set *and* every member is called "Component". The observation is real; the cause given
+here — *"because `create_component` renames the source board"* — was **wrong, and is refuted
+in [Phase 03b](./done-phase-03b-call-it-something.md)**. `create_component` keeps the name.
+The set is called "Component" only because these members shared no common *path* prefix, which
+is the fallback in `transform-in-variant:413`. Naming them `Card / Compact` and `Card / Large`
+yields a set named "Card" — and each extra path segment adds another axis. No rename tool was
+needed; `create_variant`'s description now teaches the convention and its result carries a
+`namingHint` when the fallback fires.
 
 **Primary-variant ordering left alone, deliberately.** The plan claimed "the last element of
 that reversed seq is the primary variant". Reading the source, `is-secondary-variant?`

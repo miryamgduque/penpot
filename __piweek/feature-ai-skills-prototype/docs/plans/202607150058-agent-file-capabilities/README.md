@@ -78,7 +78,7 @@ and get fleshed out at their Before Start rather than guessed at now.
 1. [Phase 01 — Create variant](./done-phase-01-create-variant.md) — `create_variant` combines 2+ main components into a real set, with validation that names the fix
 2. [Phase 02 — See the set](./done-phase-02-see-the-set.md) — `read_design` surfaces containers, members and properties
 3. [Phase 03 — Name the axes](./done-phase-03-name-the-axes.md) — `set_variant_property` renames the placeholder axis `Property 1` to `Size` (values already come from the component names — see Phase 01 notes)
-3b. [Phase 03b — Call it something](./todo-phase-03b-call-it-something.md) — every set and member is named "Component"; name them (added during execution — see its header)
+3b. [Phase 03b — Call it something](./done-phase-03b-call-it-something.md) — naming IS the matrix: a shared path prefix names the set, each further segment adds an axis (added during execution; its premise was refuted — see the file)
 4. [Phase 04 — Grow the set](./todo-phase-04-grow-the-set.md) — `add_variant` adds a member to an existing set
 5. [Phase 05 — Does the skill drive it?](./todo-phase-05-does-the-skill-drive-it.md) — verify `penpot-component-factory` reaches the new tools; patch only if it doesn't
 

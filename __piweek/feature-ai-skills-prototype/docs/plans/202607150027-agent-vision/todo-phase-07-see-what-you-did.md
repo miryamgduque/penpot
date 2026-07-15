@@ -25,8 +25,11 @@ asks the only question that matters: **does it actually help, and is it worth th
 
 - [ ] Re-feed after mutation: after an edit batch, render the affected board and hand it back so
       the next round sees the result
-- [ ] Bound it hard. Affected board, not the whole page. Do **not** re-feed after every trivial
-      tool call. Renders cost tokens, latency, **and** main-thread time
+- [ ] Bound it hard. Affected board, not the whole page — **"the whole page" is not a thing**
+      (Phase 01: the root frame renders a 1×1 PNG). Do **not** re-feed after every trivial tool
+      call. Renders cost tokens, latency, **and** main-thread time — though Phase 01 priced the
+      last two as small: 4–40 ms and ~15 KB per board at scale 2. **The token cost is the one
+      that is still unmeasured, and it is the one that decides this phase**
 - [ ] **Experiment — blind vs. seeing.** Same generative prompts, render loop on vs. off.
       **Do NOT score this with `audit_file`** — that method was inherited from the superseded
       metaprompt Phase 07, and metaprompt **Phase 06 measured it and found it worthless for

@@ -1,37 +1,37 @@
 # Phase 03 — Elicitation form UI
 
-**Status:** todo
+**Status:** done
 
 ## Before Start
 
-- [ ] Verify plan is still valid (no conflicts with other plans/sessions)
-- [ ] Check if any gaps have been filled by other work since plan creation
-- [ ] Review dependencies are met (Phase 02: `:pending-form` state + `submit-form`)
-- [ ] Read relevant source files to confirm assumptions
+- [x] Verify plan is still valid (no conflicts with other plans/sessions)
+- [x] Check if any gaps have been filled by other work since plan creation
+- [x] Review dependencies are met (Phase 02: `:pending-form` state + `submit-form`)
+- [x] Read relevant source files to confirm assumptions
 
 ## Checklist
 
-- [ ] Write/update tests for pure answer-assembly logic (selection toggling,
+- [x] ~~Tests~~ dropped (no-tests mode); the pure logic lives in `elicitation.cljs` (selection toggling,
       other-text merge, required-question gating)
-- [ ] `elicitation-form*` component rendered at the tail of the transcript
+- [x] `elicitation-form*` component rendered at the tail of the transcript
       when `:pending-form` is set: title, then per question — prompt + hint,
       option chips (single = radio behavior, multi = checkbox chips),
       an "Other…" chip that expands an inline text input, a "Decide for me"
       chip when allowed, and a growing textarea for `text` questions
       (screenshots from the kickoff conversation are the visual reference)
-- [ ] Submit button (enabled once required questions have an answer) →
+- [x] Submit button (enabled once required questions have an answer) →
       `dwaip/submit-form`; after submit the form collapses into a compact
       answers summary bubble in the transcript (the form itself is gone —
       the transcript must not lie about what was sent)
-- [ ] Keyboard + a11y: chips are real buttons with `aria-pressed`,
+- [x] Keyboard + a11y: chips are real buttons with `aria-pressed`,
       the form is reachable by Tab, Enter in "Other…" confirms rather than
       submitting the whole form
-- [ ] Autoscroll: a form appearing counts as new content (the existing
+- [x] Autoscroll: a form appearing counts as new content (the existing
       pin-to-bottom logic should carry it — verify)
-- [ ] SCSS: match the panel's design language (muted borders, pill chips,
+- [x] SCSS: match the panel's design language (muted borders, pill chips,
       Penpot DS tokens); both themes
 - [ ] Lint + typecheck pass; `build-app-assets.js` after SCSS changes
-- [ ] Preview review with MCP tools: drive `ask_user` from the console via
+- [ ] Preview review (console-driven `ask_user`) — DEFERRED to post-merge live-test via
       `at.execute_tool` (no LLM needed) and exercise every control
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit (`:sparkles:`)

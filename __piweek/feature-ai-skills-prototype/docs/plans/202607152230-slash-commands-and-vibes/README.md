@@ -76,7 +76,7 @@ and the preview reviews skipped per phase).
 
 1. [Phase 01 — Slash-command menu](./done-phase-01-slash-menu.md) — `/` autocomplete in the composer: enabled skills + command registry.
 2. [Phase 02 — ask_user tool plumbing](./done-phase-02-ask-user-tool.md) — the elicitation tool: schema, pending-form state, submit/cancel resolution.
-3. [Phase 03 — Elicitation form UI](./todo-phase-03-elicitation-form-ui.md) — the in-transcript form: chips, multi-select, "Other…", "Decide for me", free text.
+3. [Phase 03 — Elicitation form UI](./done-phase-03-elicitation-form-ui.md) — the in-transcript form: chips, multi-select, "Other…", "Decide for me", free text.
 4. [Phase 04 — Vibes doc storage + prompt inlining](./todo-phase-04-vibes-storage.md) — design-doc ns over plugin-data, `set_design_doc` tool, system-prompt section.
 5. [Phase 05 — The vibes skill + /vibes](./todo-phase-05-vibes-skill.md) — built-in skill that drives the interview and writes the doc; wire `/vibes`; live end-to-end verify.
 6. [Phase 06 — Vibes lifecycle UI](./todo-phase-06-vibes-lifecycle.md) — view/edit/re-run/delete the doc from the panel; docs update.

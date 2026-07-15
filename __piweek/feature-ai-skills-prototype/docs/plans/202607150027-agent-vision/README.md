@@ -117,8 +117,12 @@ or the viewport-only `capture-canvas-snapshot`. This plan therefore builds **`re
    payload cap). **But two findings change the plan:** `render_board` only works on the **WASM
    renderer, which is not the default** (a product decision, below), and **there is no full-page
    render** — the root frame is 0.01×0.01 and silently returns a 1×1 PNG.
-2. [Phase 02 — Image blocks in the codecs](./todo-phase-02-image-blocks.md) — the shared
-   foundation: `:images` on the canonical user message, both encoders, tests.
+2. [Phase 02 — Image blocks in the codecs](./done-phase-02-image-blocks.md) — ✅ **done**: the
+   shared foundation. `:images [{:mtype :data}]` on the canonical user message; `user-content`
+   split into `user-text` + a per-dialect encoder each. The no-image fast path returns a plain
+   string exactly as before. **10 tests, written failing first.** Verified against the
+   *documented* wire shapes only — **no image has reached a live model yet**; Phase 04 is the
+   real proof.
 3. [Phase 03 — Vision capability per model](./todo-phase-03-vision-capability.md) — a `:vision`
    flag in the curated catalog; text-only models degrade gracefully instead of erroring.
 4. [Phase 04 — Attach images in the composer](./todo-phase-04-composer-attach.md) — pick, paste,

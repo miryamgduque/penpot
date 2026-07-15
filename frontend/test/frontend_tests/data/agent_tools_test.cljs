@@ -246,6 +246,70 @@
     (t/is (= 1 (count (at/variant-sets one-set-data objs))))))
 
 ;; ---------------------------------------------------------------------------
+;; variant-property-problem
+;; ---------------------------------------------------------------------------
+
+(def ^:private a-set
+  {:container? true
+   :axes ["Size"]
+   :member-ids #{"c-1" "c-2"}})
+
+(t/deftest renaming-an-existing-axis-is-allowed
+  (t/is (nil? (at/variant-property-problem a-set {:variantId "v" :property "Size" :rename "Scale"}))))
+
+(t/deftest setting-a-members-value-is-allowed
+  (t/is (nil? (at/variant-property-problem
+               a-set {:variantId "v" :property "Size" :componentId "c-1" :value "Compact"}))))
+
+(t/deftest a-non-container-is-rejected
+  (let [problem (at/variant-property-problem
+                 (assoc a-set :container? false) {:variantId "v" :property "Size" :rename "Scale"})]
+    (t/is (str/includes? problem "create_variant"))))
+
+(t/deftest an-unknown-axis-is-rejected-and-lists-the-real-ones
+  ;; The agent guesses "Size" before reading; the message has to teach it.
+  (let [problem (at/variant-property-problem
+                 (assoc a-set :axes ["Property 1"])
+                 {:variantId "v" :property "Size" :rename "Scale"})]
+    (t/is (str/includes? problem "Property 1"))))
+
+(t/deftest a-value-without-a-component-is-rejected
+  (let [problem (at/variant-property-problem
+                 a-set {:variantId "v" :property "Size" :value "Compact"})]
+    (t/is (str/includes? problem "componentId"))))
+
+(t/deftest a-component-outside-the-set-is-rejected
+  (let [problem (at/variant-property-problem
+                 a-set {:variantId "v" :property "Size" :componentId "c-9" :value "Compact"})]
+    (t/is (str/includes? problem "not a member"))))
+
+(t/deftest a-call-that-does-nothing-is-rejected
+  ;; Neither rename nor value: the events would no-op silently and the agent
+  ;; would read the empty success as "the axis is named now".
+  (let [problem (at/variant-property-problem a-set {:variantId "v" :property "Size"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "nothing to do"))))
+
+;; ---------------------------------------------------------------------------
+;; axis-pos — name → index
+;; ---------------------------------------------------------------------------
+
+(t/deftest axis-pos-finds-the-index
+  (t/is (= 0 (at/axis-pos ["Size" "State"] "Size")))
+  (t/is (= 1 (at/axis-pos ["Size" "State"] "State"))))
+
+(t/deftest axis-pos-is-nil-for-an-unknown-axis
+  (t/is (nil? (at/axis-pos ["Size"] "Hierarchy"))))
+
+(t/deftest axis-pos-resolves-before-a-rename-invalidates-it
+  ;; Order of operations: pos comes from the CURRENT name. Resolving after the
+  ;; rename would look up a name that no longer exists and silently no-op.
+  (let [axes ["Size" "State"]
+        pos  (at/axis-pos axes "State")]
+    (t/is (= 1 pos))
+    (t/is (nil? (at/axis-pos (assoc axes pos "Mode") "State")))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

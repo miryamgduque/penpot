@@ -165,6 +165,22 @@
                                            :description
                                            "main-instance ids; defaults to the selection"}}}}
 
+   {:name "set_variant_property"
+    :description
+    (str "Names a variant axis, and sets one member's value on it — turns the "
+         "placeholder \"Property 1\" into e.g. \"Size\". Renaming an axis "
+         "affects every member of the set (properties are uniform by design); a "
+         "value applies only to the component given. New sets already take their "
+         "values from the component names, so usually only the axis needs a name. "
+         "Find the axis and member ids with read_design. Asynchronous.")
+    :input-schema {:type "object"
+                   :properties {:variantId {:type "string" :description "the variant container id"}
+                                :property {:type "string" :description "the axis's current name, e.g. Property 1"}
+                                :rename {:type "string" :description "new name for the axis, e.g. Size"}
+                                :componentId {:type "string" :description "required when setting a value"}
+                                :value {:type "string" :description "this member's value, e.g. Compact"}}
+                   :required ["variantId" "property"]}}
+
    {:name "create_color_token"
     :description
     (str "Creates a color design token in the file's token library (e.g. "
@@ -667,6 +683,82 @@
                            "\"Property 1\", and each took its value from its own "
                            "component name. Verify with read_design.")})))))
 
+;; --- Variant properties
+;;
+;; `dwv/update-property-name` guards on `valid-pos?` and does nothing when the
+;; index is out of range (variants.cljs:131) — another silent no-op. It reads the
+;; property list from the *last* of `find-variant-components`, so positions are
+;; resolved against that same component: a pos we resolve is a pos it accepts.
+
+(defn axis-pos
+  "The index of the axis named `property` among `axes`, or nil.
+
+  Callers must resolve this *before* emitting a rename — the index is stable but
+  the name is what we look up, so resolving afterwards finds nothing."
+  [axes property]
+  (first (keep-indexed (fn [i n] (when (= n property) i)) axes)))
+
+(defn variant-property-problem
+  "Why a `set_variant_property` call cannot be applied, as a message the agent
+  can act on, or nil. Pure: `axes` are the set's property names in order,
+  `member-ids` its component ids as strings."
+  [{:keys [container? axes member-ids]} {:keys [variantId property rename componentId value]}]
+  (cond
+    (not container?)
+    (dm/str "set_variant_property: " variantId " is not a variant container"
+            " — build one with create_variant, or see read_design for the sets that exist")
+
+    (nil? (axis-pos axes property))
+    (dm/str "set_variant_property: no axis named \"" property "\" on this set"
+            " (it has: " (str/join ", " axes) ") — pass one of those")
+
+    (and (nil? rename) (nil? value))
+    (dm/str "set_variant_property: nothing to do — pass rename to name the axis,"
+            " and/or value together with componentId to set one member's value")
+
+    (and (some? value) (nil? componentId))
+    (dm/str "set_variant_property: setting a value needs componentId — a value"
+            " belongs to one member, not the whole set")
+
+    (and (some? componentId) (not (contains? member-ids componentId)))
+    (dm/str "set_variant_property: component " componentId " is not a member of"
+            " variant set " variantId " — see read_design")
+
+    :else nil))
+
+(defn- variant-facts
+  "The set's shape as `variant-property-problem` wants it. Axes come from the
+  same component `update-property-name` reads, so a resolved pos is an accepted
+  pos."
+  [data objects variant-id]
+  (let [components (cfv/find-variant-components data objects variant-id)]
+    {:container? (ctc/is-variant-container? (get objects variant-id))
+     :axes (mapv :name (:variant-properties (last components)))
+     :member-ids (into #{} (comp (remove nil?) (map #(str (:id %)))) components)}))
+
+(defn- set-variant-property
+  [{:keys [variantId property rename componentId value] :as input}]
+  (let [state   @st/state
+        data    (dsh/lookup-file-data state)
+        objects (dsh/lookup-page-objects state)
+        vid     (parse-uuid variantId)
+        facts   (if vid
+                  (variant-facts data objects vid)
+                  {:container? false :axes [] :member-ids #{}})]
+    (if-let [problem (variant-property-problem facts input)]
+      (rx/throw (ex-info problem {}))
+      ;; resolve the index from the current name before any rename lands
+      (let [pos (axis-pos (:axes facts) property)]
+        (interrupt!)
+        (when rename
+          (st/emit! (dwv/update-property-name vid pos rename
+                                              {:trigger "agent:set_variant_property"})))
+        (when (and componentId value)
+          (st/emit! (dwv/update-property-value (parse-uuid componentId) pos value)))
+        (rx/of {:axis (or rename property)
+                :note (str "updated — the axis is set-wide, values are per member. "
+                           "Verify with read_design.")})))))
+
 ;; --- Token tools (the safe coloring path)
 
 (defn- create-color-token
@@ -797,6 +889,7 @@
     "create_text"        (create-text input)
     "create_component"   (create-component input)
     "create_variant"     (create-variant input)
+    "set_variant_property" (set-variant-property input)
     "create_color_token" (create-color-token input)
     "apply_tokens"       (apply-tokens input)
     (rx/throw (ex-info (dm/str "Unknown tool: " name) {}))))

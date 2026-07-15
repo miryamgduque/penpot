@@ -64,8 +64,9 @@ tone the user describes and flags mismatches. Reports only ⇒ files under **Aud
 
 ## Phases
 
-1. [Phase 01 — Backend: `profile_skill` table + RPC](./todo-phase-01-backend-profile-skill.md) —
+1. [Phase 01 — Backend: `profile_skill` table + RPC](./done-phase-01-backend-profile-skill.md) —
    per-user table + `create-skill` / `get-skills`, mirroring `skill_state` + `design_skill`.
+   ✅ **done** (16-assertion test; live create/list round-trip verified)
 2. [Phase 02 — Frontend data + state-aware catalog](./todo-phase-02-frontend-catalog-merge.md) —
    fetch user skills, merge into a state-aware catalog so they render/route/toggle via existing paths.
 3. [Phase 03 — LLM skill-doc generation](./todo-phase-03-generation.md) — answers → one model

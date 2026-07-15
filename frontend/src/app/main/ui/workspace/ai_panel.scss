@@ -881,6 +881,129 @@
   text-align: center;
 }
 
+// Filter + "Create skill" on one row at the top of the Skills list.
+.skills-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+}
+
+.create-skill-btn {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+// The guided creation flow.
+.skill-create {
+  @extend %new-scrollbar;
+
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  height: 100%;
+  padding: deprecated.$s-12;
+  overflow-y: auto;
+}
+
+.create-intro,
+.create-guard {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+.create-label {
+  @include deprecated.body-small-typography;
+
+  margin-block-start: deprecated.$s-8;
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.create-input {
+  @include deprecated.body-small-typography;
+
+  box-sizing: border-box;
+  width: 100%;
+  min-height: deprecated.$s-40;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  resize: vertical;
+}
+
+textarea.create-input {
+  min-height: 5rem;
+}
+
+.create-modes {
+  display: flex;
+  gap: deprecated.$s-4;
+}
+
+.create-mode {
+  @include deprecated.body-small-typography;
+
+  flex: 1;
+  padding: deprecated.$s-6 deprecated.$s-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+
+  &.selected {
+    border-color: var(--color-accent-primary);
+    color: var(--color-foreground-primary);
+  }
+}
+
+.create-mode-hint {
+  color: var(--color-foreground-secondary);
+}
+
+.create-error {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-accent-warning);
+}
+
+.create-submit {
+  @include deprecated.body-small-typography;
+
+  align-self: flex-start;
+  margin-block-start: deprecated.$s-8;
+  padding: deprecated.$s-8 deprecated.$s-16;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
 .catalog-group {
   display: flex;
   flex-direction: column;

@@ -74,6 +74,13 @@ verified live in devenv (localhost:3450, Chrome): drag 360→654 pixel-exact, ma
   same-tick* clicks only step once (verified in console). Human clicks
   re-render between presses and are unaffected; `swap!` with the clamp inside
   would make it airtight if it ever matters.
+- **User-caught post-close bug** (`bf81da8243`): Penpot's legacy global
+  `p { font-size: $fs12 }` (base.scss:69) beat the bubble's *inherited* scaled
+  size, pinning assistant markdown paragraphs at 12px while user bubbles
+  scaled. Invisible at scale 1 — which is exactly why measuring the bubble
+  *container's* computed style passed. Lesson: when scaling by inheritance,
+  measure the innermost text element, and expect bare element selectors in
+  legacy globals to defeat inheritance.
 - Follow-up candidates: show the stepper in the Skills header too (currently
   chat-only, though the scale applies panel-wide); double-click the drag
   handle to reset width to default.

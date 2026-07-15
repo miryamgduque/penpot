@@ -275,6 +275,13 @@
     margin-block: deprecated.$s-8;
   }
 
+  // The global element rule (base.scss `p { font-size: $fs12 }`) beats the
+  // bubble's INHERITED size, silently pinning paragraphs to 12px at every
+  // text-scale step — invisible at scale 1, wrong everywhere else.
+  p {
+    font-size: inherit;
+  }
+
   h3,
   h4,
   h5,

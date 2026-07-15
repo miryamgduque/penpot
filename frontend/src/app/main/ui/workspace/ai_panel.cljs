@@ -54,6 +54,12 @@
              model (:enabled-models status)]
          {:provider (:provider status) :model model})))
 
+(defn- model-key
+  "Stable identity of a pool entry, so the chosen model is remembered by what it
+  is rather than by its index (which shifts as providers/models change)."
+  [{:keys [provider model]}]
+  (str provider "/" model))
+
 ;; The built-in skills catalog is shared with the agent — see
 ;; app.main.data.workspace.agent-skills (`ask/catalog`, `ask/mode-label`).
 
@@ -231,11 +237,18 @@
 
         pool      (mf/with-memo [providers] (provider-pool providers))
 
-        ;; the model pool loads asynchronously; default to the first entry
-        ;; until the user picks another (tracked by index into `pool`)
-        picked*   (mf/use-state nil)
-        picked    (deref picked*)
-        idx       (if (and picked (< picked (count pool))) picked 0)
+        ;; The chosen model persists across remounts and browser sessions
+        ;; (localStorage), keyed by identity not index so it survives the pool
+        ;; changing. Until the user picks — or if the remembered model is gone —
+        ;; default to the first entry.
+        selected-model* (hooks/use-persisted-state ::selected-model nil)
+        selected-key    (deref selected-model*)
+        idx       (or (when selected-key
+                        (->> pool
+                             (keep-indexed (fn [i entry]
+                                             (when (= selected-key (model-key entry)) i)))
+                             first))
+                      0)
         settings  (nth pool idx nil)
 
         input*    (mf/use-state "")
@@ -399,7 +412,7 @@
                          :aria-selected (= i idx)
                          :class (stl/css-case :model-picker-option true
                                               :selected (= i idx))
-                         :on-click #(do (reset! picked* i)
+                         :on-click #(do (reset! selected-model* (model-key entry))
                                         (reset! picker-open* false))}
                 (:model entry)])])
           [:a {:class (stl/css :model-picker-manage)

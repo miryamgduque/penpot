@@ -96,7 +96,7 @@ and get fleshed out at their Before Start rather than guessed at now.
 ### Wave 4 — Editing primitives (close the create/modify/delete asymmetry)
 
 11. [Phase 11 — Undo the agent's own mess](./done-phase-11-delete-and-duplicate.md) — `delete_shape`, `duplicate_shape`
-12. [Phase 12 — Group and ungroup](./todo-phase-12-group-and-ungroup.md) — `group_shapes`, `ungroup_shapes`
+12. [Phase 12 — Group and ungroup](./done-phase-12-group-and-ungroup.md) — `group_shapes`, `ungroup_shapes`
 
 ### Wave 5 — Components as a system
 

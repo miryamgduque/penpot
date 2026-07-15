@@ -1810,6 +1810,12 @@
         open?    (deref open*)
         root-ref (mf/use-ref nil)
 
+        ;; inline rename: the id of the row being edited + the draft title
+        editing* (mf/use-state nil)
+        editing  (deref editing*)
+        draft*   (mf/use-state "")
+        draft    (deref draft*)
+
         on-toggle (mf/use-fn #(swap! open* not))
         on-new    (mf/use-fn
                    (mf/deps busy?)
@@ -1857,26 +1863,58 @@
        [:div {:class (stl/css :chat-history-menu)
               :role "listbox"}
         (for [{:keys [id title updated-at]} chats]
-          [:div {:key (dm/str id)
-                 :class (stl/css-case :chat-history-row true
-                                      :chat-history-active (= id chat-id))}
-           [:button {:type "button"
-                     :class (stl/css :chat-history-select)
-                     :role "option"
-                     :aria-selected (= id chat-id)
-                     :disabled busy?
-                     :on-click #(do (st/emit! (dwach/load-chat id))
-                                    (reset! open* false))}
-            [:span {:class (stl/css :chat-history-title)}
-             (if (str/blank? title) "Untitled chat" title)]
-            [:span {:class (stl/css :chat-history-time)}
-             (ct/timeago updated-at)]]
-           [:> icon-button* {:variant "ghost"
-                             :aria-label "Delete conversation"
-                             :class (stl/css :chat-history-delete)
-                             :disabled busy?
-                             :on-click #(st/emit! (dwach/delete-chat id))
-                             :icon i/delete}]])])]))
+          (let [commit-rename
+                (fn []
+                  (let [next (str/trim draft)]
+                    (when (and (seq next) (not= next title))
+                      (st/emit! (dwach/rename-chat id next))))
+                  (reset! editing* nil))]
+            [:div {:key (dm/str id)
+                   :class (stl/css-case :chat-history-row true
+                                        :chat-history-active (= id chat-id))}
+             (if (= id editing)
+               ;; renaming: the row is an input. Enter/blur commit, Escape
+               ;; cancels — stopping propagation so the menu's own Escape
+               ;; handler doesn't also close the popover.
+               [:input {:class (stl/css :chat-history-rename-input)
+                        :type "text"
+                        :value draft
+                        :auto-focus true
+                        :on-focus #(.select (dom/get-target %))
+                        :on-change #(reset! draft* (dom/get-value (dom/get-target %)))
+                        :on-blur commit-rename
+                        :on-key-down (fn [event]
+                                       (case (.-key event)
+                                         "Enter"  (commit-rename)
+                                         "Escape" (do (dom/stop-propagation event)
+                                                      (reset! editing* nil))
+                                         nil))}]
+               [:*
+                [:button {:type "button"
+                          :class (stl/css :chat-history-select)
+                          :role "option"
+                          :aria-selected (= id chat-id)
+                          :disabled busy?
+                          :on-click #(do (st/emit! (dwach/load-chat id))
+                                         (reset! open* false))}
+                 [:span {:class (stl/css :chat-history-title)}
+                  (if (str/blank? title) "Untitled chat" title)]
+                 [:span {:class (stl/css :chat-history-time)}
+                  (ct/timeago updated-at)]]
+                ;; rename stays enabled while busy — it only touches metadata,
+                ;; never the live history
+                [:> icon-button* {:variant "ghost"
+                                  :aria-label "Rename conversation"
+                                  :class (stl/css :chat-history-rename)
+                                  :on-click #(do (reset! draft* (or title ""))
+                                                 (reset! editing* id))
+                                  :icon i/pentool}]
+                [:> icon-button* {:variant "ghost"
+                                  :aria-label "Delete conversation"
+                                  :class (stl/css :chat-history-delete)
+                                  :disabled busy?
+                                  :on-click #(st/emit! (dwach/delete-chat id))
+                                  :icon i/delete}]])]))])]))
 
 (mf/defc ai-panel*
   "The Agent panel shell. Chat is the home surface and fills the body; Skills is a

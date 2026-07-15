@@ -94,11 +94,16 @@
 ;; without it, upserting a foreign id would let one profile overwrite (or
 ;; effectively read the existence of) another's conversation. A blocked
 ;; conflicting update simply affects zero rows — surfaced as not-found.
+;;
+;; `title` is written on INSERT only: it is derived from the conversation's
+;; first user message (which never changes), and leaving it out of the update
+;; arm is what makes a manual rename (`::rename-agent-chat`) durable across
+;; later saves.
 (def ^:private sql:upsert-chat
   "INSERT INTO profile_agent_chat (id, profile_id, file_id, title, data)
    VALUES (?, ?, ?, ?, ?)
    ON CONFLICT (id)
-   DO UPDATE SET title = ?, data = ?, updated_at = now()
+   DO UPDATE SET data = ?, updated_at = now()
     WHERE profile_agent_chat.profile_id = ?
       AND profile_agent_chat.file_id = ?")
 
@@ -109,8 +114,34 @@
   (let [data     (db/tjson data)
         affected (->> (db/exec-one! pool [sql:upsert-chat
                                           id profile-id file-id title data
-                                          title data
+                                          data
                                           profile-id file-id])
+                      (db/get-update-count))]
+    (when (zero? affected)
+      (ex/raise :type :not-found
+                :code :object-not-found
+                :hint "agent chat not found"))
+    ;; no :title echoed back: on conflict the stored title (possibly a manual
+    ;; rename) wins over the derived one this call carried
+    {:id id}))
+
+;; --- Mutation: rename a conversation
+
+(def ^:private schema:rename-agent-chat
+  [:map {:title "rename-agent-chat"}
+   [:id ::sm/uuid]
+   [:title [:string {:min 1 :max 250}]]])
+
+(def ^:private sql:rename-chat
+  "UPDATE profile_agent_chat
+      SET title = ?, updated_at = now()
+    WHERE id = ? AND profile_id = ?")
+
+(sv/defmethod ::rename-agent-chat
+  {::doc/added "2.13"
+   ::sm/params schema:rename-agent-chat}
+  [{:keys [::db/pool]} {:keys [::rpc/profile-id id title]}]
+  (let [affected (->> (db/exec-one! pool [sql:rename-chat title id profile-id])
                       (db/get-update-count))]
     (when (zero? affected)
       (ex/raise :type :not-found

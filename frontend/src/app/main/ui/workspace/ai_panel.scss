@@ -216,8 +216,22 @@
   font-size: deprecated.$fs-11;
 }
 
+.chat-history-rename,
 .chat-history-delete {
   flex: none;
+}
+
+// The inline rename field: fills the row where the select button stood.
+.chat-history-rename-input {
+  @include deprecated.body-small-typography;
+
+  flex: 1;
+  min-inline-size: 0;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-accent-primary);
+  border-radius: deprecated.$br-6;
+  background-color: var(--color-background-secondary);
+  color: var(--color-foreground-primary);
 }
 
 // The text-size stepper buttons. Plain (unscaled) body-small type: they live

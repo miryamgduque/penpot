@@ -177,6 +177,32 @@
                   (rx/map (fn [_] (fetch-chats)))
                   (rx/catch (fn [_] (rx/empty)))))))))))
 
+;; --- Rename
+
+(defn rename-chat
+  "Renames one saved conversation. Optimistic — the list updates immediately
+  and a failed round-trip refetches to revert. Safe while a turn runs: it
+  only touches metadata, never the live history. The stored custom title is
+  durable: later saves never write `title` on update (see the backend upsert)."
+  [id title]
+  (let [title (str/trim title)]
+    (ptk/reify ::rename-chat
+      ptk/UpdateEvent
+      (update [_ state]
+        (if-let [file-id (when (seq title) (:current-file-id state))]
+          (update-in state [:ai-panel file-id :chats]
+                     (fn [chats]
+                       (mapv #(if (= id (:id %)) (assoc % :title title) %) chats)))
+          state))
+
+      ptk/WatchEvent
+      (watch [_ _ _]
+        (if (seq title)
+          (->> (rp/cmd! :rename-agent-chat {:id id :title title})
+               (rx/map (fn [_] (fetch-chats)))
+               (rx/catch (fn [_] (rx/of (fetch-chats)))))
+          (rx/empty))))))
+
 ;; --- New / delete
 
 (defn new-chat

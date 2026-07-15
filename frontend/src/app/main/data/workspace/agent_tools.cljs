@@ -37,6 +37,7 @@
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
+   [app.main.data.workspace.design-doc :as dd]
    [app.main.data.workspace.groups :as dwg]
    [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.selection :as dws]
@@ -130,6 +131,22 @@
                               :optional {:type "boolean" :description "the user may leave this unanswered"}}
                              :required ["id" "question" "type"]}}}
                    :required ["questions"]}}
+
+   {:name "set_design_doc"
+    :description
+    (str "Saves (or replaces) this project's vibes document — a design.md "
+         "that is inlined into your instructions on every future turn in this "
+         "file and shared with every collaborator. Write concise markdown: "
+         "identity in a sentence, vibe words, audience, platform, what to "
+         "design first, voice, do / don't. Stay well under 4000 characters — "
+         "it is read on every turn. Call it at the end of a vibes interview "
+         "or when the user asks to change the project's design direction; "
+         "pass an empty `doc` to delete the document. The current doc, if "
+         "any, is already in your instructions under 'Project vibes'.")
+    :input-schema {:type "object"
+                   :properties {:doc {:type "string"
+                                      :description "the full markdown document (empty string deletes)"}}
+                   :required ["doc"]}}
 
    {:name "render_board"
     :description
@@ -530,6 +547,10 @@
      :components (library-components (dsh/lookup-libraries state) file-id)
      :tokens (tokens-by-type (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals))
      :skills (ask/catalog-manifest state)
+     ;; a boolean, not the text: the doc itself is already inlined in the
+     ;; system prompt, and repeating 4k chars in every read_design result
+     ;; would double-bill it
+     :hasDesignDoc (some? (dd/get-doc state))
      :openViolations (count (audit-violations state))}))
 
 ;; --- render_board
@@ -1819,6 +1840,31 @@
          (reset! pending-form-resolve* nil)
          (st/emit! (set-pending-form nil)))))))
 
+;; --- set_design_doc (the project vibes document)
+
+(defn- set-design-doc
+  [{:keys [doc]}]
+  (let [file-id (:current-file-id @st/state)
+        doc     (when (string? doc) (str/trim doc))]
+    (cond
+      (nil? file-id)
+      (rx/throw (ex-info "no file is open" {}))
+
+      ;; empty means delete — the schema makes `doc` required, so an empty
+      ;; string is the explicit "remove it" spelling, not an accident
+      (str/blank? doc)
+      (do (st/emit! (dd/clear-doc file-id))
+          (rx/of {:ok true :note "design doc removed"}))
+
+      :else
+      (if-let [problem (dd/doc-problem doc)]
+        (rx/throw (ex-info problem {}))
+        (do (st/emit! (dd/set-doc file-id doc))
+            (rx/of {:ok true
+                    :chars (count doc)
+                    :note (str "saved — it will be part of your instructions "
+                               "from the next turn on")}))))))
+
 ;; --- Dispatch
 
 (defn execute-tool
@@ -1828,6 +1874,7 @@
     "render_board"       (render-board input)
     "get_design_skills"  (get-design-skills input)
     "ask_user"           (ask-user input)
+    "set_design_doc"     (set-design-doc input)
     "audit_file"         (audit-file)
     "create_shape"       (create-shape input)
     "modify_shape"       (modify-shape input)

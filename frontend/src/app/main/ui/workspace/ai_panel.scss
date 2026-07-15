@@ -189,6 +189,47 @@
   background-color: var(--color-background-secondary);
 }
 
+.affected-row {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-6;
+  padding-inline-end: var(--sp-m);
+}
+
+.affected-fix {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: deprecated.$s-2 deprecated.$s-8;
+  border: none;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-accent-primary-muted);
+    color: var(--color-foreground-primary);
+  }
+}
+
+.affected-group-fix {
+  @include scaled-body-small;
+
+  margin-inline-start: auto;
+  padding: 0 deprecated.$s-6;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+  }
+}
+
 .affected-summary {
   @include scaled-body-small;
 
@@ -282,6 +323,57 @@
   @include scaled-body-small;
 
   color: var(--color-foreground-secondary);
+}
+
+// A Fix-it-now parked behind the running turn.
+.pending-fix {
+  display: flex;
+  align-items: flex-start;
+  gap: deprecated.$s-6;
+  margin: 0 var(--sp-m);
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+}
+
+.pending-fix-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  overflow: hidden;
+}
+
+.pending-fix-label {
+  @include scaled-body-small;
+
+  color: var(--color-accent-primary);
+}
+
+.pending-fix-text {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+  // the composed message can be long; two lines is enough of a preview
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pending-fix-cancel {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-accent-error);
+  }
 }
 
 // Anchors the jump-to-latest pill against the scrollport. The pill cannot live

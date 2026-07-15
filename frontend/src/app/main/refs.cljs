@@ -328,6 +328,14 @@
                  (dm/get-in state [:ai-panel file-id :violations])))
              st/state))
 
+(def ai-panel-pending-fix
+  "A Fix-it-now message queued while a turn was running; drained by the
+  panel when the turn ends."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :pending-fix])))
+             st/state))
+
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
 

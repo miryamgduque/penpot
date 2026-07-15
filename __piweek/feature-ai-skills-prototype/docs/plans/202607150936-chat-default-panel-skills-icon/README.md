@@ -45,6 +45,19 @@ shipped); final icon styling / exact muted treatment (visual design).
    into a skill, the detail view keeps its existing **"← All skills"** body button (two independent
    levels). `skills-tab*` is **not modified** — the story says its contents don't change.
 
+### Post-review adjustments (2026-07-15)
+
+After live review the user changed two of the above:
+
+- **No close button.** The header's close (×) was removed — the panel already toggles closed from
+  the workspace toolbar (Alt+B). Chat header = title + `list-checks`; Skills header = back + title.
+- **Header owns both back levels (reverses Decision 2).** The in-body "← All skills" button was
+  removed and the selected-skill state lifted into `ai-panel*`, so the single header back pops one
+  level: **detail → list → chat**. `skills-tab*` became **controlled** (`selected` + `on-select`);
+  `skill-detail*` lost its `on-back`. The detail's header title is **"Skill info"** (the list stays
+  "Skills"). (Gotcha fixed: `on-back` must branch on the deref'd `skill` binding with it in
+  `mf/deps` — reading `@skill*` from a no-deps callback captures the initial nil and skips the list.)
+
 ### Current state (grounded in code)
 
 - `ai-panel*` ([ai_panel.cljs](../../../../frontend/src/app/main/ui/workspace/ai_panel.cljs)):

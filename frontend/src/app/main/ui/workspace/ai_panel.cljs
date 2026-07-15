@@ -334,7 +334,9 @@
      (if (seq messages)
        [:> transcript* {:messages messages :busy? busy?}]
        [:div {:class (stl/css :transcript-empty)}
-        [:> i/icon* {:icon-id i/bot-message-square :size "m"}]])
+        [:> i/icon* {:icon-id i/bot-message-square
+                     :size "m"
+                     :class (stl/css :bot-icon)}]])
 
      ;; Spend meter + clear, shown once there is a conversation to act on.
      (when (or (seq messages) (some-> usage :requests pos?))

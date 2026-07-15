@@ -419,3 +419,75 @@
                        (filter map?)
                        (filter #(= "image" (:type %))))]
       (t/is (= 2 (count blocks)) "5 turns of images encode down to the recent 2"))))
+
+;; ---------------------------------------------------------------------------
+;; Images coming back FROM a tool (render_board).
+;;
+;; A different seam from user attachments and a genuinely asymmetric one:
+;; Anthropic's tool_result content is block-capable, so the render goes
+;; straight back. The OpenAI dialect has nowhere to put an image in a `tool`
+;; message at all — dropping it silently would leave the model answering as if
+;; it had seen the picture, so it is told instead.
+;; ---------------------------------------------------------------------------
+
+(def ^:private render-result
+  [{:role :user :text "does the card look right?"}
+   {:role :assistant :text "" :tool-calls [{:id "c1" :name "render_board" :input {}}]}
+   {:role :tool-results
+    :results [{:id "c1"
+               :content "{\"rendered\":[{\"name\":\"Card\"}]}"
+               :images [png jpg]}]}])
+
+(t/deftest anthropic-tool-result-carries-image-blocks
+  (let [content (->> (agent/encode-anthropic render-result) (last) :content (first))]
+    (t/is (= "tool_result" (:type content)))
+    (t/is (= "c1" (:tool_use_id content)))
+    (t/testing "text first, then the images it captions"
+      (t/is (= ["text" "image" "image"] (mapv :type (:content content)))))
+    (t/testing "bare base64 + separate media_type, same as a user image"
+      (t/is (= {:type "base64" :media_type "image/png" :data "iVBORw0KGgo="}
+               (:source (second (:content content))))))))
+
+(t/deftest anthropic-tool-result-without-images-stays-a-string
+  (t/testing "the overwhelmingly common case must not become blocks"
+    (let [history [{:role :user :text "hi"}
+                   {:role :assistant :text "" :tool-calls [{:id "c1" :name "read_design" :input {}}]}
+                   {:role :tool-results :results [{:id "c1" :content "{}"}]}]
+          content (->> (agent/encode-anthropic history) (last) :content (first))]
+      (t/is (= "{}" (:content content))))))
+
+(t/deftest openai-tool-result-says-the-image-could-not-be-shown
+  (t/testing "silently dropping it would have the model describe what it never saw"
+    (let [msg (->> (agent/encode-openai "sys" render-result)
+                   (filter #(= "tool" (:role %)))
+                   (first))]
+      (t/is (str/includes? (:content msg) "rendered"))
+      (t/is (str/includes? (:content msg) "cannot be shown"))
+      (t/is (str/includes? (:content msg) "2") "says how many"))))
+
+(t/deftest tool-result-images-are-stripped-for-a-blind-model
+  (let [out (agent/strip-images render-result)
+        res (first (:results (last out)))]
+    (t/is (nil? (:images res)))
+    (t/is (str/includes? (:content res) "omitted"))
+    (t/testing "and nothing image-shaped survives to the wire"
+      (t/is (empty? (->> (agent/encode-anthropic out)
+                         (mapcat :content)
+                         (filter map?)
+                         (mapcat #(if (vector? (:content %)) (:content %) []))
+                         (filter #(= "image" (:type %)))))))))
+
+(t/deftest prune-drops-old-renders-too
+  (t/testing "a render is an image like any other — left alone it is re-uploaded
+              on every round for the life of the conversation"
+    (let [old     (vec (mapcat (fn [i]
+                                 [{:role :user :text (str "q" i)}
+                                  {:role :assistant :text "" :tool-calls [{:id (str "c" i) :name "render_board" :input {}}]}
+                                  {:role :tool-results :results [{:id (str "c" i) :content "{}" :images [png]}]}])
+                               (range 5)))
+          out     (agent/prune-history-images old)
+          renders (->> out (filter #(= :tool-results (:role %)))
+                       (mapcat :results)
+                       (filter :images)
+                       (count))]
+      (t/is (= 2 renders) "only the last 2 turns keep their renders"))))

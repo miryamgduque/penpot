@@ -37,6 +37,7 @@
    [app.main.data.workspace.wasm-text :as dwwt]
    [app.main.features :as features]
    [app.main.store :as st]
+   [app.render-wasm.api :as wasm.api]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
 
@@ -62,6 +63,25 @@
          "not guess or reconstruct its content from the blurb.")
     :input-schema {:type "object"
                    :properties {:name {:type "string" :description "return this skill's full playbook"}}}}
+
+   {:name "render_board"
+    :description
+    (str "Renders boards to images and SHOWS them to you — this is how you "
+         "look at the design rather than infer it from JSON. Use it when the "
+         "question is visual: does this layout work, do these overlap, is the "
+         "spacing even, does that text fit, did my edit land the way I meant. "
+         "read_design gives you coordinates; this gives you the picture. "
+         "Pass board names (as read_design reports them) or ids; omit `names` "
+         "to render the current selection. Up to 5 at once. "
+         "Boards and shapes only — there is no way to render 'the page', so "
+         "name the boards you want. If it errors, do not retry: say what you "
+         "could not see and continue from read_design.")
+    :input-schema {:type "object"
+                   :properties {:names {:type "array"
+                                        :items {:type "string"}
+                                        :description "board names or ids; omit for the current selection"}
+                                :scale {:type "number"
+                                        :description "1-4, default 2; raise only if you need to read small text"}}}}
 
    {:name "create_shape"
     :description
@@ -191,6 +211,121 @@
                        (mapv (fn [t] {:name (:name t) :value (or (:resolved-value t) (:value t))})))
      :skills (ask/catalog-manifest state)
      :openViolations (count (audit-violations state))}))
+
+;; --- render_board
+;;
+;; The one tool that returns pixels. `render-shape-pixels` draws to a dedicated
+;; export surface rather than the viewport, so a board that is scrolled away or
+;; zoomed past renders identically — verified byte-identical in Phase 01.
+;;
+;; It is per-SHAPE: `_render_shape_pixels` takes `(id, scale)` and there is no
+;; rectangle, so there is no "render this region" and no "render the page" (the
+;; root frame is 0.01×0.01 and returns a 1×1 PNG, silently).
+
+(def ^:private max-render-boards 5)
+;; Phase 01 measured scale 2 as the sweet spot: text already legible, ~15kB,
+;; ~23ms. Scale 8 costs a 112ms synchronous main-thread block and buys nothing
+;; visible.
+(def ^:private default-render-scale 2)
+
+(defn- uint8->base64
+  "The WASM side hands back raw PNG bytes; the wire wants base64.
+
+  Chunked because `String.fromCharCode` is variadic — spreading a whole
+  200kB image across the argument list overflows the stack. 32k is comfortably
+  under every engine's limit."
+  [^js bytes]
+  (let [len (.-length bytes)
+        buf (js/Array.)]
+    (loop [i 0]
+      (when (< i len)
+        (let [end (min len (+ i 32768))]
+          (.push buf (.apply js/String.fromCharCode nil (.subarray bytes i end)))
+          (recur end))))
+    (js/btoa (.join buf ""))))
+
+(defn- render-available?
+  "The real precondition is the WASM renderer being live for this file — NOT
+  `:wasm-export`, which gates Penpot's own export feature, is undeclared in
+  `all-flags`, and is off everywhere. Without render-wasm the shape tree is not
+  loaded and the call aborts the WASM module rather than returning."
+  [state]
+  (features/active-feature? state "render-wasm/v1"))
+
+(defn- resolve-board
+  "Accepts an id or a name. Names are what the model actually has — `read_design`
+  reports them — and it should not have to care that Penpot thinks in uuids."
+  [objects term]
+  ;; `parse*` and not `uuid/uuid`: the latter is documented UNSAFE and will
+  ;; happily build a nonsense uuid out of a board called \"Card\"
+  (or (some->> (uuid/parse* term) (get objects) :id)
+      (->> (vals objects)
+           (filter #(= term (:name %)))
+           (first)
+           (:id))))
+
+(defn- render-board
+  [{:keys [names scale]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        scale   (-> (or scale default-render-scale) (max 1) (min 4))
+        terms   (or (seq names)
+                    (->> (dsh/get-selected-ids state) (mapv str)))]
+    (cond
+      (not (render-available? state))
+      (rx/throw (ex-info (str "Rendering is unavailable: this file is using the SVG renderer. "
+                              "The user can switch it on in Settings › Options › "
+                              "\"Use WebGL renderer\". Carry on with read_design instead.")
+                         {}))
+
+      (empty? terms)
+      (rx/throw (ex-info "Nothing to render: pass board names, or ask the user to select something." {}))
+
+      :else
+      (let [terms   (vec (take max-render-boards terms))
+            results (mapv (fn [term]
+                            (let [id (resolve-board objects term)]
+                              (cond
+                                (nil? id)
+                                {:name term :error "no shape with that name or id"}
+
+                                ;; The page root has no dimensions, so rendering
+                                ;; it returns a 1×1 PNG with no error at all —
+                                ;; the agent would "see the page", get a single
+                                ;; grey pixel, and describe it in good faith.
+                                ;; Better a refusal that names the alternative.
+                                (= id uuid/zero)
+                                {:name term
+                                 :error (str "the page as a whole cannot be rendered — "
+                                             "name the boards you want instead, e.g. "
+                                             (->> (get-in objects [uuid/zero :shapes])
+                                                  (keep #(:name (get objects %)))
+                                                  (take 3)
+                                                  (str/join ", ")))}
+
+                                :else
+                                (try
+                                  (let [bytes (wasm.api/render-shape-pixels id scale)]
+                                    {:name (or (:name (get objects id)) term)
+                                     :id (str id)
+                                     ;; base64 of the PNG the WASM side wrote
+                                     :data (uint8->base64 bytes)})
+                                  (catch :default cause
+                                    {:name term :error (or (ex-message cause) "render failed")})))))
+                          terms)
+            ok      (filterv :data results)
+            failed  (filterv :error results)]
+        (if (empty? ok)
+          (rx/throw (ex-info (str "Could not render: "
+                                  (str/join "; " (map #(str (:name %) " — " (:error %)) failed)))
+                             {}))
+          ;; `:images` is lifted out before the rest is JSON-stringified into the
+          ;; tool result — otherwise 200kB of base64 would be truncated into the
+          ;; 20k-char content string and the model would see a mangled prefix.
+          (rx/of {:images (mapv (fn [r] {:mtype "image/png" :data (:data r)}) ok)
+                  :rendered (mapv (fn [r] (select-keys r [:name :id])) ok)
+                  :failed (when (seq failed) (mapv #(select-keys % [:name :error]) failed))
+                  :scale scale}))))))
 
 ;; --- Structural tools (create / modify / nest)
 ;;
@@ -513,6 +648,7 @@
   [name input]
   (case name
     "read_design"        (rx/of (read-design))
+    "render_board"       (render-board input)
     "get_design_skills"  (get-design-skills input)
     "audit_file"         (audit-file)
     "create_shape"       (create-shape input)

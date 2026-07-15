@@ -168,8 +168,13 @@ or the viewport-only `capture-canvas-snapshot`. This plan therefore builds **`re
    (90×). Verified live that 11px text survives the compression, so the fix costs nothing in
    comprehension. Cap guard added, with the body build deferred into the stream so it actually
    reaches the user.
-6. [Phase 06 — `render_board` tool](./todo-phase-06-render-board-tool.md) — the agent takes its
-   own screenshot. Gated on Phase 01's verdict.
+6. [Phase 06 — `render_board` tool](./done-phase-06-render-board-tool.md) — ✅ **done — the agent
+   has eyes.** Asked to describe a board it did not create, Opus reached for the tool unprompted
+   and said *"I looked at an actual rendered image of the board (not inferred from file data)"* —
+   verified from the wire, not its word: a real `image` block nested in a `tool_result`. **The
+   plan's "only large unknown" was a non-problem**: Anthropic's `tool_result` takes image blocks
+   first-class, so no user-message workaround. 131ms for 2 boards, ~$0.04/turn on Opus.
+   **Requires the WASM renderer** — the profile was switched to `:wasm` for the demo.
 7. [Phase 07 — See what you did](./todo-phase-07-see-what-you-did.md) — re-feed after mutation,
    plus the blind-vs-seeing experiment. The one hypothesis that resists an automatic score.
 

@@ -320,6 +320,14 @@
                  (dm/get-in state [:ai-panel file-id :usage])))
              st/state))
 
+(def ai-panel-violations
+  "Live auto-fix violations for the current file (kept current by the
+  panel's change watcher while the panel is open)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :violations])))
+             st/state))
+
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
 

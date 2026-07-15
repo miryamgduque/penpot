@@ -16,7 +16,10 @@
   separately (phase 05; hard-refresh survival is story #5)."
   (:require
    [app.common.data.macros :as dm]
+   [app.main.data.changes :as dch]
+   [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent :as agent]
+   [app.main.data.workspace.agent-tools :as at]
    [beicon.v2.core :as rx]
    [potok.v2.core :as ptk]))
 
@@ -31,19 +34,35 @@
     (assoc-in state [:ai-panel file-id :open?] (boolean open?))
     state))
 
+(declare start-watcher)
+(declare stop-watcher)
+
 (defn close-panel
   []
   (ptk/reify ::close-panel
     ptk/UpdateEvent
     (update [_ state]
-      (set-open state false))))
+      (set-open state false))
+
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (rx/of (stop-watcher)))))
 
 (defn toggle-panel
   []
   (ptk/reify ::toggle-panel
     ptk/UpdateEvent
     (update [_ state]
-      (set-open state (not (open? state))))))
+      (set-open state (not (open? state))))
+
+    ;; potok runs `update` before `watch` on the same event, so `state` here
+    ;; already reflects the toggle: open → start the violations watcher,
+    ;; closed → stop it. Toggle semantics guarantee we never start twice.
+    ptk/WatchEvent
+    (watch [_ state _]
+      (if (open? state)
+        (rx/of (start-watcher))
+        (rx/of (stop-watcher))))))
 
 ;; --- Skills-tab list filter (US #30)
 ;;
@@ -181,6 +200,95 @@
       (if-let [file-id (:current-file-id state)]
         (assoc-in state [:ai-panel file-id :enforced-rules] (set rules))
         state))))
+
+;; --- Live violations watcher (auto-fix)
+;;
+;; Keeps `[:ai-panel <file-id> :violations]` current while the panel is open:
+;; every mutation flows through `dch/commit` (an IDeref event carrying
+;; `:redo-changes`), so the watcher filters those off the global stream,
+;; debounces, and re-runs the deterministic scan (`at/audit-violations`).
+;; The scan is over CURRENT state, so deletions and user corrections prune
+;; themselves — there is no ledger to invalidate. Deliberately re-scans the
+;; whole page (≤1000 shapes, pure in-memory) rather than scoping to touched
+;; ids; the `:dirty-ids` set exists only to keep the semantic tick's LLM
+;; payload small (phase 05), never for correctness.
+;;
+;; Consent = panel open: `toggle-panel`/`close-panel` start and stop the
+;; subscription, and the update events additionally no-op while the panel is
+;; closed so a stray subscription can never churn state for a file whose
+;; panel the user is not looking at.
+
+(def ^:private watcher-debounce-ms 500)
+
+(defn- touched-shape-ids
+  "Shape ids named by a commit's redo-changes (`:id` on add/mod/del forms,
+  `:shapes` on mov/reg forms)."
+  [redo-changes]
+  (into #{}
+        (mapcat (fn [{:keys [id shapes]}]
+                  (cond-> []
+                    (some? id)   (conj id)
+                    (seq shapes) (into shapes))))
+        redo-changes))
+
+(defn refresh-violations
+  "Recompute the deterministic violations for the current file. Prunes ids
+  from `:dirty-ids` that no longer exist (deleted shapes must not ride into
+  a semantic tick)."
+  []
+  (ptk/reify ::refresh-violations
+    ptk/UpdateEvent
+    (update [_ state]
+      (let [file-id (:current-file-id state)]
+        (if (and file-id (open? state))
+          (update-in state [:ai-panel file-id]
+                     (fn [panel]
+                       (let [objects (dsh/lookup-page-objects state)]
+                         (-> panel
+                             (assoc :violations (at/audit-violations state))
+                             (update :dirty-ids
+                                     (fn [ids]
+                                       (into #{} (filter #(contains? objects %)) ids)))))))
+          state)))))
+
+(defn- track-dirty
+  "Accumulate touched shape ids for the semantic tick (phase 05)."
+  [ids]
+  (ptk/reify ::track-dirty
+    ptk/UpdateEvent
+    (update [_ state]
+      (let [file-id (:current-file-id state)]
+        (if (and file-id (open? state) (seq ids))
+          (update-in state [:ai-panel file-id :dirty-ids] (fnil into #{}) ids)
+          state)))))
+
+(defn- stop-watcher
+  []
+  (ptk/reify ::stop-watcher))
+
+(defn- start-watcher
+  "Subscribe to commits until `::stop-watcher`. Emits an immediate initial
+  scan (a file can already be messy when the panel opens), tracks dirty ids
+  per commit, and re-scans debounced. Also re-scans when the enforced-rules
+  set changes, so toggling a rule updates the live set without an edit."
+  []
+  (ptk/reify ::start-watcher
+    ptk/WatchEvent
+    (watch [_ _ stream]
+      (let [stopper (rx/filter (ptk/type? ::stop-watcher) stream)
+            commits (->> stream
+                         (rx/filter (ptk/type? ::dch/commit))
+                         (rx/map deref))]
+        (->> (rx/merge
+              (rx/of (refresh-violations))
+              (->> commits
+                   (rx/map (fn [{:keys [redo-changes]}]
+                             (track-dirty (touched-shape-ids redo-changes)))))
+              (->> (rx/merge commits
+                             (rx/filter (ptk/type? ::set-enforced-rules) stream))
+                   (rx/debounce watcher-debounce-ms)
+                   (rx/map (fn [_] (refresh-violations)))))
+             (rx/take-until stopper))))))
 
 (defn cancel-turn
   "Stops the running turn. `send-message` watches the event stream for this."

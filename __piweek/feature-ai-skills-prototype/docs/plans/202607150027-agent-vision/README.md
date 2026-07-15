@@ -67,7 +67,15 @@ both provider codecs. Build that once, and each half becomes small.
    Nothing touches Penpot's media storage. Accepted consequence: attachments vanish from the
    transcript on reload. Persistence is a follow-up, not this plan.
 3. **Images only, max 5.** PNG/JPEG/WebP. Text/code file attachments are out of scope.
-4. **Phase 07 stays where it is for now** — see below.
+4. **Metaprompt Phase 07 is closed as superseded** by this plan — see below.
+
+### Further decisions (2026-07-15, after Phase 01's evidence)
+
+5. **Guard on `render-wasm/v1` and degrade — no SVG fallback.** Agent vision is for
+   WASM-renderer users only; enable that renderer in settings for our own profile. Accepted
+   consequence: **SVG-renderer users get no agent vision at all.**
+6. **Multi-image return, no compositing.** There is no full-page render, so `render_board` takes
+   several boards and returns several image blocks rather than stitching a fake page.
 
 ### Relationship to Phase 07 — **decided**
 
@@ -102,9 +110,13 @@ or the viewport-only `capture-canvas-snapshot`. This plan therefore builds **`re
 
 ## Phases
 
-1. [Phase 01 — Prove the pixels](./todo-phase-01-prove-the-pixels.md) — a timeboxed spike:
-   does `render-shape-pixels` actually produce a usable PNG in the devenv, and are the flags on?
-   Cheap, and it decides whether Phases 06–07 exist at all.
+1. [Phase 01 — Prove the pixels](./done-phase-01-prove-the-pixels.md) — ✅ **done — it works,
+   better than assumed.** A text board renders in **4–40 ms** (160 ms first call) at **6 KB**,
+   with **legible text**, and an off-screen board rendered **byte-identical** to its on-screen
+   render — proving a true export, not a viewport capture. Cost is a non-issue (~0.5% of the
+   payload cap). **But two findings change the plan:** `render_board` only works on the **WASM
+   renderer, which is not the default** (a product decision, below), and **there is no full-page
+   render** — the root frame is 0.01×0.01 and silently returns a 1×1 PNG.
 2. [Phase 02 — Image blocks in the codecs](./todo-phase-02-image-blocks.md) — the shared
    foundation: `:images` on the canonical user message, both encoders, tests.
 3. [Phase 03 — Vision capability per model](./todo-phase-03-vision-capability.md) — a `:vision`
@@ -149,13 +161,29 @@ because it is cheap and its verdict can reshape the plan.
   workaround is: the tool returns text, and the image is appended as a following *user* message.
   That asymmetry lands squarely in Phase 06 and is the single biggest unknown in this plan.
   **Confirm it before designing the tool's return shape.**
-- **The WASM flags may simply not be on.** `render-shape-pixels` requires `:wasm-export` **and**
-  `render-wasm/v1`, and `assets.cljs:168-174` warns a WASM render **will crash** if render-wasm
-  is inactive — the shape tree is not loaded. If the devenv does not have them, Phase 01's
-  fallback is `render/render-frame` → `app.main.rasterizer/render` (async, iframe, no flag, no
-  backend). Slower, but it works today.
-- **The render blocks the main thread** through a full Skia render + PNG encode. Fine for one
-  board; a re-feed loop that renders after every edit is a UI-jank risk, not just a token cost.
+- **`render_board` only works on the WASM renderer, which is not the default.** ✅ *Measured in
+  Phase 01; **decided** 2026-07-15.* `:wasm-export` was a red herring — a product policy gate for
+  Penpot's own export feature, undeclared in `all-flags` and off everywhere. The real
+  precondition is **`render-wasm/v1`**, which is **off by default**: `:render-switch` ships
+  enabled, so the renderer comes from `[:profile :props :renderer]`, defaulting to **`:svg`**
+  (`features.cljs:36`). Without it the call throws `:wasm-critical` (an emscripten abort) —
+  **catchable, and the app survives** (verified), but the tool is dead for that user.
+  **Decision: guard on `render-wasm/v1` and degrade; enable the WASM renderer in settings for our
+  own profile. No SVG fallback.** The residual risk is now a *product* one, not a technical one:
+  **agent vision does not exist for SVG-renderer users**, which is most of them. If that becomes
+  unacceptable, the fallback (`render/render-frame` → `app.main.rasterizer/render`) is the known
+  price of universal support — unbuilt and unpriced.
+- **There is no full-page render.** ✅ *Measured in Phase 01; **decided** 2026-07-15.* The root
+  frame's selrect is **0.01 × 0.01** despite 22 top-level children, so rendering it returns an
+  84-byte **1×1 PNG** — silently, no error. **Decision: multi-image return** — the tool takes
+  several boards and returns several image blocks; no compositing. The agent renders **specific
+  boards**, never "the page". Phase 07's "re-feed the affected region" means **"the affected
+  board"**. Watch the token cost: N boards is N images, and that is the one place this decision
+  can get expensive.
+- **The render blocks the main thread** through a full Skia render + PNG encode. ✅ *Priced in
+  Phase 01:* 4–40 ms per board (160 ms on the first call only), 112 ms at scale 8. Fine for one
+  board on demand; still a jank risk for a re-feed loop that fires after every edit. **Scale 2 is
+  the sweet spot** — text already legible, 15 KB, 23 ms.
 - **Cost honesty, inherited from Phase 07.** An image is worth a lot of tokens. If seeing costs
   10× and improves quality 5%, the honest answer is "gate it behind an explicit user action",
   not "always on". Be genuinely open to refuting the hypothesis.

@@ -76,7 +76,7 @@ and get fleshed out at their Before Start rather than guessed at now.
 ### Wave 1 — Variants (the thread that started this)
 
 1. [Phase 01 — Create variant](./done-phase-01-create-variant.md) — `create_variant` combines 2+ main components into a real set, with validation that names the fix
-2. [Phase 02 — See the set](./todo-phase-02-see-the-set.md) — `read_design` surfaces containers, members and properties
+2. [Phase 02 — See the set](./done-phase-02-see-the-set.md) — `read_design` surfaces containers, members and properties
 3. [Phase 03 — Name the axes](./todo-phase-03-name-the-axes.md) — `set_variant_property` renames the placeholder axis `Property 1` to `Size` (values already come from the component names — see Phase 01 notes)
 4. [Phase 04 — Grow the set](./todo-phase-04-grow-the-set.md) — `add_variant` adds a member to an existing set
 5. [Phase 05 — Does the skill drive it?](./todo-phase-05-does-the-skill-drive-it.md) — verify `penpot-component-factory` reaches the new tools; patch only if it doesn't

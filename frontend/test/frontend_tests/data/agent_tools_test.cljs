@@ -166,6 +166,86 @@
     (t/is (str/includes? problem "page"))))
 
 ;; ---------------------------------------------------------------------------
+;; summarize-shape — variant flags
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-plain-board-carries-no-variant-keys
+  ;; read_design is called constantly; a file with no variants must not pay for
+  ;; the feature in its payload.
+  (let [objs (objects (plain-frame id-a "Hero"))
+        out  (at/summarize-shape objs id-a)]
+    (t/is (= "Hero" (:name out)))
+    (t/is (not (contains? out :isVariantContainer)))
+    (t/is (not (contains? out :variantId)))))
+
+(t/deftest a-container-is-flagged
+  (let [objs (objects (assoc (plain-frame id-c "Card") :is-variant-container true))
+        out  (at/summarize-shape objs id-c)]
+    (t/is (true? (:isVariantContainer out)))))
+
+(t/deftest a-member-carries-its-variant-id-and-name
+  (let [objs (objects (assoc (variant-member id-a "Card" id-c) :variant-name "Compact"))
+        out  (at/summarize-shape objs id-a)]
+    (t/is (= (str id-c) (:variantId out)))
+    (t/is (= "Compact" (:variantName out)))))
+
+;; ---------------------------------------------------------------------------
+;; variant-sets
+;; ---------------------------------------------------------------------------
+
+(defn- container
+  [id name child-ids]
+  (assoc (plain-frame id name) :is-variant-container true :shapes child-ids))
+
+(defn- component-of
+  [id name shape-id variant-id props]
+  {:id id :name name :main-instance-id shape-id
+   :variant-id variant-id :variant-properties props})
+
+(def ^:private cid-1 (uuid/custom 3 1))
+(def ^:private cid-2 (uuid/custom 3 2))
+(def ^:private vid (uuid/custom 2 7))
+
+(def ^:private one-set-objects
+  (objects (container vid "Card" [id-a id-b])
+           (assoc (variant-member id-a "Card" vid) :component-id cid-1)
+           (assoc (variant-member id-b "Card" vid) :component-id cid-2)))
+
+(def ^:private one-set-data
+  {:components
+   {cid-1 (component-of cid-1 "Card" id-a vid [{:name "Size" :value "Compact"}])
+    cid-2 (component-of cid-2 "Card" id-b vid [{:name "Size" :value "Large"}])}})
+
+(t/deftest a-file-with-no-variants-yields-no-sets
+  (t/is (empty? (at/variant-sets {} (objects (plain-frame id-a "Hero"))))))
+
+(t/deftest a-set-reports-its-container
+  (let [[s] (at/variant-sets one-set-data one-set-objects)]
+    (t/is (= (str vid) (:variantId s)))
+    (t/is (= "Card" (:name s)))))
+
+(t/deftest a-set-reports-its-members-and-properties
+  (let [[s]   (at/variant-sets one-set-data one-set-objects)
+        props (mapcat :properties (:members s))]
+    (t/is (= 2 (count (:members s))))
+    (t/is (= #{"Compact" "Large"} (set (map :value props))))
+    (t/is (= #{"Size"} (set (map :name props))))))
+
+(t/deftest a-member-reports-its-component-id
+  ;; Phase 03/04 target a component, not a shape — the id has to be reachable.
+  (let [[s] (at/variant-sets one-set-data one-set-objects)]
+    (t/is (= #{(str cid-1) (str cid-2)}
+             (set (map :componentId (:members s)))))))
+
+(t/deftest a-nested-container-is-still-found
+  ;; A container relocated into a board vanishes from a top-level scan, and the
+  ;; agent would then rebuild a set that already exists.
+  (let [board-id (uuid/custom 4 1)
+        objs     (assoc one-set-objects
+                        board-id {:id board-id :name "Page" :type :frame :shapes [vid]})]
+    (t/is (= 1 (count (at/variant-sets one-set-data objs))))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

@@ -21,6 +21,7 @@
   (:require
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
+   [app.common.files.variant :as cfv]
    [app.common.types.component :as ctc]
    [app.common.types.shape :as cts]
    [app.common.types.text :as txt]
@@ -50,9 +51,11 @@
 (def tool-specs
   [{:name "read_design"
     :description
-    (str "One-call orientation: the current file, page, selection and the "
-         "page's top-level shapes. Call this FIRST each task to see what is in "
-         "the file instead of guessing.")
+    (str "One-call orientation: the current file, page, selection, the page's "
+         "top-level shapes, and its variant sets (each with its members and "
+         "their properties). Call this FIRST each task to see what is in the "
+         "file instead of guessing — including whether a variant set already "
+         "exists before building another.")
     :input-schema {:type "object" :properties {}}}
 
    {:name "get_design_skills"
@@ -200,16 +203,51 @@
 
 ;; --- read_design
 
-(defn- summarize-shape
+(defn summarize-shape
+  "The shape as the agent sees it. Variant keys are added only when truthy —
+  `read_design` is called constantly, so a file without variants should not pay
+  for the feature in every payload."
   [objects id]
   (let [shape (get objects id)]
-    {:id (dm/str id)
-     :name (:name shape)
-     :type (some-> (:type shape) name)
-     :x (:x shape)
-     :y (:y shape)
-     :width (:width shape)
-     :height (:height shape)}))
+    (cond-> {:id (dm/str id)
+             :name (:name shape)
+             :type (some-> (:type shape) name)
+             :x (:x shape)
+             :y (:y shape)
+             :width (:width shape)
+             :height (:height shape)}
+      (ctc/is-variant-container? shape)
+      (assoc :isVariantContainer true)
+
+      (ctc/is-variant? shape)
+      (assoc :variantId (dm/str (:variant-id shape))
+             :variantName (:variant-name shape))
+
+      (:variant-error shape)
+      (assoc :variantError (:variant-error shape)))))
+
+(defn variant-sets
+  "Every variant container on the page with its members and their properties —
+  the structural view `create_variant` writes and Phase 03/04 target.
+
+  Scans the whole objects map rather than the top level: a container relocated
+  into a board still exists, and an agent that cannot see it rebuilds a set that
+  is already there. Member order is `find-variant-components`' own (it reverses
+  the container's child order deliberately) — do not re-sort it."
+  [data objects]
+  (->> objects
+       (keep (fn [[id shape]]
+               (when (ctc/is-variant-container? shape)
+                 {:variantId (dm/str id)
+                  :name (:name shape)
+                  :members (->> (cfv/find-variant-components data objects id)
+                                (remove nil?)
+                                (mapv (fn [component]
+                                        {:componentId (dm/str (:id component))
+                                         :name (:name component)
+                                         :properties (mapv #(select-keys % [:name :value])
+                                                           (:variant-properties component))})))})))
+       (vec)))
 
 (defn- read-design
   []
@@ -217,13 +255,16 @@
         file-id  (:current-file-id state)
         page     (dsh/lookup-page state)
         objects  (dsh/lookup-page-objects state)
+        data     (dsh/lookup-file-data state)
         top-ids  (get-in objects [uuid/zero :shapes])
-        selected (dsh/get-selected-ids state)]
+        selected (dsh/get-selected-ids state)
+        variants (variant-sets data objects)]
     {:file (get-in state [:files file-id :name])
      :page (:name page)
      :selection (mapv #(summarize-shape objects %) selected)
      :shapes (mapv #(summarize-shape objects %) top-ids)
-     :colorTokens (->> (some-> (dsh/lookup-file-data state) :tokens-lib ctob/get-tokens-in-active-sets vals)
+     :variants variants
+     :colorTokens (->> (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals)
                        (filter #(= :color (:type %)))
                        (mapv (fn [t] {:name (:name t) :value (or (:resolved-value t) (:value t))})))
      :skills (ask/catalog-manifest state)

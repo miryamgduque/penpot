@@ -352,6 +352,7 @@
           'app.rpc.commands.media
           'app.rpc.commands.nitrate
           'app.rpc.commands.profile
+          'app.rpc.commands.profile-skills
           'app.rpc.commands.projects
           'app.rpc.commands.search
           'app.rpc.commands.skill-state

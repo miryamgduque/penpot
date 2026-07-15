@@ -337,11 +337,40 @@
 
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  // Sit the bot just above the composer, on the left.
+  align-items: flex-end;
+  justify-content: flex-start;
   padding: deprecated.$s-16;
   text-align: center;
   color: var(--color-foreground-secondary);
+}
+
+// A little greeting wave on the empty-chat bot, in the muted primary colour
+// nudged a touch darker toward the full accent.
+//
+// The DS presets are 16/32 and CSS width/height (even on the inner <use>) is not
+// honored for the sprite, so the 16px icon is scaled to 24 via transform. The
+// animation also drives `transform`, so scale(1.5) is baked into the resting
+// state and every keyframe. Order matters: scale is applied first (rightmost) so
+// the translate/rotate keep their pixel/degree values in the unscaled frame.
+.bot-icon {
+  transform-origin: center;
+  transform: scale(1.5);
+  color: color-mix(in srgb, var(--color-accent-primary-muted), var(--color-accent-primary) 30%);
+  animation: bot-greet 2.5s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes bot-greet {
+  0%   { transform: rotate(0deg) translateY(0) scale(1.5); }
+  15%  { transform: rotate(5deg) translateY(0) scale(1.5); }
+  30%  { transform: rotate(-10deg) translateY(0) scale(1.5); }
+  45%  { transform: rotate(0deg) translateY(-5px) scale(1.5); }
+  60%  { transform: rotate(0deg) translateY(0) scale(1.5); }
+  100% { transform: rotate(0deg) translateY(0) scale(1.5); }
 }
 
 .composer {

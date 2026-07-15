@@ -301,19 +301,28 @@
 
    {:name "apply_tokens"
     :description
-    (str "Binds color tokens to shapes in batch — the safe coloring path "
-         "(never rejected by token-only-colors). Each application names a "
-         "shape, a token, and optionally which properties (fill and/or stroke, "
-         "default fill). Application is asynchronous — verify with read_design "
-         "or audit_file afterwards, not in the same call.")
+    (str "Binds tokens of ANY type to shapes in batch — the safe path, never "
+         "rejected by token-only-colors. Each application names a shape, a "
+         "token, and optionally which properties to bind; omit properties for "
+         "the token type's default (fill for a color).\n"
+         "  color        → fill, strokeColor\n"
+         "  spacing      → columnGap, rowGap, paddingTop/Right/Bottom/Left, "
+         "marginTop/…\n"
+         "  borderRadius → borderRadius, borderRadiusTopLeft/…\n"
+         "  sizing       → width, height, minWidth/…\n"
+         "A spacing token on a flex board's columnGap is as much a design token "
+         "as a color on a fill — reach for this instead of hardcoding numbers "
+         "in set_layout. Asynchronous: verify with read_design or audit_file "
+         "afterwards, not in the same call.")
     :input-schema {:type "object"
                    :properties {:applications
                                 {:type "array"
                                  :items {:type "object"
                                          :properties {:shapeId {:type "string"}
-                                                      :tokenName {:type "string" :description "e.g. color.brand.primary"}
+                                                      :tokenName {:type "string" :description "e.g. spacing.md, color.brand.primary"}
                                                       :properties {:type "array"
-                                                                   :items {:type "string" :enum ["fill" "stroke"]}}}
+                                                                   :items {:type "string"}
+                                                                   :description "e.g. [\"columnGap\"], [\"fill\"]; omit for the type's default"}}
                                          :required ["shapeId" "tokenName"]}}}
                    :required ["applications"]}}])
 
@@ -1154,11 +1163,80 @@
       (rx/of {:name name :type type :value value
               :note "token created — bind it to shapes with apply_tokens"}))))
 
-(defn- attr-set
-  "Maps the requested properties to shape color attributes (default fill)."
-  [properties]
-  (into #{} (map #(if (= % "stroke") :stroke-color :fill))
-        (if (seq properties) properties ["fill"])))
+;; --- Token application
+;;
+;; `dwta/toggle-token` takes an arbitrary `attrs` set and the valid universe is
+;; `cto/all-keys` — the color-only ceiling was entirely this file's own helper,
+;; which mapped every request onto :fill or :stroke-color.
+
+(def ^:private attr-alias
+  "The plugin API's semantic names for Penpot's positional attr keys, copied
+  deliberately from `app.plugins.tokens`. This is the one place where taking the
+  plugin's naming is right: we take its translation layer with it, and the skills
+  already speak these names (`applyToken(t, [\"columnGap\"])`). `:p1` means
+  nothing without this table."
+  {:r1 :border-radius-top-left
+   :r2 :border-radius-top-right
+   :r3 :border-radius-bottom-right
+   :r4 :border-radius-bottom-left
+   :p1 :padding-top
+   :p2 :padding-right
+   :p3 :padding-bottom
+   :p4 :padding-left
+   :m1 :margin-top
+   :m2 :margin-right
+   :m3 :margin-bottom
+   :m4 :margin-left})
+
+(def token-attr-universe
+  "Every shape attribute a token can bind to (`cto/all-keys`)."
+  cto/all-keys)
+
+(defn public-attr-name
+  "The camelCase name the agent uses for an internal attr keyword."
+  [k]
+  (str/camel (name (get attr-alias k k))))
+
+(def ^:private public->attr
+  (into {"stroke" :stroke-color} ;; legacy: the shipped spec offers "stroke"
+        (map (fn [k] [(public-attr-name k) k]))
+        token-attr-universe))
+
+(defn token-attr
+  "The internal attr keyword for a public name, or nil."
+  [name]
+  (get public->attr name))
+
+(defn- type-attrs
+  "The attrs a token of this type may bind to — the same source `toggle-token`
+  itself consults (`dwta/token-properties`), so anything we accept, it accepts."
+  [token-type]
+  (let [{:keys [attributes all-attributes]} (get dwta/token-properties token-type)]
+    (or all-attributes attributes)))
+
+(defn application-problem
+  "Why this token cannot bind to these properties, or nil. Pure."
+  [token properties]
+  (let [valid (type-attrs (:type token))]
+    (some (fn [p]
+            (if-let [k (token-attr p)]
+              (when (and (seq valid) (not (contains? valid k)))
+                (dm/str "apply_tokens: token \"" (:name token) "\" is a "
+                        (some-> (:type token) name) " token and cannot bind to "
+                        p " — it can bind to: "
+                        (str/join ", " (sort (map public-attr-name valid)))))
+              (dm/str "apply_tokens: \"" p "\" is not a property a token can bind"
+                      " to — \"" (:name token) "\" can bind to: "
+                      (str/join ", " (sort (map public-attr-name valid))))))
+          properties)))
+
+(defn attr-set
+  "The internal attrs for the requested public property names, defaulting to the
+  token's own default (fill for a color) when none are given."
+  [token properties]
+  (if (seq properties)
+    (into #{} (keep token-attr) properties)
+    (or (some-> (get dwta/token-properties (:type token)) :attributes) #{:fill})))
 
 (defn- apply-tokens
   [{:keys [applications]}]
@@ -1168,18 +1246,21 @@
       (interrupt!)
       (let [results
             (mapv (fn [{:keys [shapeId tokenName properties]}]
-                    (let [id    (some-> shapeId parse-uuid)
-                          token (get all-tokens tokenName)]
-                      (if (and id token)
+                    (let [id      (some-> shapeId parse-uuid)
+                          token   (get all-tokens tokenName)
+                          problem (when token (application-problem token properties))]
+                      (if (and id token (nil? problem))
                         (do (st/emit! (dwta/toggle-token {:token token
-                                                          :attrs (attr-set properties)
+                                                          :attrs (attr-set token properties)
                                                           :shape-ids [id]
                                                           :expand-with-children false}))
                             {:shapeId shapeId :token tokenName :ok true})
                         {:shapeId shapeId :token tokenName :ok false
-                         :error (cond (nil? id) "invalid shapeId"
-                                      (nil? token) "token not found"
-                                      :else "unknown")})))
+                         :error (cond
+                                  (nil? id) "invalid shapeId"
+                                  (nil? token) (dm/str "no token named \"" tokenName
+                                                       "\" — create it with create_token")
+                                  :else problem)})))
                   applications)]
         (rx/of {:results results
                 :note "tokens resolve asynchronously — verify with read_design or audit_file"})))))

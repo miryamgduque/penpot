@@ -604,6 +604,76 @@
   (t/is (nil? (at/token-problem {:type "color" :name "color.brand" :value "{color.blue.500}"}))))
 
 ;; ---------------------------------------------------------------------------
+;; token attrs — public camelCase names -> internal attr keywords
+;; ---------------------------------------------------------------------------
+
+(t/deftest every-internal-attr-has-a-public-name
+  ;; Derived from cto/all-keys, so the map cannot drift from the schema.
+  (doseq [k at/token-attr-universe]
+    (t/is (some? (at/public-attr-name k)) (str k " has no public name"))))
+
+(t/deftest public-names-round-trip
+  (doseq [k at/token-attr-universe]
+    (t/is (= k (at/token-attr (at/public-attr-name k))))))
+
+(t/deftest the-gap-and-padding-names-are-what-the-skills-use
+  (t/is (= :column-gap (at/token-attr "columnGap")))
+  (t/is (= :row-gap (at/token-attr "rowGap")))
+  (t/is (= :p1 (at/token-attr "paddingTop")))
+  (t/is (= :p4 (at/token-attr "paddingLeft"))))
+
+(t/deftest positional-radius-keys-get-semantic-names
+  (t/is (= :r1 (at/token-attr "borderRadiusTopLeft")))
+  (t/is (= :r3 (at/token-attr "borderRadiusBottomRight"))))
+
+(t/deftest margins-get-semantic-names
+  (t/is (= :m1 (at/token-attr "marginTop"))))
+
+(t/deftest an-unknown-attr-does-not-resolve
+  (t/is (nil? (at/token-attr "gap")))
+  (t/is (nil? (at/token-attr "nonsense"))))
+
+;; --- the regression guard: apply_tokens is the safe colouring path and the one
+;; --- tool token-only-colors can never reject. Widening must not break it.
+
+(t/deftest fill-still-works
+  (t/is (= #{:fill} (at/attr-set nil ["fill"]))))
+
+(t/deftest the-default-is-still-fill
+  (t/is (= #{:fill} (at/attr-set nil []))))
+
+(t/deftest the-legacy-stroke-alias-still-works
+  ;; The old attr-set mapped "stroke" -> :stroke-color, and it is in the shipped
+  ;; spec. Dropping it would silently break a name the agent may already use.
+  (t/is (= #{:stroke-color} (at/attr-set nil ["stroke"]))))
+
+;; ---------------------------------------------------------------------------
+;; application-problem — type/attr compatibility
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-spacing-token-on-a-gap-is-fine
+  (t/is (nil? (at/application-problem {:type :spacing :name "spacing.md"} ["columnGap"]))))
+
+(t/deftest a-colour-token-on-a-fill-is-fine
+  (t/is (nil? (at/application-problem {:type :color :name "color.brand"} ["fill"]))))
+
+(t/deftest a-colour-token-on-padding-is-a-category-error
+  (let [problem (at/application-problem {:type :color :name "color.brand"} ["paddingTop"])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "color.brand"))))
+
+(t/deftest the-mismatch-message-lists-what-the-type-CAN-bind-to
+  ;; Listing the valid attrs for THIS type is shorter and more useful than the
+  ;; whole 40-key universe.
+  (let [problem (at/application-problem {:type :color :name "color.brand"} ["paddingTop"])]
+    (t/is (str/includes? problem "fill"))))
+
+(t/deftest an-unknown-attr-is-rejected
+  (let [problem (at/application-problem {:type :spacing :name "spacing.md"} ["gap"])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "gap"))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

@@ -667,18 +667,6 @@
                    :on-change on-input
                    :on-paste on-paste
                    :on-key-down on-key-down}]
-       [:button {:type "button"
-                 :class (stl/css :composer-attach)
-                 :aria-label (if sees? "Attach images" "This model can't read images")
-                 :title (if sees?
-                          (dm/str "Attach images (up to " max-images ")")
-                          (dm/str (:model settings) " can't read images"))
-                 ;; disabled, not hidden: a control that vanishes when you
-                 ;; switch models reads as a bug, not a capability
-                 :disabled (or (not settings) (not sees?)
-                               (>= (count images) max-images))
-                 :on-click on-attach}
-        [:> i/icon* {:icon-id i/img}]]
        (if busy?
          [:button {:type "button"
                    :class (stl/css :composer-stop)
@@ -694,12 +682,27 @@
                    :on-click send}
           [:> i/icon* {:icon-id i/forward}]])]
 
-      ;; Model picker below the composer — half width, right-aligned, borderless.
-      [:div {:class (stl/css :model-picker)
-             :ref picker-ref}
+      ;; Below the input: the attach button on the left, the model picker (half
+      ;; width, borderless) on the right.
+      [:div {:class (stl/css :composer-footer)}
        [:button {:type "button"
-                 :class (stl/css-case :model-picker-trigger true
-                                      :model-picker-open picker-open?)
+                 :class (stl/css :composer-attach)
+                 :aria-label (if sees? "Attach images" "This model can't read images")
+                 :title (if sees?
+                          (dm/str "Attach images (up to " max-images ")")
+                          (dm/str (:model settings) " can't read images"))
+                 ;; disabled, not hidden: a control that vanishes when you
+                 ;; switch models reads as a bug, not a capability
+                 :disabled (or (not settings) (not sees?)
+                               (>= (count images) max-images))
+                 :on-click on-attach}
+        [:> i/icon* {:icon-id i/img}]]
+
+       [:div {:class (stl/css :model-picker)
+              :ref picker-ref}
+        [:button {:type "button"
+                  :class (stl/css-case :model-picker-trigger true
+                                       :model-picker-open picker-open?)
                  :ref trigger-ref
                  :aria-haspopup "listbox"
                  :aria-expanded picker-open?
@@ -726,7 +729,7 @@
                 (:model entry)])])
           [:a {:class (stl/css :model-picker-manage)
                :href "#/settings/integrations"}
-           "Manage your models"]])]]]))
+           "Manage your models"]])]]]]))
 
 (mf/defc mode-badge*
   "The colored mode pill shared by the catalog cards and the detail view."

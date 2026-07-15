@@ -25,12 +25,14 @@
 
 (def commands
   "Special commands, listed ahead of the skills. `/vibes` inserts the
-  interview trigger phrase; the vibes skill (Phase 05) is what the phrase
-  routes to."
+  project-vibes skill's own trigger phrase — the agent's skills index does
+  the actual routing. `:skill` names the catalog skill a command fronts, so
+  the menu doesn't list the same thing twice."
   [{:command "vibes"
     :title "Set project vibes"
     :detail "Interview me about this project and pin down its design direction"
-    :insert "Set the design vibes for this project."}])
+    :insert "Set the design vibes for this project."
+    :skill "penpot-project-vibes"}])
 
 (defn- skill->entry
   [{:keys [name label blurb example]}]
@@ -41,10 +43,21 @@
 
 (defn menu-model
   "Every entry the `/` menu can offer for app-db `state`: the special
-  commands, then the enabled skills in catalog order. Disabled skills never
-  show — consistent with the agent's own routing index."
+  commands, then the enabled skills in catalog order — minus the skills a
+  command already fronts. Disabled skills never show — consistent with the
+  agent's own routing index."
   [state]
-  (into (vec commands) (map skill->entry) (ask/enabled-skills state)))
+  (let [skills  (ask/enabled-skills state)
+        enabled (into #{} (map :name) skills)
+        fronted (into #{} (keep :skill) commands)
+        ;; a command fronting a skill obeys that skill's enable toggle —
+        ;; offering /vibes while the vibes skill is off would route nowhere
+        visible (filterv #(or (nil? (:skill %)) (contains? enabled (:skill %)))
+                         commands)]
+    (into visible
+          (comp (remove #(contains? fronted (:name %)))
+                (map skill->entry))
+          skills)))
 
 (defn query
   "The filter text of a composer `input` in slash mode, or nil when the input

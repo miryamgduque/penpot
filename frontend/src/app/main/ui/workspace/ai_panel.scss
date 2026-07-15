@@ -886,22 +886,6 @@
   overflow-y: auto;
 }
 
-.detail-back {
-  align-self: flex-start;
-  margin-block-end: deprecated.$s-16;
-  padding: 0;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--color-foreground-secondary);
-
-  @include deprecated.body-small-typography;
-
-  &:hover {
-    color: var(--color-foreground-primary);
-  }
-}
-
 .detail-category {
   @include deprecated.small-title-typography;
 

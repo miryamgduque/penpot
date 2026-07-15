@@ -429,15 +429,14 @@
    (get ask/mode-label mode mode)])
 
 (mf/defc skill-detail*
-  "Detail for one catalog skill, shown in place of the list within the Skills tab
-  (not a modal, not a new tab). Carries the same on/off toggle as the list card;
-  `enabled` is the resolved state and `on-toggle` receives the new boolean."
+  "Detail for one catalog skill, shown in place of the list within the Skills
+  view. Back navigation lives in the panel header (US #35), so there is no in-body
+  back button here. Carries the same on/off toggle as the list card; `enabled` is
+  the resolved state and `on-toggle` receives the new boolean."
   {::mf/private true}
-  [{:keys [skill enabled on-toggle on-back]}]
+  [{:keys [skill enabled on-toggle]}]
   (let [{:keys [label category mode example what]} skill]
     [:div {:class (stl/css :skill-detail)}
-     [:button {:type "button" :class (stl/css :detail-back) :on-click on-back}
-      "← All skills"]
      [:div {:class (stl/css :detail-category)} category]
      [:div {:class (stl/css :detail-head)}
       [:div {:class (stl/css :detail-name)} label]
@@ -510,15 +509,15 @@
   detail view on click and carries a discreet ⋯ menu (Enable/Disable + Fork /
   Promote entry points). Enable/Disable flips the skill for this file (per-user,
   instant) and drops a disabled skill from the agent's router — see
-  agent-skills/resolve-enabled."
+  agent-skills/resolve-enabled.
+
+  Controlled by the panel: `selected` is the open skill's name (nil = list) and
+  `on-select` opens one. Back navigation lives in the panel header (US #35)."
   {::mf/private true}
-  []
-  (let [selected*   (mf/use-state nil)
-        selected    (deref selected*)
-        skill       (when selected (ask/find-skill selected))
+  [{:keys [selected on-select]}]
+  (let [skill       (when selected (ask/find-skill selected))
         enabled-map (mf/deref refs/resolved-skills-enabled)
         active      (mf/deref refs/skills-filter)
-        on-back     (mf/use-fn #(reset! selected* nil))
         toggle      (mf/use-fn
                      (fn [name checked]
                        (st/emit! (skst/set-skill-enabled name checked))))
@@ -532,8 +531,7 @@
       (let [enabled? (get enabled-map (:name skill) true)]
         [:> skill-detail* {:skill skill
                            :enabled enabled?
-                           :on-toggle #(toggle (:name skill) %)
-                           :on-back on-back}])
+                           :on-toggle #(toggle (:name skill) %)}])
       [:div {:class (stl/css :skills-tab)}
        [:div {:class (stl/css :skills-filter)}
         (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
@@ -552,7 +550,7 @@
                               :label label
                               :blurb blurb
                               :enabled (get enabled-map name true)
-                              :on-open #(reset! selected* name)
+                              :on-open #(on-select name)
                               :on-set-enabled #(toggle name %)}])])
          [:div {:class (stl/css :skills-empty)}
           "No enabled skills. Switch to All to see everything."])])))
@@ -576,15 +574,32 @@
   "The Agent panel shell. Chat is the home surface and fills the body; Skills is a
   full-panel view reached from a muted header icon (US #35). The view is in-memory
   and defaults to chat, so closing and reopening the panel always lands on chat
-  (US #2) — there are no tabs."
+  (US #2) — there are no tabs. The panel is closed from the workspace toggle
+  (Alt+B), so the header carries no close button.
+
+  Skills navigation is two levels — the list and one skill's detail — both owned
+  here so the header back pops a single level: detail → list → chat."
   [_props]
   (let [view*       (mf/use-state :chat)
         view        (deref view*)
         skills?     (= view :skills)
-        show-skills (mf/use-fn #(reset! view* :skills))
-        show-chat   (mf/use-fn #(reset! view* :chat))
 
-        on-close    (mf/use-fn #(st/emit! (dwaip/close-panel)))
+        ;; The open skill within the Skills view (nil = the list). Lifted here so
+        ;; the header back can pop it before leaving Skills.
+        skill*      (mf/use-state nil)
+        skill       (deref skill*)
+
+        open-skills (mf/use-fn (fn [] (reset! skill* nil) (reset! view* :skills)))
+        on-select   (mf/use-fn #(reset! skill* %))
+        ;; Pop one level: detail → list → chat. Branch on the deref'd `skill`
+        ;; (with it in deps) — reading @skill* from a no-deps callback captures
+        ;; the initial nil and always jumps straight to chat.
+        on-back     (mf/use-fn
+                     (mf/deps skill)
+                     (fn []
+                       (if (some? skill)
+                         (reset! skill* nil)     ;; detail → list
+                         (reset! view* :chat)))) ;; list → chat
 
         providers   (mf/deref refs/ai-providers)
         pool        (mf/with-memo [providers] (provider-pool providers))]
@@ -599,31 +614,27 @@
 
     [:aside {:class (stl/css :ai-panel)}
      ;; Adaptive header (sized to the workspace right-header band): chat shows the
-     ;; "Agent" title + the muted Skills icon; the Skills view swaps those for a
-     ;; back arrow + "Skills". Close stays in both.
+     ;; "Agent" title + the muted Skills icon; Skills swaps those for a back arrow
+     ;; and a title ("Skills" for the list, "Skill info" for a detail).
      [:div {:class (stl/css :header)}
       (if skills?
         [:div {:class (stl/css :header-lead)}
          [:> icon-button* {:variant "ghost"
-                           :aria-label "Back to chat"
-                           :on-click show-chat
+                           :aria-label "Back"
+                           :on-click on-back
                            :icon i/arrow-left}]
-         [:span {:class (stl/css :title)} "Skills"]]
+         [:span {:class (stl/css :title)} (if skill "Skill info" "Skills")]]
         [:span {:class (stl/css :title)} "Agent"])
-      [:div {:class (stl/css :header-actions)}
-       (when-not skills?
+      (when-not skills?
+        [:div {:class (stl/css :header-actions)}
          [:> icon-button* {:variant "ghost"
                            :aria-label "Open Skills"
-                           :on-click show-skills
-                           :icon i/list-checks}])
-       [:> icon-button* {:variant "ghost"
-                         :aria-label "Close Agent panel"
-                         :on-click on-close
-                         :icon i/close}]]]
+                           :on-click open-skills
+                           :icon i/list-checks}]])]
 
      [:div {:class (stl/css :body)}
       (cond
         ;; Skills is a static catalog — reachable even before a provider is set up.
-        skills?       [:> skills-tab*]
+        skills?       [:> skills-tab* {:selected skill :on-select on-select}]
         (empty? pool) [:> connect-empty*]
         :else         [:> chat-tab*])]]))

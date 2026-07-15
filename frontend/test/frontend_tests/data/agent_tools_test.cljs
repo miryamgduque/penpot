@@ -543,6 +543,67 @@
     (t/is (some? (at/layout-child-problem objs id-a {})))))
 
 ;; ---------------------------------------------------------------------------
+;; token types — public DTCG names -> internal keywords
+;;
+;; The enum is DERIVED from cto/token-type->dtcg-token-type, never retyped: a
+;; hand-copied list silently drifts the next time Penpot adds a type.
+;; ---------------------------------------------------------------------------
+
+(t/deftest every-offered-type-resolves-to-a-real-internal-type
+  (t/is (seq at/token-type-names))
+  (doseq [n at/token-type-names]
+    (t/is (some? (at/token-type n)) (str n " does not resolve"))))
+
+(t/deftest the-offered-types-cover-what-the-skills-ask-for
+  (let [offered (set at/token-type-names)]
+    (doseq [n ["color" "spacing" "borderRadius" "sizing" "opacity" "fontSizes" "number"]]
+      (t/is (contains? offered n) (str n " should be offered")))))
+
+(t/deftest composites-are-not-offered
+  ;; :value is ::sm/any, so make-token would happily accept a string for a
+  ;; typography token and author something malformed. Better to not offer it.
+  (let [offered (set at/token-type-names)]
+    (t/is (not (contains? offered "typography")))
+    (t/is (not (contains? offered "shadow")))))
+
+(t/deftest dtcg-names-map-to-internal-keywords
+  (t/is (= :border-radius (at/token-type "borderRadius")))
+  (t/is (= :spacing (at/token-type "spacing")))
+  (t/is (= :stroke-width (at/token-type "borderWidth"))))
+
+;; ---------------------------------------------------------------------------
+;; token-problem
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-spacing-token-is-allowed
+  (t/is (nil? (at/token-problem {:type "spacing" :name "spacing.md" :value "16"}))))
+
+(t/deftest an-unknown-type-is-rejected-and-lists-the-real-ones
+  (let [problem (at/token-problem {:type "padding" :name "x" :value "1"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "spacing"))))
+
+(t/deftest a-composite-type-is-rejected-honestly
+  ;; Not "invalid" — it is a real Penpot type this tool cannot express yet.
+  (let [problem (at/token-problem {:type "typography" :name "t" :value "x"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "structured"))))
+
+(t/deftest a-missing-name-or-value-is-rejected
+  (t/is (some? (at/token-problem {:type "color" :value "#fff"})))
+  (t/is (some? (at/token-problem {:type "color" :name "c.x"}))))
+
+(t/deftest a-zero-value-is-allowed
+  ;; The `absolute false` lesson from Phase 07: 0 is a legitimate spacing value,
+  ;; and a truthiness check would reject it.
+  (t/is (nil? (at/token-problem {:type "spacing" :name "spacing.none" :value "0"}))))
+
+(t/deftest an-alias-value-survives
+  ;; "{color.blue.500}" is a reference to another token — a large part of what
+  ;; makes a token system a system. Must not be validated away.
+  (t/is (nil? (at/token-problem {:type "color" :name "color.brand" :value "{color.blue.500}"}))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

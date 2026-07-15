@@ -1,6 +1,6 @@
 # Phase 08 — Any token type
 
-**Status:** todo
+**Status:** done
 
 `create_color_token` hardcodes one keyword:
 
@@ -16,20 +16,20 @@ removes it.
 
 ## Before Start
 
-- [ ] Re-read `create-color-token` (agent_tools.cljs:397) and `dwtl/create-token` ([library_edit.cljs:526](../../../../../frontend/src/app/main/data/workspace/tokens/library_edit.cljs))
-- [ ] Read `token-types` ([token.cljc:129](../../../../../common/src/app/common/types/token.cljc)) — enumerate the real list; the README's "twenty" is from a source read, confirm it
-- [ ] Check what `ctob/make-token` validates per type — does it reject a bad value shape, or accept anything and fail later?
-- [ ] Check how composite types (`typography`, `shadow`) express their value — they are not plain strings, and may not fit a flat `value` param
+- [x] Re-read `create-color-token` and `dwtl/create-token`
+- [x] Read the type list — **it is `token-type->dtcg-token-type` (`token.cljc:87`), and public names are DTCG, not the internal keywords** (see Notes)
+- [x] Check what `ctob/make-token` validates per type — **nothing useful: `:value` is `::sm/any`** (see Notes)
+- [x] Check how composite types express their value — structured; rejected honestly
 
 ## Checklist
 
-- [ ] Write tests for type validation + value shapes
-- [ ] Add the `create_token` spec to `tool-specs`
-- [ ] Implement `create-token` (generalizing `create-color-token`)
-- [ ] Decide the fate of `create_color_token` (see below) and act on it
-- [ ] Wire into the `execute-tool` dispatch `case`
-- [ ] Lint pass (`lint:clj` + `check-fmt:clj`, in the devenv — there is no Makefile)
-- [ ] Preview review: author a spacing token and a radius token, confirm they appear in the tokens panel
+- [x] Write tests for type validation + value shapes
+- [x] Add the `create_token` spec to `tool-specs`
+- [x] Implement `create-token` (generalizing `create-color-token`)
+- [x] Decide the fate of `create_color_token` — **replaced**, and the guard message updated with it
+- [x] Wire into the `execute-tool` dispatch `case`
+- [x] Lint pass — clj-kondo 0/0, cljfmt clean
+- [x] Preview review: `spacing.md`, `radius.card`, `spacing.none` authored live into the file's token library
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit (`:sparkles:`)
 
@@ -91,12 +91,44 @@ Validation:
 - `frontend/src/app/main/data/workspace/agent_tools.cljs` — spec, `create-token`, dispatch entry; `create_color_token` removed or kept per the decision above
 - `frontend/test/frontend_tests/data/agent_tools_test.cljs` — type and value tests
 
-## Notes
+## Notes — what execution found
+
+**The plan's "twenty types" was right but the wrong list.** `token-types` is a set of *internal
+keywords* (`:border-radius`, `:font-size`). The names a caller uses are **DTCG**
+(`borderRadius`, `fontSizes`), and the mapping in both directions already exists —
+`token-type->dtcg-token-type` / `dtcg-token-type->token-type` (`token.cljc:87`). The tool takes
+DTCG names and maps in; the enum is derived from that map, so it cannot drift. As a free bonus,
+`dtcg-token-type->token-type` already carries back-compat singular aliases (`fontSize`,
+`fontWeight`, `boxShadow`), so the agent's likely near-misses resolve rather than fail.
+
+**`make-token` validates nothing about the value: `:value` is `::sm/any`** (`token.cljc:180`).
+So the plan's fear was real — a `typography` token with a plain string value would be created
+happily and be malformed. Both composites (`typography`, `shadow`) are therefore not offered,
+and rejected with an honest message naming the real reason and the workaround ("author it in
+the tokens panel") rather than pretending they are invalid.
+
+**18 types offered, up from 1.** Verified live: `spacing.md = 16` and `radius.card = 12` land in
+the file's token library as `:spacing` and `:border-radius`.
+
+**Two value traps, both tested, both from earlier phases' lessons:**
+
+- **`"0"` is legitimate** — a zero spacing token is a real thing. The blank check is
+  `(and (string? value) (empty? value))`, not `str/blank?`/truthiness. This is Phase 07's
+  `absolute false` lesson repeating exactly as predicted in its notes.
+- **Aliases survive.** `value: "{color.brand.primary}"` is a reference to another token, and
+  `penpot-foundations` uses them. Validating the `{…}` syntax away would have quietly reduced a
+  token *system* to a token *list*.
+
+**`create_color_token` is gone, replaced by `create_token` with `type: "color"`.** Two tools for
+one job costs context on every request and invites the agent to wonder how they differ. The
+grep the plan asked for found the important caller: **the `token-only-colors` guard message
+itself** (`agent_tools.cljs:550`) told the agent to recover using `create_color_token`. That
+message and its explanatory comment now name `create_token (type: color)` — a rejection that
+names a tool which no longer exists would be worse than the tool it replaced. The only other
+hits are in the retired `ai-skills/` plugin, which is superseded and not live.
+
+## Notes — from planning
 
 Together with Phase 09 this makes `penpot-component-factory`'s One Rule — *"every value is a
 token"* — satisfiable for the first time. Worth demoing as a pair; neither half is convincing
 alone.
-
-The enum should be **derived** from `token-types`, not retyped. A hand-copied list is a
-divergence waiting for the next token type Penpot adds, and the test above only catches it if
-the list is generated from the same source.

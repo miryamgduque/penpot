@@ -89,7 +89,7 @@ and get fleshed out at their Before Start rather than guessed at now.
 
 ### Wave 3 — Tokens beyond color (mostly un-narrowing)
 
-8. [Phase 08 — Any token type](./todo-phase-08-any-token-type.md) — `create_token` generalizes `create_color_token` to all 20 types
+8. [Phase 08 — Any token type](./done-phase-08-any-token-type.md) — `create_token` generalizes `create_color_token` to all 20 types
 9. [Phase 09 — Any token attr](./todo-phase-09-any-token-attr.md) — `apply_tokens` reaches spacing, radius, sizing, typography
 10. [Phase 10 — Show every token](./todo-phase-10-show-every-token.md) — `read_design` stops reporting only `colorTokens`
 

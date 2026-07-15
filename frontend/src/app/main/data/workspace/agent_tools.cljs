@@ -175,6 +175,20 @@
                                            :description
                                            "main-instance ids; defaults to the selection"}}}}
 
+   {:name "add_variant"
+    :description
+    (str "Adds one more variant to an existing set, by duplicating a member. "
+         "Pass the set's container to copy its primary variant, or a specific "
+         "member to copy that one — pick whichever is closest to what you want, "
+         "since the copy inherits its content and you only modify the difference. "
+         "The new variant gets a placeholder value (\"Value N\"): name it with "
+         "set_variant_property. To build a set in the first place, name the "
+         "components with a shared path and use create_variant. Asynchronous.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string"
+                                          :description "a variant set's container id, or a member's id"}}
+                   :required ["shapeId"]}}
+
    {:name "set_variant_property"
     :description
     (str "Names a variant axis, and sets one member's value on it — turns the "
@@ -723,6 +737,50 @@
                                    "name them with set_variant_property. Verify with read_design.")}
                  hint (assoc :namingHint hint)))))))
 
+(defn add-variant-problem
+  "Why `add_variant` cannot grow this set, as a message the agent can act on, or
+  nil. Accepts either a member or the container: `add-new-variant` resolves a
+  container to its primary variant (`variants.cljs:360`)."
+  [objects id]
+  (let [shape (get objects id)]
+    (cond
+      (nil? id)
+      (dm/str "add_variant: shapeId is required — pass a variant set's container"
+              " or one of its members (see read_design)")
+
+      (nil? shape)
+      (dm/str "add_variant: no shape on this page with id " (str id)
+              " — it may be on another page, or gone; check read_design")
+
+      (or (ctc/is-variant-container? shape) (ctc/is-variant? shape))
+      nil
+
+      :else
+      (dm/str "add_variant: " (shape-label shape) " is not part of a variant set"
+              " — a set needs at least two main components; build one with"
+              " create_variant"))))
+
+(defn- add-variant
+  [{:keys [shapeId]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        id      (some-> shapeId parse-uuid)]
+    (if-let [problem (add-variant-problem objects id)]
+      (rx/throw (ex-info problem {}))
+      ;; add-new-variant generates the new ids internally and exposes no id-ref,
+      ;; but it ends by selecting the new shape — so the selection is the only
+      ;; handle on it. Compare against the previous selection rather than trust
+      ;; it: an unchanged selection means we have no id to report, not a wrong one.
+      (let [before (dsh/get-selected-ids state)]
+        (interrupt!)
+        (st/emit! (dwv/add-new-variant id))
+        (let [after (dsh/get-selected-ids @st/state)
+              new-id (first (remove before after))]
+          (rx/of (cond-> {:note (str "variant added — it starts with a placeholder value "
+                                     "(\"Value N\"); give it a real one with "
+                                     "set_variant_property. Verify with read_design.")}
+                   new-id (assoc :shapeId (dm/str new-id)))))))))
+
 ;; --- Variant properties
 ;;
 ;; `dwv/update-property-name` guards on `valid-pos?` and does nothing when the
@@ -929,6 +987,7 @@
     "create_text"        (create-text input)
     "create_component"   (create-component input)
     "create_variant"     (create-variant input)
+    "add_variant"        (add-variant input)
     "set_variant_property" (set-variant-property input)
     "create_color_token" (create-color-token input)
     "apply_tokens"       (apply-tokens input)

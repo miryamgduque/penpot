@@ -1,6 +1,6 @@
 # Phase 03 — Name the axes
 
-**Status:** todo
+**Status:** done
 
 After Phase 01 the set is real but its axis is anonymous. A designer wants `Size = Compact`,
 not `Property 1 = Tag`. This phase closes the gap between "a real variant set" and "the
@@ -20,18 +20,18 @@ variant set they asked for".
 
 ## Before Start
 
-- [ ] Phases 01 and 02 merged
-- [ ] Re-read in `variants.cljs`: `update-property-name` (:100), `update-property-value` (:147), `add-new-property` (:261), `remove-property` (:191)
-- [ ] Confirm the positional contract in `variant_properties.cljc` still holds — properties addressed by `pos`, uniform across the set
+- [x] Phases 01 and 02 merged
+- [x] Re-read `update-property-name` (:100) and `update-property-value` (:147) — found a third silent no-op, see Notes
+- [x] Confirm the positional contract — holds; properties addressed by `pos`, uniform across the set
 
 ## Checklist
 
-- [ ] Write tests for property-index resolution and validation
-- [ ] Add the `set_variant_property` spec to `tool-specs`
-- [ ] Implement `set-variant-property`
-- [ ] Wire into the `execute-tool` dispatch `case`
-- [ ] Lint pass (`lint:clj` + `check-fmt:clj`, in the devenv — there is no Makefile)
-- [ ] Preview review: rename an axis to `Size`, set values `Compact` / `Large`, confirm the design-tab switcher reads correctly
+- [x] Write tests for property-index resolution and validation
+- [x] Add the `set_variant_property` spec to `tool-specs`
+- [x] Implement `set-variant-property`
+- [x] Wire into the `execute-tool` dispatch `case`
+- [x] Lint pass — clj-kondo 0/0, cljfmt clean
+- [x] Preview review: design tab reads `Size | Compact, Tag Solid`, live
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit (`:sparkles:`)
 
@@ -97,11 +97,42 @@ Bypassing them desynchronizes the two, and `:variant-name` is what the UI displa
 - `frontend/src/app/main/data/workspace/agent_tools.cljs` — spec, `set-variant-property`, dispatch entry
 - `frontend/test/frontend_tests/data/agent_tools_test.cljs` — resolution and validation tests
 
-## Notes
+## Notes — what execution found
 
-Order-of-operations gotcha for the rename+value combined call: resolve `pos` from the
-**current** name first, then rename, then set the value at that `pos`. Getting this backwards
-means the rename invalidates the lookup. Pin the chosen order with the test above.
+**A third silent no-op, and the reason positions are resolved the way they are.**
+`update-property-name` guards on `valid-pos?` (`variants.cljs:131`) and emits nothing when
+the index is out of range — no error, no event. It reads the property list from **`(last
+(find-variant-components …))`**, so `variant-facts` reads the axes from that same component:
+a pos the tool resolves is a pos the event accepts. Resolving against any other member would
+be a coin flip if the set ever diverged.
+
+**The order-of-operations gotcha is real and now pinned by a test.** `axis-pos` resolves from
+the *current* name, before any rename is emitted. Verified live in one call: `Property 1` →
+`Size` set-wide **and** member 0's value → `Compact`, in the same request. Had the index been
+resolved after the rename, the value update would have silently no-op'd — the failure this
+whole plan exists to prevent, and the one an integration test would never have caught because
+it looks like success.
+
+**"nothing to do" was added beyond the plan.** A call with neither `rename` nor `value` would
+emit nothing and return success, teaching the agent the axis was named when it wasn't. Now
+rejected explicitly.
+
+**Live proof**: design tab reads `Size | Compact, Tag Solid` after the call, and all four
+rejections fire with actionable text — notably `no axis named "Size" on this set (it has:
+Property 1) — pass one of those`, which converts the agent's most likely guess into a correct
+retry.
+
+**`update-property-value` was kept**, despite the Phase 01 finding that values arrive
+meaningful. It earns its place for a different reason than planned: not because values start
+as junk, but because the *source component names* are junk (everything is "Component"), so
+values inherit that. Until the naming phase lands, per-member values are the only way to make
+a set readable.
+
+`add-new-property` / `remove-property` / `remove-empty-properties` stay out of scope — a
+second axis is a real ask ("Size × State") but wants its own phase, and an unknown-name-creates
+-an-axis shortcut would let a typo restructure the set.
+
+## Notes — from planning
 
 `remove-empty-properties` (:214) exists for cleanup after a set is edited down. Out of scope,
 but relevant if a "clean up this variant set" ask appears later.

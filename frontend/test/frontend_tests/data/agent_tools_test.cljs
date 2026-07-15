@@ -718,6 +718,54 @@
     (t/is (= "#6366f1" (:resolvedValue t)))))
 
 ;; ---------------------------------------------------------------------------
+;; delete-problem / duplicate-problem
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-plain-shape-can-be-deleted
+  (t/is (nil? (at/delete-problem (objects (plain-frame id-a "Hero")) [id-a]))))
+
+(t/deftest deleting-nothing-is-rejected
+  (let [problem (at/delete-problem {} [])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "shapeIds"))))
+
+(t/deftest deleting-an-unknown-id-is-rejected
+  (let [problem (at/delete-problem (objects (plain-frame id-a "Hero")) [id-a id-missing])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem (str id-missing)))))
+
+(t/deftest deleting-names-every-unknown-id-at-once
+  (let [problem (at/delete-problem {} [id-a id-b])]
+    (t/is (str/includes? problem (str id-a)))
+    (t/is (str/includes? problem (str id-b)))))
+
+(t/deftest a-plain-shape-can-be-duplicated
+  (t/is (nil? (at/duplicate-problem (objects (plain-frame id-a "Hero")) [id-a]))))
+
+(t/deftest duplicating-a-shape-inside-a-component-copy-is-rejected
+  ;; duplicate-shapes filters these out with allow-duplicate? and then no-ops on
+  ;; the empty set — success with nothing done.
+  (let [copy-head (assoc (plain-frame id-b "Card copy") :shape-ref (uuid/custom 7 1)
+                         :component-id (uuid/custom 7 2) :component-root true)
+        inner     (assoc (plain-frame id-a "Inner") :parent-id id-b
+                         :shape-ref (uuid/custom 7 3))
+        problem   (at/duplicate-problem (objects copy-head inner) [id-a])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "component copy"))))
+
+(t/deftest duplicating-nothing-is-rejected
+  (t/is (some? (at/duplicate-problem {} []))))
+
+(t/deftest the-duplicate-tool-tells-the-truth-about-offsets
+  ;; calc-duplicate-delta (selection.cljs:439) offsets ONLY frames: "The default
+  ;; is leave normal shapes in place, but put new frames to the right of the
+  ;; original." A note promising an offset would be false for every rect — and a
+  ;; copy sitting invisibly on its original is the thing the agent must be told.
+  (let [spec (first (filter #(= "duplicate_shape" (:name %)) at/tool-specs))]
+    (t/is (str/includes? (:description spec) "BOARD"))
+    (t/is (str/includes? (:description spec) "ON TOP"))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

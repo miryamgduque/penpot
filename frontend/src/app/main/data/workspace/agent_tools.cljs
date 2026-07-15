@@ -79,11 +79,25 @@
   [{:name "read_design"
     :description
     (str "One-call orientation: the current file, page, selection, the page's "
-         "top-level shapes, its variant sets (with members and properties), and "
-         "its design tokens grouped by type. Call this FIRST each task to see "
-         "what is in the file instead of guessing — including whether a token "
-         "or variant set already exists before authoring another.")
+         "TOP-LEVEL shapes, its variant sets (with members and properties), its "
+         "components, and its design tokens grouped by type. Call this FIRST "
+         "each task to see what is in the file instead of guessing — including "
+         "whether a token, component or variant set already exists before "
+         "authoring another.\n"
+         "It reports one level deep: a shape's `childCount` tells you it has "
+         "children without listing them. To reach inside, or when an `omitted` "
+         "note says a list was capped, use find_shapes.")
     :input-schema {:type "object" :properties {}}}
+
+   {:name "find_shapes"
+    :description
+    (str "Finds shapes anywhere on the page by name (case-insensitive "
+         "substring) and/or type — including nested ones read_design does not "
+         "list. Use it to reach into a board, or to follow up an `omitted` note. "
+         "At least one of name/type is required.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string" :description "substring, e.g. \"button\""}
+                                :type {:type "string" :enum ["board" "rect" "ellipse" "text" "group" "path" "image"]}}}}
 
    {:name "get_design_skills"
     :description
@@ -390,12 +404,64 @@
 
 ;; --- read_design
 
+;; --- read_design's budget
+;;
+;; Tool results are hard-capped at 20k chars (`agent/max-tool-result-chars`), and
+;; `read_design` is the most-called tool we have. Every list it returns is
+;; bounded, and every bound announces itself: a list silently cut is read as the
+;; whole file, which is worse than a short list that says it is short.
+
+(def ^:private max-listed 60)
+
+;; --- shape types
+;;
+;; The agent says "board"; the file model says `:frame`. Two mappings, and the
+;; difference matters: `create_shape` offers three types and defaults anything
+;; else to `:rect` (a lenient default for a tool that only takes three), while
+;; `find_shapes` searches the whole vocabulary — there, an unknown type must find
+;; NOTHING rather than quietly become `:rect` and return every rectangle on the
+;; page as if they were what was asked for.
+
+(defn- shape-type
+  "`create_shape`'s type → Penpot's. Defaults to `:rect`; safe only because that
+  tool offers exactly board / rect / ellipse."
+  [type]
+  (case type
+    "board"   :frame
+    "ellipse" :circle
+    :rect))
+
+(def ^:private searchable-types
+  "`find_shapes`' vocabulary → Penpot's. No default: an unmapped name resolves to
+  nil and matches nothing."
+  {"board" :frame "frame" :frame
+   "rect" :rect "rectangle" :rect
+   "ellipse" :circle "circle" :circle
+   "text" :text
+   "group" :group
+   "path" :path
+   "image" :image
+   "bool" :bool})
+
+(defn bounded
+  "`[items omission]` — at most `limit` of `coll`, plus a note when it held back.
+  The note names `find_shapes` because a cut the agent cannot act on is just a
+  cut."
+  [coll limit what]
+  (let [total (count coll)]
+    (if (<= total limit)
+      [(vec coll) nil]
+      [(vec (take limit coll))
+       (dm/str "showing " limit " of " total " " what
+               " — use find_shapes to query the rest by name or type")])))
+
 (defn summarize-shape
   "The shape as the agent sees it. Variant keys are added only when truthy —
   `read_design` is called constantly, so a file without variants should not pay
   for the feature in every payload."
   [objects id]
-  (let [shape (get objects id)]
+  (let [shape (get objects id)
+        kids  (count (:shapes shape))]
     (cond-> {:id (dm/str id)
              :name (:name shape)
              :type (some-> (:type shape) name)
@@ -403,6 +469,9 @@
              :y (:y shape)
              :width (:width shape)
              :height (:height shape)}
+      ;; so the agent can tell an empty board from one it cannot see into
+      (pos? kids)
+      (assoc :childCount kids)
       (ctc/is-variant-container? shape)
       (assoc :isVariantContainer true)
 
@@ -433,6 +502,45 @@
                       (mapv token-summary toks)))
              {}
              (group-by :type tokens)))
+
+(defn shape-matches?
+  "Does this shape match the query? `name` is a case-insensitive substring;
+  `type` accepts the agent's own vocabulary (\"board\" for `:frame`, as
+  `create_shape` takes). An empty query matches nothing — a query that matched
+  everything would be a dump, which is what bounding exists to prevent."
+  [shape {:keys [name type]}]
+  (let [want (some->> type (str/lower) (get searchable-types))]
+    (and (or (some? name) (some? type))
+         (or (nil? name)
+             (and (:name shape)
+                  (str/includes? (str/lower (:name shape)) (str/lower name))))
+         ;; `type` given but unmapped leaves `want` nil, which matches nothing —
+         ;; never everything
+         (or (nil? type) (= want (:type shape))))))
+
+(defn- find-shapes
+  [{:keys [name type] :as query}]
+  (if-let [problem
+           (cond
+             (and (nil? name) (nil? type))
+             (str "find_shapes: pass a name and/or a type to search for — an empty"
+                  " query would return the whole file, which is what read_design"
+                  " is for")
+
+             ;; an unmapped type matches nothing, and "0 found" reads as "none
+             ;; exist" — say it was the query that was wrong
+             (and (some? type) (nil? (get searchable-types (str/lower type))))
+             (dm/str "find_shapes: \"" type "\" is not a shape type — use one of: "
+                     (str/join ", " (sort (distinct (keys searchable-types))))))]
+    (rx/throw (ex-info problem {}))
+    (let [objects (dsh/lookup-page-objects @st/state)
+          hits    (->> (vals objects)
+                       (filter #(shape-matches? % query))
+                       (sort-by :name))
+          [items omitted] (bounded hits max-listed "matches")]
+      (rx/of (cond-> {:matches (mapv #(summarize-shape objects (:id %)) items)
+                      :found (count hits)}
+               omitted (assoc :omitted omitted))))))
 
 (defn library-components
   "Every component the agent can instantiate — this file's and every connected
@@ -486,16 +594,29 @@
         data     (dsh/lookup-file-data state)
         top-ids  (get-in objects [uuid/zero :shapes])
         selected (dsh/get-selected-ids state)
-        variants (variant-sets data objects)]
-    {:file (get-in state [:files file-id :name])
-     :page (:name page)
-     :selection (mapv #(summarize-shape objects %) selected)
-     :shapes (mapv #(summarize-shape objects %) top-ids)
-     :variants variants
-     :components (library-components (dsh/lookup-libraries state) file-id)
-     :tokens (tokens-by-type (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals))
-     :skills (ask/catalog-manifest state)
-     :openViolations (count (audit-violations state))}))
+        variants (variant-sets data objects)
+        comps    (library-components (dsh/lookup-libraries state) file-id)
+
+        [shapes shapes-omitted]     (bounded top-ids max-listed "top-level shapes")
+        [variants variants-omitted] (bounded variants max-listed "variant sets")
+        [comps comps-omitted]       (bounded comps max-listed "components")
+
+        omitted (cond-> {}
+                  shapes-omitted   (assoc :shapes shapes-omitted)
+                  variants-omitted (assoc :variants variants-omitted)
+                  comps-omitted    (assoc :components comps-omitted))]
+    (cond-> {:file (get-in state [:files file-id :name])
+             :page (:name page)
+             :selection (mapv #(summarize-shape objects %) selected)
+             :shapes (mapv #(summarize-shape objects %) shapes)
+             :variants variants
+             :components comps
+             :tokens (tokens-by-type (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals))
+             :skills (ask/catalog-manifest state)
+             :openViolations (count (audit-violations state))}
+      ;; only when something was actually held back — an always-present "nothing
+      ;; omitted" key is payload for nothing
+      (seq omitted) (assoc :omitted omitted))))
 
 ;; --- render_board
 ;;
@@ -627,12 +748,6 @@
   []
   (st/emit! :interrupt))
 
-(defn- shape-type
-  [type]
-  (case type
-    "board"   :frame
-    "ellipse" :circle
-    :rect))
 
 ;; --- token-only-colors enforcement (tool boundary)
 ;;
@@ -823,6 +938,7 @@
   offender and cost one retry instead of one per shape."
   [shapes]
   (str/join ", " (map shape-label shapes)))
+
 
 ;; --- Delete / duplicate
 ;;
@@ -1702,6 +1818,7 @@
   [name input]
   (case name
     "read_design"        (rx/of (read-design))
+    "find_shapes"        (find-shapes input)
     "render_board"       (render-board input)
     "get_design_skills"  (get-design-skills input)
     "audit_file"         (audit-file)

@@ -26,6 +26,43 @@
                  {:id "call_2" :name "apply_tokens" :input {:token "blue"}}]}])
 
 ;; ---------------------------------------------------------------------------
+;; result->content — the oversize backstop
+;;
+;; It used to `(subs s 0 20000)` a JSON string, which cuts mid-token and hands
+;; the model unparseable JSON with no marker: it could not tell a truncated
+;; result from a complete one, and would read a partial list as the whole file.
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-normal-result-passes-through-unchanged
+  (let [s (agent/result->content {:ok true :note "fine"})]
+    (t/is (= {"ok" true "note" "fine"} (js->clj (js/JSON.parse s))))))
+
+(t/deftest an-oversized-result-is-still-valid-json
+  (let [huge (apply str (repeat 30000 "x"))
+        s    (agent/result->content {:blob huge})]
+    ;; the point: parsing must not throw
+    (t/is (map? (js->clj (js/JSON.parse s))))))
+
+(t/deftest an-oversized-result-says-it-was-not-returned
+  (let [huge (apply str (repeat 30000 "x"))
+        out  (js->clj (js/JSON.parse (agent/result->content {:blob huge})) :keywordize-keys true)]
+    (t/is (true? (:truncated out)))
+    (t/is (str/includes? (str/lower (:error out)) "narrow"))))
+
+(t/deftest an-oversized-result-reports-its-real-size
+  (let [huge (apply str (repeat 30000 "x"))
+        out  (js->clj (js/JSON.parse (agent/result->content {:blob huge})) :keywordize-keys true)]
+    (t/is (> (:chars out) 20000))))
+
+(t/deftest the-backstop-never-emits-a-partial-prefix
+  ;; The old behaviour: the first 20k chars of the real payload. If any of the
+  ;; blob survives, a model could read it as real data.
+  (let [huge (apply str (repeat 30000 "x"))
+        s    (agent/result->content {:blob huge})]
+    (t/is (< (count s) 1000))
+    (t/is (not (str/includes? s (apply str (repeat 100 "x")))))))
+
+;; ---------------------------------------------------------------------------
 ;; cancel-history
 ;; ---------------------------------------------------------------------------
 

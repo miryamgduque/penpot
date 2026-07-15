@@ -529,11 +529,32 @@
     "⚠️ I ran out of output budget before finishing — please send the request again."
     "⚠️ The model returned no visible output — try rephrasing the request."))
 
-(defn- result->content
+(defn result->content
+  "The tool result, as JSON for the provider.
+
+  An oversized result is replaced by a small, VALID JSON object saying what
+  happened. It used to be `(subs s 0 max-tool-result-chars)` — a raw substring of
+  a JSON string, which cuts mid-token and hands the model unparseable JSON with
+  no marker. The model could not tell a truncated result from a complete one, so
+  a partial shape list read as the whole file: silent truncation, which is the
+  same failure as a silent no-op one layer up.
+
+  Refusing beats prefixing: a prefix of real data is indistinguishable from all
+  of it, while a refusal the agent can read makes it narrow the request. Tools
+  are expected to bound themselves (see `read_design`) so this rarely fires."
   [result]
   (let [s (js/JSON.stringify (clj->js result))]
     (if (> (count s) max-tool-result-chars)
-      (subs s 0 max-tool-result-chars)
+      (js/JSON.stringify
+       #js {:truncated true
+            :chars (count s)
+            :limit max-tool-result-chars
+            :error (str "This result was " (count s) " characters, over the "
+                        max-tool-result-chars " limit, so none of it was returned "
+                        "— a partial result would be indistinguishable from a "
+                        "complete one. Narrow the request and try again: "
+                        "read_design with a smaller depth, or find_shapes with a "
+                        "name/type query.")})
       s)))
 
 (defn- tool-outcome->result

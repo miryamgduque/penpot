@@ -911,6 +911,74 @@
                                    {:componentId (str cid-1) :x 0 :y 0}))))
 
 ;; ---------------------------------------------------------------------------
+;; bounded — every list read_design returns must say when it held back
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-short-list-is-returned-whole-and-says-nothing
+  (let [[items omitted] (at/bounded [1 2 3] 10 "shapes")]
+    (t/is (= [1 2 3] items))
+    (t/is (nil? omitted))))
+
+(t/deftest a-long-list-is-cut-and-says-so
+  (let [[items omitted] (at/bounded (range 100) 10 "shapes")]
+    (t/is (= 10 (count items)))
+    (t/is (some? omitted))
+    (t/is (str/includes? omitted "10"))
+    (t/is (str/includes? omitted "100"))))
+
+(t/deftest the-omission-note-says-how-to-get-the-rest
+  ;; A cut the agent cannot act on is just a cut.
+  (let [[_ omitted] (at/bounded (range 100) 10 "shapes")]
+    (t/is (str/includes? omitted "find_shapes"))))
+
+;; ---------------------------------------------------------------------------
+;; summarize-shape — child visibility
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-shape-with-children-says-how-many
+  ;; Without this the agent cannot tell an empty board from one it can't see into.
+  (let [objs (objects (assoc (plain-frame id-a "Board") :shapes [id-b id-c])
+                      (plain-frame id-b "X") (plain-frame id-c "Y"))
+        out  (at/summarize-shape objs id-a)]
+    (t/is (= 2 (:childCount out)))))
+
+(t/deftest a-childless-shape-says-nothing-about-children
+  (let [out (at/summarize-shape (objects (plain-frame id-a "Leaf")) id-a)]
+    (t/is (not (contains? out :childCount)))))
+
+;; ---------------------------------------------------------------------------
+;; shape-matches? — find_shapes
+;; ---------------------------------------------------------------------------
+
+(t/deftest find-matches-on-name-substring-case-insensitively
+  (let [s (plain-frame id-a "Primary Button")]
+    (t/is (at/shape-matches? s {:name "button"}))
+    (t/is (at/shape-matches? s {:name "PRIMARY"}))
+    (t/is (not (at/shape-matches? s {:name "card"})))))
+
+(t/deftest find-matches-on-type
+  (let [s {:id id-a :name "Box" :type :rect}]
+    (t/is (at/shape-matches? s {:type "rect"}))
+    (t/is (not (at/shape-matches? s {:type "board"})))))
+
+(t/deftest find-matches-on-type-using-the-agents-vocabulary
+  ;; create_shape takes "board"; the internal type is :frame. The agent should
+  ;; not have to know that asymmetry.
+  (let [s (plain-frame id-a "Hero")]
+    (t/is (at/shape-matches? s {:type "board"}))
+    (t/is (at/shape-matches? s {:type "frame"}))))
+
+(t/deftest find-combines-criteria
+  (let [s (plain-frame id-a "Primary Button")]
+    (t/is (at/shape-matches? s {:name "button" :type "board"}))
+    (t/is (not (at/shape-matches? s {:name "button" :type "rect"})))))
+
+(t/deftest find-with-no-criteria-matches-nothing
+  ;; A query that matches everything is a dump, and dumps are what this phase
+  ;; exists to stop.
+  (t/is (not (at/shape-matches? (plain-frame id-a "Hero") {}))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

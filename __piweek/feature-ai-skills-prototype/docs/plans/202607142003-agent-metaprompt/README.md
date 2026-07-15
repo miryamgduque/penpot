@@ -100,7 +100,7 @@ agent's own output introduced.
    blind to it** — it scores the floor, not the house style. The instrument, not the layer, is
    the finding.
 7. [Phase 07 — The agent must see](./done-phase-07-render-refeed.md) — ⛔ **closed as superseded**
-   by [Agent vision](../202607150027-agent-vision/) (user's call, 2026-07-15). That plan already
+   by [Agent vision](../completed/202607150027-agent-vision/) (user's call, 2026-07-15). That plan already
    answered this phase's feasibility spike, corrected its tool name (`render_region` → the WASM
    API is per-shape, so `render_board`), and covers user-attached images too. No code here.
 
@@ -165,7 +165,7 @@ The plan's value was less the code than four results that contradicted the brief
 - **Two defects were found only by measuring**: the routing index rendered the *label* while the
   tool keys on the *name* (agent guessed → error → retry, a wasted round); and a too-blunt
   preamble made the agent discard a real Penpot ordering constraint along with stale API syntax.
-- **Phase 07 was closed as superseded** by [Agent vision](../202607150027-agent-vision/), which
+- **Phase 07 was closed as superseded** by [Agent vision](../completed/202607150027-agent-vision/), which
   answered its spike and corrected its tool name before it ever ran.
 
 ### Effect on the story

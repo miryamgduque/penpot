@@ -2,8 +2,9 @@
 
 # Agent vision — let the model see, both ways
 
-**Status:** todo
+**Status:** done
 **Created:** 2026-07-15
+**Completed:** 2026-07-15
 **Apps:** `frontend`
 **User story:** TBD — not yet in Taiga
 **Depends on:** [Agent chat metaprompt](../202607142003-agent-metaprompt/) — start after it lands. This
@@ -175,8 +176,12 @@ or the viewport-only `capture-canvas-snapshot`. This plan therefore builds **`re
    plan's "only large unknown" was a non-problem**: Anthropic's `tool_result` takes image blocks
    first-class, so no user-message workaround. 131ms for 2 boards, ~$0.04/turn on Opus.
    **Requires the WASM renderer** — the profile was switched to `:wasm` for the demo.
-7. [Phase 07 — See what you did](./todo-phase-07-see-what-you-did.md) — re-feed after mutation,
-   plus the blind-vs-seeing experiment. The one hypothesis that resists an automatic score.
+7. [Phase 07 — See what you did](./done-phase-07-see-what-you-did.md) — ✅ **done — and the
+   re-feed was refuted, so it was not built.** Told to check its work, the agent ran
+   `modify → render → modify → render` **by itself** (4 renders, 3 edits, no harness). Harness
+   machinery would duplicate a loop the model already runs. Seeing beat blind decisively on an
+   inherited design — but partly for a confounded reason: **`read_design` cannot see inside a
+   board**, which cripples the blind arm for reasons unrelated to vision.
 
 **Sequencing note.** Attachments (02→05) come before the render tool (06→07) deliberately, even
 though the user asked about screenshots first. Attaching a photo is the cheapest possible
@@ -245,3 +250,57 @@ because it is cheap and its verdict can reshape the plan.
   mislabelled** with the requested mimetype — the Rust side hardcodes PNG
   (`render.rs:2419-2423`) while `export-image-uri` labels the blob from the requested type.
   Harmless for us (we want PNG), worth reporting separately.
+
+## Completion Summary
+
+**Completed:** 2026-07-15 (same day it was created — seven phases, six commits)
+
+### What shipped
+
+Both halves of "let the model see", and both are **proven against a live model, not against
+documentation**:
+
+- **The user can attach images** — pick, paste or drop up to 5. A real Claude read an arbitrary
+  string (`VERIFY-7742`) back off an attachment, which is what retired the "the codecs match the
+  docs" caveat the plan carried from Phase 02.
+- **The agent can render boards and look at them** — `render_board`. Asked about a board it did
+  not author, Opus reached for it unprompted and said *"I looked at an actual rendered image of
+  the board (not inferred from file data)"*. Verified from the wire: a real `image` block nested
+  in a `tool_result`.
+- **Both are bounded.** Images are capped to 1568px + WebP on attach, and pruned from all but the
+  last 2 turns. The pathological payload is **flat at ~60% of cap from 2 turns to 60** — it stops
+  growing, which was the actual failure mode.
+- **Both degrade honestly.** A text-only model greys out the attach button and gets a note
+  instead of a silent lie; the SVG renderer gets a refusal naming the setting to change.
+
+### What changed from the original plan
+
+- **Phase 07's re-feed was refuted and not built.** The plan assumed the harness must re-feed a
+  render after each edit. It doesn't: the agent runs that loop itself. Not building it is the
+  phase's deliverable.
+- **Phase 01 pre-answered its own risk.** "Is a native render even reachable?" — the plan's
+  biggest open question — turned out to be one synchronous call. `:wasm-export`, the flag the
+  plan feared, was a red herring (undeclared, off everywhere, gates Penpot's own export feature).
+  The real gate is `render-wasm/v1`.
+- **"The only large unknown" was a non-problem.** Anthropic's `tool_result` takes image blocks
+  first-class. No workaround needed.
+- **A catalog refresh appeared out of nowhere.** Verifying `:vision` turned up **three dead or
+  dying model ids** and two wrong context windows. Fixed in its own commit.
+- **Phase 03's headline number is obsolete** — "half the catalog is text-only" became 2 of 14
+  after that refresh, and the surviving pair sits *inside* Zhipu, which is a better shape anyway.
+
+### Lessons & follow-ups
+
+- **`read_design` cannot see inside a board.** `summarize-shape` returns geometry for *top-level*
+  shapes only — no children. Both experiment arms hit it; both agents said so unprompted. Right
+  now `render_board` is the **only** way to introspect nested structure, which is a strange place
+  to be, and it means the blind-vs-seeing question has **never actually been tested fairly**.
+  This is the highest-value follow-up in the plan: fix it, then re-run Phase 07's experiment.
+- **The OpenAI codec has never met a live provider.** Anthropic-only was a deliberate call for
+  the 2026-07-17 demo (see the scope note above). All of OpenAI/Zhipu/Moonshot ride one
+  unverified codepath. Ten-minute job the moment a key exists.
+- **The demo profile is now on the WASM renderer.** `render_board` requires it. This is a durable
+  account-level change affecting every file.
+- **Measure before building.** Phase 05 was written around history accumulation; the measurement
+  said single-message size was the load-bearing problem. Phase 07 was written to build a re-feed;
+  the measurement said don't. Both phases would have shipped the wrong thing if built first.

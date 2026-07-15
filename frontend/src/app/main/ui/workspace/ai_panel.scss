@@ -648,6 +648,145 @@
   white-space: nowrap;
 }
 
+// The ask_user interview form, living in the transcript flow like a wide
+// assistant bubble: a bordered card of questions with pill-chip answers.
+.eform {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-16;
+  padding: deprecated.$s-12;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-secondary);
+}
+
+.eform-title {
+  @include deprecated.body-medium-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.eform-question {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-6;
+}
+
+.eform-prompt {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.eform-optional {
+  color: var(--color-foreground-secondary);
+  font-weight: 400;
+}
+
+.eform-hint {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+.eform-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-6;
+}
+
+.eform-chip {
+  @include deprecated.body-small-typography;
+
+  display: inline-flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-12;
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-foreground-secondary);
+  }
+}
+
+.eform-chip-active {
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+}
+
+.eform-chip-mark {
+  color: inherit;
+}
+
+.eform-chip-other {
+  color: var(--color-foreground-secondary);
+
+  &.eform-chip-active {
+    color: var(--color-accent-primary);
+  }
+}
+
+.eform-other-input,
+.eform-textarea {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+
+  &::placeholder {
+    color: var(--color-foreground-secondary);
+  }
+}
+
+.eform-textarea {
+  resize: vertical;
+}
+
+.eform-actions {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+}
+
+.eform-submit {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-6 deprecated.$s-16;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.eform-pending-hint {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
 // The real <input type=file>: kept in the DOM (the attach button clicks it)
 // but never shown.
 .composer-file-input {

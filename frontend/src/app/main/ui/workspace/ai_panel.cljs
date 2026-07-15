@@ -24,6 +24,7 @@
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
+   [app.main.data.workspace.elicitation :as el]
    [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.skill-state :as skst]
    [app.main.data.workspace.slash-commands :as slc]
@@ -275,6 +276,134 @@
            (when-let [result (:result message)]
              [:pre {:class (stl/css :tool-detail-payload)} result])])])]))
 
+(mf/defc elicitation-question*
+  "One question of the ask_user form: prompt + hint, then its input — option
+  chips (single or multi), an Other… chip that expands an inline text field,
+  a \"Decide for me\" chip, or a free textarea. `qstate` is this question's
+  ui-state map; the handlers close over the question id."
+  {::mf/private true}
+  [{:keys [question qstate on-toggle on-other-text on-text]}]
+  (let [{:keys [id type options hint optional allow-decide allow-other]} question
+        selected   (or (:selected qstate) #{})
+        other-on?  (contains? selected :other)
+        multi?     (= "multi" type)
+        text-type? (= "text" type)]
+    [:div {:class (stl/css :eform-question)}
+     [:div {:class (stl/css :eform-prompt)}
+      (:question question)
+      (when optional [:span {:class (stl/css :eform-optional)} " (optional)"])]
+     (when (seq hint)
+       [:div {:class (stl/css :eform-hint)} hint])
+
+     (if text-type?
+       [:textarea {:class (stl/css :eform-textarea)
+                   :rows 3
+                   :placeholder "Your answer…"
+                   :value (or (:text qstate) "")
+                   :on-change #(on-text id (dom/get-value (dom/get-target %)))}]
+
+       [:div {:class (stl/css :eform-chips)}
+        (for [opt options]
+          (let [active? (contains? selected opt)]
+            [:button {:key opt
+                      :type "button"
+                      :class (stl/css-case :eform-chip true
+                                           :eform-chip-active active?)
+                      :aria-pressed active?
+                      :on-click #(on-toggle id type opt)}
+             (when multi?
+               [:span {:class (stl/css :eform-chip-mark) :aria-hidden true}
+                (if active? "☑" "☐")])
+             opt]))
+        (when allow-other
+          [:button {:type "button"
+                    :class (stl/css-case :eform-chip true
+                                         :eform-chip-other true
+                                         :eform-chip-active other-on?)
+                    :aria-pressed other-on?
+                    :on-click #(on-toggle id type :other)}
+           "Other…"])
+        (when allow-decide
+          [:button {:type "button"
+                    :class (stl/css-case :eform-chip true
+                                         :eform-chip-active (contains? selected :decide))
+                    :aria-pressed (contains? selected :decide)
+                    :on-click #(on-toggle id type :decide)}
+           "Decide for me"])])
+
+     (when (and (not text-type?) other-on?)
+       [:input {:class (stl/css :eform-other-input)
+                :type "text"
+                :placeholder "Tell me in your words…"
+                :value (or (:other-text qstate) "")
+                ;; Enter must not bubble into anything submit-like; the form
+                ;; sends only from its own button
+                :on-key-down #(when (kbd/enter? %) (dom/prevent-default %))
+                :on-change #(on-other-text id (dom/get-value (dom/get-target %)))}])]))
+
+(mf/defc elicitation-form*
+  "The ask_user interview, rendered at the tail of the transcript while a
+  turn is paused on the user's answers. Submitting collapses it into a plain
+  answers-summary bubble (appended by `dwaip/submit-form`) — the form itself
+  is presentation state and vanishes once resolved.
+
+  Remounted per form via `:key (hash form)` at the call site, so ui state
+  never leaks from one interview into the next."
+  {::mf/private true}
+  [{:keys [form]}]
+  (let [{:keys [title questions]} form
+        ;; normalized once: snake_case JSON keys → the names the question
+        ;; component reads; Other… defaults to on for choice questions
+        questions (mf/with-memo [questions]
+                    (mapv (fn [q]
+                            (assoc q
+                                   :allow-other (and (not= "text" (:type q))
+                                                     (not (false? (:allow_other q))))
+                                   :allow-decide (true? (:allow_decide q))))
+                          questions))
+        state*    (mf/use-state {})
+        state     (deref state*)
+        ready?    (el/complete? questions state)
+
+        on-toggle     (mf/use-fn
+                       (fn [id type opt]
+                         (swap! state* update-in [id :selected]
+                                #(el/toggle type % opt))))
+        on-other-text (mf/use-fn
+                       (fn [id text]
+                         (swap! state* assoc-in [id :other-text] text)))
+        on-text       (mf/use-fn
+                       (fn [id text]
+                         (swap! state* assoc-in [id :text] text)))
+
+        on-submit (mf/use-fn
+                   (mf/deps questions state ready?)
+                   (fn []
+                     (when ready?
+                       (st/emit! (dwaip/submit-form
+                                  (el/answers questions state)
+                                  (el/summary questions state))))))]
+
+    [:div {:class (stl/css :eform)}
+     (when (seq title)
+       [:div {:class (stl/css :eform-title)} title])
+     (for [q questions]
+       [:> elicitation-question* {:key (:id q)
+                                  :question q
+                                  :qstate (get state (:id q))
+                                  :on-toggle on-toggle
+                                  :on-other-text on-other-text
+                                  :on-text on-text}])
+     [:div {:class (stl/css :eform-actions)}
+      [:button {:type "button"
+                :class (stl/css :eform-submit)
+                :disabled (not ready?)
+                :on-click on-submit}
+       "Send answers"]
+      (when-not ready?
+        [:span {:class (stl/css :eform-pending-hint)}
+         "Answer the required questions to continue"])]]))
+
 (mf/defc transcript*
   "The message list, split out so it can own its scroll ref.
 
@@ -288,7 +417,7 @@
   never pin to the latest — and once the content outgrows the panel the
   sentinel is never seen, leaving it wrongly detached forever."
   {::mf/private true}
-  [{:keys [messages busy?]}]
+  [{:keys [messages busy? form]}]
   (let [;; consecutive tool calls collapse into one row; `partition-by` on the
         ;; role predicate yields alternating runs of tools / everything else
         runs          (mf/with-memo [messages]
@@ -321,7 +450,8 @@
     (mf/with-layout-effect []
       (scroll-to-end))
 
-    (mf/with-layout-effect [messages busy?]
+    ;; `form` is in the deps: an interview appearing is new content to follow
+    (mf/with-layout-effect [messages busy? form]
       (when ^boolean (mf/ref-val at-bottom-ref)
         (scroll-to-end)))
 
@@ -360,7 +490,11 @@
                (if user?
                  (:content message)
                  [:> md/markdown* {:text (:content message)}])]))))
-      (when busy?
+      ;; while an interview is open the turn is busy *waiting on the user* —
+      ;; a "Thinking…" bubble under the form would be a lie
+      (when (some? form)
+        [:> elicitation-form* {:key (hash form) :form form}])
+      (when (and busy? (nil? form))
         [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
 
      (when-not at-bottom?
@@ -380,6 +514,7 @@
         providers (mf/deref refs/ai-providers)
         busy?     (mf/deref refs/ai-panel-busy?)
         usage     (mf/deref refs/ai-panel-usage)
+        pending-form (mf/deref refs/ai-panel-pending-form)
 
         pool      (mf/with-memo [providers] (provider-pool providers))
 
@@ -645,8 +780,8 @@
       [:span {:class (stl/css :context-sep)} "·"]
       [:span {:class (stl/css :context-selection)} (selection-label selected objects)]]
 
-     (if (seq messages)
-       [:> transcript* {:messages messages :busy? busy?}]
+     (if (or (seq messages) (some? pending-form))
+       [:> transcript* {:messages messages :busy? busy? :form pending-form}]
        [:div {:class (stl/css :transcript-empty)}
         [:> i/icon* {:icon-id i/bot-message-square
                      :size "m"

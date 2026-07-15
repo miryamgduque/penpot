@@ -48,8 +48,10 @@ Decisions from the discovery interview (2026-07-16):
 - **"Clear" becomes "New chat"** — starting fresh no longer destroys the
   conversation; it stays in the file's history list. Explicit delete lives in
   the list.
-- **Auto-title from the first user message** (truncated ~60 chars); rename is
-  out of scope.
+- **Auto-title from the first user message** (truncated ~60 chars), editable
+  afterwards (phase 03b, added by user direction 2026-07-16): the derived
+  title is written on insert only and never on later saves, so a manual
+  rename is durable.
 - **Last-write-wins** on concurrent tabs — acceptable for the prototype; noted,
   not solved.
 
@@ -68,7 +70,6 @@ Decisions from the discovery interview (2026-07-16):
 
 ### Out of scope
 
-- Renaming conversations.
 - Sharing/team-visible conversations.
 - Persisting image bytes (stripped, see above).
 - Any retention/quota policy beyond the existing history trim.
@@ -79,7 +80,8 @@ Decisions from the discovery interview (2026-07-16):
 1. [Phase 01 — Backend table + RPC](./done-phase-01-backend-table-and-rpc.md) — migration `0157` + `agent_chats.clj` (list/get/upsert/delete), registered
 2. [Phase 02 — Frontend persistence layer](./done-phase-02-frontend-persistence.md) — save at turn boundaries, hydrate on panel open, strip-for-save + auto-title helpers
 3. [Phase 03 — Conversation switcher UI](./done-phase-03-conversation-switcher-ui.md) — history popover + New chat in the panel header, load/delete
-4. [Phase 04 — Merge and live verify](./todo-phase-04-merge-and-live-verify.md) — merge the worktree into `feature/ai-skills-prototype` (user gate), then verify everything live in the devenv
+4. [Phase 03b — Rename conversations](./done-phase-03b-rename-conversations.md) — inline rename in the popover; renames survive later saves
+5. [Phase 04 — Merge and live verify](./todo-phase-04-merge-and-live-verify.md) — merge the worktree into `feature/ai-skills-prototype` (user gate), then verify everything live in the devenv
 
 ## Acceptance Criteria
 
@@ -88,7 +90,9 @@ Decisions from the discovery interview (2026-07-16):
   agent remembers context, and spend meter).
 - Each file lists its own conversations; each user sees only their own.
 - "New chat" starts a fresh conversation without destroying the previous one;
-  any listed conversation can be resumed or deleted.
+  any listed conversation can be resumed, renamed or deleted.
+- A renamed conversation keeps its custom title through later turns, saves
+  and refreshes.
 - Images never reach the database — restored transcripts show the omission notes.
 - A resumed conversation continues correctly (the next turn carries the restored
   canonical history, including intact tool_use/tool_result pairs).

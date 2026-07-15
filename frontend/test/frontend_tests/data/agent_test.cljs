@@ -299,3 +299,55 @@
           history (conj filler {:role :user :text "look" :images [png]})
           trimmed (agent/trim-history history)]
       (t/is (= [png] (:images (peek trimmed)))))))
+
+;; ---------------------------------------------------------------------------
+;; Degrading to a text-only model.
+;;
+;; The subtle part: history is re-encoded from canonical on EVERY round, so
+;; switching to a text-only model mid-conversation re-encodes images the user
+;; sent five turns ago. Stripping has to apply to the whole history, not just
+;; the next message, or the switch fails the entire conversation.
+;; ---------------------------------------------------------------------------
+
+(t/deftest strip-images-removes-every-image-in-the-history
+  (let [history [{:role :user :text "look at this" :images [png]}
+                 {:role :assistant :text "ok" :tool-calls []}
+                 {:role :user :text "and this" :images [png jpg]}]
+        out     (agent/strip-images history)]
+    (t/is (every? (comp nil? :images) out))
+    (t/is (= ["image" "image" "image"]
+             (->> (agent/encode-anthropic history)
+                  (mapcat :content)
+                  (filterv map?)
+                  (filterv #(= "image" (:type %)))
+                  (mapv :type)))
+          "sanity: the un-stripped history really does carry 3 images")
+    (t/is (empty? (->> (agent/encode-anthropic out)
+                       (mapcat :content)
+                       (filterv map?)
+                       (filterv #(= "image" (:type %)))))
+          "and the stripped one carries none")))
+
+(t/deftest strip-images-leaves-a-note-in-their-place
+  (t/testing "a silent disappearance invites the model to confabulate what it saw"
+    (let [out  (agent/strip-images [{:role :user :text "what is this?" :images [png]}])
+          text (:text (first out))]
+      (t/is (str/includes? text "what is this?") "the user's own words survive")
+      (t/is (str/includes? text "omitted") "and the model is told an image was there"))))
+
+(t/deftest strip-images-notes-the-count
+  (let [out (agent/strip-images [{:role :user :text "compare" :images [png jpg]}])]
+    (t/is (str/includes? (:text (first out)) "2"))))
+
+(t/deftest strip-images-handles-an-image-with-no-text
+  (t/testing "the note becomes the whole message rather than a dangling blank line"
+    (let [out (agent/strip-images [{:role :user :text "" :images [png]}])]
+      (t/is (str/starts-with? (:text (first out)) "["))
+      (t/is (not (str/starts-with? (:text (first out)) "\n"))))))
+
+(t/deftest strip-images-leaves-image-free-history-untouched
+  (t/testing "the common case must be a no-op — not a rebuilt equal-ish value"
+    (let [history [{:role :user :text "hi"}
+                   {:role :assistant :text "hello" :tool-calls []}
+                   {:role :tool-results :results [{:id "c1" :content "{}"}]}]]
+      (t/is (= history (agent/strip-images history))))))

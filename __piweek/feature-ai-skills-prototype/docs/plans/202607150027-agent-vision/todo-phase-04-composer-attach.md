@@ -31,6 +31,13 @@ media storage.
       `ui/components/file_uploader.cljs:13-42`. Note its contract quirk: `on-selected` is
       expected to **return an event it `st/emit!`s itself** (`:23-27`) — picker-only. Use the raw
       hidden-input pattern directly if that fights the rx flow
+- [ ] **Gate the attach affordance on `(dai/vision? provider model)`** — disabled with a reason
+      when the active model is text-only, never hidden (a control that vanishes reads as a bug)
+      and never a silent no-op. *Moved here from Phase 03*, which delivered the predicate but
+      was sequenced before the button existed. **This is not a rare branch: six of the twelve
+      catalogued models are text-only** (all of Zhipu and Moonshot), so it is on the demo path,
+      not a corner. Note the model can change *after* attaching — `strip-images` already handles
+      that end (Phase 03); this is only about not offering the control in the first place
 - [ ] Paste handler on the textarea (`:370-374`). `clipboard.cljs:266-290` (`create-paste-from-blob`)
       is the template for pulling image blobs off the event. **No coordination needed with the
       canvas paste flow** — `viewport/actions.cljs:585-586` already declines `TEXTAREA` targets

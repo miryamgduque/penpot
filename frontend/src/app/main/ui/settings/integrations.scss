@@ -339,6 +339,19 @@
   font-size: 0.6875rem;
 }
 
+// Sits after the context size, so a row reads "… 1M context · Images".
+// Only rendered for models that accept image input, hence no "no" variant:
+// the absence is the signal.
+.provider-models-vision {
+  flex-shrink: 0;
+  border: 1px solid var(--color-background-quaternary);
+  border-radius: $br-4;
+  padding: 0 var(--sp-xxs);
+  color: var(--color-foreground-secondary);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
 // The models hint ("Claude models") sits next to the provider name.
 .provider-card-name {
   display: flex;

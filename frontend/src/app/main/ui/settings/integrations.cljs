@@ -616,23 +616,8 @@
 ;; Curated, hand-maintained catalog: a small subset of each provider's
 ;; latest models with their context window (in tokens). Not a live fetch —
 ;; edit this list as providers ship new models.
-(def ^:private ai-provider-models
-  {"anthropic"
-   [{:id "claude-opus-4-8"            :label "Claude Opus 4.8"  :context 200000}
-    {:id "claude-sonnet-5"           :label "Claude Sonnet 5"  :context 200000}
-    {:id "claude-haiku-4-5-20251001" :label "Claude Haiku 4.5" :context 200000}]
-   "openai"
-   [{:id "gpt-5"      :label "GPT-5"      :context 400000}
-    {:id "gpt-5-mini" :label "GPT-5 mini" :context 400000}
-    {:id "gpt-4.1"    :label "GPT-4.1"    :context 1000000}]
-   "zhipu"
-   [{:id "glm-4.6"     :label "GLM-4.6"     :context 200000}
-    {:id "glm-4.5"     :label "GLM-4.5"     :context 128000}
-    {:id "glm-4.5-air" :label "GLM-4.5 Air" :context 128000}]
-   "moonshot"
-   [{:id "kimi-k2-0905-preview" :label "Kimi K2"          :context 256000}
-    {:id "moonshot-v1-128k"     :label "Moonshot v1 128K" :context 128000}
-    {:id "moonshot-v1-32k"      :label "Moonshot v1 32K"  :context 32000}]})
+;; The catalog now lives in app.main.data.ai-providers — the agent reads
+;; `:vision` to decide how to encode a turn, so it cannot live in a UI ns.
 
 (defn- format-context
   "Human-friendly context-window size, e.g. 200000 → \"200K\", 1000000 → \"1M\"."
@@ -669,12 +654,12 @@
 
         ;; the curated catalog, plus any enabled model no longer in it
         ;; (kept visible so the user can toggle it back off)
-        catalog     (get ai-provider-models provider [])
+        catalog     (get dai/ai-provider-models provider [])
         catalog-ids (set (map :id catalog))
         rows        (concat catalog
                             (for [m enabled
                                   :when (not (contains? catalog-ids m))]
-                              {:id m :label m :context nil}))
+                              {:id m :label m :context nil :vision false}))
 
         save-key
         (mf/use-fn
@@ -829,7 +814,7 @@
 
        (when models-open?
          [:ul {:class (stl/css :provider-models-menu)}
-          (for [{:keys [id label context]} rows]
+          (for [{:keys [id label context vision]} rows]
             [:li {:key id :class (stl/css :provider-models-item)}
              [:> checkbox* {:id (dm/str "ai-model-" provider "-" id)
                             :label label
@@ -839,7 +824,14 @@
                             :on-change on-toggle-model}]
              (when-let [ctx (format-context context)]
                [:span {:class (stl/css :provider-models-context)}
-                (tr "integrations.ai-provider.models.context" ctx)])])])]]]))
+                (tr "integrations.ai-provider.models.context" ctx)])
+             ;; only called out when present: the agent chat can send images to
+             ;; these models, so it is worth knowing which of your enabled
+             ;; models can actually look at one
+             (when vision
+               [:span {:class (stl/css :provider-models-vision)
+                       :title (tr "integrations.ai-provider.models.vision-hint")}
+                (tr "integrations.ai-provider.models.vision")])])])]]]))
 
 (mf/defc ai-providers-section*
   {::mf/private true}

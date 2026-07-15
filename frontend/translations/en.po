@@ -2493,6 +2493,12 @@ msgstr "Save an API key above to enable models for the agent chat."
 msgid "integrations.ai-provider.models.context"
 msgstr "%s context"
 
+msgid "integrations.ai-provider.models.vision"
+msgstr "Images"
+
+msgid "integrations.ai-provider.models.vision-hint"
+msgstr "This model can read images you attach in the agent chat."
+
 msgid "integrations.ai-provider.models.count"
 msgstr "%s models enabled"
 

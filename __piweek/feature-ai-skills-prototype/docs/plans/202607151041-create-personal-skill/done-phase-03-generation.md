@@ -1,6 +1,6 @@
 # Phase 03 — LLM skill-doc generation
 
-**Status:** todo
+**Status:** done
 
 ## Goal
 
@@ -21,25 +21,23 @@ the raw structure.
 
 ## Checklist
 
-- [ ] **Generation prompt:** a system/user prompt that, given the answers, emits a skill doc in a
-      **fixed shape we can parse** — prefer strict JSON (`{name, label, category, mode, trigger,
-      description, body}`) so no brittle frontmatter parsing. `body` is the multi-section playbook
-      (method/steps/checkpoints) written for the native agent; `category` constrained to an existing
-      one; `mode` echoes the confirmed mode.
-- [ ] **`generate-skill` fn** (`data/workspace/skill-gen.cljs` or in `user_skills.cljs`): builds the
-      prompt from answers, calls the proxy with the selected provider/model, parses the JSON result,
-      normalizes (slugify `name`, clamp category to a known one, default mode). Returns the skill map
-      (or an error).
-- [ ] **Robustness:** tolerate the model wrapping JSON in prose / code fences (extract the JSON
-      object); on parse failure or empty body, surface a retryable error rather than creating a
-      broken skill. Bound output tokens.
-- [ ] **No provider case:** generation needs a connected model — guard the entry (Phase 04 disables
-      the flow / prompts to connect when the pool is empty).
-- [ ] Unit test the parse/normalize (fenced JSON, unknown category → closest, missing trigger) with
-      a stubbed completion; keep the network call thin and mockable.
-- [ ] `make lint` + frontend build, 0 warnings
-- [ ] Human approval received
-- [ ] Committed (`:sparkles:`)
+- [x] **Generation prompt:** system `instructions` (JSON-only reply, native-tools framing, no
+      MCP/plugin-API, category from the existing set) + `answers->user-message`. The model supplies
+      `name/label/category/body`; the user's `mode`/`trigger`/`what` stay authoritative in normalize.
+- [x] **`generate-skill` fn** (`data/workspace/skill_gen.cljs`): bare tool-free `generation-body`
+      (mirrors `agent/build-round-body` minus tools/stream), calls **`:ai-agent-round`** (the
+      buffered proxy twin), `extract-text` per provider, `parse-generation` → skill map; throws a
+      retryable ex-info on unusable output.
+- [x] **Robustness:** `extract-json` strips ``` / ```json fences + surrounding prose (first `{` …
+      last `}`); parse failure or empty body → nil → retryable error. `max_tokens` 4000.
+- [x] **No provider case:** generation needs a connected model — the entry guard is Phase 04's
+      (it disables the flow / prompts to connect when the pool is empty). Noted.
+- [x] Unit tests (`workspace-skill-gen-test`, 5 deftests / 21 assertions): fenced/prose/plain/none
+      JSON extraction; category clamp incl. unknown → Audits; full parse (user fields win, category
+      clamped, name slugified); nil on missing body / no JSON; name fallbacks (label → `what`).
+- [x] `clj-kondo` 0/0; shadow test build clean; tests green
+- [x] Human approval received
+- [x] Committed (`:sparkles:`)
 
 ## After Finish
 

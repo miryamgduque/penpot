@@ -21,6 +21,7 @@
    [app.common.exceptions :as ex]
    [app.common.math :as mth]
    [app.common.media :as cm]
+   [app.common.time :as ct]
    [app.common.uuid :as uuid]
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent :as agent]
@@ -1094,14 +1095,14 @@
            (usage-summary usage (:model settings))
            "Restored conversation")]
         ;; the glyph is decorative — kept out of the accessible name, which
-        ;; would otherwise read "multiplication x clear"
+        ;; would otherwise read "plus sign new chat"
         [:button {:class (stl/css :chat-clear)
                   :type "button"
                   :disabled busy?
-                  :title "Clear this file's chat history and start a fresh session"
+                  :title "Start a new chat — this conversation is kept in History"
                   :on-click on-clear}
-         [:span {:aria-hidden true} "✕"]
-         "Clear"]])
+         [:span {:aria-hidden true} "+"]
+         "New chat"]])
 
      ;; A Fix-it-now queued behind the running turn: visible, cancellable,
      ;; sends itself when the turn ends (drain effect above).
@@ -1789,6 +1790,94 @@
     step
     font-scale-default-step))
 
+(mf/defc chat-controls*
+  "Header controls for the chat view: start a new conversation and browse this
+  file's saved ones. Self-contained — derefs its own refs and owns the History
+  popover (outside-click + Escape close, the model-picker pattern). The
+  container ref wraps the triggers too, so opening the menu and clicking its
+  own trigger don't fight.
+
+  Everything is disabled while a turn runs: loading or deleting a conversation
+  mid-turn would rip the history out from under `run-turn`."
+  {::mf/private true}
+  []
+  (let [chats    (mf/deref refs/ai-panel-chats)
+        chat-id  (mf/deref refs/ai-panel-chat-id)
+        messages (mf/deref refs/ai-panel-messages)
+        busy?    (mf/deref refs/ai-panel-busy?)
+
+        open*    (mf/use-state false)
+        open?    (deref open*)
+        root-ref (mf/use-ref nil)
+
+        on-toggle (mf/use-fn #(swap! open* not))
+        on-new    (mf/use-fn
+                   (mf/deps busy?)
+                   (fn []
+                     (when-not busy?
+                       (st/emit! (dwach/new-chat)))))]
+
+    (mf/with-effect [open?]
+      (when ^boolean open?
+        (let [on-doc (fn [event]
+                       (let [node (mf/ref-val root-ref)]
+                         (when (and node (not (.contains node (dom/get-target event))))
+                           (reset! open* false))))
+              on-key (fn [event]
+                       (when (= "Escape" (.-key event))
+                         (dom/prevent-default event)
+                         (reset! open* false)
+                         ;; focus would otherwise fall back to <body>
+                         (some-> (mf/ref-val root-ref)
+                                 (.querySelector "button:not([disabled])")
+                                 (dom/focus!))))]
+          (.addEventListener js/document "pointerdown" on-doc)
+          (.addEventListener js/document "keydown" on-key)
+          (fn []
+            (.removeEventListener js/document "pointerdown" on-doc)
+            (.removeEventListener js/document "keydown" on-key)))))
+
+    [:div {:class (stl/css :chat-controls)
+           :ref root-ref}
+     ;; disabled on an empty chat: "new" from nothing is a no-op
+     [:> icon-button* {:variant "ghost"
+                       :aria-label "New chat"
+                       :disabled (or busy? (empty? messages))
+                       :on-click on-new
+                       :icon i/add}]
+     (when (seq chats)
+       [:> icon-button* {:variant "ghost"
+                         :aria-label "Chat history"
+                         :aria-haspopup "listbox"
+                         :aria-expanded open?
+                         :on-click on-toggle
+                         :icon i/history}])
+
+     (when (and open? (seq chats))
+       [:div {:class (stl/css :chat-history-menu)
+              :role "listbox"}
+        (for [{:keys [id title updated-at]} chats]
+          [:div {:key (dm/str id)
+                 :class (stl/css-case :chat-history-row true
+                                      :chat-history-active (= id chat-id))}
+           [:button {:type "button"
+                     :class (stl/css :chat-history-select)
+                     :role "option"
+                     :aria-selected (= id chat-id)
+                     :disabled busy?
+                     :on-click #(do (st/emit! (dwach/load-chat id))
+                                    (reset! open* false))}
+            [:span {:class (stl/css :chat-history-title)}
+             (if (str/blank? title) "Untitled chat" title)]
+            [:span {:class (stl/css :chat-history-time)}
+             (ct/timeago updated-at)]]
+           [:> icon-button* {:variant "ghost"
+                             :aria-label "Delete conversation"
+                             :class (stl/css :chat-history-delete)
+                             :disabled busy?
+                             :on-click #(st/emit! (dwach/delete-chat id))
+                             :icon i/delete}]])])]))
+
 (mf/defc ai-panel*
   "The Agent panel shell. Chat is the home surface and fills the body; Skills is a
   full-panel view reached from a muted header icon (US #35). The view is in-memory
@@ -1913,6 +2002,10 @@
         [:span {:class (stl/css :title)} "Agent"])
       (when-not skills?
         [:div {:class (stl/css :header-actions)}
+         ;; Conversation controls (new chat + history) lead the band — they
+         ;; act on the chat itself, where the rest configure the panel. (The
+         ;; A−/A+ stepper moved into the More-actions menu below.)
+         [:> chat-controls*]
          [:> icon-button* {:variant "ghost"
                            :aria-label "Open Skills"
                            :on-click open-skills

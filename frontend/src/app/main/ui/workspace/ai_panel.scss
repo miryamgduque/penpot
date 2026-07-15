@@ -48,12 +48,22 @@
   color: var(--modal-title-foreground-color);
 }
 
-// The tab switcher (Chat / Skills) fills the rest of the panel; its
-// scrollable panel holds the active tab body.
-.tabs {
-  --tabs-nav-padding-inline-start: var(--sp-m);
-  --tabs-nav-padding-inline-end: var(--sp-m);
+// Left of the header: the back arrow + "Skills" title in the Skills view.
+.header-lead {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+}
 
+// Right of the header: the Skills icon (chat only) + close.
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-2;
+}
+
+// Fills the panel below the flex-none header; the chat/skills bodies size to it.
+.body {
   flex: 1;
   min-height: 0;
 }

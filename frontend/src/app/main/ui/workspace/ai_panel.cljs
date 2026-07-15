@@ -240,6 +240,7 @@
 
         input*    (mf/use-state "")
         input     (deref input*)
+        input-ref (mf/use-ref nil)
 
         on-input  (mf/use-fn
                    (fn [event]
@@ -279,6 +280,17 @@
                          (st/emit! (dwaip/clear-chat)))))
 
         on-cancel   (mf/use-fn #(st/emit! (dwaip/cancel-turn)))]
+
+    ;; Grow the composer with its content up to a cap, then scroll. Reset to
+    ;; "auto" first so it can shrink too (e.g. after send clears it); add the
+    ;; borders back since border-box height excludes what scrollHeight measures.
+    (mf/with-effect [input]
+      (when-let [node (mf/ref-val input-ref)]
+        (let [style (.-style node)]
+          (set! (.-height style) "auto")
+          (let [borders (- (.-offsetHeight node) (.-clientHeight node))
+                height  (min 200 (+ (.-scrollHeight node) borders))]
+            (set! (.-height style) (dm/str height "px"))))))
 
     ;; close the model picker on any click outside it, or on Escape — without
     ;; the latter it is a keyboard trap: openable by keyboard, not closable
@@ -368,6 +380,7 @@
        ;; and being unable to even type through a long turn is the harshest
        ;; part of the current experience
        [:textarea {:class (stl/css :composer-input)
+                   :ref input-ref
                    :placeholder "Ask the agent…"
                    :value input
                    :on-change on-input

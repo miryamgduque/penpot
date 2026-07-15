@@ -520,6 +520,9 @@
   flex: 1;
   min-width: 0;
   min-height: deprecated.$s-52;
+  // Auto-grows with content (JS sets the height) up to here, then scrolls.
+  max-height: 200px;
+  overflow-y: auto;
   resize: none;
   padding: deprecated.$s-8;
   border-radius: deprecated.$br-8;

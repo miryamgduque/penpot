@@ -1,6 +1,6 @@
 # Agent Panel: Resizable Width + Font Size Stepper
 
-**Status:** done — pending post-merge visual verification (see Completion Summary)
+**Status:** done
 **Created:** 2026-07-15
 **Apps:** `frontend`
 **Dependencies:** None
@@ -41,7 +41,11 @@ Executed in a worktree (`feature/agent-panel-resize`, branched off
 
 ## Completion Summary
 
-**Completed:** 2026-07-16 (implementation; visual verification pending post-merge)
+**Completed:** 2026-07-16 — merged to `feature/ai-skills-prototype` (`158baa24af`) and
+verified live in devenv (localhost:3450, Chrome): drag 360→654 pixel-exact, max clamp
+= half window (756), min clamp = 360, width persisted across hard reload; stepper
+1→1.45 with A+ disabling at max, composer text 12→17.4px while the header title held
+14px, scale persisted across reload; a live agent turn rendered correctly at max scale.
 
 ### What Shipped
 - Left-edge drag handle resizing the panel between 360px and half the window,
@@ -59,12 +63,20 @@ Executed in a worktree (`feature/agent-panel-resize`, branched off
 
 ### Lessons & Follow-ups
 - No Clojure lint tooling exists outside devenv on this machine; cljs changes
-  got manual review + paren-balance only — the shadow-cljs watch compile at
-  first post-merge run is the real syntax gate.
-- **Pending:** post-merge visual verification (both features, persistence,
-  extremes) in the user's dev environment; then move this folder to
-  `completed/`. Revisit whether the stepper should also appear in the Skills
-  header.
+  got manual review + paren-balance only — the shadow-cljs compile after the
+  merge was the real syntax gate (0 warnings).
+- **A replace-all bit back** (`baed6fd6f3`): routing includes through the
+  `scaled-body-small` wrapper also rewrote the include *inside the wrapper's
+  own definition* → infinite Sass recursion, stack overflow at asset build.
+  Stylelint can't catch self-recursive mixins; only evaluating Sass does.
+  Lesson: exclude the definition site when replace-all'ing an include.
+- The stepper on-clicks close over the rendered step, so multiple *synthetic
+  same-tick* clicks only step once (verified in console). Human clicks
+  re-render between presses and are unaffected; `swap!` with the clamp inside
+  would make it airtight if it ever matters.
+- Follow-up candidates: show the stepper in the Skills header too (currently
+  chat-only, though the scale applies panel-wide); double-click the drag
+  handle to reset width to default.
 
 ## Key Code
 

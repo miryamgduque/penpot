@@ -766,6 +766,68 @@
     (t/is (str/includes? (:description spec) "ON TOP"))))
 
 ;; ---------------------------------------------------------------------------
+;; group-problem / ungroup-problem
+;;
+;; Both events filter silently and then no-op on the empty set: group-shapes
+;; removes copy-children and variants, ungroup-shapes removes copy-children,
+;; components and variant containers.
+;; ---------------------------------------------------------------------------
+
+(t/deftest two-plain-shapes-can-be-grouped
+  (let [objs (objects (plain-frame id-a "A") (plain-frame id-b "B"))]
+    (t/is (nil? (at/group-problem objs [id-a id-b])))))
+
+(t/deftest one-shape-can-be-grouped
+  ;; Penpot allows ⌘G on a single shape; the plan assumed it needed two.
+  (t/is (nil? (at/group-problem (objects (plain-frame id-a "A")) [id-a]))))
+
+(t/deftest grouping-nothing-is-rejected
+  (t/is (some? (at/group-problem {} []))))
+
+(t/deftest grouping-a-variant-member-is-rejected
+  (let [objs    (objects (variant-member id-a "Card" vid) (plain-frame id-b "B"))
+        problem (at/group-problem objs [id-a id-b])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "variant"))))
+
+(t/deftest grouping-inside-a-component-copy-is-rejected
+  (let [head  (assoc (plain-frame id-b "Card copy") :shape-ref (uuid/custom 8 1))
+        inner (assoc (plain-frame id-a "Inner") :parent-id id-b)
+        problem (at/group-problem (objects head inner) [id-a])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "component copy"))))
+
+(t/deftest a-group-can-be-ungrouped
+  (let [objs (objects {:id id-a :name "G" :type :group :shapes [id-b]})]
+    (t/is (nil? (at/ungroup-problem objs [id-a])))))
+
+(t/deftest a-board-can-be-ungrouped
+  ;; ungroup-shapes handles frames via remove-frame-changes — the plan wrongly
+  ;; assumed a board should be rejected here.
+  (t/is (nil? (at/ungroup-problem (objects (plain-frame id-a "Board")) [id-a]))))
+
+(t/deftest a-rect-cannot-be-ungrouped
+  (let [problem (at/ungroup-problem (objects {:id id-a :name "Box" :type :rect}) [id-a])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "group"))))
+
+(t/deftest a-component-cannot-be-ungrouped
+  ;; groups.cljs says so in its own comment: "components can't be ungrouped"
+  (let [objs    (objects (assoc (main-instance id-a "Card") :component-root true
+                                :component-id (uuid/custom 8 2)))
+        problem (at/ungroup-problem objs [id-a])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "component"))))
+
+(t/deftest a-variant-container-cannot-be-ungrouped
+  (let [problem (at/ungroup-problem (objects (container vid "Card" [id-a])) [vid])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "variant"))))
+
+(t/deftest ungrouping-nothing-is-rejected
+  (t/is (some? (at/ungroup-problem {} []))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

@@ -25,6 +25,7 @@
    [app.common.files.variant :as cfv]
    [app.common.path-names :as cpn]
    [app.common.types.component :as ctc]
+   [app.common.types.container :as ctn]
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
    [app.common.types.text :as txt]
@@ -34,6 +35,7 @@
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
+   [app.main.data.workspace.groups :as dwg]
    [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.shape-layout :as dwsl]
@@ -172,6 +174,26 @@
          "omitted) into a reusable component. Returns the new component id.")
     :input-schema {:type "object"
                    :properties {:shapeIds {:type "array" :items {:type "string"}}}}}
+
+   {:name "group_shapes"
+    :description
+    (str "Groups shapes into a group and returns its id. A group is NOT a board: "
+         "it has no layout, no fill and no clipping — it only bundles shapes so "
+         "they move together. If you want them arranged or spaced, create a board "
+         "(create_shape type=board) and give it set_layout instead; that is the "
+         "usual answer when the ask is \"group these and space them out\".")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["shapeIds"]}}
+
+   {:name "ungroup_shapes"
+    :description
+    (str "Dissolves a group, a board or a boolean, leaving its children in place "
+         "where they were. Components and variant containers cannot be ungrouped "
+         "— they own their structure.")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["shapeIds"]}}
 
    {:name "delete_shape"
     :description
@@ -845,6 +867,98 @@
                    (and new-id (= 1 (count ids)))
                    (assoc :shapeId (dm/str new-id)))))))))
 
+;; --- Group / ungroup
+;;
+;; Both events mirror the pattern this file exists to close: they filter their
+;; input silently and then `(when-not (empty? …))`, so a fully-filtered call
+;; does nothing and returns success.
+
+(defn group-problem
+  "Why `group_shapes` cannot run, or nil. Mirrors `group-shapes`' own filters
+  (`groups.cljs:195-200`)."
+  [objects ids]
+  (or (ids-problem "group_shapes" objects ids)
+      (let [shapes   (map #(get objects %) ids)
+            variants (filter ctc/is-variant? shapes)
+            in-copy  (filter #(ctn/has-any-copy-parent? objects %) shapes)]
+        (cond
+          (seq variants)
+          (dm/str "group_shapes: " (labels variants)
+                  (if (= 1 (count variants)) " is" " are")
+                  " part of a variant set, which owns its own structure"
+                  " — a variant set cannot be grouped")
+
+          (seq in-copy)
+          (dm/str "group_shapes: " (labels in-copy)
+                  (if (= 1 (count in-copy)) " is" " are")
+                  " inside a component copy, whose structure is owned by the main"
+                  " component — group the main instead, or detach the copy first")))))
+
+(defn ungroup-problem
+  "Why `ungroup_shapes` cannot run, or nil. Mirrors `ungroup-shapes`' filters
+  (`groups.cljs:242-246`) and what its `prepare` can actually handle."
+  [objects ids]
+  (or (ids-problem "ungroup_shapes" objects ids)
+      (let [shapes    (map #(get objects %) ids)
+            in-copy   (filter #(ctn/has-any-copy-parent? objects %) shapes)
+            comps     (filter ctc/instance-head? shapes)
+            containers (filter ctc/is-variant-container? shapes)
+            ;; prepare handles group / bool / frame; anything else yields no
+            ;; changes and is dropped without a word
+            wrong     (remove #(or (cfh/group-shape? %)
+                                   (cfh/bool-shape? %)
+                                   (cfh/frame-shape? %))
+                              shapes)]
+        (cond
+          (seq containers)
+          (dm/str "ungroup_shapes: " (labels containers)
+                  (if (= 1 (count containers)) " is a variant container" " are variant containers")
+                  " — ungrouping one would destroy the set; delete it instead if that is the intent")
+
+          (seq comps)
+          (dm/str "ungroup_shapes: " (labels comps)
+                  (if (= 1 (count comps)) " is a component" " are components")
+                  " and components cannot be ungrouped — detach the copy, or delete the component")
+
+          (seq in-copy)
+          (dm/str "ungroup_shapes: " (labels in-copy)
+                  (if (= 1 (count in-copy)) " is" " are")
+                  " inside a component copy, whose structure is owned by the main component")
+
+          (seq wrong)
+          (dm/str "ungroup_shapes: " (labels wrong)
+                  (if (= 1 (count wrong)) " is a " " are ")
+                  (some-> (:type (first wrong)) name)
+                  " — only a group, a board or a boolean can be ungrouped")))))
+
+(defn- group-shapes
+  [{:keys [shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (group-problem objects ids)]
+      (rx/throw (ex-info problem {}))
+      ;; group-shapes takes the new group's id, so it is knowable up front
+      (let [group-id (uuid/next)]
+        (interrupt!)
+        (st/emit! (dwg/group-shapes group-id (into #{} ids)))
+        (rx/of {:groupId (dm/str group-id)
+                :note (str "grouped. A group is not a board: it has no layout, fill "
+                           "or clip — if you want these arranged, use a board with "
+                           "set_layout instead. Verify with read_design.")})))))
+
+(defn- ungroup-shapes
+  [{:keys [shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (ungroup-problem objects ids)]
+      (rx/throw (ex-info problem {}))
+      (do
+        (interrupt!)
+        (st/emit! (dwg/ungroup-shapes (into #{} ids)))
+        (rx/of {:note "ungrouped — the children stay where they were. Verify with read_design."})))))
+
 ;; --- Layout (flex)
 ;;
 ;; The single widest gap in the tool surface: the skills' central method is
@@ -1505,6 +1619,8 @@
     "create_component"   (create-component input)
     "delete_shape"       (delete-shape input)
     "duplicate_shape"    (duplicate-shape input)
+    "group_shapes"       (group-shapes input)
+    "ungroup_shapes"     (ungroup-shapes input)
     "set_layout"         (set-layout input)
     "set_layout_child"   (set-layout-child input)
     "create_variant"     (create-variant input)

@@ -114,6 +114,35 @@
             message))
         messages))
 
+;; How many of the most recent user turns keep their images. Two, because an
+;; image is the subject of the turn it arrives in and usually of one follow-up
+;; ("make it match this" → "now warm the palette up"); past that it is dead
+;; weight re-uploaded on every single round. Turns, not messages: a turn can be
+;; twenty messages of tool calls, and counting those would strip the image out
+;; of the very turn asking about it.
+(def ^:private max-image-turns 2)
+
+;; Ours, not the provider's: `:payload [:string {:max 4000000}]` on both
+;; ai-agent-round schemas. Overrunning it is an RPC *validation* error, which
+;; reaches the user as a generic failure with nothing pointing at the image.
+(def ^:private max-payload-chars 4000000)
+
+(defn prune-history-images
+  "Drops images from every user turn but the most recent `max-image-turns`.
+
+  The whole conversation is re-encoded on every round, so an image sent on turn
+  1 is re-uploaded on turn 12. Five screenshots are affordable once and fatal
+  twelve times — and the failure needs no new user action, it just arrives."
+  [messages]
+  (let [messages  (vec messages)
+        user-idxs (into [] (keep-indexed (fn [i m] (when (= :user (:role m)) i))) messages)
+        n         (count user-idxs)]
+    (if (<= n max-image-turns)
+      messages
+      (let [cut (nth user-idxs (- n max-image-turns))]
+        (into (strip-images (subvec messages 0 cut))
+              (subvec messages cut))))))
+
 (defn- anthropic?
   "Providers that speak the Anthropic Messages API; the rest are
   OpenAI-compatible (chat.completions)."
@@ -203,33 +232,49 @@
   and OpenAI's usage opt-in is dialect-specific anyway."
   [{:keys [provider model]} messages system stream?]
   (let [messages (cond-> messages
+                   ;; old images are re-uploaded on every round otherwise
+                   :always
+                   (prune-history-images)
                    ;; the model can change between rounds, so this is decided
                    ;; per round rather than when the message was composed
                    (not (dai/vision? provider model))
-                   (strip-images))]
-    (js/JSON.stringify
-     (clj->js
-      (if (anthropic? provider)
-        (cond-> {:model model
-                 ;; generous budget: adaptive-thinking models can spend a chunk
-                 ;; reasoning before any visible output; a small budget yields a
-                 ;; silent empty reply
-                 :max_tokens 32000
-                 ;; the ephemeral marker caches tools+system across rounds
-                 :system [{:type "text" :text system
-                           :cache_control {:type "ephemeral"}}]
-                 :messages (encode-anthropic messages)}
-          (seq at/tool-specs) (assoc :tools (anthropic-tools))
-          stream?             (assoc :stream true))
-        (cond-> {:model model
-                 :messages (encode-openai system messages)}
-          (seq at/tool-specs)      (assoc :tools (openai-tools))
-          (= provider "openai")    (assoc :max_completion_tokens 16000)
-          (not= provider "openai") (assoc :max_tokens 16000)
-          stream?                  (assoc :stream true)
-          ;; without this opt-in the final chunk carries no usage at all and the
-          ;; spend meter silently reads zero
-          stream?                  (assoc :stream_options {:include_usage true})))))))
+                   (strip-images))
+        body
+        (js/JSON.stringify
+         (clj->js
+          (if (anthropic? provider)
+            (cond-> {:model model
+                     ;; generous budget: adaptive-thinking models can spend a
+                     ;; chunk reasoning before any visible output; a small
+                     ;; budget yields a silent empty reply
+                     :max_tokens 32000
+                     ;; the ephemeral marker caches tools+system across rounds
+                     :system [{:type "text" :text system
+                               :cache_control {:type "ephemeral"}}]
+                     :messages (encode-anthropic messages)}
+              (seq at/tool-specs) (assoc :tools (anthropic-tools))
+              stream?             (assoc :stream true))
+            (cond-> {:model model
+                     :messages (encode-openai system messages)}
+              (seq at/tool-specs)      (assoc :tools (openai-tools))
+              (= provider "openai")    (assoc :max_completion_tokens 16000)
+              (not= provider "openai") (assoc :max_tokens 16000)
+              stream?                  (assoc :stream true)
+              ;; without this opt-in the final chunk carries no usage at all
+              ;; and the spend meter silently reads zero
+              stream?                  (assoc :stream_options {:include_usage true})))))]
+    ;; Fail here rather than let the RPC schema reject it: this says which
+    ;; message is too big and what to do, where the validation error says
+    ;; nothing a user could act on.
+    (when (> (count body) max-payload-chars)
+      (throw (ex-info "payload too large"
+                      {:code :payload-too-large
+                       :hint (str "This conversation is too large to send ("
+                                  (js/Math.round (/ (count body) 1000))
+                                  "k of a " (/ max-payload-chars 1000)
+                                  "k limit). Remove an image, or clear the chat "
+                                  "and start again.")})))
+    body))
 
 ;; --- Usage
 ;;
@@ -510,9 +555,15 @@
   [settings messages system]
   (let [anthropic?* (anthropic? (:provider settings))
         acc*        (atom empty-accumulator)]
-    (->> (rp/cmd! ::sse/ai-agent-round-stream
-                  {:provider (:provider settings)
-                   :payload (build-round-body settings messages system true)})
+    ;; The body is built inside the stream, not while assembling it: round 1 is
+    ;; constructed eagerly inside `send-message`'s watch, so a `build-round-body`
+    ;; throw there would escape past the caller's `rx/catch` and surface as an
+    ;; unhandled error instead of a message in the transcript.
+    (->> (rx/mapcat (fn [_]
+                      (rp/cmd! ::sse/ai-agent-round-stream
+                               {:provider (:provider settings)
+                                :payload (build-round-body settings messages system true)}))
+                    (rx/of nil))
          (rx/mapcat
           (fn [event]
             (case (sse/get-type event)

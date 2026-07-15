@@ -69,6 +69,28 @@ both provider codecs. Build that once, and each half becomes small.
 3. **Images only, max 5.** PNG/JPEG/WebP. Text/code file attachments are out of scope.
 4. **Metaprompt Phase 07 is closed as superseded** by this plan — see below.
 
+### 🚩 Scope: Anthropic only for the prototype (decided 2026-07-15)
+
+**The demo is Friday 2026-07-17. Until then, Anthropic models are the only ones that matter** —
+verify against Claude, demo on Claude, and do not spend time on the other providers.
+
+**Do not read this as "the other providers work."** It is the opposite: it is the reason we
+accept that they are unverified. The specific debt:
+
+- **`encode-openai`'s image block has never met a live provider.** It is verified against
+  provider documentation and unit tests only (`{:type "image_url" :image_url {:url "data:…"}}`).
+  Every OpenAI-compatible provider — OpenAI, Zhipu, Moonshot — rides that one codepath, so if
+  the dialect is subtly wrong, **all three are broken and nothing in this plan would have caught
+  it.** The Anthropic half is proven live (Phase 04 read `VERIFY-7742` back off an attachment).
+- Closing it needs nothing more than one key for any OpenAI-compatible provider and one attached
+  image. It is a ten-minute job the moment a key exists — not a rewrite.
+- `glm-5v-turbo` is the one to try first when that day comes: it is the only non-Anthropic vision
+  model in the catalog, and it is a design-to-code specialist (Design2Code 94.8).
+
+**Before this ships to anyone outside the demo, either verify the OpenAI path or hide the
+non-Anthropic providers.** Offering a model that silently fails on an attached image is worse
+than not offering it.
+
 ### Further decisions (2026-07-15, after Phase 01's evidence)
 
 5. **Guard on `render-wasm/v1` and degrade — no SVG fallback.** Agent vision is for
@@ -139,8 +161,13 @@ or the viewport-only `capture-canvas-snapshot`. This plan therefore builds **`re
    OpenAI dialect still is not — no key for it here. Also produced Phase 05's number: **five
    realistic screenshots are 66% of the payload cap in a single message** (743% for
    photographic content), which makes downscale-on-attach urgent rather than defensive.
-5. [Phase 05 — Fit the budget](./todo-phase-05-fit-the-budget.md) — downscale on attach, and
-   strip images from old history. Without this the 4M cap is a time bomb, not an edge case.
+5. [Phase 05 — Fit the budget](./done-phase-05-fit-the-budget.md) — ✅ **done**: cap the long
+   edge at 1568px + re-encode to WebP on attach, and prune images from all but the last 2 turns.
+   **The payload is now bounded, not merely smaller** — the pathological case is flat at ~60% of
+   cap from 2 turns to 60. A 12MP phone photo went from **544% of the cap on its own** to 6%
+   (90×). Verified live that 11px text survives the compression, so the fix costs nothing in
+   comprehension. Cap guard added, with the body build deferred into the stream so it actually
+   reaches the user.
 6. [Phase 06 — `render_board` tool](./todo-phase-06-render-board-tool.md) — the agent takes its
    own screenshot. Gated on Phase 01's verdict.
 7. [Phase 07 — See what you did](./todo-phase-07-see-what-you-did.md) — re-feed after mutation,

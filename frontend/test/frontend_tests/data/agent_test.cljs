@@ -15,7 +15,8 @@
   nothing pointing back at the cancel."
   (:require
    [app.main.data.workspace.agent :as agent]
-   [cljs.test :as t :include-macros true]))
+   [cljs.test :as t :include-macros true]
+   [cuerdas.core :as str]))
 
 (def ^:private turn-with-dangling-calls
   [{:role :user :text "make the button blue"}
@@ -204,3 +205,97 @@
       (t/is (<= (count trimmed) 40))
       (t/is (= uses results) "every tool_use still has its tool_result")
       (t/is (= :user (:role (first trimmed))) "a turn must start at a user message"))))
+
+;; ---------------------------------------------------------------------------
+;; Image blocks on the user message.
+;;
+;; The dialects genuinely diverge, which is why the canonical model stores raw
+;; base64 + mimetype and lets each encoder assemble its own shape:
+;;   Anthropic → {:type "image" :source {:type "base64" :media_type … :data …}}
+;;   OpenAI    → {:type "image_url" :image_url {:url "data:…;base64,…"}}
+;; Getting this wrong fails at the provider, not here — hence the assertions on
+;; the exact wire shape rather than on "an image is present somewhere".
+;; ---------------------------------------------------------------------------
+
+(def ^:private png {:mtype "image/png" :data "iVBORw0KGgo="})
+(def ^:private jpg {:mtype "image/jpeg" :data "/9j/4AAQSkZJRg=="})
+
+(defn- a-content [message] (:content (first (agent/encode-anthropic [message]))))
+(defn- o-content [message] (:content (second (agent/encode-openai "sys" [message]))))
+
+(t/deftest user-without-images-stays-a-plain-string
+  (t/testing "the no-image fast path is untouched — this is the common case"
+    (let [m {:role :user :text "make it blue"}]
+      (t/is (= "make it blue" (a-content m)))
+      (t/is (= "make it blue" (o-content m))))))
+
+(t/deftest user-with-empty-images-stays-a-plain-string
+  (t/testing "an empty :images vector must not promote content to blocks"
+    (let [m {:role :user :text "hi" :images []}]
+      (t/is (string? (a-content m)))
+      (t/is (string? (o-content m))))))
+
+(t/deftest anthropic-encodes-an-image-block
+  (let [content (a-content {:role :user :text "what is this?" :images [png]})]
+    (t/is (= [{:type "image"
+               :source {:type "base64" :media_type "image/png" :data "iVBORw0KGgo="}}
+              {:type "text" :text "what is this?"}]
+             content)
+          "bare base64 + separate media_type, image first")))
+
+(t/deftest openai-encodes-an-image-url-block
+  (let [content (o-content {:role :user :text "what is this?" :images [png]})]
+    (t/is (= [{:type "image_url"
+               :image_url {:url "data:image/png;base64,iVBORw0KGgo="}}
+              {:type "text" :text "what is this?"}]
+             content)
+          "a full data: URI, not a bare base64 payload")))
+
+(t/deftest images-precede-the-text-in-both-dialects
+  (t/testing "providers read a trailing question as being about the images above it"
+    (let [m {:role :user :text "compare these" :images [png jpg]}]
+      (t/is (= ["image" "image" "text"] (mapv :type (a-content m))))
+      (t/is (= ["image_url" "image_url" "text"] (mapv :type (o-content m)))))))
+
+(t/deftest five-images-all-survive-encoding
+  (t/testing "5 is the product cap; the encoder must not silently drop any"
+    (let [imgs (mapv (fn [i] {:mtype "image/png" :data (str "data" i)}) (range 5))
+          m    {:role :user :text "look" :images imgs}]
+      (t/is (= 5 (count (filter #(= "image" (:type %)) (a-content m)))))
+      (t/is (= 5 (count (filter #(= "image_url" (:type %)) (o-content m)))))
+      (t/is (= ["data0" "data1" "data2" "data3" "data4"]
+               (->> (a-content m) (filter #(= "image" (:type %))) (mapv #(get-in % [:source :data]))))
+            "order is preserved — the user's 1st image stays 1st"))))
+
+(t/deftest image-without-text-emits-no-empty-text-block
+  (t/testing "Anthropic rejects an empty text block, so it must be omitted entirely"
+    (let [m {:role :user :text "" :images [png]}]
+      (t/is (= ["image"] (mapv :type (a-content m))))
+      (t/is (= ["image_url"] (mapv :type (o-content m)))))))
+
+(t/deftest image-message-still-carries-the-design-context
+  (t/testing "context rides the text block, exactly as it does without images"
+    (let [m {:role :user :text "fix this" :context {:file "f" :selection ["a"]}
+             :images [png]}
+          a-text (->> (a-content m) (filter #(= "text" (:type %))) first :text)]
+      (t/is (str/includes? a-text "Current design context"))
+      (t/is (str/includes? a-text "fix this")))))
+
+(t/deftest images-do-not-leak-onto-other-roles
+  (t/testing "only the user message grows images; assistant/tool shapes are unchanged"
+    (let [history [{:role :user :text "hi" :images [png]}
+                   {:role :assistant :text "ok" :tool-calls []}
+                   {:role :tool-results :results [{:id "c1" :content "{}"}]}]
+          encoded (agent/encode-anthropic history)]
+      (t/is (= [{:type "text" :text "ok"}] (:content (second encoded))))
+      (t/is (= "tool_result" (:type (first (:content (nth encoded 2)))))))))
+
+(t/deftest trim-history-preserves-images
+  (t/testing "trimming cuts at user messages — it must not strip their images"
+    (let [filler  (vec (mapcat (fn [i]
+                                 [{:role :user :text (str "q" i)}
+                                  {:role :assistant :text (str "a" i) :tool-calls []}])
+                               (range 40)))
+          history (conj filler {:role :user :text "look" :images [png]})
+          trimmed (agent/trim-history history)]
+      (t/is (= [png] (:images (peek trimmed)))))))

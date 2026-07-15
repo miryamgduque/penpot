@@ -28,7 +28,7 @@
 ;; --- Canonical conversation model
 ;;
 ;; A message is one of:
-;;   {:role :user       :text "…" :context {…}}
+;;   {:role :user       :text "…" :context {…} :images [{:mtype :data}]}
 ;;   {:role :assistant  :text "…" :tool-calls [{:id :name :input}]}
 ;;   {:role :tool-results :results [{:id :content :error?}]}
 ;;
@@ -37,11 +37,15 @@
 ;; system prompt: the system block carries the `cache_control` marker, so any
 ;; per-turn content inside it rewrites the cached prefix on every selection
 ;; change. Measured: 96% cached → 0% cached, ~9× the per-turn cost.
+;;
+;; `:images` holds RAW base64 plus its mimetype — never a pre-assembled wire
+;; shape — because the two dialects disagree about how to carry an image, and
+;; history is re-encoded from canonical on every round: baking one provider's
+;; shape in would break the moment the user switched models mid-conversation.
 
-(defn- user-content
-  "Renders a canonical user message for the wire: the turn's design context (when
-  present) followed by what the user typed. Both providers take a plain string
-  here, so one renderer serves both."
+(defn- user-text
+  "The text half of a canonical user message: the turn's design context (when
+  present) followed by what the user typed."
   [{:keys [text context]}]
   (if (seq context)
     (str/join "\n" ["## Current design context"
@@ -51,6 +55,36 @@
                     ""
                     text])
     text))
+
+;; Both providers take a plain string when there is nothing but text, and that
+;; stays the fast path — it is the overwhelmingly common case. Images promote
+;; `:content` to a block vector, and there the dialects diverge: Anthropic wants
+;; bare base64 with a separate `media_type`, OpenAI wants a full `data:` URI.
+;; Images lead the vector because both providers read a trailing question as
+;; being about the images above it.
+
+(defn- user-content-anthropic
+  [{:keys [images] :as message}]
+  (let [text (user-text message)]
+    (if (seq images)
+      (cond-> (mapv (fn [{:keys [mtype data]}]
+                      {:type "image"
+                       :source {:type "base64" :media_type mtype :data data}})
+                    images)
+        ;; an empty text block is rejected outright, so omit it entirely
+        (seq text) (conj {:type "text" :text text}))
+      text)))
+
+(defn- user-content-openai
+  [{:keys [images] :as message}]
+  (let [text (user-text message)]
+    (if (seq images)
+      (cond-> (mapv (fn [{:keys [mtype data]}]
+                      {:type "image_url"
+                       :image_url {:url (str "data:" mtype ";base64," data)}})
+                    images)
+        (seq text) (conj {:type "text" :text text}))
+      text)))
 
 (defn- anthropic?
   "Providers that speak the Anthropic Messages API; the rest are
@@ -83,7 +117,7 @@
        (mapv (fn [{:keys [role text tool-calls results] :as message}]
                (case role
                  :user
-                 {:role "user" :content (user-content message)}
+                 {:role "user" :content (user-content-anthropic message)}
 
                  :assistant
                  (let [blocks (cond-> []
@@ -115,7 +149,7 @@
         (mapcat (fn [{:keys [role text tool-calls results] :as message}]
                   (case role
                     :user
-                    [{:role "user" :content (user-content message)}]
+                    [{:role "user" :content (user-content-openai message)}]
 
                     :assistant
                     [(cond-> {:role "assistant" :content (when (seq text) text)}

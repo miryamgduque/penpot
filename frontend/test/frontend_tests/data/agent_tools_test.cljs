@@ -828,6 +828,89 @@
   (t/is (some? (at/ungroup-problem {} []))))
 
 ;; ---------------------------------------------------------------------------
+;; library-components — read_design's components section
+;; ---------------------------------------------------------------------------
+
+(def ^:private local-file-id (uuid/custom 9 1))
+(def ^:private lib-file-id (uuid/custom 9 2))
+
+(defn- comp-entry
+  ([id name] {:id id :name name})
+  ([id name extra] (merge {:id id :name name} extra)))
+
+(def ^:private libraries
+  {local-file-id {:name "My File"
+                  :data {:components {cid-1 (comp-entry cid-1 "Card")
+                                      cid-2 (comp-entry cid-2 "Button")}}}
+   lib-file-id   {:name "Design System"
+                  :data {:components {(uuid/custom 9 5) (comp-entry (uuid/custom 9 5) "DS Input")}}}})
+
+(t/deftest local-components-are-listed
+  (let [out (at/library-components libraries local-file-id)]
+    (t/is (contains? (set (map :name out)) "Card"))
+    (t/is (contains? (set (map :name out)) "Button"))))
+
+(t/deftest a-local-component-carries-no-fileId
+  ;; It is the default target — saying so on every entry is payload for nothing.
+  (let [card (first (filter #(= "Card" (:name %)) (at/library-components libraries local-file-id)))]
+    (t/is (not (contains? card :fileId)))))
+
+(t/deftest connected-library-components-are-listed-with-their-file
+  ;; instantiate-component takes a file-id, so cross-library placement works —
+  ;; but only if the agent can see which library a component lives in.
+  (let [input (first (filter #(= "DS Input" (:name %)) (at/library-components libraries local-file-id)))]
+    (t/is (some? input))
+    (t/is (= (str lib-file-id) (:fileId input)))
+    (t/is (= "Design System" (:library input)))))
+
+(t/deftest deleted-components-are-not-listed
+  (let [libs {local-file-id {:name "My File"
+                             :data {:components {cid-1 (comp-entry cid-1 "Gone" {:deleted true})
+                                                 cid-2 (comp-entry cid-2 "Card")}}}}]
+    (t/is (= ["Card"] (map :name (at/library-components libs local-file-id))))))
+
+(t/deftest variant-members-are-not-listed-again
+  ;; They are already under :variants with their componentIds; listing them here
+  ;; too would double the payload for a set-heavy file.
+  (let [libs {local-file-id {:name "My File"
+                             :data {:components
+                                    {cid-1 (comp-entry cid-1 "Card" {:variant-id vid})
+                                     cid-2 (comp-entry cid-2 "Button")}}}}]
+    (t/is (= ["Button"] (map :name (at/library-components libs local-file-id))))))
+
+;; ---------------------------------------------------------------------------
+;; instance-problem
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-known-component-can-be-instantiated
+  (t/is (nil? (at/instance-problem libraries local-file-id
+                                   {:componentId (str cid-1) :x 0 :y 0}))))
+
+(t/deftest an-unknown-component-is-rejected
+  (let [problem (at/instance-problem libraries local-file-id
+                                     {:componentId (str id-missing) :x 0 :y 0})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "read_design"))))
+
+(t/deftest a-component-from-another-library-needs-its-fileId
+  ;; Without fileId we would look in the local file and reject something real.
+  (let [ds (str (uuid/custom 9 5))]
+    (t/is (some? (at/instance-problem libraries local-file-id {:componentId ds :x 0 :y 0})))
+    (t/is (nil? (at/instance-problem libraries local-file-id
+                                     {:componentId ds :fileId (str lib-file-id) :x 0 :y 0})))))
+
+(t/deftest a-missing-position-is-rejected
+  ;; instantiate-component asserts (gpt/point? position) — a nil would throw an
+  ;; assertion rather than return a message.
+  (let [problem (at/instance-problem libraries local-file-id {:componentId (str cid-1)})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "x"))))
+
+(t/deftest a-zero-position-is-allowed
+  (t/is (nil? (at/instance-problem libraries local-file-id
+                                   {:componentId (str cid-1) :x 0 :y 0}))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

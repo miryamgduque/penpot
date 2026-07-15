@@ -321,6 +321,14 @@
                  (dm/get-in state [:ai-panel file-id :usage])))
              st/state))
 
+(def ai-panel-pending-form
+  "The open ask_user form for the current file — {:title :questions} — or nil.
+  Set while an agent turn is paused waiting on the user's answers."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :pending-form])))
+             st/state))
+
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
 

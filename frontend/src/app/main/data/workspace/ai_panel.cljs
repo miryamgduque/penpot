@@ -17,6 +17,7 @@
   (:require
    [app.common.data.macros :as dm]
    [app.main.data.workspace.agent :as agent]
+   [app.main.data.workspace.agent-tools :as at]
    [beicon.v2.core :as rx]
    [potok.v2.core :as ptk]))
 
@@ -186,6 +187,25 @@
   "Stops the running turn. `send-message` watches the event stream for this."
   []
   (ptk/reify ::cancel-turn))
+
+(defn submit-form
+  "Resolves the open ask_user form with the user's `answers` (question id →
+  value) and leaves `summary` — a compact human rendering of those answers,
+  built by the form UI — in the transcript as the user's bubble. The pending
+  turn resumes with the answers as the tool result; the form state itself is
+  cleared by the tool observable's own completion path."
+  [answers summary]
+  (ptk/reify ::submit-form
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :messages]
+                   (fnil conj []) {:role "user" :content summary})
+        state))
+
+    ptk/EffectEvent
+    (effect [_ _ _]
+      (at/submit-pending-form! answers))))
 
 (defn send-message
   "Runs one user turn: appends the user message, runs the agent turn through

@@ -21,6 +21,7 @@
   (:require
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
+   [app.common.types.component :as ctc]
    [app.common.types.shape :as cts]
    [app.common.types.text :as txt]
    [app.common.types.tokens-lib :as ctob]
@@ -34,6 +35,7 @@
    [app.main.data.workspace.tokens.library-edit :as dwtl]
    [app.main.data.workspace.transforms :as dwt]
    [app.main.data.workspace.undo :as dwu]
+   [app.main.data.workspace.variants :as dwv]
    [app.main.data.workspace.wasm-text :as dwwt]
    [app.main.features :as features]
    [app.main.store :as st]
@@ -144,6 +146,21 @@
          "omitted) into a reusable component. Returns the new component id.")
     :input-schema {:type "object"
                    :properties {:shapeIds {:type "array" :items {:type "string"}}}}}
+
+   {:name "create_variant"
+    :description
+    (str "Combines two or more main components into a Penpot variant set — the "
+         "real thing: a variant container whose members switch by property. The "
+         "shapes must already be main components (create_component first) and "
+         "must not already belong to a variant set. Input order determines "
+         "variant order. Never emulate variants by naming layers \"Prop=Value\" "
+         "— that is not a variant set. The new set gets one unnamed axis "
+         "(\"Property 1\") whose values come from the component names. "
+         "Asynchronous: verify with read_design.")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}
+                                           :description
+                                           "main-instance ids; defaults to the selection"}}}}
 
    {:name "create_color_token"
     :description
@@ -527,6 +544,88 @@
         (catch :default e
           (rx/throw e))))))
 
+;; --- Variants
+;;
+;; `dwv/combine-as-variants` filters out ids that are not main instances or are
+;; already variants, and no-ops entirely below two ids — all silently. Silence
+;; is the one answer the agent cannot act on: with no signal it improvises
+;; something that resembles the capability (frames named `Card=Size=Compact`).
+;; So the eligibility rules are checked here first, mirroring the event's own
+;; filter, and rejected with a message that names the corrective action.
+
+(defn- shape-label
+  [shape]
+  (dm/str "\"" (:name shape) "\" (" (dm/str (:id shape)) ")"))
+
+(defn- labels
+  [shapes]
+  (str/join ", " (map shape-label shapes)))
+
+(defn variant-member-ids
+  "The parsed, de-duplicated member ids from a `create_variant` input, in the
+  order given — `combine-as-variants` honours the order of a sequential
+  collection and normalizes anything else to layer-tree order."
+  [shapeIds]
+  (into [] (comp (keep parse-uuid) (distinct)) shapeIds))
+
+(defn variant-members-problem
+  "Why `ids` cannot become a variant set, as a message the agent can act on, or
+  nil when they can. Pure: `objects` is the current page's shape map."
+  [objects ids]
+  ;; distinct first: [a a] reaches combine-as-variants as one id and no-ops
+  ;; silently, so it must not read as two members here
+  (let [ids      (distinct ids)
+        shapes   (keep #(get objects %) ids)
+        missing  (remove #(contains? objects %) ids)
+        ;; a variant member is also a main instance, so this branch is checked
+        ;; first — "extend the set you already have" beats "make a component"
+        variants (filter ctc/is-variant? shapes)
+        non-main (remove ctc/main-instance? shapes)]
+    (cond
+      (< (count ids) 2)
+      (dm/str "create_variant: needs at least 2 main components (got " (count ids)
+              ") — a variant set is a comparison between members")
+
+      (seq missing)
+      (dm/str "create_variant: no shape on this page with id "
+              (str/join ", " (map str missing))
+              " — it may be on another page, or gone; check read_design")
+
+      (seq variants)
+      (dm/str "create_variant: " (labels variants)
+              (if (= 1 (count variants)) " is" " are")
+              " already part of a variant set — use add_variant to extend it")
+
+      (seq non-main)
+      (dm/str "create_variant: " (labels non-main)
+              (if (= 1 (count non-main))
+                " is not a main component — call create_component on it first"
+                " are not main components — call create_component on them first")
+              ", then pass the main instance")
+
+      :else nil)))
+
+(defn- create-variant
+  [{:keys [shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (if (seq shapeIds)
+                  (variant-member-ids shapeIds)
+                  (vec (dsh/get-selected-ids state)))]
+    (if-let [problem (variant-members-problem objects ids)]
+      (rx/throw (ex-info problem {}))
+      ;; the container's id *is* the variant-id, so pre-generating it lets us
+      ;; return the id without awaiting the event chain (as api.cljs does)
+      (let [variant-id (uuid/next)]
+        (interrupt!)
+        (st/emit! (dwv/combine-as-variants
+                   ids {:trigger "agent:create_variant" :variant-id variant-id}))
+        (rx/of {:variantId (dm/str variant-id)
+                :members (count ids)
+                :note (str "variant set created — the members share one axis named "
+                           "\"Property 1\", and each took its value from its own "
+                           "component name. Verify with read_design.")})))))
+
 ;; --- Token tools (the safe coloring path)
 
 (defn- create-color-token
@@ -656,6 +755,7 @@
     "nest_shape"         (nest-shape input)
     "create_text"        (create-text input)
     "create_component"   (create-component input)
+    "create_variant"     (create-variant input)
     "create_color_token" (create-color-token input)
     "apply_tokens"       (apply-tokens input)
     (rx/throw (ex-info (dm/str "Unknown tool: " name) {}))))

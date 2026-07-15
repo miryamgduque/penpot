@@ -132,8 +132,13 @@ or the viewport-only `capture-canvas-snapshot`. This plan therefore builds **`re
    the lineup is now current, and **12 of 14 models see** — only Zhipu's `glm-5.2` and `glm-4.7`
    are text-only, so degradation is now an in-provider distinction rather than a whole-provider
    one.
-4. [Phase 04 — Attach images in the composer](./todo-phase-04-composer-attach.md) — pick, paste,
-   drop; ≤5; thumbnails; remove. The first end-to-end proof that an image reaches the model.
+4. [Phase 04 — Attach images in the composer](./done-phase-04-composer-attach.md) — ✅ **done —
+   and the plan's foundation is now proven, not assumed.** Pick, paste, drop; ≤5; thumbnails;
+   remove; gated on `dai/vision?`. A live Claude read back an arbitrary string (`VERIFY-7742`)
+   from an attached image, so **the Anthropic codec is verified against a real provider**. The
+   OpenAI dialect still is not — no key for it here. Also produced Phase 05's number: **five
+   realistic screenshots are 66% of the payload cap in a single message** (743% for
+   photographic content), which makes downscale-on-attach urgent rather than defensive.
 5. [Phase 05 — Fit the budget](./todo-phase-05-fit-the-budget.md) — downscale on attach, and
    strip images from old history. Without this the 4M cap is a time bomb, not an edge case.
 6. [Phase 06 — `render_board` tool](./todo-phase-06-render-board-tool.md) — the agent takes its

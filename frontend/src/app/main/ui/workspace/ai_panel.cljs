@@ -16,11 +16,14 @@
   separate plan). The Skills manager tab is owned by its own story."
   (:require-macros [app.main.style :as stl])
   (:require
+   [app.common.data :as d]
    [app.common.data.macros :as dm]
+   [app.common.media :as cm]
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
+   [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.skill-state :as skst]
    [app.main.data.workspace.user-skills :as dusk]
    [app.main.refs :as refs]
@@ -33,8 +36,49 @@
    [app.main.ui.hooks :as hooks]
    [app.util.dom :as dom]
    [app.util.keyboard :as kbd]
+   [app.util.webapi :as wapi]
+   [beicon.v2.core :as rx]
    [cuerdas.core :as str]
    [rumext.v2 :as mf]))
+
+;; --- Attachments
+;;
+;; Images are held as `{:mtype :data}` (raw base64) — the same shape the agent's
+;; canonical message uses — and never touch Penpot's media storage. They ride
+;; the turn and are gone on reload; that is the deal, not an oversight.
+
+(def ^:private max-images 5)
+
+(def ^:private data-uri-re #"^data:([^;,]+);base64,(.*)$")
+
+(defn- data-uri->image
+  "`data:image/png;base64,iVBOR…` → `{:mtype \"image/png\" :data \"iVBOR…\"}`.
+  The canonical model wants the two halves apart, because the providers
+  disagree about how to put them back together."
+  [duri]
+  (when-let [[_ mtype data] (re-matches data-uri-re duri)]
+    {:mtype mtype :data data}))
+
+(defn- image-file?
+  [file]
+  (contains? cm/image-types (.-type ^js file)))
+
+(defn- read-images
+  "Files → a stream of one `[{:mtype :data}]` vector, in the order given.
+  `read-file-as-data-url` carries a Safari repeated-mimetype fix, which is why
+  this goes through it rather than a bare FileReader."
+  [files]
+  (->> (rx/from files)
+       ;; beicon's `mapcat` is rxjs `concatMap`, so the reads stay in order and
+       ;; the user's first image is still first. `merge-map` would interleave.
+       (rx/mapcat wapi/read-file-as-data-url)
+       (rx/map data-uri->image)
+       (rx/filter some?)
+       (rx/reduce conj [])))
+
+(defn- image-src
+  [{:keys [mtype data]}]
+  (dm/str "data:" mtype ";base64," data))
 
 (defn- selection-label
   "`refs/selected-shapes` is a set of shape ids; resolve the single-selection
@@ -205,11 +249,19 @@
         (if (= "tool" (:role (second (first run))))
           [:> tool-group* {:key (ffirst run) :messages (mapv second run)}]
           (for [[idx message] run]
-            (let [user? (= "user" (:role message))]
+            (let [user?  (= "user" (:role message))
+                  images (:images message)]
               [:div {:key idx
                      :class (stl/css-case :message true
                                           :message-user user?
                                           :message-md (not user?))}
+               (when (seq images)
+                 [:div {:class (stl/css :message-images)}
+                  (for [[i image] (map-indexed vector images)]
+                    [:img {:key i
+                           :class (stl/css :message-image)
+                           :src (image-src image)
+                           :alt (dm/str "Attached image " (inc i))}])])
                ;; the user didn't write markdown — don't eat their asterisks
                (if user?
                  (:content message)
@@ -259,6 +311,106 @@
                    (fn [event]
                      (reset! input* (dom/get-value (dom/get-target event)))))
 
+        ;; attachments live with the composer, not in app state: they belong to
+        ;; the message being written and die with it
+        images*   (mf/use-state [])
+        images    (deref images*)
+        ;; a rejection the user needs told about (wrong type, over the cap);
+        ;; cleared on the next successful attach
+        attach-error* (mf/use-state nil)
+        attach-error  (deref attach-error*)
+        file-input-ref (mf/use-ref nil)
+        dragging?*    (mf/use-state false)
+        dragging?     (deref dragging?*)
+
+        ;; whether the ACTIVE model can read an image. Not a provider-level
+        ;; fact: within zhipu, glm-5v-turbo sees and glm-5.2 does not.
+        sees?     (dai/vision? (:provider settings) (:model settings))
+
+        add-files (mf/use-fn
+                   (mf/deps images)
+                   (fn [files]
+                     (let [files    (vec files)
+                           pictures (filterv image-file? files)
+                           room     (- max-images (count images))
+                           accepted (vec (take room pictures))
+                           ;; report the *first* reason that applies rather
+                           ;; than stacking messages: one clear sentence beats
+                           ;; two competing ones
+                           error    (cond
+                                      (and (seq files) (empty? pictures))
+                                      "Only images can be attached (PNG, JPEG or WebP)."
+
+                                      (< (count pictures) (count files))
+                                      "Some files were skipped — only images can be attached."
+
+                                      (< (count accepted) (count pictures))
+                                      (dm/str "Only " max-images " images can be attached at once."))]
+                       (reset! attach-error* error)
+                       (when (seq accepted)
+                         (->> (read-images accepted)
+                              (rx/subs! (fn [read]
+                                          (swap! images* into read))
+                                        (fn [_]
+                                          (reset! attach-error*
+                                                  "That image could not be read."))))))))
+
+        on-pick   (mf/use-fn
+                   (mf/deps add-files)
+                   (fn [event]
+                     (let [target (dom/get-target event)]
+                       (add-files (array-seq (.-files ^js target)))
+                       ;; re-picking the same file must re-fire `change`
+                       (dom/set-value! target ""))))
+
+        on-attach (mf/use-fn
+                   (fn []
+                     (some-> (mf/ref-val file-input-ref) (.click))))
+
+        on-remove (mf/use-fn
+                   (fn [event]
+                     (let [i (-> (dom/get-current-target event)
+                                 (dom/get-data "index")
+                                 (d/parse-integer))]
+                       (when (some? i)
+                         (swap! images* (fn [v]
+                                          (vec (concat (subvec v 0 i)
+                                                       (subvec v (inc i))))))))))
+
+        on-paste  (mf/use-fn
+                   (mf/deps add-files sees?)
+                   (fn [event]
+                     ;; the canvas paste handler already ignores TEXTAREA
+                     ;; targets, so this cannot race paste-image-onto-canvas
+                     (let [items (some-> (.-clipboardData ^js event) (.-items))
+                           files (when items
+                                   (->> (array-seq items)
+                                        (filter #(= "file" (.-kind ^js %)))
+                                        (keep #(.getAsFile ^js %))
+                                        (vec)))]
+                       (when (and sees? (seq files))
+                         ;; only swallow the paste when it really is an image;
+                         ;; otherwise pasting text into the box would break
+                         (dom/prevent-default event)
+                         (add-files files)))))
+
+        on-drag-over (mf/use-fn
+                      (mf/deps sees?)
+                      (fn [event]
+                        (when sees?
+                          (dom/prevent-default event)
+                          (reset! dragging?* true))))
+
+        on-drag-leave (mf/use-fn (fn [_] (reset! dragging?* false)))
+
+        on-drop   (mf/use-fn
+                   (mf/deps add-files sees?)
+                   (fn [event]
+                     (dom/prevent-default event)
+                     (reset! dragging?* false)
+                     (when sees?
+                       (add-files (array-seq (.. ^js event -dataTransfer -files))))))
+
         picker-open* (mf/use-state false)
         picker-open? (deref picker-open*)
         picker-ref   (mf/use-ref nil)
@@ -266,17 +418,21 @@
         on-toggle-picker (mf/use-fn #(swap! picker-open* not))
 
         send      (mf/use-fn
-                   (mf/deps input settings busy? page selected objects)
+                   (mf/deps input images settings busy? page selected objects)
                    (fn []
                      (let [text (str/trim input)]
-                       (when (and (seq text) settings (not busy?))
+                       ;; an image on its own is a legitimate message — "what is
+                       ;; this?" is often carried entirely by the picture
+                       (when (and (or (seq text) (seq images)) settings (not busy?))
                          (let [context {:file (:name page)
                                         :page (:name page)
                                         :selection (->> selected
                                                         (map #(select-keys (get objects %) [:name :type]))
                                                         (vec))}]
-                           (st/emit! (dwaip/send-message settings text context))
-                           (reset! input* ""))))))
+                           (st/emit! (dwaip/send-message settings text context images))
+                           (reset! input* "")
+                           (reset! images* [])
+                           (reset! attach-error* nil))))))
 
         on-key-down (mf/use-fn
                      (mf/deps send)
@@ -358,9 +514,44 @@
          "Clear"]])
 
      [:div {:class (stl/css :composer)}
-      ;; The send/stop control lives inside the textarea (bottom-right); the
-      ;; input reserves room on that side so text never runs under it.
-      [:div {:class (stl/css :composer-row)}
+      (when (seq images)
+        [:div {:class (stl/css :composer-attachments)}
+         (for [[i image] (map-indexed vector images)]
+           [:div {:key i :class (stl/css :composer-attachment)}
+            [:img {:class (stl/css :composer-attachment-img)
+                   :src (image-src image)
+                   :alt (dm/str "Attached image " (inc i))}]
+            [:button {:type "button"
+                      :class (stl/css :composer-attachment-remove)
+                      :aria-label (dm/str "Remove attached image " (inc i))
+                      :data-index (dm/str i)
+                      :on-click on-remove}
+             [:span {:aria-hidden true} "✕"]]])])
+
+      ;; the thumbnails stay put when the model changes — the agent notes them
+      ;; as omitted rather than dropping them silently — but saying so here
+      ;; beats letting the user find out from the reply
+      (when (and (seq images) (not sees?))
+        [:div {:class (stl/css :composer-hint)}
+         (dm/str (:model settings) " can't read images — they won't be sent.")])
+
+      (when attach-error
+        [:div {:class (stl/css :composer-hint)} attach-error])
+
+      ;; The send/stop control lives inside the textarea (bottom-right) and
+      ;; attach mirrors it on the left; the input reserves room on both sides so
+      ;; text never runs under either.
+      [:div {:class (stl/css-case :composer-row true
+                                  :composer-row-dragging dragging?)
+             :on-drag-over on-drag-over
+             :on-drag-leave on-drag-leave
+             :on-drop on-drop}
+       [:input {:type "file"
+                :ref file-input-ref
+                :class (stl/css :composer-file-input)
+                :accept dwm/accept-image-types
+                :multiple true
+                :on-change on-pick}]
        ;; deliberately NOT disabled while busy: only *sending* needs gating,
        ;; and being unable to even type through a long turn is the harshest
        ;; part of the current experience
@@ -373,7 +564,20 @@
                    :placeholder "Ask the agent…"
                    :value input
                    :on-change on-input
+                   :on-paste on-paste
                    :on-key-down on-key-down}]
+       [:button {:type "button"
+                 :class (stl/css :composer-attach)
+                 :aria-label (if sees? "Attach images" "This model can't read images")
+                 :title (if sees?
+                          (dm/str "Attach images (up to " max-images ")")
+                          (dm/str (:model settings) " can't read images"))
+                 ;; disabled, not hidden: a control that vanishes when you
+                 ;; switch models reads as a bug, not a capability
+                 :disabled (or (not settings) (not sees?)
+                               (>= (count images) max-images))
+                 :on-click on-attach}
+        [:> i/icon* {:icon-id i/img}]]
        (if busy?
          [:button {:type "button"
                    :class (stl/css :composer-stop)
@@ -383,7 +587,9 @@
          [:button {:type "button"
                    :class (stl/css :composer-send)
                    :aria-label "Send message"
-                   :disabled (or (not settings) (empty? (str/trim input)))
+                   ;; an image on its own is a legitimate message
+                   :disabled (or (not settings)
+                                 (and (empty? (str/trim input)) (empty? images)))
                    :on-click send}
           [:> i/icon* {:icon-id i/forward}]])]
 

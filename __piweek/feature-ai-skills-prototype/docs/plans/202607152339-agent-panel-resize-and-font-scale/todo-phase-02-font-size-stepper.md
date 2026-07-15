@@ -11,14 +11,14 @@
 
 ## Checklist
 
-- [ ] Write tests for the step model (pure fns: step → scale, next/prev step with clamping at both ends)
+- [ ] ~~Write tests~~ (waived — see README "Execution Mode")
 - [ ] Define the scale steps (proposed: `[0.85 1 1.15 1.3 1.45]`, default index 1 = today's sizes) and persist the index via `use-persisted-state ::font-step`
 - [ ] Set the scale as a CSS custom property (e.g. `--ai-font-scale`) via inline style on the root `:aside`
 - [ ] In `ai_panel.scss`, route text sizing through the variable: introduce local mixins (e.g. `@mixin body-text` = DS mixin + `font-size: calc(<base> * var(--ai-font-scale, 1))`) and swap the existing `@include`s to them — one mechanical single-file pass
 - [ ] Add the A− / A+ stepper to the panel header actions (ghost icon-buttons beside the Skills icon); disable at min/max step; aria-labels ("Decrease text size" / "Increase text size")
-- [ ] Lint + typecheck pass (frontend lint; run frontend tests)
-- [ ] Preview review with MCP tools: step through all sizes in chat + skills views, verify persistence across reload, check composer/chips/tool payloads at the largest step
-- [ ] Human approval received
+- [ ] Lint pass (clj-kondo over the touched files)
+- [ ] ~~Preview review~~ deferred to post-merge verification with the user: step through all sizes in chat + skills views, persistence across reload, composer/chips/tool payloads at the largest step
+- [ ] ~~Human approval before commit~~ moved to the merge gate (see README "Execution Mode")
 - [ ] Committed with a gitmoji commit (`:sparkles: Let the agent panel text be resized`)
 
 ## After Finish

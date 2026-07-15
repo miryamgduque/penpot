@@ -1,6 +1,6 @@
 # Chat-default panel + Skills icon (US #35)
 
-**Status:** todo
+**Status:** done
 **Created:** 2026-07-15
 **Apps:** `frontend`
 **Source:** [Taiga US #35 — Replace Chat/Skills tabs with chat-default panel and a Skills icon](https://tree.taiga.io/project/miryam-all-in-penpot/us/35)
@@ -62,11 +62,13 @@ shipped); final icon styling / exact muted treatment (visual design).
 
 ## Phases
 
-1. [Phase 01 — `list-checks` icon asset](./todo-phase-01-list-checks-icon.md) — add the Lucide
-   icon (SVG + `icon.cljs` def) and regenerate the sprite; verify it renders.
-2. [Phase 02 — Chat-default panel + adaptive header + Skills view](./todo-phase-02-chat-default-panel.md)
+1. [Phase 01 — `list-checks` icon asset](./done-phase-01-list-checks-icon.md) — add the Lucide
+   icon (SVG + `icon.cljs` def) and regenerate the sprite; verify it renders. ✅ **done**
+   (`icon-list-checks` in sprite, `:main` clean)
+2. [Phase 02 — Chat-default panel + adaptive header + Skills view](./done-phase-02-chat-default-panel.md)
    — remove the tabs, chat as the default body, muted `list-checks` in the header, in-memory view
    state (default chat), full-panel Skills view with a `← Skills` header, back to chat.
+   ✅ **done**
 
 ## Acceptance Criteria
 

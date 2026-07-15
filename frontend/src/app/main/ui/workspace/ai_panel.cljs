@@ -29,7 +29,6 @@
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
-   [app.main.ui.ds.layout.tab-switcher :refer [tab-switcher*]]
    [app.main.ui.hooks :as hooks]
    [app.util.dom :as dom]
    [app.util.keyboard :as kbd]
@@ -574,24 +573,24 @@
     "Connect a provider"]])
 
 (mf/defc ai-panel*
-  ;; `file` / `page` are passed for future context-aware tabs; the Chat tab
-  ;; reads live context from refs.
+  "The Agent panel shell. Chat is the home surface and fills the body; Skills is a
+  full-panel view reached from a muted header icon (US #35). The view is in-memory
+  and defaults to chat, so closing and reopening the panel always lands on chat
+  (US #2) — there are no tabs."
   [_props]
-  (let [tab*      (hooks/use-persisted-state ::ai-panel-tab "chat")
-        tab       (deref tab*)
-        on-change (mf/use-fn #(reset! tab* %))
+  (let [view*       (mf/use-state :chat)
+        view        (deref view*)
+        skills?     (= view :skills)
+        show-skills (mf/use-fn #(reset! view* :skills))
+        show-chat   (mf/use-fn #(reset! view* :chat))
 
-        on-close  (mf/use-fn #(st/emit! (dwaip/close-panel)))
+        on-close    (mf/use-fn #(st/emit! (dwaip/close-panel)))
 
-        providers (mf/deref refs/ai-providers)
-        pool      (mf/with-memo [providers] (provider-pool providers))
-
-        tabs      (mf/with-memo []
-                    [{:label "Chat" :id "chat"}
-                     {:label "Skills" :id "skills"}])]
+        providers   (mf/deref refs/ai-providers)
+        pool        (mf/with-memo [providers] (provider-pool providers))]
 
     ;; Providers are configured on the settings page; load them so we know
-    ;; whether to show the panel or the connect-a-provider prompt. Skill state
+    ;; whether to show the chat or the connect-a-provider prompt. Skill state
     ;; (per-account + this file's overrides) drives which skills the agent
     ;; routes to, so load it up front too.
     (mf/with-effect []
@@ -599,27 +598,32 @@
                 (skst/fetch-skill-states)))
 
     [:aside {:class (stl/css :ai-panel)}
-     ;; Title header, sized to the workspace right-header band so the tabs
-     ;; below line up with the sidebar's Design/Prototype/Inspect tabs.
+     ;; Adaptive header (sized to the workspace right-header band): chat shows the
+     ;; "Agent" title + the muted Skills icon; the Skills view swaps those for a
+     ;; back arrow + "Skills". Close stays in both.
      [:div {:class (stl/css :header)}
-      [:span {:class (stl/css :title)} "Agent"]
-      [:> icon-button* {:variant "ghost"
-                        :aria-label "Close Agent panel"
-                        :on-click on-close
-                        :icon i/close}]]
+      (if skills?
+        [:div {:class (stl/css :header-lead)}
+         [:> icon-button* {:variant "ghost"
+                           :aria-label "Back to chat"
+                           :on-click show-chat
+                           :icon i/arrow-left}]
+         [:span {:class (stl/css :title)} "Skills"]]
+        [:span {:class (stl/css :title)} "Agent"])
+      [:div {:class (stl/css :header-actions)}
+       (when-not skills?
+         [:> icon-button* {:variant "ghost"
+                           :aria-label "Open Skills"
+                           :on-click show-skills
+                           :icon i/list-checks}])
+       [:> icon-button* {:variant "ghost"
+                         :aria-label "Close Agent panel"
+                         :on-click on-close
+                         :icon i/close}]]]
 
-     (if (empty? pool)
-       ;; No provider connected — replace the whole body, tabs included.
-       [:> connect-empty*]
-
-       [:> tab-switcher* {:tabs tabs
-                          :selected tab
-                          :on-change on-change
-                          :scrollable-panel true
-                          :class (stl/css :tabs)}
-        (case tab
-          "chat"
-          [:> chat-tab*]
-
-          "skills"
-          [:> skills-tab*])])]))
+     [:div {:class (stl/css :body)}
+      (cond
+        ;; Skills is a static catalog — reachable even before a provider is set up.
+        skills?       [:> skills-tab*]
+        (empty? pool) [:> connect-empty*]
+        :else         [:> chat-tab*])]]))

@@ -118,6 +118,19 @@ and get fleshed out at their Before Start rather than guessed at now.
 
 16. [Phase 16 — Markup and style](./todo-phase-16-markup-and-style.md) — `generate_markup` / `generate_style`, the whole method of `penpot-design-to-code-review`
 
+### Wave 9 — Reading a shape's look (the replicate gap)
+
+Asked to *"replicate the selected element as accurately as possible"*, the agent read the design,
+rendered it (agent-vision) and reported two walls precisely: *"1. Fill/image content … 2.
+Effects/filters"* — things it *"can see visually but cannot directly inspect through the API"*. Both
+are accurate: `summarize-shape` ([agent_tools.cljs:186](../../../../../frontend/src/app/main/data/workspace/agent_tools.cljs))
+returns geometry only — no fills, no effects. This is the **read/inspect** side of style: Wave 6
+(Phase 14) *writes* radius/shadow/opacity, Wave 7 (Phase 15) reads *depth* — neither surfaces a
+shape's paint or effects for the model to copy, and image fills are unreachable entirely.
+
+17. [Phase 17 — Inspect fills and image content](./todo-phase-17-inspect-fill-and-image.md) — `read_design` reports each shape's fills (solid / gradient / **image** with its ref); image-fill write is scope-gated
+18. [Phase 18 — Inspect effects and filters](./todo-phase-18-inspect-effects-and-filters.md) — `read_design` reports present shadow / blur / opacity / radius, mirroring Phase 14's write params so read → copy → write is a straight path
+
 ## Sequencing notes
 
 - **Waves 1–3 are the spine.** Variants first: small, planned, closes a demo-able loop end to

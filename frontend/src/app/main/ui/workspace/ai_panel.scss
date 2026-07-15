@@ -70,6 +70,15 @@
 
   // Separation from the options sidebar on its left.
   border-inline-start: deprecated.$s-1 solid var(--panel-border-color);
+
+  // The app-level `.workspace ::placeholder` rule pins every placeholder to
+  // 12px no matter what the input itself says. class+element+pseudo out-ranks
+  // its class+pseudo, and `inherit` follows the input's scaled size
+  // (pseudo-elements inherit from their originating element).
+  textarea::placeholder,
+  input::placeholder {
+    font-size: inherit;
+  }
 }
 
 // Left-edge drag handle: an invisible strip straddling the panel border, same

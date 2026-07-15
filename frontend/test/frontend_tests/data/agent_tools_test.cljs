@@ -1036,6 +1036,36 @@
   (t/is (empty? (at/input-colors {:radius 8 :opacity 0.5}))))
 
 ;; ---------------------------------------------------------------------------
+;; code-problem — generate_code
+;;
+;; The skill's method is COMPARISON (design vs shipped code), so a half
+;; stylesheet produces confidently false findings. Better to refuse and be
+;; narrowed than to answer with part of the truth.
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-shape-can-be-inspected
+  (t/is (nil? (at/code-problem (objects (plain-frame id-a "Card")) [id-a] "html"))))
+
+(t/deftest inspecting-nothing-is-rejected
+  (let [problem (at/code-problem {} [] "html")]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "select"))))
+
+(t/deftest an-unknown-shape-is-rejected
+  (let [problem (at/code-problem (objects (plain-frame id-a "Card")) [id-missing] "html")]
+    (t/is (some? problem))
+    (t/is (str/includes? problem (str id-missing)))))
+
+(t/deftest an-unknown-markup-type-is-rejected-with-the-real-ones
+  (let [problem (at/code-problem (objects (plain-frame id-a "Card")) [id-a] "jsx")]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "html"))
+    (t/is (str/includes? problem "svg"))))
+
+(t/deftest svg-is-a-valid-type
+  (t/is (nil? (at/code-problem (objects (plain-frame id-a "Card")) [id-a] "svg"))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

@@ -77,7 +77,7 @@ Decisions from the discovery interview (2026-07-16):
 ## Phases
 
 1. [Phase 01 — Backend table + RPC](./done-phase-01-backend-table-and-rpc.md) — migration `0157` + `agent_chats.clj` (list/get/upsert/delete), registered
-2. [Phase 02 — Frontend persistence layer](./todo-phase-02-frontend-persistence.md) — save at turn boundaries, hydrate on panel open, strip-for-save + auto-title helpers
+2. [Phase 02 — Frontend persistence layer](./done-phase-02-frontend-persistence.md) — save at turn boundaries, hydrate on panel open, strip-for-save + auto-title helpers
 3. [Phase 03 — Conversation switcher UI](./todo-phase-03-conversation-switcher-ui.md) — history popover + New chat in the panel header, load/delete
 4. [Phase 04 — Merge and live verify](./todo-phase-04-merge-and-live-verify.md) — merge the worktree into `feature/ai-skills-prototype` (user gate), then verify everything live in the devenv
 

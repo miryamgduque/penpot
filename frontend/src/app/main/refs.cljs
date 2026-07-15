@@ -373,6 +373,20 @@
 ;; pipeline, and requiring it from here closes a circular dependency through
 ;; app.main.data.event.
 
+(def ai-panel-chats
+  "This file's saved conversation list (metadata only, newest first)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :chats])))
+             st/state))
+
+(def ai-panel-chat-id
+  "The active conversation's saved row id (nil until its first save)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :chat-id])))
+             st/state))
+
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
 

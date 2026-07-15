@@ -20,6 +20,7 @@
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent :as agent]
+   [app.main.data.workspace.agent-chats :as agent-chats]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [beicon.v2.core :as rx]
@@ -179,18 +180,9 @@
         (update-in state [:ai-panel file-id :usage] agent/add-usage usage)
         state))))
 
-(defn clear-chat
-  "Starts a fresh session for the current file: drops the transcript, the
-  canonical history and the spend meter. Guarded against running turns by the
-  UI (the clear control is disabled while busy)."
-  []
-  (ptk/reify ::clear-chat
-    ptk/UpdateEvent
-    (update [_ state]
-      (if-let [file-id (:current-file-id state)]
-        (update-in state [:ai-panel file-id]
-                   (fn [panel] (dissoc panel :messages :history :usage)))
-        state))))
+;; Starting fresh is `agent-chats/new-chat` — non-destructive now that
+;; conversations persist (the old one stays in the file's saved list). The
+;; destructive clear-chat this replaced is gone with it.
 
 (defn set-enforced-rules
   "Records which rule names are enforced for the current file — the agent's
@@ -686,11 +678,15 @@
                (rx/take-until stopper))
 
           ;; deferred: `concat` subscribes here only once the turn is over, so
-          ;; the atoms have settled by the time this decides what happened
+          ;; the atoms have settled by the time this decides what happened.
+          ;; `persist-chat` runs on both paths — the turn boundary is the save
+          ;; point, and a cancelled turn is part of the conversation too.
           (->> (rx/of ::end)
                (rx/mapcat (fn [_]
                             (if @ended?*
-                              (rx/of (set-busy false))
+                              (rx/of (set-busy false)
+                                     (agent-chats/persist-chat))
                               (rx/of (append-message "assistant" "⏹ Stopped.")
                                      (store-history (agent/cancel-history @latest*))
-                                     (set-busy false))))))))))))
+                                     (set-busy false)
+                                     (agent-chats/persist-chat))))))))))))

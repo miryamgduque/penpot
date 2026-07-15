@@ -24,6 +24,7 @@
    [app.common.uuid :as uuid]
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent :as agent]
+   [app.main.data.workspace.agent-chats :as dwach]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.design-doc :as dd]
@@ -1006,7 +1007,7 @@
                      (mf/deps busy?)
                      (fn []
                        (when-not busy?
-                         (st/emit! (dwaip/clear-chat)))))
+                         (st/emit! (dwach/new-chat)))))
 
         on-cancel   (mf/use-fn #(st/emit! (dwaip/cancel-turn)))]
 
@@ -1879,11 +1880,14 @@
     ;; Providers are configured on the settings page; load them so we know
     ;; whether to show the chat or the connect-a-provider prompt. Skill state
     ;; (per-account + this file's overrides) and the user's created skills drive
-    ;; which skills the agent routes to, so load them up front too.
+    ;; which skills the agent routes to, so load them up front too. Saved
+    ;; conversations load with restore: an empty panel lands back in the file's
+    ;; most recent conversation (hard-refresh survival).
     (mf/with-effect []
       (st/emit! (dai/fetch-ai-providers)
                 (skst/fetch-skill-states)
-                (dusk/fetch-user-skills)))
+                (dusk/fetch-user-skills)
+                (dwach/fetch-chats true)))
 
     [:aside {:class (stl/css :ai-panel)
              :style #js {:width (dm/str width "px")

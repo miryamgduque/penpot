@@ -34,10 +34,13 @@ media storage.
 - [ ] **Gate the attach affordance on `(dai/vision? provider model)`** — disabled with a reason
       when the active model is text-only, never hidden (a control that vanishes reads as a bug)
       and never a silent no-op. *Moved here from Phase 03*, which delivered the predicate but
-      was sequenced before the button existed. **This is not a rare branch: six of the twelve
-      catalogued models are text-only** (all of Zhipu and Moonshot), so it is on the demo path,
-      not a corner. Note the model can change *after* attaching — `strip-images` already handles
-      that end (Phase 03); this is only about not offering the control in the first place
+      was sequenced before the button existed. Note the model can change *after* attaching —
+      `strip-images` already handles that end (Phase 03); this is only about not offering the
+      control in the first place.
+      **Post-refresh (2026-07-15): 12 of the 14 catalogued models now see.** Only Zhipu's
+      `glm-5.2` and `glm-4.7` are text-only — so this is a narrower branch than Phase 03 found,
+      but a *sharper* one to demo: within Zhipu, `glm-5v-turbo` sees and `glm-5.2` does not, so
+      the affordance has to react to the model rather than the provider. Test with that pair
 - [ ] Paste handler on the textarea (`:370-374`). `clipboard.cljs:266-290` (`create-paste-from-blob`)
       is the template for pulling image blobs off the event. **No coordination needed with the
       canvas paste flow** — `viewport/actions.cljs:585-586` already declines `TEXTAREA` targets

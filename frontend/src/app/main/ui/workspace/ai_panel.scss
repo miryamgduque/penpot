@@ -406,9 +406,9 @@
 // Model picker: a custom dropdown that opens upward, with a manage-models link.
 .model-picker {
   position: relative;
-  // Half width, sitting on the right below the composer.
+  // Half width, pushed to the right of the composer footer.
   width: 50%;
-  align-self: flex-end;
+  margin-inline-start: auto;
 }
 
 .model-picker-trigger {
@@ -596,12 +596,16 @@
 }
 
 // Mirrors .composer-send across the textarea: same size and shape, other corner.
+// Below the input: attach on the left, model picker pushed to the right.
+.composer-footer {
+  display: flex;
+  align-items: center;
+}
+
 .composer-attach {
-  position: absolute;
-  inset-block-end: deprecated.$s-8;
-  inset-inline-start: deprecated.$s-8;
   display: grid;
   place-content: center;
+  flex: none;
   width: deprecated.$s-28;
   height: deprecated.$s-28;
   border: none;
@@ -675,7 +679,8 @@
 .composer-send,
 .composer-stop {
   position: absolute;
-  inset-block-end: deprecated.$s-8;
+  // Vertically centred in the single-line input (36 − 28 = 8, split top/bottom).
+  inset-block-end: deprecated.$s-4;
   inset-inline-end: deprecated.$s-8;
   display: grid;
   place-content: center;
@@ -771,21 +776,26 @@
   display: block;
   box-sizing: border-box;
   width: 100%;
-  // Starts as a single line; the JS auto-grow takes it from here up to the cap.
-  min-height: deprecated.$s-40;
+  // Starts as a single line (snug, so the one line sits vertically centred); the
+  // JS auto-grow takes it from here up to the cap.
+  min-height: deprecated.$s-36;
   // Auto-grows with content (JS sets the height) up to here, then scrolls.
   max-height: 200px;
   overflow-y: auto;
   resize: none;
   padding: deprecated.$s-8;
   // Reserve the bottom-right corner so text never runs under the send/stop
-  // button — and the bottom-left, likewise, for attach.
+  // button. Attach now lives below the input, so the left side is normal.
   padding-inline-end: deprecated.$s-44;
-  padding-inline-start: deprecated.$s-44;
   border-radius: deprecated.$br-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
   color: var(--color-foreground-primary);
+
+  &:focus {
+    border-color: var(--color-accent-primary);
+    outline: none;
+  }
 }
 
 // Spend meter + clear row, above the composer.

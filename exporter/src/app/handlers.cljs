@@ -12,6 +12,7 @@
    [app.common.spec :as us]
    [app.handlers.export-frames :as export-frames]
    [app.handlers.export-shapes :as export-shapes]
+   [app.handlers.screenshot-url :as screenshot-url]
    [app.util.transit :as t]
    [clojure.spec.alpha :as s]
    [cuerdas.core :as str]))
@@ -70,6 +71,7 @@
 
 (defmethod command-spec :export-shapes [_] ::export-shapes/params)
 (defmethod command-spec :export-frames [_] ::export-frames/params)
+(defmethod command-spec :screenshot-url [_] ::screenshot-url/params)
 
 (s/def ::params
   (s/and (s/keys :req-un [::cmd]
@@ -83,6 +85,7 @@
     (case cmd
       :export-shapes (export-shapes/handler exchange params)
       :export-frames (export-frames/handler exchange params)
+      :screenshot-url (screenshot-url/handler exchange params)
       (ex/raise :type :internal
                 :code :method-not-implemented
                 :hint (str/istr "method ~{cmd} not implemented")))))

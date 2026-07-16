@@ -712,12 +712,11 @@
         open-rules  (deref open-rules*)]
     [:div {:class (stl/css :observer-card)}
      [:div {:class (stl/css :observer-header-row)}
+      ;; two lines — title over byline — no glyph; the row toggles
       [:button {:type "button"
                 :class (stl/css :observer-header)
                 :aria-expanded expanded?
                 :on-click on-toggle}
-       [:span {:class (stl/css :observer-eye) :aria-hidden true}
-        [:> i/icon* {:icon-id i/shown}]]
        [:span {:class (stl/css :observer-headline)} label]
        [:span {:class (stl/css :observer-summary)} summary]]
       [:button {:type "button"

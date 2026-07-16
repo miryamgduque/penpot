@@ -1593,10 +1593,9 @@
 (mf/defc foundations-list*
   "The file's foundations (US #38): an 'Applies to this file' marker, one
   card per foundation (glyph, name, one-line summary), and the add
-  affordance. Creation is agent-guided and lands with the detail work — the
-  button says so rather than pretending."
+  affordance — creation is agent-guided, so it seeds the chat composer."
   {::mf/private true}
-  [{:keys [on-select on-interview]}]
+  [{:keys [on-select on-interview on-create]}]
   (let [foundations (mf/deref dd/foundations-ref)]
     [:div {:class (stl/css :foundations-view)}
      [:div {:class (stl/css :foundations-scope)}
@@ -1626,25 +1625,8 @@
               [:div {:class (stl/css :foundation-card-summary)} summary])]])
         [:button {:type "button"
                   :class (stl/css :foundation-add)
-                  :disabled true
-                  :title "Agent-guided creation lands in the next phase"}
+                  :on-click on-create}
          "+ Add a foundation"]])]))
-
-(mf/defc foundation-detail*
-  "A non-vibes foundation, read-only for now (US #38 phase 06) — the doc
-  rendered like any DESIGN.md. Editing, removal and the agent input arrive
-  with phase 07; Vibes routes to `vibes-view*` instead, which already has
-  the full edit story."
-  {::mf/private true}
-  [{:keys [slug]}]
-  (let [foundations (mf/deref dd/foundations-ref)
-        doc         (some #(when (= slug (:slug %)) (:doc %)) foundations)]
-    (if (some? doc)
-      [:div {:class (stl/css :vibes-view)}
-       [:> design-doc-view* {:doc doc}]]
-      [:div {:class (stl/css :vibes-empty)}
-       [:p {:class (stl/css :vibes-empty-text)}
-        "This foundation is gone — someone may have removed it just now."]])))
 
 (defn- vec-remove
   [v i]
@@ -1775,18 +1757,22 @@
        [:p {:class (stl/css :vibes-form-note)}
         "components tokens are kept as-is — edit them through the agent for now"])]))
 
-(mf/defc vibes-view*
-  "The project vibes document: rendered markdown with Edit / Re-run interview /
-  Delete, an editor with the same size cap the tool enforces, and an empty
-  state that starts the interview. Editing splits by format: a DESIGN.md doc
-  gets the token FORM + a body textarea (raw YAML is never shown), a legacy
-  doc keeps the plain textarea plus an 'Add design tokens' path into the form.
-  Deleting is a two-click inline confirm — and it goes through the changes
-  pipeline, so it is undoable like any edit. `on-interview` seeds the chat
-  composer with the vibes trigger and switches to the chat view."
+(mf/defc foundation-view*
+  "One foundation's detail (US #38): the doc rendered readable, an agent
+  input to change it conversationally (per the story, the primary edit path),
+  and Edit / Delete. Editing splits by format: a DESIGN.md doc gets the token
+  FORM + a body textarea (raw YAML is never shown), a legacy doc keeps the
+  plain textarea plus an 'Add design tokens' path into the form. Deleting is
+  a two-click inline confirm — and it goes through the changes pipeline, so
+  it is undoable like any edit. Vibes keeps its extras: the Re-run interview
+  action and the interview empty state. `on-seed-chat` prefills the chat
+  composer and lands there — the user presses Enter themselves; `on-deleted`
+  pops back to the list."
   {::mf/private true}
-  [{:keys [on-interview]}]
-  (let [doc       (mf/deref dd/doc-ref)
+  [{:keys [slug on-seed-chat on-deleted]}]
+  (let [foundations (mf/deref dd/foundations-ref)
+        doc       (some #(when (= slug (:slug %)) (:doc %)) foundations)
+        vibes?    (= slug dd/vibes-slug)
         ;; nil = reading; {:mode :raw :text s} = legacy textarea;
         ;; {:mode :form :model m :body s} = token form + body
         edit*     (mf/use-state nil)
@@ -1794,6 +1780,8 @@
         editing?  (some? edit)
         confirm?* (mf/use-state false)
         confirm?  (deref confirm?*)
+        ask*      (mf/use-state "")
+        ask       (deref ask*)
 
         ;; what Save would persist — the cap and the validation gate both run
         ;; against the SERIALIZED doc, exactly like the agent's tool path
@@ -1827,20 +1815,38 @@
                                          :body (or text "")})))
         on-cancel (mf/use-fn #(reset! edit* nil))
         on-save   (mf/use-fn
-                   (mf/deps candidate problem)
+                   (mf/deps slug candidate problem)
                    (fn []
                      (when-not problem
                        (when-let [file-id (:current-file-id @st/state)]
-                         (st/emit! (dd/set-doc file-id candidate))
+                         (st/emit! (dd/set-foundation file-id slug candidate))
                          (reset! edit* nil)))))
         on-delete (mf/use-fn
-                   (mf/deps confirm?)
+                   (mf/deps slug confirm? on-deleted)
                    (fn []
                      (if confirm?
                        (do (when-let [file-id (:current-file-id @st/state)]
-                             (st/emit! (dd/clear-doc file-id)))
-                           (reset! confirm?* false))
-                       (reset! confirm?* true))))]
+                             (st/emit! (dd/clear-foundation file-id slug)))
+                           (reset! confirm?* false)
+                           (on-deleted))
+                       (reset! confirm?* true))))
+        on-interview  (mf/use-fn
+                       (mf/deps on-seed-chat)
+                       #(on-seed-chat "Set the design vibes for this project."))
+        on-ask-change (mf/use-fn
+                       #(reset! ask* (dom/get-value (dom/get-target %))))
+        on-ask-submit (mf/use-fn
+                       (mf/deps slug ask on-seed-chat)
+                       (fn []
+                         (when-not (str/blank? ask)
+                           (on-seed-chat (str "Update the '" (dd/display-name slug)
+                                              "' foundation: " (str/trim ask))))))
+        on-ask-key    (mf/use-fn
+                       (mf/deps on-ask-submit)
+                       (fn [event]
+                         (when (= "Enter" (.-key event))
+                           (dom/prevent-default event)
+                           (on-ask-submit))))]
 
     (cond
       editing?
@@ -1881,11 +1887,24 @@
       (some? doc)
       [:div {:class (stl/css :vibes-view)}
        [:> design-doc-view* {:doc doc}]
+       ;; the conversational edit path — the agent rewrites the guidance
+       [:div {:class (stl/css :foundation-ask)}
+        [:input {:class (stl/css :vibes-form-input)
+                 :placeholder "Ask the agent for a change — \"allow emoji\", \"more formal\"…"
+                 :value ask
+                 :on-change on-ask-change
+                 :on-key-down on-ask-key}]
+        [:button {:type "button"
+                  :class (stl/css :vibes-button-primary)
+                  :disabled (str/blank? ask)
+                  :on-click on-ask-submit}
+         "Ask"]]
        [:div {:class (stl/css :vibes-actions)}
         [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
          "Edit"]
-        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
-         "Re-run interview"]
+        (when vibes?
+          [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
+           "Re-run interview"])
         [:button {:type "button"
                   :class (stl/css-case :vibes-button true
                                        :vibes-button-danger true
@@ -1893,7 +1912,7 @@
                   :on-click on-delete}
          (if confirm? "Really delete? (undoable)" "Delete")]]]
 
-      :else
+      vibes?
       [:div {:class (stl/css :vibes-empty)}
        [:div {:class (stl/css :vibes-empty-title)} "No vibes set yet"]
        [:p {:class (stl/css :vibes-empty-text)}
@@ -1901,7 +1920,12 @@
        [:button {:type "button"
                  :class (stl/css :vibes-button-primary)
                  :on-click on-interview}
-        "Set the vibes"]])))
+        "Set the vibes"]]
+
+      :else
+      [:div {:class (stl/css :vibes-empty)}
+       [:p {:class (stl/css :vibes-empty-text)}
+        "This foundation is gone — someone may have removed it just now."]])))
 
 (mf/defc skills-tab*
   "The built-in skills catalog: rows grouped by category. Each row opens its
@@ -2379,14 +2403,24 @@
         on-created  (mf/use-fn #(reset! creating* false))
         open-foundations   (mf/use-fn (fn [] (reset! foundation* nil) (reset! view* :foundations)))
         on-open-foundation (mf/use-fn #(reset! foundation* %))
-        ;; "Set the vibes" / "Re-run interview": hand the chat a ready-to-send
-        ;; trigger and land there — the user presses Enter themselves.
-        on-vibes-interview
+        on-foundation-deleted (mf/use-fn #(reset! foundation* nil))
+        ;; Foundations are agent-authored: every create/change path hands the
+        ;; chat a ready-to-send (or ready-to-complete) prompt and lands there —
+        ;; the user presses Enter themselves.
+        on-seed-chat
         (mf/use-fn
-         (fn []
-           (st/emit! (dwaip/seed-composer "Set the design vibes for this project."))
+         (fn [text]
+           (st/emit! (dwaip/seed-composer text))
            (reset! foundation* nil)
            (reset! view* :chat)))
+        on-vibes-interview
+        (mf/use-fn
+         (mf/deps on-seed-chat)
+         #(on-seed-chat "Set the design vibes for this project."))
+        on-add-foundation
+        (mf/use-fn
+         (mf/deps on-seed-chat)
+         #(on-seed-chat "Add a new foundation to this file: "))
         ;; Chat "create a skill …" → take the user to the Skills create flow with
         ;; the described "what" prefilled.
         on-create-skill (mf/use-fn
@@ -2531,18 +2565,14 @@
                                                    :on-select on-select
                                                    :on-create open-create
                                                    :on-promote open-promote}])
-        ;; Foundations: the file's standing design context (US #38). Vibes keeps
-        ;; its full view (edit/interview/delete); other foundations are read-only
-        ;; until the phase-07 detail work.
-        foundations?  (cond
-                        (= foundation dd/vibes-slug)
-                        [:> vibes-view* {:on-interview on-vibes-interview}]
-
-                        (some? foundation)
-                        [:> foundation-detail* {:slug foundation}]
-
-                        :else
+        ;; Foundations: the file's standing design context (US #38); every
+        ;; foundation gets the full detail (render, agent input, edit, delete).
+        foundations?  (if (some? foundation)
+                        [:> foundation-view* {:slug foundation
+                                              :on-seed-chat on-seed-chat
+                                              :on-deleted on-foundation-deleted}]
                         [:> foundations-list* {:on-select on-open-foundation
-                                               :on-interview on-vibes-interview}])
+                                               :on-interview on-vibes-interview
+                                               :on-create on-add-foundation}])
         (empty? pool) [:> connect-empty*]
         :else         [:> chat-tab* {:on-create-skill on-create-skill}])]]))

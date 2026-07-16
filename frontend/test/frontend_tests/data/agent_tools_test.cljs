@@ -1644,6 +1644,13 @@
     (t/is (str/includes? msg "™!!"))
     (t/is (str/includes? msg "letters or digits"))))
 
+;; set_design_doc is retired — set_foundation (name "Vibes") is the one way
+;; to write the vibes doc. This pins the retirement so a stray skill body or
+;; cached prompt calling the old name fails loudly, not mysteriously.
+(t/deftest set-design-doc-is-gone
+  (t/is (str/includes? (tool-error "set_design_doc" {:doc "x"})
+                       "Unknown tool")))
+
 (t/deftest explore-needs-a-question
   (with-stub-runner (fn [_] (rx/of {:text "d" :usage {}}))
     #(t/is (str/includes? (tool-error "explore_design" {}) "question"))))

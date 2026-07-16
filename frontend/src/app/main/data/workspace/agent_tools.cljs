@@ -192,44 +192,30 @@
                              :required ["id" "question" "type"]}}}
                    :required ["questions"]}}
 
-   {:name "set_design_doc"
-    :description
-    (str "Saves (or replaces) this project's vibes document — a DESIGN.md "
-         "that is inlined into your instructions on every future turn in this "
-         "file and shared with every collaborator. Format: YAML frontmatter "
-         "between --- fences carrying the machine-readable tokens (name, "
-         "description, colors, typography, rounded, spacing, optionally "
-         "components referencing tokens as {colors.primary}), then a markdown "
-         "body in the canonical sections — Overview, Colors, Typography, "
-         "Layout, Shapes, Do's and Don'ts. The doc is validated on save: "
-         "broken YAML or a {token.ref} that resolves to nothing is rejected "
-         "with the reason. Stay well under 6000 characters — it is read on "
-         "every turn. Call it at the end of a vibes interview or when the "
-         "user asks to change the project's design direction; pass an empty "
-         "`doc` to delete the document. The current doc, if any, is already "
-         "in your instructions under 'Foundations'.")
-    :input-schema {:type "object"
-                   :properties {:doc {:type "string"
-                                      :description "the full markdown document (empty string deletes)"}}
-                   :required ["doc"]}}
-
    {:name "set_foundation"
     :description
     (str "Saves (or replaces) ONE of this file's foundations — named standing "
          "design context (Vibes, Tone of voice, Naming, A11y priorities…) "
          "that is inlined into your instructions on every future turn in "
          "this file and shared with every collaborator. `name` picks the "
-         "foundation, creating it if new — 'Vibes' is the project's DESIGN.md "
-         "(set_design_doc writes the same one). Write the doc in the "
-         "DESIGN.md shape: YAML frontmatter with at least `name` and a "
-         "one-line `description` (that line becomes the foundation's card "
-         "summary; add design tokens only where they earn their per-turn "
-         "prompt weight) + short markdown guidance. Validated on save. Pass "
-         "an empty `doc` to remove the foundation. The file's current "
-         "foundations are already in your instructions under 'Foundations'.")
+         "foundation, creating it if new. Write the doc in the DESIGN.md "
+         "shape: YAML frontmatter between --- fences with at least `name` "
+         "and a one-line `description` (that line becomes the foundation's "
+         "card summary), then short markdown guidance. 'Vibes' is the "
+         "project's design direction and carries the full token schema — "
+         "colors, typography, rounded, spacing, optionally components "
+         "referencing tokens as {colors.primary} — with body sections "
+         "Overview, Colors, Typography, Layout, Shapes, Do's and Don'ts; "
+         "other foundations add tokens only where they earn their per-turn "
+         "prompt weight. Validated on save: broken YAML or a {token.ref} "
+         "that resolves to nothing is rejected with the reason; stay well "
+         "under 6000 characters per foundation — every one is read on every "
+         "turn. Pass an empty `doc` to remove the foundation. The file's "
+         "current foundations are already in your instructions under "
+         "'Foundations'.")
     :input-schema {:type "object"
                    :properties {:name {:type "string"
-                                       :description "which foundation (e.g. \"Tone of voice\")"}
+                                       :description "which foundation (e.g. \"Vibes\", \"Tone of voice\")"}
                                 :doc {:type "string"
                                       :description "the full document (empty string removes it)"}}
                    :required ["name" "doc"]}}
@@ -3425,32 +3411,9 @@
          (reset! pending-form-resolve* nil)
          (st/emit! (set-pending-form nil)))))))
 
-;; --- set_design_doc (the project vibes document)
-
-(defn- set-design-doc
-  [{:keys [doc]}]
-  (let [file-id (:current-file-id @st/state)
-        doc     (when (string? doc) (str/trim doc))]
-    (cond
-      (nil? file-id)
-      (rx/throw (ex-info "no file is open" {}))
-
-      ;; empty means delete — the schema makes `doc` required, so an empty
-      ;; string is the explicit "remove it" spelling, not an accident
-      (str/blank? doc)
-      (do (st/emit! (dd/clear-doc file-id))
-          (rx/of {:ok true :note "design doc removed"}))
-
-      :else
-      (if-let [problem (dd/doc-problem doc)]
-        (rx/throw (ex-info problem {}))
-        (do (st/emit! (dd/set-doc file-id doc))
-            (rx/of {:ok true
-                    :chars (count doc)
-                    :note (str "saved — it will be part of your instructions "
-                               "from the next turn on")}))))))
-
-;; --- set_foundation (any named standing-context doc; US #38)
+;; --- set_foundation (any named standing-context doc; US #38 — the vibes
+;;     doc is the foundation named "Vibes"; the old set_design_doc tool is
+;;     retired, this one covers it)
 
 (defn- set-foundation
   [{:keys [name doc]}]
@@ -3584,7 +3547,6 @@
     "get_design_skills"  (get-design-skills input)
     "explore_design"     (explore-design input)
     "ask_user"           (ask-user input)
-    "set_design_doc"     (set-design-doc input)
     "set_foundation"     (set-foundation input)
     "audit_file"         (audit-file)
     "create_shape"       (create-shape input)

@@ -1,6 +1,12 @@
 # Phase 04 — Team Dashboard "Agent Skills" entry
 
-**Status:** todo
+**Status:** done (2026-07-16) — new `:dashboard-agent-skills` route
+(`/dashboard/agent-skills`) + `go-to-dashboard-agent-skills`, registered in
+ui.cljs; a Sources-section nav entry ("Agent Skills", alongside Fonts/Libraries)
+in the dashboard sidebar; read-only `ui/dashboard/agent-skills.cljs` page (fetches
+team skills, lists name + category + reactive, empty state) + scss; i18n keys.
+Verified live: Sources shows Fonts/Libraries/Agent Skills, and the page lists the
+promoted "Passive voice flagger" (Audits · observer).
 
 ## Goal
 

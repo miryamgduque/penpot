@@ -54,7 +54,7 @@
    [:name [:string {:min 1 :max 200}]]
    [:label [:string {:min 1 :max 200}]]
    [:category [:string {:min 1 :max 100}]]
-   [:reactive [:enum "on-call" "observer"]]
+   [:reactive [:enum "on-demand" "observer"]]
    [:trigger {:optional true} [:maybe [:string {:max 2000}]]]
    [:description {:optional true} [:maybe [:string {:max 4000}]]]
    [:body [:string {:min 1 :max 100000}]]])
@@ -102,7 +102,7 @@
   [:map {:title "update-skill"}
    [:id ::sm/uuid]
    [:label [:string {:min 1 :max 200}]]
-   [:mode [:enum "suggest" "review" "autofix"]]
+   [:reactive [:enum "on-demand" "observer"]]
    [:trigger {:optional true} [:maybe [:string {:max 2000}]]]
    [:description {:optional true} [:maybe [:string {:max 4000}]]]
    [:body [:string {:min 1 :max 100000}]]])
@@ -110,12 +110,12 @@
 (sv/defmethod ::update-skill
   {::doc/added "2.13"
    ::sm/params schema:update-skill}
-  [{:keys [::db/pool]} {:keys [::rpc/profile-id id label mode trigger description body]}]
+  [{:keys [::db/pool]} {:keys [::rpc/profile-id id label reactive trigger description body]}]
   ;; profile-id in the WHERE is the ownership check: someone else's id
   ;; matches zero rows and updates nothing
   (-> (db/update! pool :profile-skill
                   {:label label
-                   :mode mode
+                   :reactive reactive
                    :trigger-on trigger
                    :description (or description "")
                    :body body

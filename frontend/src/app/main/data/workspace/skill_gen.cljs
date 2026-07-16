@@ -13,7 +13,7 @@
   on the client and the user never sees the raw structure. The user's confirmed
   `mode` and their example `trigger` / `what` stay authoritative; the model
   supplies the name, label, category (classified into an existing one) and the
-  playbook `body`. `reactive` is On-call / Observer (US #14) — user-chosen too."
+  playbook `body`. `reactive` is On-demand / Observer (US #14) — user-chosen too."
   (:require
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]

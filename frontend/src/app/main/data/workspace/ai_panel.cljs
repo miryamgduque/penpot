@@ -204,6 +204,20 @@
         (assoc-in state [:ai-panel file-id :enforced-rules] (set rules))
         state))))
 
+(defn dismiss-observer
+  "Wave off the Observer notification for `skill` (issue #37) until its findings
+  change: remembers `signature` — a stable hash of the skill's current violation
+  set — so the card stays hidden while the exact same set holds, and re-appears
+  on its own the moment new violations arrive (a different signature). Per-file,
+  in-memory, like the transcript."
+  [skill signature]
+  (ptk/reify ::dismiss-observer
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (assoc-in state [:ai-panel file-id :observer-dismissed skill] signature)
+        state))))
+
 ;; --- Live violations watcher (auto-fix)
 ;;
 ;; Keeps `[:ai-panel <file-id> :violations]` current while the panel is open:

@@ -1066,6 +1066,158 @@
   (t/is (nil? (at/code-problem (objects (plain-frame id-a "Card")) [id-a] "svg"))))
 
 ;; ---------------------------------------------------------------------------
+;; fill-summary — Phase 17: read a shape's paint
+;;
+;; The agent must RECOGNISE and COPY, not round-trip internals — so these are
+;; compact descriptors, not raw attrs. Only one of fill-color /
+;; fill-color-gradient / fill-image is ever set (valid-fill-attrs).
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-solid-fill-reports-its-copyable-colour
+  (let [[f] (at/fill-summary [{:fill-color "#6366f1" :fill-opacity 1}])]
+    (t/is (= "solid" (:type f)))
+    (t/is (= "#6366f1" (:color f)))))
+
+(t/deftest a-solid-fills-opacity-shows-only-when-not-fully-opaque
+  (t/is (nil? (:opacity (first (at/fill-summary [{:fill-color "#fff" :fill-opacity 1}])))))
+  (t/is (= 0.5 (:opacity (first (at/fill-summary [{:fill-color "#fff" :fill-opacity 0.5}]))))))
+
+(t/deftest a-token-backed-fill-says-so
+  ;; A fill bound to a token is not a raw colour to copy — it is a reference to
+  ;; reuse, which is most of what penpot-audit-tokens cares about.
+  (let [[f] (at/fill-summary [{:fill-color "#6366f1" :fill-color-ref-id (uuid/custom 6 1)}])]
+    (t/is (true? (:fromToken f)))))
+
+(t/deftest a-gradient-fill-is-distinguished-and-carries-its-stops
+  (let [[f] (at/fill-summary [{:fill-color-gradient
+                               {:type :linear :start-x 0 :start-y 0 :end-x 1 :end-y 1 :width 1
+                                :stops [{:color "#000000" :offset 0}
+                                        {:color "#ffffff" :offset 1}]}}])]
+    (t/is (= "gradient" (:type f)))
+    (t/is (= "linear" (:gradient f)))
+    (t/is (= ["#000000" "#ffffff"] (:stops f)))))
+
+(t/deftest an-image-fill-is-distinguished-and-named
+  ;; The novel case: images are unreachable today. The agent cannot reproduce the
+  ;; raster, so the useful answer is "this is an image, here is its handle".
+  (let [id (uuid/custom 6 2)
+        [f] (at/fill-summary [{:fill-image {:id id :width 800 :height 600
+                                            :mtype "image/png" :name "mars.png"}}])]
+    (t/is (= "image" (:type f)))
+    (t/is (= (str id) (:imageId f)))
+    (t/is (= 800 (:width f)))
+    (t/is (= "mars.png" (:name f)))))
+
+(t/deftest several-fills-are-all-reported-in-order
+  (let [out (at/fill-summary [{:fill-color "#111111"} {:fill-color "#222222"}])]
+    (t/is (= ["#111111" "#222222"] (map :color out)))))
+
+(t/deftest no-fills-yields-nothing
+  (t/is (empty? (at/fill-summary nil)))
+  (t/is (empty? (at/fill-summary []))))
+
+;; --- and the payload economy the phase's own notes demand
+
+(t/deftest a-shape-without-fills-carries-no-fills-key
+  (t/is (not (contains? (at/summarize-shape (objects (plain-frame id-a "Bare")) id-a {:fills? true})
+                        :fills))))
+
+(t/deftest a-filled-shape-carries-its-fills-when-asked
+  (let [objs (objects (assoc (plain-frame id-a "Card") :fills [{:fill-color "#6366f1"}]))
+        out  (at/summarize-shape objs id-a {:fills? true})]
+    (t/is (= [{:type "solid" :color "#6366f1"}] (:fills out)))))
+
+(t/deftest fills-are-off-by-default
+  ;; read_design's broad list is the most-called payload we produce; paint on
+  ;; every shape cost ~11% of the 20k budget and would crowd out Phase 18.
+  ;; The selection and find_shapes hits opt in.
+  (let [objs (objects (assoc (plain-frame id-a "Card") :fills [{:fill-color "#6366f1"}]))]
+    (t/is (not (contains? (at/summarize-shape objs id-a) :fills)))))
+
+;; ---------------------------------------------------------------------------
+;; fill->shape — Phase 17's write half
+;;
+;; The write shape MIRRORS the read shape, so a descriptor from read_design can
+;; be passed straight back: read -> copy -> write round-trips.
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-bare-hex-still-works
+  ;; The shipped param was a hex string; it must keep working.
+  (t/is (= [{:fill-color "#6366f1" :fill-opacity 1}] (at/fill->shape "#6366f1"))))
+
+(t/deftest a-solid-descriptor-works
+  (t/is (= [{:fill-color "#6366f1" :fill-opacity 1}]
+           (at/fill->shape {:type "solid" :color "#6366f1"}))))
+
+(t/deftest a-solid-descriptor-keeps-its-opacity
+  (t/is (= [{:fill-color "#6366f1" :fill-opacity 0.5}]
+           (at/fill->shape {:type "solid" :color "#6366f1" :opacity 0.5}))))
+
+(t/deftest a-gradient-descriptor-round-trips-from-the-read-shape
+  (let [out (first (at/fill->shape {:type "gradient" :gradient "linear"
+                                    :stops ["#ff0000" "#0000ff"]}))
+        g   (:fill-color-gradient out)]
+    (t/is (= :linear (:type g)))
+    (t/is (= ["#ff0000" "#0000ff"] (mapv :color (:stops g))))
+    ;; stops must be spread across the axis, or every stop sits at 0
+    (t/is (= [0 1] (mapv :offset (:stops g))))))
+
+(t/deftest a-three-stop-gradient-spaces-its-offsets
+  (let [g (:fill-color-gradient (first (at/fill->shape {:type "gradient" :stops ["#000" "#888" "#fff"]})))]
+    (t/is (= [0 0.5 1] (mapv :offset (:stops g))))))
+
+(t/deftest an-image-descriptor-round-trips-by-id
+  ;; The replicate case: reuse the SAME raster rather than approximate it.
+  (let [id (uuid/custom 6 3)
+        out (first (at/fill->shape {:type "image" :imageId (str id)
+                                    :width 800 :height 600 :mtype "image/png"}))]
+    (t/is (= id (:id (:fill-image out))))
+    (t/is (= 800 (:width (:fill-image out))))))
+
+;; --- fill-problem: validation
+
+(t/deftest a-gradient-without-stops-is-rejected
+  (let [problem (at/fill-problem {:type "gradient" :stops []})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "stops"))))
+
+(t/deftest an-image-without-an-id-is-rejected
+  (let [problem (at/fill-problem {:type "image"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "imageId"))))
+
+(t/deftest an-image-with-an-unparseable-id-is-rejected
+  (t/is (some? (at/fill-problem {:type "image" :imageId "not-a-uuid"}))))
+
+(t/deftest an-unknown-fill-type-is-rejected-with-the-real-ones
+  (let [problem (at/fill-problem {:type "pattern"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "gradient"))
+    (t/is (str/includes? problem "image"))))
+
+(t/deftest a-solid-without-a-colour-is-rejected
+  (t/is (some? (at/fill-problem {:type "solid"}))))
+
+(t/deftest a-valid-fill-has-no-problem
+  (t/is (nil? (at/fill-problem "#6366f1")))
+  (t/is (nil? (at/fill-problem {:type "gradient" :stops ["#000" "#fff"]})))
+  (t/is (nil? (at/fill-problem {:type "image" :imageId (str (uuid/custom 6 4))}))))
+
+;; --- the guard must see every colour a gradient carries
+
+(t/deftest every-gradient-stop-is-collected-for-the-guard
+  ;; A gradient is several raw colours in a trench coat. If the guard only saw
+  ;; `fill` as a string, all of them would walk straight past token-only-colors.
+  (t/is (= #{"#ff0000" "#0000ff"}
+           (set (at/input-colors {:fill {:type "gradient" :stops ["#ff0000" "#0000ff"]}})))))
+
+(t/deftest an-image-fill-carries-no-colour-to-guard
+  (t/is (empty? (at/input-colors {:fill {:type "image" :imageId "x"}}))))
+
+(t/deftest a-solid-descriptor-is-collected-for-the-guard
+  (t/is (= ["#6366f1"] (at/input-colors {:fill {:type "solid" :color "#6366f1"}}))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

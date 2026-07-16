@@ -1588,3 +1588,65 @@
   (t/testing "a scout that came back empty must not read as 'nothing found'"
     (with-stub-runner (fn [_] (rx/of {:text "" :usage {}}))
       #(t/is (some? (tool-error "explore_design" {:question "q"}))))))
+
+;; ---------------------------------------------------------------------------
+;; insert_image — validation, geometry, and error translation
+;; ---------------------------------------------------------------------------
+
+(t/deftest insert-image-needs-a-url
+  (t/is (str/includes? (tool-error "insert_image" {}) "http")))
+
+(t/deftest insert-image-rejects-a-relative-url
+  (t/is (str/includes? (tool-error "insert_image" {:url "picsum.photos/600/400"})
+                       "http")))
+
+(t/deftest insert-image-rejects-a-non-http-scheme
+  (t/testing "only http(s) reaches the server-side download"
+    (t/is (some? (tool-error "insert_image" {:url "ftp://host/img.png"})))
+    (t/is (some? (tool-error "insert_image" {:url "javascript:alert(1)"})))
+    (t/is (some? (tool-error "insert_image" {:url "data:image/png;base64,xxxx"})))))
+
+(t/deftest insert-image-accepts-http-and-https
+  (t/is (nil? (at/insert-image-problem {:url "https://picsum.photos/600/400"})))
+  (t/is (nil? (at/insert-image-problem {:url "http://example.com/a.png?x=1&y=2"}))))
+
+(t/deftest image-geometry-keeps-intrinsic-size
+  (t/is (= {:x 0 :y 0 :width 600 :height 400}
+           (at/image-geometry {} {:width 600 :height 400}))))
+
+(t/deftest image-geometry-honours-both-overrides
+  (t/is (= {:x 10 :y 20 :width 300 :height 100}
+           (at/image-geometry {:x 10 :y 20 :width 300 :height 100}
+                              {:width 600 :height 400}))))
+
+(t/deftest image-geometry-scales-height-from-width
+  (t/testing "one dimension given → the other keeps the image's aspect"
+    (t/is (= {:x 0 :y 0 :width 300 :height 200}
+             (at/image-geometry {:width 300} {:width 600 :height 400})))))
+
+(t/deftest image-geometry-scales-width-from-height
+  (t/is (= {:x 0 :y 0 :width 150 :height 100}
+           (at/image-geometry {:height 100} {:width 600 :height 400}))))
+
+(t/deftest image-geometry-rounds-scaled-dimensions
+  (let [{:keys [height]} (at/image-geometry {:width 100} {:width 300 :height 200})]
+    (t/is (= 67 height))))
+
+(t/deftest media-error-names-the-private-host-block
+  (t/is (str/includes? (at/media-error-message :ssrf-blocked-target) "private")))
+
+(t/deftest media-error-names-the-content-length-requirement
+  (t/is (str/includes? (at/media-error-message :unknown-size) "content-length")))
+
+(t/deftest media-error-names-the-png-fix-for-bad-types
+  (t/testing "placehold.co defaults to SVG-as-text/html — the message must point at .png"
+    (t/is (str/includes? (at/media-error-message :media-type-not-allowed) ".png"))))
+
+(t/deftest media-error-mentions-the-size-limit
+  (t/is (str/includes? (at/media-error-message :media-max-file-size-reached) "size")))
+
+(t/deftest media-error-falls-back-naming-the-code
+  (t/is (str/includes? (at/media-error-message :some-new-code) "some-new-code")))
+
+(t/deftest media-error-survives-a-nil-code
+  (t/is (string? (at/media-error-message nil))))

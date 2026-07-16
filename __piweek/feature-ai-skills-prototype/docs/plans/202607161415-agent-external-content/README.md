@@ -1,6 +1,6 @@
 # Agent External-Content Tools
 
-**Status:** todo
+**Status:** doing
 **Created:** 2026-07-16
 **Apps:** `frontend`, `backend`, `exporter`
 **Dependencies:** None (builds on the embedded agent chat on `feature/ai-skills-prototype`)
@@ -61,7 +61,7 @@ integrations); keyed stock-photo providers.
 Ordered so frontend-only wins land first, the web-fetch backend unblocks both
 text and brand phases, and brand extraction composes everything before it.
 
-1. [Phase 01 — insert_image tool](./todo-phase-01-insert-image.md) — URL → media → image shape; placeholder recipes (Picsum/placehold.co/DiceBear) in the tool description
+1. [Phase 01 — insert_image tool](./done-phase-01-insert-image.md) — URL → media → image shape; placeholder recipes (Picsum/placehold.co/DiceBear) in the tool description
 2. [Phase 02 — Iconify icons](./todo-phase-02-iconify-icons.md) — `search_icons` + `insert_icon` via api.iconify.design → SVG import
 3. [Phase 03 — Google Fonts](./todo-phase-03-google-fonts.md) — `search_fonts` + `set_font` over the in-memory catalog + `ensure-loaded!`
 4. [Phase 04 — fetch-web-page RPC](./todo-phase-04-fetch-web-page-rpc.md) — backend command: SSRF-guarded fetch, HTML→text, metadata extraction, size caps

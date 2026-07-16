@@ -849,6 +849,16 @@
   font-style: italic;
 }
 
+// A harness note (e.g. "✦ Conversation compacted") — a quiet seam in the
+// transcript, not a bubble from either party.
+.message-note {
+  align-self: center;
+  max-width: 100%;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  font-style: italic;
+}
+
 // Tool-call marker chip (e.g. read_design ✓)
 .tool-chip {
   @include scaled-body-small;

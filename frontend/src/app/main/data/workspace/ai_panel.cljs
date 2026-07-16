@@ -719,16 +719,34 @@
                          (agent/trim-history))
              ;; context rides on the user message (the volatile slot), while the
              ;; system prompt stays a stable, cacheable prefix built from `state`
-             history (conj prior (cond-> {:role :user :text text :context context}
-                                   (seq images) (assoc :images images)))
-             system  (agent/build-system-prompt state)]
+             user-msg (cond-> {:role :user :text text :context context}
+                        (seq images) (assoc :images images))
+             system   (agent/build-system-prompt state)]
          (rx/concat
           (rx/of (append-message "user" text images)
                  ;; a new message while a checkpoint is pending supersedes it —
                  ;; the stored history already contains the paused turn
                  (set-checkpoint nil)
                  (set-busy true))
-          (turn-stream settings history system stream nil)))))))
+          (if-not (agent/compact-due? prior)
+            (turn-stream settings (conj prior user-msg) system stream nil)
+            ;; the history outgrew the compaction threshold: one cheap buffered
+            ;; round rewrites it as [summary + last turn] before the turn runs.
+            ;; The turn-stream seeds from the compacted history, so it is what
+            ;; gets stored when the turn ends — later turns inherit the savings.
+            ;; A compaction failure (no Anthropic key, provider down) must never
+            ;; block the user's turn: it degrades to the uncompacted history,
+            ;; which the trim backstop still bounds.
+            (->> (agent/compact-history prior)
+                 (rx/mapcat
+                  (fn [{:keys [history usage]}]
+                    (rx/concat
+                     (rx/of (accumulate-usage usage)
+                            (append-message "note" "✦ Conversation compacted to save tokens"))
+                     (turn-stream settings (conj (vec history) user-msg) system stream nil))))
+                 (rx/catch
+                  (fn [_]
+                    (turn-stream settings (conj prior user-msg) system stream nil)))))))))))
 
 (defn continue-turn
   "Resumes the turn paused at the runaway checkpoint (see

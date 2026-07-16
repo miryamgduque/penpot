@@ -576,11 +576,15 @@
           [:> tool-group* {:key (ffirst run) :messages (mapv second run)}]
           (for [[idx message] run]
             (let [user?  (= "user" (:role message))
+                  ;; harness notes (e.g. "conversation compacted") — not a
+                  ;; bubble from either party, rendered as a quiet seam
+                  note?  (= "note" (:role message))
                   images (:images message)]
               [:div {:key idx
                      :class (stl/css-case :message true
                                           :message-user user?
-                                          :message-md (not user?))}
+                                          :message-note note?
+                                          :message-md (not (or user? note?)))}
                (when (seq images)
                  [:div {:class (stl/css :message-images)}
                   (for [[i image] (map-indexed vector images)]
@@ -588,8 +592,9 @@
                            :class (stl/css :message-image)
                            :src (image-src image)
                            :alt (dm/str "Attached image " (inc i))}])])
-               ;; the user didn't write markdown — don't eat their asterisks
-               (if user?
+               ;; the user didn't write markdown — don't eat their asterisks;
+               ;; a note is a plain string by construction
+               (if (or user? note?)
                  (:content message)
                  [:> md/markdown* {:text (:content message)}])]))))
       ;; while an interview is open the turn is busy *waiting on the user* —

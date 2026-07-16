@@ -56,3 +56,24 @@ and closes the plan with the mandatory docs pass.
   reload) between scenario runs to keep figures comparable.
 - If only a subset of phases landed, still run this phase for that subset and
   record which levers remain unpulled.
+
+### Worktree verification pass (2026-07-16, phases 01–06)
+
+Run in the devenv container against the `feature/token-efficiency` worktree
+before merging back:
+
+- `shadow-cljs compile test` — green, 0 warnings (882 files).
+- `node target/tests/test.js` — 755 tests / 2508 assertions; **all
+  token-efficiency tests pass**. 2 failures, both PRE-EXISTING in
+  `workspace-skill-gen-test` (`clamp-category` "auto"→"Audits",
+  `parse-generation` `:mode` nil) — files untouched by this plan, almost
+  certainly fallout of the US #14 mode→reactive rename merge. Flagged
+  separately; not this plan's to fix.
+- `shadow-cljs compile main` — green, 0 warnings (1190 files).
+- clj-kondo over the six changed files — 0 errors, 0 warnings.
+- cljfmt — 2 files auto-fixed (whitespace), committed as `:art:`.
+
+STILL OPEN for this phase: the live before/after meter measurement (needs the
+user's Anthropic key + a live panel session) and the checkpoint/compaction/
+scout preview review. `build-app-assets.js` must run once after merge for the
+new SCSS classes (checkpoint row, message-note).

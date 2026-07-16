@@ -9,8 +9,8 @@
 
   **`catalog`** — the built-in *skills*: playbooks the user chooses, shared with
   the Skills-tab UI. Mirrors `skills-core`'s `builtinCatalog()` (US #7): the
-  bundled penpot-ai-kit skills, grouped by category, with a mode and a first-run
-  enabled default. The agent lists the ENABLED ones as a routing index and backs
+  bundled penpot-ai-kit skills, grouped by category, with a reactive behavior and
+  a first-run enabled default. The agent lists the ENABLED ones as a routing index and backs
   `get_design_skills` with them. Cheap to carry (a name and a blurb); the body
   loads only when a task matches.
 
@@ -21,7 +21,7 @@
   The split is the always-loaded ↔ load-on-demand axis applied to our own corpus:
   conventions that shape every response are always-on; procedures are on-demand.
 
-  NOTE: only catalog metadata (name/category/mode/blurb) is available natively —
+  NOTE: only catalog metadata (name/category/reactive/blurb) is available natively —
   the full skill bodies live in `skills-core` (TS). Bringing those into CLJS (a
   generated `aikit.gen.cljs`, like `import-aikit.mjs` does for the MCP server) is
   a follow-up; until then `get_design_skills` returns the metadata."
@@ -77,59 +77,57 @@
 (def catalog
   [{:category "Setup"
     :skills [{:name "penpot-project-vibes" :label "Set project vibes"
-              :blurb "Interview → a design.md the agent designs against" :mode "review" :enabled true
+              :blurb "Interview → a design.md the agent designs against" :reactive "on-call" :enabled true
               :example "Set the design vibes for this project."
               :what "Runs a short kickoff interview as an in-chat form (what to design first, platform, vibe words, audience…) and distills the answers into a design.md stored on this file. The agent then honors it in every design task, and collaborators share it."
               :body vibes-body}]}
    {:category "Audits"
     :skills [{:name "penpot-audit-accessibility" :label "Accessibility audit"
-              :blurb "WCAG 2.1/2.2 AA checks" :mode "suggest" :enabled true
+              :blurb "WCAG 2.1/2.2 AA checks" :reactive "on-call" :enabled true
               :example "Check this screen for accessibility problems."
               :what "Runs a WCAG 2.1/2.2 AA audit covering contrast, tap-target sizes, heading structure, and focus order. Returns a severity-ranked report without changing the file."}
              {:name "penpot-audit-tokens" :label "Tokens governance audit"
               :rule "token-only-colors"
-              :blurb "Hardcoded values, off-grid spacing" :mode "suggest" :enabled true
+              :blurb "Hardcoded values, off-grid spacing" :reactive "observer" :enabled true
               :example "Audit this file for design-system issues."
               :what "Flags hardcoded values where a token exists, off-grid spacing, orphan or unused tokens, and detached instances. Suggests semantic-token swaps; reports only, no changes."}
              {:name "penpot-design-to-code-review" :label "Design-to-code review"
-              :blurb "Design vs. built code drift" :mode "suggest" :enabled true
+              :blurb "Design vs. built code drift" :reactive "on-call" :enabled true
               :example "Does my code match this design?"
               :what "Diffs a Penpot selection against its implemented component (or Storybook story) and reports drift in tokens, structure and states, with a reconciliation. Read-only."}]}
    {:category "Build"
+    ;; An Observer skill additionally declares how the live watcher handles it:
+    ;; `:rule` ties it to the audited rule its fixes clear, `:detect` says which
+    ;; detection tier applies ("deterministic" = the native scan alone; "model" =
+    ;; ALSO judged by the semantic audit tick), and `:model` names the cheap model
+    ;; the tick / Fix-it-now runs on, so ambient work never bills like design work.
+    ;; Prototype-only: these live in the builtin catalog, not the profile_skill DB.
     :skills [{:name "penpot-foundations" :label "Foundations"
-              :blurb "Design tokens setup" :mode "review" :enabled true
+              :blurb "Design tokens setup" :reactive "on-call" :enabled true
               :example "Set up design tokens for this file."
               :what "Builds and governs the token + library foundation: primitive/semantic/component token tiers and light/dark themes. Proposes changes for your review before applying."}
              {:name "penpot-component-factory" :label "Component factory"
-              :blurb "Builds full variant matrix" :mode "review" :enabled true
+              :blurb "Builds full variant matrix" :reactive "on-call" :enabled true
               :example "Turn this into a component with variants."
               :what "Builds a component with a complete variant matrix — sizes, hierarchies and every interactive state — fully tokenized and correctly named. Proposed for review."}
              {:name "penpot-build-screen" :label "Build screen"
-              :blurb "Designs screens from a brief" :mode "review" :enabled true
+              :blurb "Designs screens from a brief" :reactive "on-call" :enabled true
               :example "Design a dashboard screen from this brief."
               :what "Designs a production-grade screen from a brief, section by section, reusing the existing tokens and components. Proposes the result for review."}
              {:name "penpot-build-from-code" :label "Build from code"
-              :blurb "Recreates a view on your tokens" :mode "review" :enabled true
+              :blurb "Recreates a view on your tokens" :reactive "on-call" :enabled true
               :example "Recreate this React view in Penpot."
               :what "Translates existing page or component code into a Penpot screen bound to your design system — mapping code styles onto semantic tokens and reusing library components. For review."}
              {:name "penpot-document-handoff" :label "Document handoff"
-              :blurb "Annotates a design for devs" :mode "review" :enabled true
+              :blurb "Annotates a design for devs" :reactive "on-call" :enabled true
               :example "Annotate this screen for handoff."
               :what "Builds a clean annotation layer beside the design — a context card, numbered pins and matching note cards — wrapped in a hideable group. Proposed for review."}
              {:name "penpot-migrate" :label "Migrate"
-              :blurb "Figma → Penpot migration" :mode "review" :enabled true
+              :blurb "Figma → Penpot migration" :reactive "on-call" :enabled true
               :example "Import this Figma file into Penpot."
-              :what "Migrates a Figma design into Penpot with high fidelity: Auto Layout → flex/grid, Variables → tokens, component sets → variants, preserving hierarchy. For review."}]}
-   {:category "Auto-fix"
-    ;; Auto-fix skills additionally declare how the live watcher handles them:
-    ;; `:rule` ties the skill to the audited rule its fixes clear, `:detect`
-    ;; says which detection tier applies ("deterministic" = the native scan
-    ;; alone; "model" = ALSO judged by the semantic audit tick), and `:model`
-    ;; names the model Fix-it-now / the tick should run on — a cheap one, so
-    ;; ambient fixes never bill like design work. Prototype-only: these live
-    ;; in the builtin catalog, not the design_skill DB table (a follow-up).
-    :skills [{:name "penpot-rename-layers" :label "Rename layers"
-              :blurb "Auto-fixes messy layer names" :mode "autofix" :enabled true
+              :what "Migrates a Figma design into Penpot with high fidelity: Auto Layout → flex/grid, Variables → tokens, component sets → variants, preserving hierarchy. For review."}
+             {:name "penpot-rename-layers" :label "Rename layers"
+              :blurb "Auto-fixes messy layer names" :reactive "observer" :enabled true
               :rule "layer-naming" :detect "model"
               :model "claude-haiku-4-5-20251001"
               :example "Clean up the layer names in this file."
@@ -145,8 +143,10 @@
        (keep :model)
        (first)))
 
-(def mode-label
-  {"suggest" "suggest" "review" "review" "autofix" "auto-fix"})
+(def reactive-label
+  "The human label for a skill's reactive behavior (US #14): On-call acts only
+  when invoked; Observer keeps ambient awareness and notifies in the panel."
+  {"on-call" "On-call" "observer" "Observer"})
 
 ;; --- Inner knowledge
 ;;
@@ -274,7 +274,7 @@
    :name     (:name us)
    :label    (:label us)
    :blurb    (:description us)
-   :mode     (:mode us)
+   :reactive (:reactive us)
    :category (:category us)
    :enabled  (:enabled us)
    :example  (:trigger us)
@@ -367,11 +367,13 @@
          (assoc skill :category category))))
 
 (defn watched-rules
-  "The rule names declared (via `:rule`) by the currently-enabled skills —
-  what the auto-fix watcher enforces when nothing else has set the file's
-  rules. Disabling the declaring skill takes its rule out of the watch."
+  "The rule names declared (via `:rule`) by the currently-enabled **Observer**
+  skills — what the live watcher enforces when nothing else has set the file's
+  rules. Reactive behavior drives the watch: an On-call skill never observes, so
+  only Observer skills contribute rules, and disabling one takes its rule out."
   [state]
   (->> (enabled-skills state)
+       (filter #(= "observer" (:reactive %)))
        (keep :rule)
        (set)))
 
@@ -380,10 +382,10 @@
   cheap — it is the menu. A named fetch (2-arity) is where disclosure happens and
   carries the skill's full `:body`; only that call pays for the playbook."
   ([state]
-   (mapv #(select-keys % [:name :label :category :mode :blurb]) (enabled-skills state)))
+   (mapv #(select-keys % [:name :label :category :reactive :blurb]) (enabled-skills state)))
   ([state name]
    (some #(when (= name (:name %))
-            (-> (select-keys % [:name :label :category :mode :blurb])
+            (-> (select-keys % [:name :label :category :reactive :blurb])
                 (assoc :body (or (skill-body state name)
                                  "No playbook text is bundled for this skill; use the description above."))))
          (enabled-skills state))))
@@ -406,5 +408,5 @@
                   "These are your playbooks. When a task matches one, call get_design_skills with the skill's `name` (the value in backticks) to read its playbook and follow it — do not guess its content."]
                  (map (fn [s]
                         (str "- `" (:name s) "` — **" (:label s) "** (" (:category s) " · "
-                             (get mode-label (:mode s) (:mode s)) "): " (:blurb s)))
+                             (get reactive-label (:reactive s) (:reactive s)) "): " (:blurb s)))
                       skills))))))

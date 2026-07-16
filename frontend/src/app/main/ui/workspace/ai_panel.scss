@@ -141,11 +141,53 @@
 
 // The text-size stepper buttons. Plain (unscaled) body-small type: they live
 // in the fixed header band and must not move as the body text steps.
+// Anchors the "more actions" dropdown to the ⋯ button in the header.
+.more-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+// The dropdown itself (mirrors .skill-menu), opening below the ⋯ button.
+.more-menu {
+  position: absolute;
+  inset-block-start: calc(100% + #{deprecated.$s-4});
+  inset-inline-end: 0;
+  z-index: 12;
+  min-width: 200px;
+  padding: deprecated.$s-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+}
+
+// One action row: a label on the left, its control on the right.
+.more-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-4 deprecated.$s-8;
+}
+
+.more-row-label {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+}
+
+.font-stepper {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-2;
+}
+
 .font-step-btn {
   @include deprecated.body-small-typography;
 
   padding: deprecated.$s-4 deprecated.$s-6;
-  border: none;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
   background-color: transparent;
   color: var(--color-foreground-secondary);
@@ -421,6 +463,9 @@
   gap: deprecated.$s-8;
   padding: var(--sp-m);
   overflow-y: auto;
+  // The workspace sets `user-select: none` globally; re-enable it here so the
+  // conversation text can be selected and copied.
+  user-select: text;
   // flex items default to min-height:auto, which would size us to content and
   // silently defeat the overflow-y above
   min-height: 0;
@@ -1934,9 +1979,10 @@ textarea.create-input {
   color: var(--color-foreground-secondary);
 }
 
-.mode-badge {
+.reactive-badge {
   @include scaled-body-small;
 
+  flex-shrink: 0;
   padding: 0 deprecated.$s-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
@@ -1944,22 +1990,18 @@ textarea.create-input {
   white-space: nowrap;
 }
 
-.mode-suggest {
-  color: var(--color-accent-info);
-  border-color: color-mix(in srgb, var(--color-accent-info) 40%, transparent);
-  background-color: color-mix(in srgb, var(--color-accent-info) 14%, transparent);
+// On-call recedes — it is the plain request-driven default, so keep it neutral.
+.reactive-oncall {
+  color: var(--color-foreground-secondary);
+  border-color: var(--color-background-quaternary);
 }
 
-.mode-review {
-  color: var(--color-accent-secondary);
-  border-color: color-mix(in srgb, var(--color-accent-secondary) 40%, transparent);
-  background-color: color-mix(in srgb, var(--color-accent-secondary) 14%, transparent);
-}
-
-.mode-autofix {
-  color: var(--color-accent-warning);
-  border-color: color-mix(in srgb, var(--color-accent-warning) 40%, transparent);
-  background-color: color-mix(in srgb, var(--color-accent-warning) 14%, transparent);
+// Observer is the ambient/watching one — give it the accent so an at-a-glance
+// scan of the catalog surfaces which skills act on their own.
+.reactive-observer {
+  color: var(--color-accent-primary);
+  border-color: color-mix(in srgb, var(--color-accent-primary) 40%, transparent);
+  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
 }
 
 // Read-only detail view (shown in place of the list within the Skills tab).

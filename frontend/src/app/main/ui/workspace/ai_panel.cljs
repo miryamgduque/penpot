@@ -191,15 +191,15 @@
                 0)]
     (nth pool idx nil)))
 
-(defn- propose-mode
-  "A default mode guessed from the description — a report-ish skill suggests, a
-  direct-fix one auto-fixes, generative work is review. The user can override."
+(defn- propose-reactive
+  "A default reactive behavior guessed from the description (US #14): watch-ish
+  phrasing (audit, watch, monitor, keep an eye, flag, remind…) suggests an
+  Observer; everything else is On-call. The user can override."
   [what]
   (let [w (str/lower (or what ""))]
-    (cond
-      (re-find #"rename|clean up|fix|correct|format|tidy" w) "autofix"
-      (re-find #"build|create|generate|design|make|add|produce" w) "review"
-      :else "suggest")))
+    (if (re-find #"audit|watch|monitor|keep an eye|flag|remind|notice|track|observe" w)
+      "observer"
+      "on-call")))
 
 (defn- skill-create-intent
   "When a chat message asks to create a skill, the described 'what' with the
@@ -215,7 +215,7 @@
               (str/trim)))))
 
 ;; The built-in skills catalog is shared with the agent — see
-;; app.main.data.workspace.agent-skills (`ask/catalog`, `ask/mode-label`).
+;; app.main.data.workspace.agent-skills (`ask/catalog`, `ask/reactive-label`).
 
 (defn- format-tokens
   [n]
@@ -1195,43 +1195,45 @@
                :href "#/settings/integrations"}
            "Manage your models"]])]]]]))
 
-(mf/defc mode-badge*
-  "The colored mode pill shared by the catalog cards and the detail view."
+(mf/defc reactive-badge*
+  "The reactive-behavior pill (US #14) shared by the catalog cards and the detail
+  view: On-call (acts only when invoked) vs Observer (keeps ambient awareness)."
   {::mf/private true}
-  [{:keys [mode]}]
-  [:span {:class (stl/css-case :mode-badge true
-                               :mode-suggest (= mode "suggest")
-                               :mode-review  (= mode "review")
-                               :mode-autofix (= mode "autofix"))}
-   (get ask/mode-label mode mode)])
+  [{:keys [reactive]}]
+  (when (seq reactive)
+    [:span {:class (stl/css-case :reactive-badge true
+                                 :reactive-oncall   (= reactive "on-call")
+                                 :reactive-observer (= reactive "observer"))}
+     (get ask/reactive-label reactive reactive)]))
 
 (mf/defc skill-edit*
-  "Inline editor for a USER-CREATED skill: label, trigger phrase, mode and the
-  generated playbook body. The name slug is deliberately absent — it keys the
-  enable state and the router, so it never changes after creation."
+  "Inline editor for a USER-CREATED skill: label, trigger phrase, reactive
+  behavior and the generated playbook body. The name slug is deliberately
+  absent — it keys the enable state and the router, so it never changes after
+  creation."
   {::mf/private true}
   [{:keys [skill on-saved on-cancel]}]
-  (let [label*   (mf/use-state (or (:label skill) ""))
-        trigger* (mf/use-state (or (:example skill) ""))
-        mode*    (mf/use-state (:mode skill))
-        body*    (mf/use-state (or (:body skill) ""))
-        label    (deref label*)
-        trigger  (deref trigger*)
-        mode     (deref mode*)
-        body     (deref body*)
-        ready?   (and (seq (str/trim label)) (seq (str/trim body)))
-        on-save  (mf/use-fn
-                  (mf/deps skill label trigger mode body ready?)
-                  (fn []
-                    (when ready?
-                      (st/emit! (dusk/update-skill
-                                 {:id (:id skill)
-                                  :label (str/trim label)
-                                  :mode mode
-                                  :trigger (str/trim trigger)
-                                  :description (:what skill)
-                                  :body body}))
-                      (on-saved))))]
+  (let [label*    (mf/use-state (or (:label skill) ""))
+        trigger*  (mf/use-state (or (:example skill) ""))
+        reactive* (mf/use-state (or (:reactive skill) "on-call"))
+        body*     (mf/use-state (or (:body skill) ""))
+        label     (deref label*)
+        trigger   (deref trigger*)
+        reactive  (deref reactive*)
+        body      (deref body*)
+        ready?    (and (seq (str/trim label)) (seq (str/trim body)))
+        on-save   (mf/use-fn
+                   (mf/deps skill label trigger reactive body ready?)
+                   (fn []
+                     (when ready?
+                       (st/emit! (dusk/update-skill
+                                  {:id (:id skill)
+                                   :label (str/trim label)
+                                   :reactive reactive
+                                   :trigger (str/trim trigger)
+                                   :description (:what skill)
+                                   :body body}))
+                       (on-saved))))]
     [:div {:class (stl/css :skill-edit)}
      [:label {:class (stl/css :create-label)} "Name"]
      [:input {:class (stl/css :create-input)
@@ -1243,13 +1245,13 @@
               :value trigger
               :on-change #(reset! trigger* (dom/get-value (dom/get-target %)))}]
 
-     [:label {:class (stl/css :create-label)} "Mode"]
+     [:label {:class (stl/css :create-label)} "Behavior"]
      [:div {:class (stl/css :create-modes)}
-      (for [[m lbl] [["suggest" "🔍 Suggest"] ["review" "✏️ Review"] ["autofix" "⚡ Auto-fix"]]]
+      (for [[m lbl] [["on-call" "💬 On-call"] ["observer" "👁 Observer"]]]
         [:button {:key m
                   :type "button"
-                  :class (stl/css-case :create-mode true :selected (= m mode))
-                  :on-click #(reset! mode* m)}
+                  :class (stl/css-case :create-mode true :selected (= m reactive))
+                  :on-click #(reset! reactive* m)}
          lbl])]
 
      [:label {:class (stl/css :create-label)} "Playbook (what the agent follows)"]
@@ -1281,7 +1283,7 @@
   list after a delete."
   {::mf/private true}
   [{:keys [skill enabled on-toggle on-close]}]
-  (let [{:keys [label category mode example what user? body]} skill
+  (let [{:keys [label category reactive example what user? body]} skill
         editing?* (mf/use-state false)
         editing?  (deref editing?*)
         confirm?* (mf/use-state false)
@@ -1306,7 +1308,7 @@
                      :aria-label (dm/str (if enabled "Disable " "Enable ") label)
                      :on-change on-toggle}]]
        [:div {:class (stl/css :detail-tags)}
-        [:> mode-badge* {:mode mode}]]
+        [:> reactive-badge* {:reactive reactive}]]
        [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
        [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
        [:div {:class (stl/css :detail-section-label)} "What it does"]
@@ -1332,7 +1334,7 @@
   clicks so it doesn't. Enable/Disable is instant; Fork / Promote to team are
   entry points only (disabled — wired by US #10 / US #12)."
   {::mf/private true}
-  [{:keys [label blurb enabled on-open on-set-enabled]}]
+  [{:keys [label blurb reactive enabled on-open on-set-enabled]}]
   (let [show-menu?  (mf/use-state false)
         toggle-menu (mf/use-fn #(swap! show-menu? not))
         close-menu  (mf/use-fn #(reset! show-menu? false))
@@ -1353,6 +1355,7 @@
            :on-key-down open-detail}
      [:div {:class (stl/css :catalog-card-head)}
       [:span {:class (stl/css :catalog-name)} label]
+      [:> reactive-badge* {:reactive reactive}]
       (when-not enabled
         [:span {:class (stl/css :catalog-off)} "Off"])
       ;; The menu lives inside the clickable row, so swallow its click/keydown to
@@ -1535,10 +1538,11 @@
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
             [:div {:class (stl/css :catalog-group-label)} category]
-            (for [{:keys [name label blurb]} rows]
+            (for [{:keys [name label blurb reactive]} rows]
               [:> skill-row* {:key name
                               :label label
                               :blurb blurb
+                              :reactive reactive
                               :enabled (get enabled-map name true)
                               :on-open #(on-select name)
                               :on-set-enabled #(toggle name %)}])])
@@ -1561,21 +1565,21 @@
     "Connect a provider"]])
 
 (mf/defc skill-create*
-  "The guided creation flow (US #9): capture what / trigger / mode (with a
-  proposed default), then generate the skill doc and persist it. Lives in the
-  Skills view; the header owns the back nav. `seed` prefills the description when
-  started from Chat. `on-created` closes the flow (the new card shows in the list)."
+  "The guided creation flow (US #9): capture what / trigger / reactive behavior
+  (with a proposed default), then generate the skill doc and persist it. Lives in
+  the Skills view; the header owns the back nav. `seed` prefills the description
+  when started from Chat. `on-created` closes the flow (the new card shows up)."
   {::mf/private true}
   [{:keys [settings seed on-created]}]
   (let [what*     (mf/use-state (or seed ""))
         trigger*  (mf/use-state "")
-        mode*     (mf/use-state nil)
+        reactive* (mf/use-state nil)
         status*   (mf/use-state :idle)
 
         what      (deref what*)
         trigger   (deref trigger*)
-        proposed  (propose-mode what)
-        mode      (or (deref mode*) proposed)
+        proposed  (propose-reactive what)
+        reactive  (or (deref reactive*) proposed)
         status    (deref status*)
         busy?     (= status :generating)
         ready?    (and (seq (str/trim what)) (some? settings) (not busy?))
@@ -1585,14 +1589,14 @@
 
         submit
         (mf/use-fn
-         (mf/deps what trigger mode settings busy?)
+         (mf/deps what trigger reactive settings busy?)
          (fn []
            (when (and (seq (str/trim what)) settings (not busy?))
              (reset! status* :generating)
              (st/emit!
               (dusk/create-from-answers
                settings
-               {:what (str/trim what) :trigger (str/trim trigger) :mode mode}
+               {:what (str/trim what) :trigger (str/trim trigger) :reactive reactive}
                {:on-success (fn [created] (reset! status* :idle) (on-created created))
                 :on-error   (fn [_] (reset! status* :error))})))))]
 
@@ -1621,14 +1625,15 @@
                 :disabled busy?
                 :on-change on-trigger}]
 
-       [:label {:class (stl/css :create-label)} "Mode"]
+       [:label {:class (stl/css :create-label)}
+        "Should it only respond when asked, or keep an eye on things and let you know?"]
        [:div {:class (stl/css :create-modes)}
-        (for [[m lbl] [["suggest" "🔍 Suggest"] ["review" "✏️ Review"] ["autofix" "⚡ Auto-fix"]]]
+        (for [[m lbl] [["on-call" "💬 On-call"] ["observer" "👁 Observer"]]]
           [:button {:key m
                     :type "button"
-                    :class (stl/css-case :create-mode true :selected (= m mode))
+                    :class (stl/css-case :create-mode true :selected (= m reactive))
                     :disabled busy?
-                    :on-click #(reset! mode* m)}
+                    :on-click #(reset! reactive* m)}
            lbl
            (when (= m proposed)
              [:span {:class (stl/css :create-mode-hint)} " · suggested"])])]
@@ -1796,7 +1801,16 @@
         on-font-inc (mf/use-fn
                      (mf/deps font-step)
                      #(reset! font-step* (min (dec (count font-scale-steps))
-                                              (inc font-step))))]
+                                              (inc font-step))))
+
+        ;; "More actions" overflow menu next to the Skills icon. `more-ref` is the
+        ;; dropdown's container so clicking a row (e.g. the A−/A+ stepper) keeps
+        ;; the menu open — only a click outside it closes.
+        more-open*  (mf/use-state false)
+        more-open?  (deref more-open*)
+        more-ref    (mf/use-ref nil)
+        toggle-more (mf/use-fn #(swap! more-open* not))
+        close-more  (mf/use-fn #(reset! more-open* false))]
 
     ;; Providers are configured on the settings page; load them so we know
     ;; whether to show the chat or the connect-a-provider prompt. Skill state
@@ -1831,26 +1845,37 @@
         [:span {:class (stl/css :title)} "Agent"])
       (when-not skills?
         [:div {:class (stl/css :header-actions)}
-         ;; A−/A+ text-size stepper. The header itself deliberately doesn't
-         ;; scale, so these stay put while the body text steps.
-         [:button {:type "button"
-                   :class (stl/css :font-step-btn)
-                   :aria-label "Decrease text size"
-                   :title "Decrease text size"
-                   :disabled (zero? font-step)
-                   :on-click on-font-dec}
-          "A−"]
-         [:button {:type "button"
-                   :class (stl/css :font-step-btn)
-                   :aria-label "Increase text size"
-                   :title "Increase text size"
-                   :disabled (= font-step (dec (count font-scale-steps)))
-                   :on-click on-font-inc}
-          "A+"]
          [:> icon-button* {:variant "ghost"
                            :aria-label "Open Skills"
                            :on-click open-skills
-                           :icon i/list-checks}]])]
+                           :icon i/list-checks}]
+         ;; More actions — a dropdown of extra controls. For now: the text-size
+         ;; stepper (the header itself never scales, so it stays put).
+         [:div {:class (stl/css :more-actions)
+                :ref more-ref}
+          [:> icon-button* {:variant "ghost"
+                            :aria-label "More actions"
+                            :on-click toggle-more
+                            :icon i/menu}]
+          [:& dropdown {:show more-open? :on-close close-more :container more-ref}
+           [:div {:class (stl/css :more-menu)}
+            [:div {:class (stl/css :more-row)}
+             [:span {:class (stl/css :more-row-label)} "Text size"]
+             [:div {:class (stl/css :font-stepper)}
+              [:button {:type "button"
+                        :class (stl/css :font-step-btn)
+                        :aria-label "Decrease text size"
+                        :title "Decrease text size"
+                        :disabled (zero? font-step)
+                        :on-click on-font-dec}
+               "A−"]
+              [:button {:type "button"
+                        :class (stl/css :font-step-btn)
+                        :aria-label "Increase text size"
+                        :title "Increase text size"
+                        :disabled (= font-step (dec (count font-scale-steps)))
+                        :on-click on-font-inc}
+               "A+"]]]]]]])]
 
      [:div {:class (stl/css :body)}
       (cond

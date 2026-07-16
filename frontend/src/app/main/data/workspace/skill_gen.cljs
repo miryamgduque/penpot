@@ -13,7 +13,7 @@
   on the client and the user never sees the raw structure. The user's confirmed
   `mode` and their example `trigger` / `what` stay authoritative; the model
   supplies the name, label, category (classified into an existing one) and the
-  playbook `body`."
+  playbook `body`. `reactive` is On-call / Observer (US #14) — user-chosen too."
   (:require
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
@@ -21,7 +21,7 @@
 
 (def categories
   "The existing categories a generated skill is filed under (closest match)."
-  ["Audits" "Build" "Auto-fix"])
+  ["Audits" "Build"])
 
 ;; --- Prompt
 
@@ -43,12 +43,12 @@
              "  tools; no governance/naming boilerplate (the agent already carries those)."]))
 
 (defn- answers->user-message
-  [{:keys [what trigger mode]}]
+  [{:keys [what trigger reactive]}]
   (str/join "\n"
             ["Create a skill from this:"
              (str "- What it should do: " what)
              (str "- When it triggers / example phrase: " (or trigger "(none given)"))
-             (str "- Mode: " mode " (already chosen by the user; the body must respect it)")]))
+             (str "- Reactive behavior: " reactive " (already chosen by the user; the body must respect it)")]))
 
 (defn- generation-body
   "A bare, tool-free provider payload for one completion (mirrors agent/build-round-body
@@ -107,8 +107,8 @@
 (defn parse-generation
   "Pure: turn the model's reply `text` + the user's `answers` into a skill map
   ready for `:create-skill`, or nil if it isn't usable (retryable). The user's
-  `mode`, `trigger` and `what` stay authoritative."
-  [{:keys [what trigger mode] :as _answers} text]
+  `reactive`, `trigger` and `what` stay authoritative."
+  [{:keys [what trigger reactive] :as _answers} text]
   (when-let [json (extract-json text)]
     (let [doc  (try (js->clj (js/JSON.parse json) :keywordize-keys true)
                     (catch :default _ nil))
@@ -120,7 +120,7 @@
         {:name nm
          :label (or (not-empty (:label doc)) "New skill")
          :category (clamp-category (:category doc))
-         :mode mode
+         :reactive reactive
          :trigger (or (not-empty trigger) (not-empty (:trigger doc)))
          :description (or (not-empty what) (not-empty (:description doc)))
          :body body}))))

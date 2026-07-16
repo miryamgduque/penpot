@@ -34,7 +34,7 @@
            (rx/map user-skills-fetched)))))
 
 (defn create-skill
-  "Persists an already-built skill map (name/label/category/mode/trigger/
+  "Persists an already-built skill map (name/label/category/reactive/trigger/
   description/body) and refetches so it appears in the catalog."
   [params]
   (ptk/reify ::create-skill
@@ -44,7 +44,7 @@
            (rx/map (fn [_] (fetch-user-skills)))))))
 
 (defn update-skill
-  "Saves an edit of one of the caller's skills (id + label/mode/trigger/
+  "Saves an edit of one of the caller's skills (id + label/reactive/trigger/
   description/body — the name slug is immutable, it keys the enable state)
   and refetches so the catalog and the agent's router see the new text."
   [params]

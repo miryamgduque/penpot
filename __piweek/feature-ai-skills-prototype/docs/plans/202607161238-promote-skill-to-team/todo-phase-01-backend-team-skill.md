@@ -1,6 +1,12 @@
 # Phase 01 — Backend team_skill store + RPCs
 
-**Status:** todo
+**Status:** done (2026-07-16) — `team_skill` table (migration 0160, mirrors
+profile_skill + team_id/promoted_by/source_profile_skill_id) + `profile_skill.
+promoted_to` (0161); `team_skills.clj` with `::get-team-skills` + `::promote-
+skill` (copies label/category/reactive/body from the source, dedups the slug in
+the team, sets the source's promoted_to); `get-skills` surfaces `promoted_to`;
+registered in rpc.clj. Verified live: backend restarted clean, both migrations
+applied (`team_skill` 13 cols + `promoted_to` column present).
 
 ## Goal
 

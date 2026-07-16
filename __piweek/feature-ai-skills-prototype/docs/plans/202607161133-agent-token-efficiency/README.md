@@ -46,7 +46,7 @@ lands (demo is Friday 2026-07-17; phase 01 is the safest pre-demo candidate).
 2. [Phase 02 — History hygiene](./done-phase-02-history-hygiene.md) — stub stale tool results (microcompaction) + token-budget trim
 3. [Phase 03 — Runaway brake](./done-phase-03-runaway-brake.md) — mid-turn pause-and-ask checkpoint after N rounds / ~$X
 4. [Phase 04 — Auto-compaction](./done-phase-04-auto-compaction.md) — summarize-and-restart at a history threshold, subtle transcript note
-5. [Phase 05 — Side-context runner](./todo-phase-05-side-context-runner.md) — a buffered tool-loop on a cheap model (generalizes `detect-round`)
+5. [Phase 05 — Side-context runner](./done-phase-05-side-context-runner.md) — a buffered tool-loop on a cheap model (generalizes `detect-round`)
 6. [Phase 06 — Scout tool](./todo-phase-06-scout-tool.md) — `explore_design` delegates read sweeps to the side context, returns a digest
 7. [Phase 07 — Live verification + docs](./todo-phase-07-live-verification.md) — before/after measurements in devenv on a scripted scenario
 

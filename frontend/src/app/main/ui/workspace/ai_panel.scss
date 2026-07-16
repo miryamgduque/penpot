@@ -35,6 +35,18 @@
   font-size: calc(#{deprecated.$fs-14} * var(--ai-font-scale, 1));
 }
 
+@mixin scaled-headline-medium {
+  @include t.use-typography("headline-medium");
+
+  font-size: calc(#{deprecated.$fs-16} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-headline-small {
+  @include t.use-typography("headline-small");
+
+  font-size: calc(#{deprecated.$fs-12} * var(--ai-font-scale, 1));
+}
+
 @mixin scaled-med-title {
   @include deprecated.med-title-typography;
 
@@ -1579,6 +1591,8 @@
   flex-direction: column;
   gap: deprecated.$s-8;
   padding: deprecated.$s-8;
+  block-size: 100%;
+  min-block-size: 0;
   overflow-y: auto;
 }
 
@@ -1671,16 +1685,40 @@
   flex-direction: column;
   gap: deprecated.$s-8;
   padding: deprecated.$s-8;
+  // fill the panel body (a definite-height flex item) so the read view scrolls
+  // instead of overflowing when a foundation doc is long
+  block-size: 100%;
+  min-block-size: 0;
   overflow-y: auto;
 }
 
 .vibes-doc {
-  padding: deprecated.$s-8;
+  padding: deprecated.$s-16;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
   // .message-md inherits its text color; in the transcript the bubble sets
   // it, but here the workspace default (yellow) would leak through.
   color: var(--color-foreground-primary);
+
+  // The doc is real content (not a chat line): the project title (frontmatter
+  // name) is headline-medium; its section headings are headline-small and
+  // paragraphs body-small, instead of .message-md's flat body-small-bold.
+  h3,
+  h4,
+  h5,
+  h6 {
+    @include scaled-headline-small;
+
+    margin-block: deprecated.$s-16 deprecated.$s-4;
+    color: var(--color-foreground-primary);
+  }
+
+  p {
+    @include scaled-body-small;
+
+    color: var(--color-foreground-primary);
+  }
 }
 
 // The DESIGN.md token summary: frontmatter rendered as swatches, type lines
@@ -1695,10 +1733,9 @@
 }
 
 .vibes-tokens-name {
-  @include deprecated.body-small-typography;
+  @include scaled-headline-medium;
 
   color: var(--color-foreground-primary);
-  font-weight: 600;
 }
 
 .vibes-tokens-desc {
@@ -1740,7 +1777,7 @@
   @include deprecated.body-small-typography;
 
   color: var(--color-foreground-secondary);
-  font-family: monospace;
+  font-family: "robotomono", monospace;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1750,6 +1787,12 @@
   display: flex;
   flex-direction: column;
   gap: deprecated.$s-4;
+}
+
+.vibes-type-row {
+  display: flex;
+  align-items: baseline;
+  gap: deprecated.$s-8;
 }
 
 .vibes-type-row,
@@ -1787,7 +1830,7 @@
   border-radius: deprecated.$br-4;
   background-color: var(--color-background-secondary);
   color: var(--color-foreground-primary);
-  font-family: monospace;
+  font-family: "robotomono", monospace;
 }
 
 .vibes-editor {

@@ -223,7 +223,8 @@
    "- Your tools are your only write path, and every change goes through Penpot's normal edit history — so anything you apply is undoable by the user."
    "- Applying tokens and creating text settle asynchronously. A tool returning successfully means \"applied\", not \"verified\" — confirm the result with read_design or audit_file instead of trusting the return value."
    "- A new board is born with an opaque white fill. Keep it only on a real surface (the screen root, a card, a control) and bind it to a `color.bg.*` token; clear it on layout-only containers, where it defeats a child's border radius and breaks dark mode."
-   "- Colour rules are enforced at the tool boundary: while `token-only-colors` is active a raw hex is rejected outright. Create or apply a token — do not try to route around the rule."])
+   "- Colour rules are enforced at the tool boundary: while `token-only-colors` is active a raw hex is rejected outright. Create or apply a token — do not try to route around the rule."
+   "- For broad reading — file maps, inventories, cross-shape audits — prefer ONE explore_design call over many read_design/find_shapes rounds: it sweeps in a side context and returns a digest at a fraction of the cost."])
 
 (def inner-knowledge
   "The always-on knowledge layer, inlined into every system prompt."

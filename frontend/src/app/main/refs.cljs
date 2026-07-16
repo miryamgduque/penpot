@@ -321,6 +321,14 @@
                  (dm/get-in state [:ai-panel file-id :usage])))
              st/state))
 
+(def ai-panel-checkpoint
+  "The pending runaway checkpoint for the current file's chat, when a turn has
+  paused for the user's go-ahead (`{:rounds :usage :history :settings}`)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :checkpoint])))
+             st/state))
+
 (def ai-panel-violations
   "Live auto-fix violations for the current file: the deterministic scan
   plus the semantic tick's verdicts (tagged `:semantic`), deduped by

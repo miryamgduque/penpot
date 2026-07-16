@@ -566,6 +566,45 @@
     (t/is (pos? (count uses)) "something survived the cut")))
 
 ;; ---------------------------------------------------------------------------
+;; The runaway brake (checkpoint-due?).
+;;
+;; A turn that has run 12 tool rounds — or spent ~$1 — pauses for the user's
+;; go-ahead instead of grinding on (a model once spent $4 building an
+;; unrequested landing page; the meter showed it, nothing acted on it). The
+;; thresholds are per-SEGMENT: a resumed turn earns a fresh allowance, so the
+;; pause never re-fires immediately after Continue.
+;; ---------------------------------------------------------------------------
+
+(def ^:private no-spend agent/empty-usage)
+
+(t/deftest checkpoint-not-due-early
+  (t/is (false? (boolean (agent/checkpoint-due? "claude-sonnet-5" 3 no-spend)))))
+
+(t/deftest checkpoint-due-at-the-round-cap
+  (t/is (true? (boolean (agent/checkpoint-due? "claude-sonnet-5" 12 no-spend)))))
+
+(t/deftest checkpoint-never-fires-before-the-first-round
+  (t/testing "round 0 = nothing has run in this segment yet — even a resumed
+              turn with heavy prior spend must not re-pause instantly"
+    (let [heavy {:input-tokens 1000000 :output-tokens 1000000
+                 :cache-read-tokens 0 :cache-write-tokens 0 :requests 30}]
+      (t/is (false? (boolean (agent/checkpoint-due? "claude-sonnet-5" 0 heavy)))))))
+
+(t/deftest checkpoint-due-on-spend-alone
+  (t/testing "a few expensive rounds trip the brake before the round cap"
+    ;; 80k output on opus-4-8 at $25/M = $2 — over the $1 threshold
+    (let [spent {:input-tokens 10000 :output-tokens 80000
+                 :cache-read-tokens 0 :cache-write-tokens 0 :requests 3}]
+      (t/is (true? (boolean (agent/checkpoint-due? "claude-opus-4-8" 3 spent)))))))
+
+(t/deftest checkpoint-unpriced-model-uses-rounds-only
+  (t/testing "no price entry → no cost estimate → the round cap is the brake"
+    (let [spent {:input-tokens 9000000 :output-tokens 9000000
+                 :cache-read-tokens 0 :cache-write-tokens 0 :requests 3}]
+      (t/is (false? (boolean (agent/checkpoint-due? "some-unpriced-model" 3 spent))))
+      (t/is (true? (boolean (agent/checkpoint-due? "some-unpriced-model" 12 spent)))))))
+
+;; ---------------------------------------------------------------------------
 ;; The history cache breakpoint.
 ;;
 ;; The system block's `cache_control` marker caches tools+system only — the

@@ -582,6 +582,51 @@
   }
 }
 
+// The runaway brake: a turn paused at its round/spend allowance,
+// waiting on the user's go-ahead. Rendered at the transcript tail.
+.checkpoint {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+}
+
+.checkpoint-label {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+.checkpoint-actions {
+  display: flex;
+  gap: deprecated.$s-8;
+}
+
+.checkpoint-continue {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: none;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-secondary);
+  cursor: pointer;
+}
+
+.checkpoint-stop {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+}
+
 // A Fix-it-now parked behind the running turn.
 .pending-fix {
   display: flex;

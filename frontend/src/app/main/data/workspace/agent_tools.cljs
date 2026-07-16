@@ -246,7 +246,9 @@
    {:name "create_shape"
     :description
     (str "Creates a rectangle, ellipse or board (frame) at the given "
-         "position/size. Pass parentId to nest it inside a board. Returns the "
+         "position/size. Pass parentId to nest it inside a board. Into a "
+         "laid-out board, children land in CREATION order (first created = "
+         "first in the flow), so build in reading order. Returns the "
          "new shape id. Geometry settles asynchronously — re-read to confirm.")
     :input-schema {:type "object"
                    :properties {:type {:type "string" :enum ["rect" "ellipse" "board"]}
@@ -384,8 +386,10 @@
          "fill. Radius and opacity can also be bound to tokens with apply_tokens, "
          "which is preferred for any value that repeats. Also: rotation (absolute "
          "degrees), flipH/flipV, stroke width/style, and hidden/locked. Modifying "
-         "a locked shape is refused unless you set locked:false. Geometry settles "
-         "asynchronously — re-read to confirm.")
+         "a locked shape is refused unless you set locked:false. Position/size "
+         "writes return the SETTLED geometry — if it differs from what you "
+         "sent, something (a parent layout, a component) owns it; do not "
+         "re-send the same numbers.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
                                 :name {:type "string"}
@@ -428,17 +432,25 @@
 
    {:name "nest_shape"
     :description
-    "Moves a shape into a parent board/group at an optional index (default 0)."
+    (str "Moves a shape into a parent board/group. In a laid-out board `index` "
+         "is the position in READING order — 0 = first item of the flow; omit "
+         "it to append at the end — the tool translates to Penpot's internal "
+         "order, so create/nest in the order you want things to read and never "
+         "reach for row-reverse to fix ordering. In a plain board/group, index "
+         "is z-order from the back and omitting it puts the shape on top. "
+         "Verifies the move actually landed and errors if Penpot refused it.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
                                 :parentId {:type "string"}
-                                :index {:type "number"}}
+                                :index {:type "number"
+                                        :description "flow position in a laid-out board (0 = first); z-from-back otherwise"}}
                    :required ["shapeId" "parentId"]}}
 
    {:name "create_text"
     :description
     (str "Creates an auto-width text shape with the given string at x,y. "
-         "Optional fill (hex, default black), align, and parentId to nest it. "
+         "Optional fill (hex, default black), align, and parentId to nest it "
+         "(in a laid-out board, texts land in creation order). "
          "TYPOGRAPHY IS TOKENS: font size, family and weight are set by binding a "
          "token with apply_tokens (author one with create_token type=fontSizes) — "
          "that is how a heading becomes a heading, and how a type scale stays a "
@@ -525,9 +537,12 @@
          "survives content changes, hand-placed coordinates do not. Use `type: "
          "grid` for a gallery, a pricing table or any two-dimensional wrap, with "
          "`columns` for how many; flex (the default) for a single row or column. "
-         "Gaps and padding accept spacing tokens via apply_tokens (rowGap, "
-         "columnGap, paddingTop…). Only boards can have a layout. Asynchronous: "
-         "verify with read_design.")
+         "Children flow in the order you created/nested them (reading order) — "
+         "if the order is wrong, fix it with nest_shape index, NEVER by "
+         "switching to row-reverse/column-reverse (those are for genuinely "
+         "reversed designs). Gaps and padding accept spacing tokens via "
+         "apply_tokens (rowGap, columnGap, paddingTop…). Only boards can have a "
+         "layout. Asynchronous: verify with read_design.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string" :description "board id"}
                                 :type {:type "string" :enum ["flex" "grid"]
@@ -1561,6 +1576,37 @@
       (ctl/flex-layout? parent)
       (st/emit! (ptk/data-event :layout/update {:ids [pid]})))))
 
+;; --- Flow order
+;;
+;; Penpot lays flex children out in REVERSE `:shapes` order for `row`/`column`
+;; (flex_layout/layout_data.cljc reverses the children before positioning) and
+;; in vector order for the -reverse directions. The tools speak READING order
+;; and translate here: "create A, then B" reads A-then-B on canvas, and
+;; nest_shape's `index` is the position in the flow (0 = first). Without the
+;; translation the model discovers the reversal the hard way and starts
+;; authoring row-reverse layouts to compensate — semantically backwards files
+;; (the Kahoot session, 2026-07-16).
+
+(defn flow-append-index
+  "Vector index at which to insert a NEW child of `parent` so it lands LAST in
+  the visual flow (reading order), or nil when the parent has no layout — the
+  caller then keeps the default append-on-top z behavior. Public for tests."
+  [parent]
+  (when (ctl/any-layout? parent)
+    (if (ctl/reverse? parent) (count (:shapes parent)) 0)))
+
+(defn flow-index->vector-index
+  "Translates a flow position (0 = first item in reading order) into an
+  insertion index in `parent`'s `:shapes` vector. For a parent without a
+  layout the position is z-order from the back — which is what a bare index
+  always meant there. Public for tests."
+  [parent flow-index]
+  (let [n (count (:shapes parent))
+        i (-> flow-index (max 0) (min n))]
+    (if (and (ctl/any-layout? parent) (not (ctl/reverse? parent)))
+      (- n i)
+      i)))
+
 (defn- create-shape
   [{:keys [type x y width height fill parentId] :as input}]
   ;; via input-colors, not `fill` directly: both colour-setting tools share one
@@ -1584,7 +1630,12 @@
           changes (-> (cb/empty-changes)
                       (cb/with-page page)
                       (cb/with-objects objects)
-                      (cb/add-object shape))]
+                      ;; into a laid-out board, land at the END of the flow so
+                      ;; creation order = reading order (see Flow order above)
+                      (cb/add-object shape
+                                     (when-let [idx (some-> (and parent? (get objects pid))
+                                                            flow-append-index)]
+                                       {:index idx})))]
       (interrupt!)
       (st/emit! (dch/commit-changes changes))
       (when parent?
@@ -1674,7 +1725,10 @@
                     changes (-> (cb/empty-changes)
                                 (cb/with-page page)
                                 (cb/with-objects objects)
-                                (cb/add-object shape))]
+                                (cb/add-object shape
+                                               (when-let [idx (some-> (and parent? (get objects pid))
+                                                                      flow-append-index)]
+                                                 {:index idx})))]
                 (interrupt!)
                 (st/emit! (dch/commit-changes changes))
                 (when parent?
@@ -2153,18 +2207,113 @@
                                                          (some? strokeWidth) (assoc :stroke-width strokeWidth)
                                                          (some? strokeStyle) (assoc :stroke-style (keyword strokeStyle)))])))))))
         (st/emit! (dwu/commit-undo-transaction tx))
-        (rx/of {:id shapeId :note "modified — verify with read_design"})))))
+        (if-not (or (some? x) (some? y) (some? width) (some? height))
+          (rx/of {:id shapeId :note "modified — verify with read_design"})
+          ;; geometry writes can be constrained — a parent layout owns the
+          ;; position, an instance or auto-sized text normalizes itself — so
+          ;; report where the shape actually SETTLED instead of claiming the
+          ;; numbers took (the Kahoot session re-sent the same y five times)
+          (->> (rx/timer 80)
+               (rx/map
+                (fn [_]
+                  (let [s       (get (dsh/lookup-page-objects @st/state) id)
+                        settled {:x (:x s) :y (:y s)
+                                 :width (:width s) :height (:height s)}
+                        off?    (fn [want got]
+                                  (and (some? want) (some? got)
+                                       (> (js/Math.abs (- want got)) 0.5)))
+                        drift?  (or (off? x (:x s)) (off? y (:y s))
+                                    (off? width (:width s)) (off? height (:height s)))]
+                    {:id shapeId
+                     :settled settled
+                     :note (if drift?
+                             (str "modified — but the shape SETTLED at a different "
+                                  "geometry than requested (see settled). Something "
+                                  "owns it: a parent layout positions its children "
+                                  "(use set_layout/set_layout_child or move the "
+                                  "parent), auto-width text re-measures itself. Do "
+                                  "not re-send the same x/y.")
+                             "modified — settled at the requested geometry")})))))))))
+
+(defn nest-problem
+  "Why `nest_shape` cannot run, or nil. Pure. Public for tests.
+
+  relocate-shapes filters silently — a stale id, a cycle, or a copy-owned
+  target all no-op and read as success, which is how the Kahoot session lost
+  half its content to nests that never landed. Name the refusal instead."
+  [objects id pid]
+  (let [shape  (get objects id)
+        parent (get objects pid)]
+    (cond
+      (or (nil? id) (nil? pid))
+      "nest_shape: missing or invalid shapeId/parentId"
+
+      (nil? shape)
+      (dm/str "nest_shape: no shape on this page with id " (str id)
+              " — it may already be deleted; check read_design")
+
+      (nil? parent)
+      (dm/str "nest_shape: no shape on this page with id " (str pid)
+              " (the parentId) — check read_design")
+
+      (= id pid)
+      "nest_shape: a shape cannot be nested into itself"
+
+      (not (or (cfh/frame-shape? parent) (cfh/group-shape? parent)))
+      (dm/str "nest_shape: " (shape-label parent) " is a "
+              (some-> (:type parent) name)
+              " — the parent must be a board or a group")
+
+      (cfh/is-parent? objects pid id)
+      (dm/str "nest_shape: " (shape-label parent) " is inside "
+              (shape-label shape)
+              " — nesting a shape into its own descendant would create a cycle")
+
+      (or (ctc/in-component-copy? parent)
+          (ctn/has-any-copy-parent? objects parent))
+      (dm/str "nest_shape: " (shape-label parent) " is part of a component copy,"
+              " whose structure is owned by the main component — nest into the"
+              " main component instead, or sever the copy with detach_instance"))))
 
 (defn- nest-shape
   [{:keys [shapeId parentId index]}]
-  (let [id  (some-> shapeId parse-uuid)
-        pid (some-> parentId parse-uuid)]
-    (if (and id pid)
-      (do (interrupt!)
-          (st/emit! (dwsh/relocate-shapes #{id} pid (or index 0)))
-          (rx/of {:id shapeId :parentId parentId
-                  :note "reparented — verify with read_design"}))
-      (rx/throw (ex-info "nest_shape: missing or invalid shapeId/parentId" {})))))
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        id      (some-> shapeId parse-uuid)
+        pid     (some-> parentId parse-uuid)]
+    (if-let [problem (nest-problem objects id pid)]
+      (rx/throw (ex-info problem {}))
+      (let [parent  (get objects pid)
+            ;; a reorder within the same parent leaves the vector before
+            ;; re-inserting — translate against the count without the shape
+            parent' (cond-> parent
+                      (= pid (:parent-id (get objects id)))
+                      (update :shapes (fn [shapes] (filterv #(not= id %) shapes))))
+            to-idx  (if (some? index)
+                      (flow-index->vector-index parent' (js/Math.round index))
+                      ;; default: end of the flow in a laid-out board, top of
+                      ;; the z-stack in a plain one — visible either way
+                      (flow-index->vector-index parent' (count (:shapes parent'))))]
+        (interrupt!)
+        (st/emit! (dwsh/relocate-shapes #{id} pid to-idx))
+        ;; relocate-shapes filters its input silently (loops, structure
+        ;; ownership) — read the move back rather than report success on faith
+        (->> (rx/timer 80)
+             (rx/map (fn [_]
+                       (let [shape' (get (dsh/lookup-page-objects @st/state) id)]
+                         (if (= pid (:parent-id shape'))
+                           {:id shapeId :parentId parentId
+                            :note (str "reparented"
+                                       (when (ctl/any-layout? parent)
+                                         (str " — the parent lays out its children,"
+                                              " so it now controls this shape's position"))
+                                       ". Verify with read_design.")}
+                           (throw (ex-info
+                                   (str "nest_shape: the move did not take — Penpot "
+                                        "refused it (typically component or variant "
+                                        "structure ownership). The shape is still under "
+                                        "its previous parent; check read_design.")
+                                   {})))))))))))
 
 ;; --- Text & component tools
 
@@ -2196,7 +2345,10 @@
           changes (-> (cb/empty-changes)
                       (cb/with-page page)
                       (cb/with-objects objects)
-                      (cb/add-object shape))]
+                      (cb/add-object shape
+                                     (when-let [idx (some-> (and parent? (get objects pid))
+                                                            flow-append-index)]
+                                       {:index idx})))]
       (interrupt!)
       (st/emit! (dch/commit-changes changes))
       (when (features/active-feature? @st/state "render-wasm/v1")
@@ -2330,13 +2482,27 @@
         ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
     (if-let [problem (delete-problem objects ids)]
       (rx/throw (ex-info problem {}))
-      (do
+      ;; disclose the cascade: deleting a container takes every descendant
+      ;; with it, and "deleted 1" hid exactly that (the Kahoot session lost a
+      ;; card's icon and texts to a container it thought was empty)
+      (let [id-set   (set ids)
+            children (->> ids
+                          (mapcat #(cfh/get-children-ids objects %))
+                          (remove id-set)
+                          (distinct)
+                          (count))]
         (interrupt!)
         ;; delete-shapes asserts a set; combine-as-variants wanted a vector.
         ;; Two conventions live in this file — convert at the boundary.
-        (st/emit! (dwsh/delete-shapes (set ids)))
-        (rx/of {:deleted (count ids)
-                :note "deleted — undo with ⌘Z (it is one undo step)"})))))
+        (st/emit! (dwsh/delete-shapes id-set))
+        (rx/of (cond-> {:deleted (count ids)
+                        :note (str "deleted"
+                                   (when (pos? children)
+                                     (str " — INCLUDING " children " nested "
+                                          (if (= 1 children) "child" "children")
+                                          " that lived inside"))
+                                   " — undo with ⌘Z (it is one undo step)")}
+                 (pos? children) (assoc :childrenDeleted children)))))))
 
 (defn- duplicate-shape
   [{:keys [shapeIds]}]

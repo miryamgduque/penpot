@@ -1943,3 +1943,80 @@
                             "get_page_meta:"))
     (t/is (str/starts-with? (at/fetch-page-error-message :ssrf-blocked-target)
                             "fetch_page:"))))
+
+;; ---------------------------------------------------------------------------
+;; flow order — the tools speak READING order (see agent-tools "Flow order"):
+;; Penpot lays flex children out in REVERSE :shapes order for row/column, and
+;; the translation here is what keeps "create A, then B" reading A-then-B.
+;; Getting this wrong is how the model ends up authoring row-reverse layouts
+;; to compensate.
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-new-child-of-a-laid-out-board-lands-last-in-the-flow
+  ;; vector index 0 IS the end of the flow for row/column
+  (t/is (= 0 (at/flow-append-index (laid-out-board board-id [id-a id-b])))))
+
+(t/deftest a-reverse-direction-board-appends-at-the-vector-end
+  (let [board (assoc (laid-out-board board-id [id-a id-b])
+                     :layout-flex-dir :row-reverse)]
+    (t/is (= 2 (at/flow-append-index board)))))
+
+(t/deftest a-plain-board-keeps-the-default-append
+  (t/is (nil? (at/flow-append-index (plain-frame board-id "Plain")))))
+
+(t/deftest flow-position-zero-is-the-vector-end
+  (let [board (laid-out-board board-id [id-a id-b])]
+    (t/is (= 2 (at/flow-index->vector-index board 0)))
+    (t/is (= 0 (at/flow-index->vector-index board 2)))))
+
+(t/deftest flow-positions-are-clamped-to-the-vector
+  (let [board (laid-out-board board-id [id-a id-b])]
+    (t/is (= 0 (at/flow-index->vector-index board 99)))
+    (t/is (= 2 (at/flow-index->vector-index board -1)))))
+
+(t/deftest a-plain-parent-keeps-z-semantics
+  (let [board (assoc (plain-frame board-id "Plain") :shapes [id-a id-b])]
+    (t/is (= 1 (at/flow-index->vector-index board 1)))))
+
+;; ---------------------------------------------------------------------------
+;; nest-problem — relocate-shapes filters silently; the boundary names it
+;; ---------------------------------------------------------------------------
+
+(t/deftest nesting-a-deleted-shape-is-named
+  (let [objs    (objects (plain-frame board-id "Board"))
+        problem (at/nest-problem objs id-missing board-id)]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "deleted"))))
+
+(t/deftest nesting-into-a-missing-parent-is-named
+  (let [objs (objects (plain-frame id-a "Item"))]
+    (t/is (str/includes? (at/nest-problem objs id-a id-missing) "parentId"))))
+
+(t/deftest nesting-into-itself-is-rejected
+  (let [objs (objects (plain-frame board-id "Board"))]
+    (t/is (str/includes? (at/nest-problem objs board-id board-id) "itself"))))
+
+(t/deftest nesting-into-a-non-container-is-rejected
+  (let [objs (objects {:id id-a :name "Dot" :type :rect}
+                      {:id id-b :name "Label" :type :text})]
+    (t/is (str/includes? (at/nest-problem objs id-b id-a) "board or a group"))))
+
+(t/deftest nesting-into-a-descendant-names-the-cycle
+  (let [objs    (objects (assoc (plain-frame board-id "Outer") :shapes [id-a])
+                         (assoc (plain-frame id-a "Inner") :parent-id board-id))
+        problem (at/nest-problem objs board-id id-a)]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "cycle"))))
+
+(t/deftest nesting-into-a-copy-names-detach
+  (let [objs    (objects (assoc (plain-frame board-id "CardCopy")
+                                :shape-ref (uuid/custom 5 5))
+                         (plain-frame id-a "Loose"))
+        problem (at/nest-problem objs id-a board-id)]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "detach_instance"))))
+
+(t/deftest a-valid-nest-passes
+  (let [objs (objects (plain-frame board-id "Board")
+                      (plain-frame id-a "Item"))]
+    (t/is (nil? (at/nest-problem objs id-a board-id)))))

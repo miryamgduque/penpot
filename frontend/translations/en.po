@@ -3541,8 +3541,28 @@ msgid "dashboard.agent-skills.description"
 msgstr "Skills your team promoted, shared with everyone in their agent panel."
 
 #: src/app/main/ui/dashboard/agent_skills.cljs
-msgid "dashboard.agent-skills.empty"
-msgstr "No promoted skills yet. Promote a personal skill from the agent panel to share it with the team."
+msgid "dashboard.agent-skills.empty-title"
+msgstr "No team skills yet"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.empty-desc"
+msgstr "Promote a skill from the Agent panel to share it with your team."
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.trigger"
+msgstr "Example trigger phrase"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.what"
+msgstr "What it does"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.by"
+msgstr "by %s"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.no-test"
+msgstr "No test action here — the dashboard has no open file to act on."
 
 #: src/app/main/ui/onboarding/questions.cljs:53
 msgid "labels.start"

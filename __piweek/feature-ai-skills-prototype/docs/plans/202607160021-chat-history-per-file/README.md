@@ -81,7 +81,7 @@ Decisions from the discovery interview (2026-07-16):
 2. [Phase 02 — Frontend persistence layer](./done-phase-02-frontend-persistence.md) — save at turn boundaries, hydrate on panel open, strip-for-save + auto-title helpers
 3. [Phase 03 — Conversation switcher UI](./done-phase-03-conversation-switcher-ui.md) — history popover + New chat in the panel header, load/delete
 4. [Phase 03b — Rename conversations](./done-phase-03b-rename-conversations.md) — inline rename in the popover; renames survive later saves
-5. [Phase 04 — Merge and live verify](./todo-phase-04-merge-and-live-verify.md) — merge the worktree into `feature/ai-skills-prototype` (user gate), then verify everything live in the devenv
+5. [Phase 04 — Merge and live verify](./doing-phase-04-merge-and-live-verify.md) — merge the worktree into `feature/ai-skills-prototype` (user gate), then verify everything live in the devenv
 
 ## Acceptance Criteria
 

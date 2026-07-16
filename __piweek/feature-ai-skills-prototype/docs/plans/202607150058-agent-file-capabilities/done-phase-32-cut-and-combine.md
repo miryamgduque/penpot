@@ -1,6 +1,6 @@
 # Phase 32 — Cut and combine
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; suite+live at merge)
 
 Boolean operations — union, difference, intersection, exclusion — are the one shape-*making*
 primitive left out of the registry. `ungroup_shapes` can already **dissolve** a boolean (it

@@ -1,6 +1,10 @@
 # Phase 03 — Creation flow + generation
 
-**Status:** todo
+**Status:** done (2026-07-16) — `propose-reactive` heuristic; the interview's
+Mode step is now the On-call/Observer question; `skill_gen` categories →
+`["Audits" "Build"]`, prompt + parse carry `:reactive`. Verified live: the
+question renders, On-call is the empty-description default, and a watch-ish
+description flips the suggested default to Observer.
 
 ## Goal
 

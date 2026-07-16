@@ -188,15 +188,15 @@
                 0)]
     (nth pool idx nil)))
 
-(defn- propose-mode
-  "A default mode guessed from the description — a report-ish skill suggests, a
-  direct-fix one auto-fixes, generative work is review. The user can override."
+(defn- propose-reactive
+  "A default reactive behavior guessed from the description (US #14): watch-ish
+  phrasing (audit, watch, monitor, keep an eye, flag, remind…) suggests an
+  Observer; everything else is On-call. The user can override."
   [what]
   (let [w (str/lower (or what ""))]
-    (cond
-      (re-find #"rename|clean up|fix|correct|format|tidy" w) "autofix"
-      (re-find #"build|create|generate|design|make|add|produce" w) "review"
-      :else "suggest")))
+    (if (re-find #"audit|watch|monitor|keep an eye|flag|remind|notice|track|observe" w)
+      "observer"
+      "on-call")))
 
 (defn- skill-create-intent
   "When a chat message asks to create a skill, the described 'what' with the
@@ -212,7 +212,7 @@
               (str/trim)))))
 
 ;; The built-in skills catalog is shared with the agent — see
-;; app.main.data.workspace.agent-skills (`ask/catalog`, `ask/mode-label`).
+;; app.main.data.workspace.agent-skills (`ask/catalog`, `ask/reactive-label`).
 
 (defn- format-tokens
   [n]
@@ -1058,21 +1058,21 @@
     "Connect a provider"]])
 
 (mf/defc skill-create*
-  "The guided creation flow (US #9): capture what / trigger / mode (with a
-  proposed default), then generate the skill doc and persist it. Lives in the
-  Skills view; the header owns the back nav. `seed` prefills the description when
-  started from Chat. `on-created` closes the flow (the new card shows in the list)."
+  "The guided creation flow (US #9): capture what / trigger / reactive behavior
+  (with a proposed default), then generate the skill doc and persist it. Lives in
+  the Skills view; the header owns the back nav. `seed` prefills the description
+  when started from Chat. `on-created` closes the flow (the new card shows up)."
   {::mf/private true}
   [{:keys [settings seed on-created]}]
   (let [what*     (mf/use-state (or seed ""))
         trigger*  (mf/use-state "")
-        mode*     (mf/use-state nil)
+        reactive* (mf/use-state nil)
         status*   (mf/use-state :idle)
 
         what      (deref what*)
         trigger   (deref trigger*)
-        proposed  (propose-mode what)
-        mode      (or (deref mode*) proposed)
+        proposed  (propose-reactive what)
+        reactive  (or (deref reactive*) proposed)
         status    (deref status*)
         busy?     (= status :generating)
         ready?    (and (seq (str/trim what)) (some? settings) (not busy?))
@@ -1082,14 +1082,14 @@
 
         submit
         (mf/use-fn
-         (mf/deps what trigger mode settings busy?)
+         (mf/deps what trigger reactive settings busy?)
          (fn []
            (when (and (seq (str/trim what)) settings (not busy?))
              (reset! status* :generating)
              (st/emit!
               (dusk/create-from-answers
                settings
-               {:what (str/trim what) :trigger (str/trim trigger) :mode mode}
+               {:what (str/trim what) :trigger (str/trim trigger) :reactive reactive}
                {:on-success (fn [created] (reset! status* :idle) (on-created created))
                 :on-error   (fn [_] (reset! status* :error))})))))]
 
@@ -1118,14 +1118,15 @@
                 :disabled busy?
                 :on-change on-trigger}]
 
-       [:label {:class (stl/css :create-label)} "Mode"]
+       [:label {:class (stl/css :create-label)}
+        "Should it only respond when asked, or keep an eye on things and let you know?"]
        [:div {:class (stl/css :create-modes)}
-        (for [[m lbl] [["suggest" "🔍 Suggest"] ["review" "✏️ Review"] ["autofix" "⚡ Auto-fix"]]]
+        (for [[m lbl] [["on-call" "💬 On-call"] ["observer" "👁 Observer"]]]
           [:button {:key m
                     :type "button"
-                    :class (stl/css-case :create-mode true :selected (= m mode))
+                    :class (stl/css-case :create-mode true :selected (= m reactive))
                     :disabled busy?
-                    :on-click #(reset! mode* m)}
+                    :on-click #(reset! reactive* m)}
            lbl
            (when (= m proposed)
              [:span {:class (stl/css :create-mode-hint)} " · suggested"])])]

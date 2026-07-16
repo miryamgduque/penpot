@@ -8,7 +8,7 @@
   "Per-user, user-created skills (US #9).
 
   A profile's own skills, stored with the full generated document (label,
-  category, mode, trigger, body). On the client they merge into the agent's
+  category, reactive, trigger, body). On the client they merge into the agent's
   catalog and are toggled through `profile_skill_state` exactly like the built-in
   skills — `is_enabled` here is only the creation default (on). Contrast
   `design_skill`, which is the app/team registry."
@@ -25,7 +25,7 @@
    :name (:name row)
    :label (:label row)
    :category (:category row)
-   :mode (:mode row)
+   :reactive (:reactive row)
    :trigger (:trigger-on row)
    :description (:description row)
    :body (:body row)
@@ -34,7 +34,7 @@
 ;; --- Query: the caller's own created skills
 
 (def ^:private sql:get-skills
-  "SELECT id, name, label, category, mode, trigger_on, description, body, is_enabled
+  "SELECT id, name, label, category, reactive, trigger_on, description, body, is_enabled
      FROM profile_skill
     WHERE profile_id = ?
     ORDER BY created_at")
@@ -53,7 +53,7 @@
    [:name [:string {:min 1 :max 200}]]
    [:label [:string {:min 1 :max 200}]]
    [:category [:string {:min 1 :max 100}]]
-   [:mode [:enum "suggest" "review" "autofix"]]
+   [:reactive [:enum "on-call" "observer"]]
    [:trigger {:optional true} [:maybe [:string {:max 2000}]]]
    [:description {:optional true} [:maybe [:string {:max 4000}]]]
    [:body [:string {:min 1 :max 100000}]]])
@@ -78,14 +78,14 @@
 (sv/defmethod ::create-skill
   {::doc/added "2.13"
    ::sm/params schema:create-skill}
-  [{:keys [::db/pool]} {:keys [::rpc/profile-id name label category mode trigger description body]}]
+  [{:keys [::db/pool]} {:keys [::rpc/profile-id name label category reactive trigger description body]}]
   (let [uname (unique-name pool profile-id name)]
     (-> (db/insert! pool :profile-skill
                     {:profile-id profile-id
                      :name uname
                      :label label
                      :category category
-                     :mode mode
+                     :reactive reactive
                      :trigger-on trigger
                      :description (or description "")
                      :body body})

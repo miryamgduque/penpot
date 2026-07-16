@@ -1,6 +1,10 @@
 # Phase 04 — Backend
 
-**Status:** todo
+**Status:** done (2026-07-16) — migration `0157-profile-skill-reactive`
+renames `mode`→`reactive` and remaps rows; RPC schema is `[:enum "on-call"
+"observer"]`; row map + SELECT + insert carry `:reactive`. Verified live:
+backend restarted, DB column renamed, existing `typo-checker` remapped to
+`on-call` and its card now shows the On-call badge.
 
 ## Goal
 

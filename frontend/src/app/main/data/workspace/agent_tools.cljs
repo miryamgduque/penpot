@@ -42,6 +42,7 @@
    [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.shape-layout :as dwsl]
    [app.main.data.workspace.shapes :as dwsh]
+   [app.main.data.workspace.texts :as dwt-text]
    [app.main.data.workspace.tokens.application :as dwta]
    [app.main.data.workspace.tokens.library-edit :as dwtl]
    [app.main.data.workspace.transforms :as dwt]
@@ -213,16 +214,35 @@
    {:name "create_text"
     :description
     (str "Creates an auto-width text shape with the given string at x,y. "
-         "Optional fill (hex, default black) and parentId to nest it. Width/"
-         "height settle asynchronously — re-read to confirm.")
+         "Optional fill (hex, default black), align, and parentId to nest it. "
+         "TYPOGRAPHY IS TOKENS: font size, family and weight are set by binding a "
+         "token with apply_tokens (author one with create_token type=fontSizes) — "
+         "that is how a heading becomes a heading, and how a type scale stays a "
+         "scale. Use set_text to change the words later. Width/height settle "
+         "asynchronously — re-read to confirm.")
     :input-schema {:type "object"
                    :properties {:text {:type "string"}
                                 :x {:type "number"}
                                 :y {:type "number"}
                                 :name {:type "string"}
                                 :fill {:type "string" :description "hex, default #000000"}
+                                :align {:type "string" :enum ["left" "center" "right" "justify"]}
                                 :parentId {:type "string"}}
                    :required ["text" "x" "y"]}}
+
+   {:name "set_text"
+    :description
+    (str "Changes an existing text shape's WORDS, and/or its alignment. This is "
+         "the only way to edit text after creating it — modify_shape's `name` "
+         "renames the layer, it does not touch the words. Font size, family and "
+         "weight are not here on purpose: they are design tokens, bound with "
+         "apply_tokens (fontSize, fontFamily, fontWeight). Rewriting the words "
+         "keeps the existing styling.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string"}
+                                :text {:type "string" :description "the new words; \"\" clears them"}
+                                :align {:type "string" :enum ["left" "center" "right" "justify"]}}
+                   :required ["shapeId"]}}
 
    {:name "create_component"
     :description
@@ -485,6 +505,33 @@
     "board"   :frame
     "ellipse" :circle
     :rect))
+
+;; --- Shared message helpers
+;;
+;; Defined once, here, above every user: these were scattered through the file
+;; and each new tool that reached for one hit a forward reference. They exist
+;; because of the plan's standing rule — a rejection has to name the shape and
+;; the fix, so almost every tool needs them.
+
+(defn- shape-label
+  "How a shape is named back to the agent: \"Name\" (id). Both halves matter —
+  the name so the message is readable, the id so it is actionable."
+  [shape]
+  (dm/str "\"" (:name shape) "\" (" (dm/str (:id shape)) ")"))
+
+(defn- labels
+  "Several shapes named back to the agent, so one message can list every
+  offender and cost one retry instead of one per shape."
+  [shapes]
+  (str/join ", " (map shape-label shapes)))
+
+(defn- enum-problem
+  [tool param value allowed]
+  (when (and (some? value) (not (contains? allowed value)))
+    (dm/str tool ": " param " \"" value "\" is not valid — use one of: "
+            (str/join ", " (sort allowed)))))
+
+(def ^:private text-aligns #{"left" "center" "right" "justify"})
 
 (def ^:private searchable-types
   "`find_shapes`' vocabulary → Penpot's. No default: an unmapped name resolves to
@@ -1158,9 +1205,11 @@
 ;; --- Text & component tools
 
 (defn- create-text
-  [{:keys [text x y parentId fill] :as input}]
-  (if (or (not (string? text)) (empty? text))
-    (rx/throw (ex-info "create_text: text must be a non-empty string" {}))
+  [{:keys [text x y parentId fill align] :as input}]
+  (if-let [problem (or (when (or (not (string? text)) (empty? text))
+                         "create_text: text must be a non-empty string")
+                       (enum-problem "create_text" "align" align text-aligns))]
+    (rx/throw (ex-info problem {}))
     (let [nm      (:name input)
           color   (or fill "#000000")
           state   @st/state
@@ -1175,7 +1224,9 @@
                                 :grow-type :auto-width}
                          nm (assoc :name nm)))
                       (update :content txt/change-text text
-                              {:fills [{:fill-color color :fill-opacity 1}]})
+                              (cond-> {:fills [{:fill-color color :fill-opacity 1}]}
+                                ;; creating right beats creating then fixing
+                                align (assoc :text-align align)))
                       (dissoc :position-data)
                       (cond-> parent? (assoc :parent-id pid :frame-id pid)))
           changes (-> (cb/empty-changes)
@@ -1188,6 +1239,70 @@
         (st/emit! (dwwt/resize-wasm-text-debounce (:id shape))))
       (rx/of {:id (dm/str (:id shape))
               :note "text created — size settles async; verify with read_design"}))))
+
+;; --- Text
+;;
+;; Scope came from the phase's own instruction to check the token path first, and
+;; it narrowed the phase sharply: `apply_tokens` ALREADY reaches fontSize,
+;; fontFamily, fontWeight, letterSpacing, lineHeight, textCase and
+;; textDecoration (Phase 09 derived them from `cto/all-keys`). Verified live — a
+;; `fontSizes` token applied to a text really does resize it. So
+;; `penpot-foundations`' type scale already works, and the premise "every text is
+;; the same default-sized paragraph" was only half true.
+;;
+;; What is genuinely unreachable: the WORDS (no path at all) and ALIGNMENT (not a
+;; token attr — there is no text-align token). This covers exactly those, and
+;; points at apply_tokens for the rest, the same relationship `fill` has with
+;; colour tokens.
+
+(defn text-problem
+  "Why `set_text` cannot run, or nil. Pure."
+  [objects id {:keys [text align]}]
+  (let [shape (get objects id)]
+    (cond
+      (nil? id)
+      "set_text: shapeId is required"
+
+      (nil? shape)
+      (dm/str "set_text: no shape on this page with id " (str id) " — check read_design")
+
+      (not (cfh/text-shape? shape))
+      (dm/str "set_text: " (shape-label shape) " is a "
+              (some-> (:type shape) name)
+              ", not a text shape — note modify_shape's `name` renames the LAYER,"
+              " it does not change the words; create text with create_text")
+
+      ;; `some?`, not truthiness: "" clears the text, which is a real edit
+      (and (nil? text) (nil? align))
+      "set_text: nothing to change — pass text (the words) and/or align"
+
+      :else
+      (enum-problem "set_text" "align" align text-aligns))))
+
+(defn- set-text
+  [{:keys [shapeId text align]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        id      (some-> shapeId parse-uuid)]
+    (if-let [problem (text-problem objects id {:text text :align align})]
+      (rx/throw (ex-info problem {}))
+      (do
+        (interrupt!)
+        (when (some? text)
+          ;; the same pure content transform create_text seeds with, so it keeps
+          ;; the first paragraph's styling rather than resetting it
+          (st/emit! (dwsh/update-shapes [id] #(update % :content txt/change-text text))))
+        (when align
+          ;; update-paragraph-attrs has a headless branch: with no editor open it
+          ;; falls through to update-shapes. The agent never has an editor.
+          (st/emit! (dwt-text/update-paragraph-attrs {:id id :attrs {:text-align align}})))
+        (when (features/active-feature? @st/state "render-wasm/v1")
+          (st/emit! (dwwt/resize-wasm-text-debounce id)))
+        (rx/of {:id shapeId
+                :note (str "text updated — size settles async. Font size, family and "
+                           "weight are design tokens: author one with create_token "
+                           "(fontSizes) and bind it with apply_tokens rather than "
+                           "hardcoding. Verify with read_design.")})))))
 
 (defn- create-component
   [{:keys [shapeIds]}]
@@ -1206,17 +1321,6 @@
         (catch :default e
           (rx/throw e))))))
 
-(defn- shape-label
-  "How a shape is named back to the agent: \"Name\" (id). Both halves matter —
-  the name so the message is readable, the id so it is actionable."
-  [shape]
-  (dm/str "\"" (:name shape) "\" (" (dm/str (:id shape)) ")"))
-
-(defn- labels
-  "Several shapes named back to the agent, so one message can list every
-  offender and cost one retry instead of one per shape."
-  [shapes]
-  (str/join ", " (map shape-label shapes)))
 
 
 ;; --- Delete / duplicate
@@ -1430,11 +1534,6 @@
       (seq gap)              (assoc :layout-gap gap)
       (seq pad)              (assoc :layout-padding pad))))
 
-(defn- enum-problem
-  [tool param value allowed]
-  (when (and (some? value) (not (contains? allowed value)))
-    (dm/str tool ": " param " \"" value "\" is not valid — use one of: "
-            (str/join ", " (sort allowed)))))
 
 (defn layout-problem
   "Why `set_layout` cannot be applied to `id`, as a message the agent can act on,
@@ -2156,6 +2255,7 @@
     "modify_shape"       (modify-shape input)
     "nest_shape"         (nest-shape input)
     "create_text"        (create-text input)
+    "set_text"           (set-text input)
     "create_component"   (create-component input)
     "delete_shape"       (delete-shape input)
     "duplicate_shape"    (duplicate-shape input)

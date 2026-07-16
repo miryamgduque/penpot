@@ -88,12 +88,15 @@
          "It reports one level deep: a shape's `childCount` tells you it has "
          "children without listing them. To reach inside, or when an `omitted` "
          "note says a list was capped, use find_shapes.\n"
-         "The SELECTION reports each shape's `fills` — solid (with the hex to "
-         "copy), gradient (with its stops), or image (with its id and size). The "
-         "broad shape list does not, to stay cheap: use find_shapes to see any "
-         "other shape's paint. An image fill cannot be reproduced from JSON — "
-         "reuse it by passing its imageId back to create_shape/modify_shape, or "
-         "name it; do not approximate it with a solid.")
+         "The SELECTION reports each shape's LOOK — `fills` (solid with the hex "
+         "to copy, gradient with its stops, or image with its id), plus any "
+         "`radius`, `opacity`, `shadow` and `blur`. Those names are exactly "
+         "modify_shape's, so reading a look and writing it back is a straight "
+         "copy. The broad shape list omits all of it to stay cheap: use "
+         "find_shapes to see any other shape's look.\n"
+         "Two things you can read but not write: an image fill (reuse it by "
+         "passing its imageId back, never approximate it with a solid) and a "
+         "`blur`. Say so rather than shipping a replica that quietly lacks them.")
     :input-schema {:type "object" :properties {}}}
 
    {:name "find_shapes"
@@ -546,21 +549,65 @@
                     (assoc :fromToken true)))))
         fills))
 
+(defn effect-summary
+  "A shape's effects, in **Phase 14's own write-param names** — `radius`,
+  `opacity`, `shadow {style offsetX offsetY blur spread color opacity}` — so a
+  read can be handed straight back to `modify_shape` with no translation.
+
+  Only present, non-default attrs are emitted: every shape carries `r1..r4 = 0`
+  and `opacity 1`, and reporting those would spend the budget saying nothing.
+
+  `blur` and `blendMode` are reported although `modify_shape` cannot write them.
+  The transcript's complaint was a *glow* it could see but not inspect — a blur
+  IS that glow. Naming what cannot be reproduced is the same honesty Phase 17
+  gives an image fill: better a replica that says \"the original also has an 8px
+  blur\" than one that silently drops it."
+  [shape]
+  (let [{:keys [r1 r2 r3 r4 opacity blend-mode blur shadow]} shape
+        live   (remove :hidden shadow)
+        one    (fn [s] (cond-> {:style (some-> (:style s) name)
+                                :offsetX (:offset-x s)
+                                :offsetY (:offset-y s)
+                                :blur (:blur s)
+                                :spread (:spread s)
+                                :color (:color (:color s))}
+                         (some? (:opacity (:color s)))
+                         (assoc :opacity (:opacity (:color s)))))
+        radius (when (some pos? [r1 r2 r3 r4])
+                 (if (apply = [r1 r2 r3 r4])
+                   r1
+                   ;; Phase 14 writes ONE radius for all four, so a mixed radius
+                   ;; is not copyable in a single call — reporting a single
+                   ;; number here would be a plausible lie
+                   {:topLeft r1 :topRight r2 :bottomRight r3 :bottomLeft r4}))]
+    (cond-> {}
+      (some? radius)                     (assoc :radius radius)
+      (and (some? opacity) (not= 1 opacity)) (assoc :opacity opacity)
+      (and (some? blend-mode) (not= :normal blend-mode))
+      (assoc :blendMode (name blend-mode))
+
+      (and (some? blur) (not (:hidden blur)))
+      (assoc :blur {:type (some-> (:type blur) name) :value (:value blur)})
+
+      (= 1 (count live)) (assoc :shadow (one (first live)))
+      (< 1 (count live)) (assoc :shadows (mapv one live)))))
+
 (defn summarize-shape
   "The shape as the agent sees it. Variant keys are added only when truthy —
   `read_design` is called constantly, so a file without variants should not pay
   for the feature in every payload.
 
-  `:fills?` is off by default and on for the two places paint is actually wanted:
-  the **selection** (\"replicate this\") and **find_shapes** hits (drill-in).
-  Fills on every shape of the broad list cost ~11% of the 20k budget for a
-  59-shape file and would crowd out Phase 18's effects — the constant-cost
-  orientation call stays about *what is here*, not *what it looks like*."
+  `:look?` — a shape's paint and effects — is off by default and on for the two
+  places the look is actually wanted: the **selection** (\"replicate this\") and
+  **find_shapes** hits (drill-in). On every shape of the broad list it cost ~11%
+  of the 20k budget for a 59-shape file; the constant-cost orientation call stays
+  about *what is here*, not *what it looks like*."
   ([objects id] (summarize-shape objects id nil))
-  ([objects id {:keys [fills?]}]
-   (let [shape (get objects id)
-         kids  (count (:shapes shape))
-         fills (when fills? (fill-summary (:fills shape)))]
+  ([objects id {:keys [look?]}]
+   (let [shape   (get objects id)
+         kids    (count (:shapes shape))
+         fills   (when look? (fill-summary (:fills shape)))
+         effects (when look? (effect-summary shape))]
      (cond-> {:id (dm/str id)
               :name (:name shape)
               :type (some-> (:type shape) name)
@@ -574,6 +621,9 @@
 
        (seq fills)
        (assoc :fills fills)
+
+       (seq effects)
+       (merge effects)
 
        (ctc/is-variant-container? shape)
        (assoc :isVariantContainer true)
@@ -641,7 +691,7 @@
                        (filter #(shape-matches? % query))
                        (sort-by :name))
           [items omitted] (bounded hits max-listed "matches")]
-      (rx/of (cond-> {:matches (mapv #(summarize-shape objects (:id %) {:fills? true}) items)
+      (rx/of (cond-> {:matches (mapv #(summarize-shape objects (:id %) {:look? true}) items)
                       :found (count hits)}
                omitted (assoc :omitted omitted))))))
 
@@ -710,7 +760,7 @@
                   comps-omitted    (assoc :components comps-omitted))]
     (cond-> {:file (get-in state [:files file-id :name])
              :page (:name page)
-             :selection (mapv #(summarize-shape objects % {:fills? true}) selected)
+             :selection (mapv #(summarize-shape objects % {:look? true}) selected)
              :shapes (mapv #(summarize-shape objects %) shapes)
              :variants variants
              :components comps

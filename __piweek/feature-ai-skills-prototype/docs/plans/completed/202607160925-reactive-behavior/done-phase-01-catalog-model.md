@@ -14,7 +14,7 @@ catalog, replacing them with **reactive behavior** (`:reactive` ∈ `"on-call"` 
 ## Before Start
 
 - [ ] Re-read the catalog + helpers in
-      [agent_skills.cljs](../../../../../frontend/src/app/main/data/workspace/agent_skills.cljs):
+      [agent_skills.cljs](../../../../../../frontend/src/app/main/data/workspace/agent_skills.cljs):
       `catalog` (:40), `mode-label` (:105), `user-skill->entry` (:228),
       `watched-rules` (:320), `catalog-manifest` (:329), `system-prompt-section` (:342)
 - [ ] Confirm the watcher's two consumers key off `:rule`/`:detect`, not `:mode`:

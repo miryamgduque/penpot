@@ -13,7 +13,7 @@ rows, so user-created skills round-trip the new axis.
 
 ## Before Start
 
-- [ ] Re-read [profile_skills.clj](../../../../../backend/src/app/rpc/commands/profile_skills.clj):
+- [ ] Re-read [profile_skills.clj](../../../../../../backend/src/app/rpc/commands/profile_skills.clj):
       row mapping (:28), SELECT (:37), create schema `[:mode [:enum "suggest"
       "review" "autofix"]]` (:56), insert params (:81).
 - [ ] Re-read migration `0156-add-profile-skill-table.sql` (`mode text NOT NULL`),

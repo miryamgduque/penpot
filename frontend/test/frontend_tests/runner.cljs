@@ -13,6 +13,7 @@
    [frontend-tests.data.ai-providers-test]
    [frontend-tests.data.comments-filters-test]
    [frontend-tests.data.dashboard-test]
+   [frontend-tests.data.design-doc-test]
    [frontend-tests.data.design-md-test]
    [frontend-tests.data.exports-assets-test]
    [frontend-tests.data.nitrate-test]
@@ -135,6 +136,7 @@
    'frontend-tests.data.ai-providers-test
    'frontend-tests.data.comments-filters-test
    'frontend-tests.data.dashboard-test
+   'frontend-tests.data.design-doc-test
    'frontend-tests.data.design-md-test
    'frontend-tests.data.nitrate-test
    'frontend-tests.data.persistence-test

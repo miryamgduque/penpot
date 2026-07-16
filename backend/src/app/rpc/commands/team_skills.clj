@@ -32,16 +32,22 @@
    :description (:description row)
    :body (:body row)
    :promoted-by (:promoted-by row)
+   ;; who promoted it (US #13): the profile's full name, or their email when the
+   ;; name is blank
+   :promoted-by-name (or (not-empty (:promoted-by-fullname row))
+                         (:promoted-by-email row))
    :source-skill-id (:source-profile-skill-id row)})
 
 ;; --- Query: a team's promoted skills
 
 (def ^:private sql:get-team-skills
-  "SELECT id, name, label, category, reactive, trigger_on, description, body,
-          promoted_by, source_profile_skill_id
-     FROM team_skill
-    WHERE team_id = ?
-    ORDER BY created_at")
+  "SELECT ts.id, ts.name, ts.label, ts.category, ts.reactive, ts.trigger_on,
+          ts.description, ts.body, ts.promoted_by, ts.source_profile_skill_id,
+          p.fullname AS promoted_by_fullname, p.email AS promoted_by_email
+     FROM team_skill ts
+     LEFT JOIN profile p ON p.id = ts.promoted_by
+    WHERE ts.team_id = ?
+    ORDER BY ts.created_at")
 
 (sv/defmethod ::get-team-skills
   {::doc/added "2.13"

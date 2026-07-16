@@ -40,6 +40,8 @@
   color: var(--color-foreground-secondary);
 }
 
+// --- List
+
 .skill-list {
   display: flex;
   flex-direction: column;
@@ -50,20 +52,23 @@
   max-inline-size: $s-712;
 }
 
+// A promoted skill: a full-width clickable card (name + short description +
+// tags) that opens its read-only detail.
 .skill-card {
   display: flex;
   flex-direction: column;
   gap: $s-6;
+  inline-size: 100%;
   padding: $s-16;
   border: $s-1 solid var(--color-background-quaternary);
   border-radius: $br-8;
   background-color: var(--color-background-primary);
-}
+  cursor: pointer;
+  text-align: start;
 
-.skill-head {
-  display: flex;
-  gap: $s-8;
-  align-items: center;
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
 }
 
 .skill-name {
@@ -72,29 +77,143 @@
   color: var(--color-foreground-primary);
 }
 
-.skill-tag {
-  @include t.use-typography("body-small");
-
-  padding: 0 $s-6;
-  border-radius: $br-8;
-  background-color: var(--color-background-quaternary);
-  color: var(--color-foreground-secondary);
-}
-
 .skill-desc {
   @include t.use-typography("body-small");
 
-  margin: 0;
   color: var(--color-foreground-secondary);
 }
 
-.empty {
+// A muted metadata row that matches the Skills panel's plain-text badges (not
+// filled pills): category · reactive · by <promoter>, dot-separated.
+.skill-tags {
+  display: flex;
+  gap: $s-6;
+  align-items: center;
+  flex-wrap: wrap;
+
+  > * + *::before {
+    content: "·";
+    margin-inline-end: $s-6;
+    color: var(--color-foreground-secondary);
+  }
+}
+
+.skill-tag {
   @include t.use-typography("body-small");
 
-  max-inline-size: $s-712;
-  padding: $s-32;
-  border: $s-1 dashed var(--color-background-quaternary);
-  border-radius: $br-8;
   color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+.skill-by {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+}
+
+// --- Detail
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: $s-12;
+  max-inline-size: $s-712;
+}
+
+.detail-head {
+  display: flex;
+  gap: $s-8;
+  align-items: center;
+}
+
+.detail-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: $s-4;
+  border: none;
+  border-radius: $br-8;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+.detail-name {
+  @include t.use-typography("title-medium");
+
+  color: var(--color-foreground-primary);
+}
+
+.detail-label {
+  @include t.use-typography("body-small");
+
+  margin-block-start: $s-4;
+  color: var(--color-foreground-secondary);
+  text-transform: uppercase;
+}
+
+.detail-trigger {
+  @include t.use-typography("body-medium");
+
+  margin: 0;
+  color: var(--color-foreground-primary);
+  font-style: italic;
+}
+
+.detail-what {
+  @include t.use-typography("body-medium");
+
+  margin: 0;
+  color: var(--color-foreground-primary);
+}
+
+.detail-note {
+  @include t.use-typography("body-small");
+
+  margin: $s-8 0 0;
+  color: var(--color-foreground-secondary);
+  font-style: italic;
+}
+
+// --- Empty state
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: $s-8;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: $s-32;
   text-align: center;
+}
+
+.empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: $s-48;
+  block-size: $s-48;
+  border-radius: 50%;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
+}
+
+.empty-title {
+  @include t.use-typography("title-small");
+
+  color: var(--color-foreground-primary);
+}
+
+.empty-desc {
+  @include t.use-typography("body-small");
+
+  max-inline-size: $s-360;
+  color: var(--color-foreground-secondary);
 }

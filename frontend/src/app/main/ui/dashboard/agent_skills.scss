@@ -8,6 +8,13 @@
 @use "ds/typography.scss" as t;
 
 .agent-skills-page {
+  // the dashboard content area is a grid (header row + content row); with no
+  // dashboard header we span both rows so the page fills the area instead of
+  // being clipped to the 64px header row.
+  grid-row: 1 / -1;
+  grid-column: 1 / -1;
+  min-block-size: 0;
+
   display: flex;
   flex-direction: column;
   gap: $s-16;

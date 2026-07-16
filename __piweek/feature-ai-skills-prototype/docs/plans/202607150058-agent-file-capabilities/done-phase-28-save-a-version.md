@@ -1,6 +1,6 @@
 # Phase 28 — Save a version
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; suite+live at merge — async snapshot bridge needs live check)
 
 The corpus's scariest sentence is gotcha #12: mutating variants through the plugin *"has
 corrupted files and hung all subsequent saves in live sessions."* Its prescribed defense is

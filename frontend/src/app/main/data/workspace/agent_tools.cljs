@@ -50,6 +50,7 @@
    [app.main.data.workspace.tokens.library-edit :as dwtl]
    [app.main.data.workspace.transforms :as dwt]
    [app.main.data.workspace.undo :as dwu]
+   [app.main.data.workspace.versions :as dwv-ver]
    [app.main.data.workspace.variants :as dwv]
    [app.main.data.workspace.wasm-text :as dwwt]
    [app.main.features :as features]
@@ -510,6 +511,17 @@
    {:name "redo_change"
     :description "Re-applies the most recently undone change — the counterpart to undo_change."
     :input-schema {:type "object" :properties {}}}
+
+   {:name "save_version"
+    :description
+    (str "Saves a named version snapshot of the file — the cheapest insurance "
+         "before risky work (a long build session, variant surgery). Undo takes "
+         "back the last step; a snapshot takes back the next hundred. Give a "
+         "label saying what it is a checkpoint for; it appears in the History "
+         "panel. Restoring is the user's move there, not the agent's.")
+    :input-schema {:type "object"
+                   :properties {:label {:type "string" :description "e.g. \"before variant surgery\""}}
+                   :required ["label"]}}
 
    {:name "switch_variant"
     :description
@@ -2460,6 +2472,45 @@
                                      "read_design.")}
                    new-id (assoc :shapeId (dm/str new-id)))))))))
 
+;; --- Save a version
+;;
+;; The cheapest insurance in the plan. gotcha #12's prescribed defence is manual
+;; ("duplicate the file before risky work"); this is the first-class answer —
+;; `create-version-from-plugins` force-persists and snapshots. Pairs with undo
+;; exactly where undo is weakest: undo covers the last step, a snapshot covers
+;; the next hundred. Restore is deliberately OUT — that is the user's move in the
+;; History panel, with their own eyes on what they lose.
+
+(defonce ^:private agent-version-count (atom 0))
+(def ^:private max-agent-versions 10)
+
+(defn- save-version
+  [{:keys [label]}]
+  (let [file-id (:current-file-id @st/state)
+        clean   (str/trim (str label))
+        full    (if (str/starts-with? clean "agent:") clean (str "agent: " clean))]
+    (cond
+      (str/blank? clean)
+      (rx/throw (ex-info (str "save_version: label is required — say what the snapshot is for,"
+                              " e.g. \"before variant surgery\"") {}))
+
+      (>= (deref agent-version-count) max-agent-versions)
+      (rx/throw (ex-info (str "save_version: already saved " max-agent-versions " snapshots this"
+                              " session — that is plenty of checkpoints. Prune or restore in the"
+                              " History panel.") {}))
+
+      :else
+      (do
+        (swap! agent-version-count inc)
+        (interrupt!)
+        ;; fire-and-report: the snapshot resolves async through the backend. The
+        ;; result discloses where to find it rather than blocking on the round trip.
+        (st/emit! (dwv-ver/create-version-from-plugins file-id full (fn [_]) (fn [_])))
+        (rx/of {:label full
+                :note (str "snapshot requested — it appears in the History panel › versions "
+                           "once the backend saves it (the file force-persists first). "
+                           "Restoring a version is the user's move there, not mine.")})))))
+
 ;; --- Drive the copy
 ;;
 ;; An instance, once placed, was frozen. These three one-event wraps let the
@@ -3358,6 +3409,7 @@
     "generate_code"      (generate-code input)
     "create_instance"    (create-instance input)
     "create_from_svg"    (create-from-svg input)
+    "save_version"       (save-version input)
     "switch_variant"     (switch-variant input)
     "reset_overrides"    (reset-overrides input)
     "swap_component"     (swap-component input)

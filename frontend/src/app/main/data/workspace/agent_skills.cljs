@@ -252,6 +252,25 @@
    "- **Layers** — name a layer for the semantic HTML element it represents (`nav`, `header`, `main`, `button`, `label`, `h1`–`h6`, `p`, `ul`, `li`, `img`); for non-semantic containers use a kebab-case role name (`card-container`, `button-group`, `field-row`). Never ship an auto-generated name like `Rectangle 12` or `Group 4` — renaming is a precondition for accessibility work and code review."
    "- **Token sets** — `primitives` (raw ramps), `semantic` (mode-invariant: `spacing.*`, `radius.*`, `font.*`), and `modes/light` + `modes/dark` holding the SAME colour names with per-mode values. A Light/Dark theme just toggles which `modes/*` set is active, so a shape bound by token name flips correctly."])
 
+;; Layout doctrine graduated into inner-knowledge after the Kahoot session
+;; (2026-07-16 postmortem): the flex-first rules existed only inside skill
+;; bodies that never got fetched, and the model burned ~150 calls building
+;; absolute-positioned screens it then had to restructure. Layout choices shape
+;; every build response — exactly the bar for this layer.
+(def ^:private layout-doctrine
+  ["## Layout doctrine"
+   "- **Every container is a flex or grid board — recursively.** A screen, a card, a list row, a button cluster: create a board, set_layout it, THEN create its children inside it in reading order. Boards nest as deep as the UI does."
+   "- **Never position UI with raw x/y.** Order + gap + padding + align/justify place children; set_layout_child (fill/fix/auto) expresses sizing intent. Absolute coordinates don't reflow and rot on the first edit — reserve x/y for placing top-level boards on the canvas and for genuine overlays (set_layout_child absolute:true)."
+   "- **Plain groups don't lay out** — they only bound shapes. When siblings need arranging or spacing, that is a board with a layout."
+   "- **\"Quick\", \"sloppy\" or \"rough\" means rough VALUES** — eyeballed gaps, placeholder content — never absolute positioning. A rough flex board refines in place; hand-placed coordinates must be rebuilt."
+   "- Build order for a screen: root column board → chrome and sections as child boards in reading order → leaves inside each section → spacing and tokens last."])
+
+(def ^:private visual-self-review
+  ["## Look at your work before presenting it"
+   "- After building or changing anything visible, render it (render_board) and actually LOOK: overlaps, clipping, missing or misordered elements, text overflow, broken hierarchy."
+   "- When the user attached reference images, compare your render against them before claiming a match — wrong order, spacing or hierarchy is a failure even when every shape exists. If you cannot see images on this model, say so instead of guessing."
+   "- Fix what you see with the smallest change and re-render. After two failed fixes, STOP and present the render with the remaining defects named — never declare success while a defect you noticed is still visible."])
+
 (def ^:private native-tool-notes
   ["## How your tools behave"
    "- Your tools are your only write path, and every change goes through Penpot's normal edit history — so anything you apply is undoable by the user."
@@ -262,7 +281,9 @@
 
 (def inner-knowledge
   "The always-on knowledge layer, inlined into every system prompt."
-  (str/join "\n" (concat governance [""] naming-conventions [""] native-tool-notes)))
+  (str/join "\n" (concat governance [""] naming-conventions [""]
+                         layout-doctrine [""] visual-self-review [""]
+                         native-tool-notes)))
 
 ;; --- Skill bodies (load-on-demand)
 ;;
@@ -479,7 +500,7 @@
       (str/join "\n"
                 (concat
                  ["## Skills available for this file"
-                  "These are your playbooks. When a task matches one, call get_design_skills with the skill's `name` (the value in backticks) to read its playbook and follow it — do not guess its content."]
+                  "These are your playbooks. When a task matches one, call get_design_skills with the skill's `name` (the value in backticks) BEFORE your first mutating call, read the playbook, and follow it — do not guess its content. This holds when the user asks for quick, sloppy or rough work (that changes the polish, not the method), and when continuing work a previous conversation started."]
                  (map (fn [s]
                         (str "- `" (:name s) "` — **" (:label s) "** (" (:category s) " · "
                              (get reactive-label (:reactive s) (:reactive s)) "): " (:blurb s)))

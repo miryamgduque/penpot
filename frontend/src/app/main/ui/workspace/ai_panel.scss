@@ -393,16 +393,16 @@
   overflow: hidden;
 }
 
-// One slim line: the toggle button (eye + headline + count) and the ✕ beside it.
+// Title over byline, ✕ top-right; the text block is the toggle.
 .observer-header-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .observer-header {
   display: flex;
-  gap: deprecated.$s-8;
-  align-items: center;
+  flex-direction: column;
+  gap: deprecated.$s-2;
   flex: 1;
   min-inline-size: 0;
   padding: deprecated.$s-8;
@@ -419,6 +419,7 @@
   flex-shrink: 0;
   inline-size: deprecated.$s-24;
   block-size: deprecated.$s-24;
+  margin-block-start: deprecated.$s-8;
   margin-inline-end: deprecated.$s-8;
   padding: 0;
   border: none;
@@ -433,31 +434,17 @@
   }
 }
 
-// Soft neutral square holding the eye — ties the card to Observer behavior
-// without shouting like the old amber bolt did.
-.observer-eye {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  inline-size: deprecated.$s-24;
-  block-size: deprecated.$s-24;
-  border-radius: deprecated.$br-6;
-  background-color: var(--color-background-tertiary);
-  color: var(--color-foreground-secondary);
-}
-
+// Smaller than the old title-small — the card is a notice, not a section head.
 .observer-headline {
-  @include scaled-title-small;
+  @include scaled-body-small;
 
   overflow: hidden;
-  flex-shrink: 0;
+  font-weight: 500;
   color: var(--color-foreground-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-// Inline after the headline on the same line, first to give way when narrow.
 .observer-summary {
   @include scaled-body-small;
 

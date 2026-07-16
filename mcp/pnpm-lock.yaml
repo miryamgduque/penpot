@@ -29,9 +29,6 @@ importers:
       '@penpot/plugin-types':
         specifier: 1.4.2
         version: 1.4.2
-      '@penpot/skills-core':
-        specifier: link:../../../skills-core
-        version: link:../../../skills-core
     devDependencies:
       cross-env:
         specifier: ^10.1.0
@@ -51,9 +48,6 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.4.3)
-      '@penpot/skills-core':
-        specifier: link:../../../skills-core
-        version: link:../../../skills-core
       class-transformer:
         specifier: ^0.5.1
         version: 0.5.1

@@ -17,7 +17,6 @@ import { ImportPenpotFileTool } from "./tools/ImportPenpotFileTool";
 import { CljsCompilerOutputTool } from "./tools/CljsCompilerOutputTool";
 import { CljCheckParentheses } from "./tools/CljCheckParentheses";
 import { ReadTaigaIssueTool } from "./tools/ReadTaigaIssueTool";
-import { GetDesignSkillsTool } from "./tools/GetDesignSkillsTool";
 import { NreplClient } from "./NreplClient";
 import { ReplServer } from "./ReplServer";
 import { ApiDocs } from "./ApiDocs";
@@ -215,7 +214,6 @@ export class PenpotMcpServer {
             new HighLevelOverviewTool(this),
             new PenpotApiInfoTool(this, this.apiDocs),
             new ExportShapeTool(this),
-            new GetDesignSkillsTool(this),
         ];
         if (this.isFileSystemAccessEnabled()) {
             toolInstances.push(new ImportImageTool(this));

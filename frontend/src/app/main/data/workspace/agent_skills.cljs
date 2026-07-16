@@ -8,9 +8,8 @@
   "What the agent knows, in two layers with different lifetimes.
 
   **`catalog`** — the built-in *skills*: playbooks the user chooses, shared with
-  the Skills-tab UI. Mirrors `skills-core`'s `builtinCatalog()` (US #7): the
-  bundled penpot-ai-kit skills, grouped by category, with a reactive behavior and
-  a first-run enabled default. The agent lists the ENABLED ones as a routing index and backs
+  the Skills-tab UI (US #7): the bundled penpot-ai-kit skills, grouped by
+  category, with a reactive behavior and a first-run enabled default. The agent lists the ENABLED ones as a routing index and backs
   `get_design_skills` with them. Cheap to carry (a name and a blurb); the body
   loads only when a task matches.
 
@@ -21,10 +20,9 @@
   The split is the always-loaded ↔ load-on-demand axis applied to our own corpus:
   conventions that shape every response are always-on; procedures are on-demand.
 
-  NOTE: only catalog metadata (name/category/reactive/blurb) is available natively —
-  the full skill bodies live in `skills-core` (TS). Bringing those into CLJS (a
-  generated `aikit.gen.cljs`, like `import-aikit.mjs` does for the MCP server) is
-  a follow-up; until then `get_design_skills` returns the metadata."
+  The full skill bodies are native too: `get_design_skills` serves them from
+  the generated `aikit-bodies` namespace (plus the stored body for user-created
+  skills)."
   (:require
    [app.main.data.workspace.aikit-bodies :as ab]
    [app.main.data.workspace.skill-state :as skst]
@@ -241,9 +239,10 @@
 ;;
 ;; The other half of the disclosure axis: the routing index above is always in
 ;; context and costs a line per skill; the BODY is thousands of tokens and loads
-;; only when a task actually matches. `aikit-bodies/bodies` is generated (see
-;; ai-skills/scripts/import-aikit-cljs.mjs), with the MCP/plugin-API sections and
-;; the sections duplicated by `inner-knowledge` already stripped.
+;; only when a task actually matches. `aikit-bodies/bodies` is generated from
+;; the committed kit import, with the tooling sections that do not apply to the
+;; native agent and the sections duplicated by `inner-knowledge` already
+;; stripped.
 ;;
 ;; Stripping whole sections is deterministic; what it cannot fix is prose that
 ;; assumes a capability we do not have. A few bodies still say things like

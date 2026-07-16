@@ -9,8 +9,7 @@
   (`::sse/ai-agent-round-stream`) — provider keys live with the profile on the
   server and never reach the browser. The proxy is a dumb pipe: it forwards our
   payload verbatim and re-emits the provider's own SSE frames, so both wire
-  dialects are decoded here. This is the native CLJS port of
-  `ai-skills/src/ui/agent.ts`.
+  dialects are decoded here.
 
   The conversation history is kept in ONE canonical form and re-encoded into
   the wire form of whichever provider is currently selected (Anthropic

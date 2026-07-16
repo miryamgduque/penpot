@@ -5,8 +5,7 @@
 ;; Copyright (c) KALEIDOS INC Sucursal en España SL
 
 (ns app.main.data.workspace.agent-tools
-  "The Agents' native design tools — the CLJS port of the plugin tools in
-  `ai-skills/src/ui/agent.ts` + `plugin.ts`. Each tool reads or mutates the
+  "The Agents' native design tools. Each tool reads or mutates the
   workspace through Penpot's internal APIs (no plugin runtime, no
   `execute_code`).
 
@@ -1287,7 +1286,7 @@
 
 ;; --- token-only-colors enforcement (tool boundary)
 ;;
-;; Port of skills-core/src/guard.ts. When the file enforces `token-only-colors`,
+;; When the file enforces `token-only-colors`,
 ;; the color-setting tools accept only colors that are a design token value or a
 ;; library color; a raw hex is rejected with a rule-tagged error the agent
 ;; recovers from by using create_token + apply_tokens. Which rules are

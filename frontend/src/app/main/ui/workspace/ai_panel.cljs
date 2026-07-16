@@ -1419,7 +1419,7 @@
   list after a delete."
   {::mf/private true}
   [{:keys [skill enabled on-toggle on-close on-promote]}]
-  (let [{:keys [label category reactive example what user? promoted? body]} skill
+  (let [{:keys [label category reactive example what user? body]} skill
         editing?* (mf/use-state false)
         editing?  (deref editing?*)
         confirm?* (mf/use-state false)
@@ -1456,7 +1456,7 @@
           [:div {:class (stl/css :vibes-actions)}
            [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
             "Edit"]
-           (when (and (not promoted?) on-promote)
+           (when on-promote
              [:button {:type "button" :class (stl/css :vibes-button) :on-click on-promote}
               "Promote to team"])
            [:button {:type "button"
@@ -1473,7 +1473,7 @@
   clicks so it doesn't. Enable/Disable is instant; Fork / Promote to team are
   entry points only (disabled — wired by US #10 / US #12)."
   {::mf/private true}
-  [{:keys [label blurb reactive enabled team? promoted? user? on-open on-set-enabled on-promote]}]
+  [{:keys [label blurb reactive enabled team? user? on-open on-set-enabled on-promote]}]
   (let [show-menu?  (mf/use-state false)
         toggle-menu (mf/use-fn #(swap! show-menu? not))
         close-menu  (mf/use-fn #(reset! show-menu? false))
@@ -1487,7 +1487,7 @@
                      (mf/deps on-set-enabled enabled)
                      (fn []
                        (on-set-enabled (not enabled))))]
-    [:div {:class (stl/css-case :catalog-card true :disabled (or (not enabled) promoted?))
+    [:div {:class (stl/css-case :catalog-card true :disabled (not enabled))
            :role "button"
            :tab-index 0
            :on-click on-open
@@ -1497,10 +1497,8 @@
       [:> reactive-badge* {:reactive reactive}]
       (when team?
         [:span {:class (stl/css :catalog-team)} "Team"])
-      (cond
-        ;; a personal skill already promoted to the team — the light link (US #12)
-        promoted?     [:span {:class (stl/css :catalog-promoted)} "Promoted to team"]
-        (not enabled) [:span {:class (stl/css :catalog-off)} "Off"])
+      (when-not enabled
+        [:span {:class (stl/css :catalog-off)} "Off"])
       ;; The menu lives inside the clickable row, so swallow its click/keydown to
       ;; keep them from opening the detail view.
       [:div {:class (stl/css :catalog-menu)
@@ -1519,9 +1517,9 @@
          [:li {:class (stl/css-case :menu-option true :menu-option-disabled true)
                :aria-disabled true}
           "Fork"]
-         ;; Promote to team (US #12): live only for a personal skill not already
-         ;; promoted; built-ins and team skills keep it disabled.
-         (if (and user? (not promoted?) on-promote)
+         ;; Promote to team (US #12): live only for a personal skill; built-ins
+         ;; and team skills keep it disabled.
+         (if (and user? on-promote)
            [:li {:class (stl/css :menu-option)
                  :role "button"
                  :on-click #(do (on-promote) (close-menu))}
@@ -1890,13 +1888,12 @@
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
             [:div {:class (stl/css :catalog-group-label)} category]
-            (for [{:keys [name label blurb reactive team? promoted? user?] :as entry} rows]
+            (for [{:keys [name label blurb reactive team? user?] :as entry} rows]
               [:> skill-row* {:key name
                               :label label
                               :blurb blurb
                               :reactive reactive
                               :team? team?
-                              :promoted? promoted?
                               :user? user?
                               :enabled (get enabled-map name true)
                               :on-open #(on-select name)

@@ -30,15 +30,12 @@
    :trigger (:trigger-on row)
    :description (:description row)
    :body (:body row)
-   :enabled (:is-enabled row)
-   ;; non-nil once promoted to a team (US #12): the personal copy is then shown
-   ;; disabled + lightly linked, and dropped from the active/router set
-   :promoted-to (:promoted-to row)})
+   :enabled (:is-enabled row)})
 
 ;; --- Query: the caller's own created skills
 
 (def ^:private sql:get-skills
-  "SELECT id, name, label, category, reactive, trigger_on, description, body, is_enabled, promoted_to
+  "SELECT id, name, label, category, reactive, trigger_on, description, body, is_enabled
      FROM profile_skill
     WHERE profile_id = ?
     ORDER BY created_at")

@@ -298,11 +298,7 @@
    :example     (:trigger us)
    :what        (:description us)
    :body        (:body us)
-   :user?       true
-   ;; set once promoted to a team (US #12): the personal copy is shown disabled +
-   ;; lightly linked and dropped from the active/router set (see `enabled-skills`)
-   :promoted?   (some? (:promoted-to us))
-   :promoted-to (:promoted-to us)})
+   :user?       true})
 
 ;; A team-promoted skill (US #12, from `[:team-skills]`) is shaped exactly like a
 ;; user skill so it merges into the catalog by name with no special-casing —
@@ -413,9 +409,7 @@
   [state]
   (vec (for [{:keys [category skills]} (resolved-catalog state)
              skill skills
-             ;; a promoted personal copy is inactive for its owner — the team
-             ;; version carries it instead (US #12)
-             :when (and (:enabled skill) (not (:promoted? skill)))]
+             :when (:enabled skill)]
          (assoc skill :category category))))
 
 (defn watched-rules

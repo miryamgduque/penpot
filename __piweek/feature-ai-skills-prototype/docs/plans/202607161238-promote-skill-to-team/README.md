@@ -49,9 +49,11 @@ the **agent panel**.
 
 ## What each side sees
 
-- **Promoter:** their personal copy is marked `promoted_to` the new team skill —
-  shown disabled with a "Promoted to team" reference (the *light link*), and
-  dropped from the active/router set. They use the team version like anyone.
+- **Promoter:** promoting **moves** the skill to the team — the original personal
+  copy is **not kept** (product decision, 2026-07-16, overriding the story's
+  "lightly linked" text): `::promote-skill` deletes the source `profile_skill`.
+  The promoter then uses the team version like anyone. (The `promoted_to` column
+  and `team_skill.source_profile_skill_id` from P1 are now vestigial/unused.)
 - **Every member:** the team skill appears as a card in their Skills tab, default
   **on**, merged into the catalog by category with a small "Team" marker.
 

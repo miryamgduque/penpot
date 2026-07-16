@@ -45,16 +45,27 @@
 ;; shape in would break the moment the user switched models mid-conversation.
 
 (defn- user-text
-  "The text half of a canonical user message: the turn's design context (when
-  present) followed by what the user typed."
-  [{:keys [text context]}]
-  (if (seq context)
-    (str/join "\n" ["## Current design context"
-                    "```json"
-                    (js/JSON.stringify (clj->js context))
-                    "```"
-                    ""
-                    text])
+  "The text half of a canonical user message: the turn's design context and
+  the auto-matched playbook (both when present), then what the user typed.
+  The playbook rides HERE — the volatile slot — because the system prompt is
+  the cached prefix and must stay task-independent; on the first message it is
+  paid once and cached with the rest of the history thereafter."
+  [{:keys [text context playbook]}]
+  (if (or (seq context) playbook)
+    (str/join "\n"
+              (concat
+               (when (seq context)
+                 ["## Current design context"
+                  "```json"
+                  (js/JSON.stringify (clj->js context))
+                  "```"
+                  ""])
+               (when playbook
+                 [(str "## Playbook: " (:skill playbook)
+                       " (auto-loaded for this task — follow its method)")
+                  (:body playbook)
+                  ""])
+               [text]))
     text))
 
 ;; Both providers take a plain string when there is nothing but text, and that
@@ -315,33 +326,42 @@
                    ;; per round rather than when the message was composed
                    (not (dai/vision? provider model))
                    (strip-images))
-        body
-        (js/JSON.stringify
-         (clj->js
-          (if (anthropic? provider)
-            (cond-> {:model model
-                     ;; generous budget: adaptive-thinking models can spend a
-                     ;; chunk reasoning before any visible output; a small
-                     ;; budget yields a silent empty reply
-                     :max_tokens 32000
-                     ;; the ephemeral marker caches tools+system across rounds
-                     :system [{:type "text" :text system
-                               :cache_control {:type "ephemeral"}}]
-                     ;; second marker: the history itself (see
-                     ;; mark-history-breakpoint). OpenAI-dialect providers cache
-                     ;; long prefixes automatically — no marker exists there.
-                     :messages (mark-history-breakpoint (encode-anthropic messages))}
-              (seq at/tool-specs) (assoc :tools (anthropic-tools))
-              stream?             (assoc :stream true))
-            (cond-> {:model model
-                     :messages (encode-openai system messages)}
-              (seq at/tool-specs)      (assoc :tools (openai-tools))
-              (= provider "openai")    (assoc :max_completion_tokens 16000)
-              (not= provider "openai") (assoc :max_tokens 16000)
-              stream?                  (assoc :stream true)
-              ;; without this opt-in the final chunk carries no usage at all
-              ;; and the spend meter silently reads zero
-              stream?                  (assoc :stream_options {:include_usage true})))))]
+        encode
+        (fn [messages]
+          (js/JSON.stringify
+           (clj->js
+            (if (anthropic? provider)
+              (cond-> {:model model
+                       ;; generous budget: adaptive-thinking models can spend a
+                       ;; chunk reasoning before any visible output; a small
+                       ;; budget yields a silent empty reply
+                       :max_tokens 32000
+                       ;; the ephemeral marker caches tools+system across rounds
+                       :system [{:type "text" :text system
+                                 :cache_control {:type "ephemeral"}}]
+                       ;; second marker: the history itself (see
+                       ;; mark-history-breakpoint). OpenAI-dialect providers cache
+                       ;; long prefixes automatically — no marker exists there.
+                       :messages (mark-history-breakpoint (encode-anthropic messages))}
+                (seq at/tool-specs) (assoc :tools (anthropic-tools))
+                stream?             (assoc :stream true))
+              (cond-> {:model model
+                       :messages (encode-openai system messages)}
+                (seq at/tool-specs)      (assoc :tools (openai-tools))
+                (= provider "openai")    (assoc :max_completion_tokens 16000)
+                (not= provider "openai") (assoc :max_tokens 16000)
+                stream?                  (assoc :stream true)
+                ;; without this opt-in the final chunk carries no usage at all
+                ;; and the spend meter silently reads zero
+                stream?                  (assoc :stream_options {:include_usage true}))))))
+        body (encode messages)
+        ;; Degrade before dying: only image base64 grows a payload past the
+        ;; cap (the NYT session aborted here twice on photographic renders).
+        ;; Strip every image — the omission notes remain, so the model knows
+        ;; what it lost — and retry once before giving up.
+        body (if (<= (count body) max-payload-chars)
+               body
+               (encode (strip-images messages)))]
     ;; Fail here rather than let the RPC schema reject it: this says which
     ;; message is too big and what to do, where the validation error says
     ;; nothing a user could act on.
@@ -840,8 +860,16 @@
                        :usage (add-usage (:usage seed) spent)
                        :history messages})
 
+               ;; the hard backstop gets the same resumable pause as the soft
+               ;; brake — `rx/empty` here ended the stream with no :done, which
+               ;; the panel could only render as a bare "⏹ Stopped." (the NYT
+               ;; session's mystery stops). History ends in tool-results at the
+               ;; top of step, so it is valid to resume from as-is.
                (>= round max-rounds)
-               (rx/empty)
+               (rx/of {:kind :checkpoint
+                       :rounds (+ (:rounds seed 0) round)
+                       :usage (add-usage (:usage seed) spent)
+                       :history messages})
 
                :else
                (->> (stream-round settings messages system)
@@ -1114,6 +1142,50 @@
                   ;; 5-minute cache TTL, so a marker would mostly buy 1.25×
                   ;; writes and no reads
                   :cache? false}))
+
+;; --- Playbook matching (turn-start injection)
+;;
+;; The NYT/Kahoot sessions showed the routing index alone does not create
+;; demand: build turns ran without ever fetching their playbook. Instead of
+;; gambling on a fetch, the FIRST message of a conversation runs one cheap
+;; tool-less round that names the matching skill, and the body is injected
+;; into the user message itself — zero extra agent rounds, cache-compatible.
+
+(def ^:private match-model "claude-haiku-4-5-20251001")
+
+(def ^:private match-system
+  (str "You route design tasks to playbooks. Given a task and a list of "
+       "playbooks, answer with the single best playbook's `name` exactly as "
+       "listed, or the word none. Answer with nothing else. Pick a playbook "
+       "only when the task clearly matches its purpose; questions, tiny "
+       "tweaks and conversation are none."))
+
+(defn match-playbook
+  "One buffered round naming the enabled skill whose playbook matches `text`
+  → observable of `{:skill :body :usage}` (skill/body nil on no match).
+  Anthropic-only like the other side work; every failure degrades to no
+  injection — this is an optimization, never a blocker."
+  [state text]
+  (let [skills (ask/catalog-manifest state)]
+    (if (or (str/blank? text) (empty? skills))
+      (rx/of {})
+      (->> (detect-round {:provider "anthropic" :model match-model}
+                         match-system
+                         (str "Task:\n"
+                              (subs text 0 (min 1500 (count text)))
+                              "\n\nPlaybooks:\n"
+                              (str/join "\n"
+                                        (map #(str "- " (:name %) " — " (:label %)
+                                                   ": " (:blurb %))
+                                             skills))))
+           (rx/map (fn [{:keys [text usage]}]
+                     (let [nm   (str/trim (or text ""))
+                           body (when (and (not= "none" nm)
+                                           (some #(= nm (:name %)) skills))
+                                  (ask/skill-body state nm))]
+                       (cond-> {:usage usage}
+                         body (assoc :skill nm :body body)))))
+           (rx/catch (fn [_] (rx/of {})))))))
 
 ;; --- Auto-compaction: the summarizer round
 

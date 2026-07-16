@@ -23,6 +23,7 @@
    [app.common.files.helpers :as cfh]
    [app.common.files.variant :as cfv]
    [app.common.geom.point :as gpt]
+   [app.common.logic.libraries :as cll]
    [app.common.path-names :as cpn]
    [app.common.types.component :as ctc]
    [app.common.types.components-list :as ctkl]
@@ -71,6 +72,11 @@
    [potok.v2.core :as ptk]))
 
 (declare audit-violations)
+;; grid-cell reflow lives with the layout tools; nest_shape (earlier) reseats
+;; grid cells after a reorder
+(declare reflow-grid-cells)
+;; defined beside render-board's wasm plumbing, used by encode-render above it
+(declare uint8->base64)
 ;; shared problem-checker helper, defined with the delete/duplicate tools but used
 ;; by the earlier mask section too
 (declare ids-problem)
@@ -270,8 +276,12 @@
     :description
     (str "Fetches an image from an http(s) URL (downloaded server-side) and "
          "places it as an image shape. Ideal for mock content from keyless "
-         "placeholder services — photos: https://picsum.photos/{w}/{h} (insert "
-         "/seed/{word}/ before the size for a stable pick), labeled blocks: "
+         "placeholder services — photos BY KEYWORD: "
+         "https://loremflickr.com/{w}/{h}/{keyword} (e.g. /320/320/pasta — use "
+         "this when the content matters: food, portrait, city…), random "
+         "photos: https://picsum.photos/{w}/{h} (insert /seed/{word}/ before "
+         "the size for a stable pick — the seed does NOT pick the subject), "
+         "labeled blocks: "
          "https://placehold.co/{w}x{h}/{bghex}/{fghex}.png?text={label}, "
          "avatars: https://api.dicebear.com/9.x/{style}/png?seed={name} "
          "(styles: lorelei, avataaars, shapes, initials). Any public image URL "
@@ -394,7 +404,9 @@
          "a locked shape is refused unless you set locked:false. Position/size "
          "writes return the SETTLED geometry — if it differs from what you "
          "sent, something (a parent layout, a component) owns it; do not "
-         "re-send the same numbers.")
+         "re-send the same numbers. A layout child set absolute takes x/y "
+         "relative to its PARENT board, not the page. For several shapes use "
+         "update_shapes — one call, one undo step.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
                                 :name {:type "string"}
@@ -434,6 +446,23 @@
                                 :hidden {:type "boolean"}
                                 :locked {:type "boolean" :description "a user lock; the agent respects it unless you set false"}}
                    :required ["shapeId"]}}
+
+   {:name "update_shapes"
+    :description
+    (str "Applies modify_shape-style updates to MANY shapes in one call and "
+         "ONE undo step — prefer this over repeated modify_shape (clearing "
+         "fills on a batch of layout boards, renaming several layers, nudging "
+         "a set of positions). Each entry takes the same fields as "
+         "modify_shape. All-or-nothing: one invalid entry rejects the whole "
+         "batch, so nothing half-applies. Geometry settles asynchronously — "
+         "verify with read_design.")
+    :input-schema {:type "object"
+                   :properties {:updates {:type "array"
+                                          :items {:type "object"
+                                                  :description "same fields as modify_shape (shapeId required)"
+                                                  :properties {:shapeId {:type "string"}}
+                                                  :required ["shapeId"]}}}
+                   :required ["updates"]}}
 
    {:name "nest_shape"
     :description
@@ -527,12 +556,57 @@
     (str "Duplicates shapes, exactly as ⌘D does — which means a duplicated "
          "BOARD lands to the right of its original, while any other shape lands "
          "exactly ON TOP of the one it copied and must be moved to be seen. "
-         "Cheaper and more faithful than rebuilding a copy with create_shape. To "
-         "add a variant to an existing set use add_variant instead — that keeps "
-         "the copy inside the set.")
+         "Cheaper and more faithful than rebuilding a copy with create_shape. "
+         "For copies with different content (titles, images) or copies that "
+         "should land inside a laid-out board, use clone_shape — one call does "
+         "the duplicate + re-nest + retext chain. To add a variant to an "
+         "existing set use add_variant instead — that keeps the copy inside "
+         "the set.")
     :input-schema {:type "object"
                    :properties {:shapeIds {:type "array" :items {:type "string"}}}
                    :required ["shapeIds"]}}
+
+   {:name "clone_shape"
+    :description
+    (str "Duplicates a shape N times with per-clone content — the one-call way "
+         "to turn a finished card/list-item/tile into a populated set. Each "
+         "clone can override the copy's layer name plus, matched BY LAYER NAME "
+         "inside the copy, its texts (textByName) and image fills (imageByName "
+         "— an http(s) URL to fetch, or an existing imageId to reuse). Pass "
+         "parentId to append the clones to a laid-out board's flow in order "
+         "(grid cells reseat to match). Prefer this over duplicate_shape + "
+         "re-nest + set_text chains. Asynchronous: verify with render_board.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string" :description "the shape to clone (a board/card works best)"}
+                                :parentId {:type "string" :description "board to append the clones into (optional)"}
+                                :clones {:type "array"
+                                         :items {:type "object"
+                                                 :properties {:name {:type "string" :description "layer name for this clone"}
+                                                              :textByName {:type "object"
+                                                                           :description "layer name → new words, e.g. {\"title\": \"Sheet-Pan Quesadillas\"}"}
+                                                              :imageByName {:type "object"
+                                                                            :description "layer name → image URL or existing imageId"}}}}}
+                   :required ["shapeId" "clones"]}}
+
+   {:name "build_tree"
+    :description
+    (str "Creates a whole nested subtree in ONE call: boards with layouts, "
+         "rects/ellipses, texts and images, with token bindings and fonts, "
+         "children flowing in the listed (reading) order. THE default way to "
+         "build a section or a screen skeleton — plan the structure, send one "
+         "tree, then refine with targeted calls; 30 create/nest/set_layout "
+         "rounds collapse into one. Node: {type: board|rect|ellipse|text|image, "
+         "name, width/height (x/y only for the root), text (type text), url "
+         "(type image), fill (hex), layout (set_layout fields, boards only), "
+         "layoutChild (set_layout_child fields), tokens ([{name, properties}] "
+         "as in apply_tokens), font ({family, variant}, text only), children "
+         "(boards only)}. Returns ids keyed by node name. On an error you get "
+         "a PARTIAL result naming what exists — repair with targeted calls, "
+         "never re-send the tree. Asynchronous: verify with render_board.")
+    :input-schema {:type "object"
+                   :properties {:parentId {:type "string" :description "existing board to build into (optional)"}
+                                :tree {:type "object" :description "the root node"}}
+                   :required ["tree"]}}
 
    {:name "set_layout"
     :description
@@ -578,8 +652,10 @@
          "hug-contents. The parent must already have a layout (set_layout); "
          "without one these settings are stored and do nothing. Exception: on a "
          "board that itself has a layout, fix/auto sizing works with no parent — "
-         "that is how a top-level board or component hugs its content. Margins "
-         "accept spacing tokens via apply_tokens. Asynchronous.")
+         "that is how a top-level board or component hugs its content. An "
+         "absolute child is positioned with modify_shape x/y RELATIVE TO ITS "
+         "PARENT board, not the page. Margins accept spacing tokens via "
+         "apply_tokens. Asynchronous.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
                                 :horizontalSizing {:type "string" :enum ["fill" "fix" "auto"]}
@@ -837,7 +913,8 @@
          "shapes with apply_tokens. Prefer a token over a literal for any value "
          "that repeats — a spacing token on a layout's gap is as much a token as "
          "a color on a fill. A value may reference another token, e.g. "
-         "\"{color.blue.500}\".")
+         "\"{color.blue.500}\". For a scale or a palette use create_tokens "
+         "(plural) — one call instead of one per token.")
     :input-schema {:type "object"
                    :properties {:type {:type "string" :enum token-type-names
                                        :description "e.g. color, spacing, borderRadius"}
@@ -846,6 +923,26 @@
                                 :set {:type "string"
                                       :description "target set, e.g. \"modes/dark\"; defaults to the file's existing set"}}
                    :required ["type" "name" "value"]}}
+
+   {:name "create_tokens"
+    :description
+    (str "Creates MANY design tokens in one call — prefer this over repeated "
+         "create_token whenever you author a scale or a palette (the usual "
+         "case). Entries validate together, including that each target set "
+         "exists (create_token_set first on a fresh file); nothing is created "
+         "unless everything passes. Values may reference other tokens, even "
+         "ones earlier in the same batch, e.g. \"{color.blue.500}\".")
+    :input-schema {:type "object"
+                   :properties {:set {:type "string"
+                                      :description "default target set for entries without their own"}
+                                :tokens {:type "array"
+                                         :items {:type "object"
+                                                 :properties {:name {:type "string"}
+                                                              :type {:type "string" :enum token-type-names}
+                                                              :value {:type "string"}
+                                                              :set {:type "string"}}
+                                                 :required ["name" "type" "value"]}}}
+                   :required ["tokens"]}}
 
    {:name "create_token_set"
     :description
@@ -1311,6 +1408,55 @@
 ;; visible.
 (def ^:private default-render-scale 2)
 
+;; Image budgets: past the soft threshold a render re-encodes as JPEG (a
+;; PHOTOGRAPHIC board compresses ~10×; crisp UI renders rarely cross it); past
+;; the hard budget it is refused with the fix named. One oversized render must
+;; never kill the NEXT request — the 4M-char payload cap aborted the NYT
+;; session twice on photo-filled grid renders.
+(def ^:private jpeg-threshold-b64-chars 300000)
+(def ^:private max-render-b64-chars 1000000)
+
+(defn- bytes->jpeg-b64
+  "PNG pixels → JPEG q0.8 base64. Decodes via Blob + createImageBitmap (no
+  fetch, CSP-quiet). Any failure resolves to nil — the caller keeps the PNG."
+  [bytes]
+  (->> (rx/from
+        (-> (js/createImageBitmap (js/Blob. #js [bytes] #js {:type "image/png"}))
+            (.then (fn [bitmap]
+                     (let [canvas (js/OffscreenCanvas. (.-width bitmap) (.-height bitmap))]
+                       (.drawImage (.getContext canvas "2d") bitmap 0 0)
+                       (.convertToBlob canvas #js {:type "image/jpeg" :quality 0.8}))))
+            (.then (fn [blob]
+                     (js/Promise.
+                      (fn [resolve reject]
+                        (let [reader (js/FileReader.)]
+                          (set! (.-onload reader)
+                                #(let [s (.-result reader)]
+                                   (resolve (subs s (inc (str/index-of s ","))))))
+                          (set! (.-onerror reader) reject)
+                          (.readAsDataURL reader blob))))))))
+       (rx/catch (fn [_] (rx/of nil)))))
+
+(defn- encode-render
+  "One rendered board → its attachable image entry (or a refusal)."
+  [{:keys [bytes] :as r}]
+  (let [png (uint8->base64 bytes)
+        r   (dissoc r :bytes)]
+    (if (<= (count png) jpeg-threshold-b64-chars)
+      (rx/of (assoc r :mtype "image/png" :data png))
+      (->> (bytes->jpeg-b64 bytes)
+           (rx/map
+            (fn [jpeg]
+              (let [[mtype data] (if (and jpeg (< (count jpeg) (count png)))
+                                   ["image/jpeg" jpeg]
+                                   ["image/png" png])]
+                (if (> (count data) max-render-b64-chars)
+                  {:name (:name r)
+                   :error (str "render too large to attach even compressed — "
+                               "render a smaller shape (one section, not the "
+                               "whole screen) or pass scale 1")}
+                  (assoc r :mtype mtype :data data)))))))))
+
 (defn- uint8->base64
   "The WASM side hands back raw PNG bytes; the wire wants base64.
 
@@ -1391,12 +1537,12 @@
                                   (let [bytes (wasm.api/render-shape-pixels id scale)]
                                     {:name (or (:name (get objects id)) term)
                                      :id (str id)
-                                     ;; base64 of the PNG the WASM side wrote
-                                     :data (uint8->base64 bytes)})
+                                     ;; raw PNG pixels; encoding decides the format
+                                     :bytes bytes})
                                   (catch :default cause
                                     {:name term :error (or (ex-message cause) "render failed")})))))
                           terms)
-            ok      (filterv :data results)
+            ok      (filterv :bytes results)
             failed  (filterv :error results)]
         (if (empty? ok)
           (rx/throw (ex-info (str "Could not render: "
@@ -1405,10 +1551,21 @@
           ;; `:images` is lifted out before the rest is JSON-stringified into the
           ;; tool result — otherwise 200kB of base64 would be truncated into the
           ;; 20k-char content string and the model would see a mangled prefix.
-          (rx/of {:images (mapv (fn [r] {:mtype "image/png" :data (:data r)}) ok)
-                  :rendered (mapv (fn [r] (select-keys r [:name :id])) ok)
-                  :failed (when (seq failed) (mapv #(select-keys % [:name :error]) failed))
-                  :scale scale}))))))
+          (->> (reduce (fn [acc r] (rx/concat acc (encode-render r))) (rx/empty) ok)
+               (rx/reduce conj [])
+               (rx/map
+                (fn [encoded]
+                  (let [good   (filterv :data encoded)
+                        over   (filterv :error encoded)
+                        failed (into failed over)]
+                    (if (empty? good)
+                      (throw (ex-info (str "Could not render: "
+                                           (str/join "; " (map #(str (:name %) " — " (:error %)) failed)))
+                                      {}))
+                      {:images (mapv #(select-keys % [:mtype :data]) good)
+                       :rendered (mapv #(select-keys % [:name :id]) good)
+                       :failed (when (seq failed) (mapv #(select-keys % [:name :error]) failed))
+                       :scale scale}))))))))))
 
 ;; --- Structural tools (create / modify / nest)
 ;;
@@ -2148,84 +2305,99 @@
             " to keep it as-is — ask before changing it, or unlock it deliberately"
             " with modify_shape locked:false.")))
 
-(defn- modify-shape
-  [{:keys [shapeId x y width height fill stroke shadow strokeWidth strokeStyle
-           hidden locked rotation flipH flipV] :as input}]
-  (let [nm      (:name input)
-        id      (some-> shapeId parse-uuid)
-        state   @st/state
-        shape   (when id (get (dsh/lookup-page-objects state) id))]
+(defn- modify-throwable
+  "The rejection (an ex-info, carrying :rule for guard hits) for ONE
+  modify_shape-style update, or nil. Shared by modify_shape and the
+  update_shapes batch; `tool` names whichever surfaced it."
+  [tool state objects {:keys [shapeId fill strokeStyle] :as input}]
+  (let [id    (some-> shapeId parse-uuid)
+        shape (when id (get objects id))]
     (cond
       (nil? id)
-      (rx/throw (ex-info "modify_shape: missing or invalid shapeId" {}))
+      (ex-info (dm/str tool ": missing or invalid shapeId") {})
 
       (nil? shape)
-      (rx/throw (ex-info (dm/str "modify_shape: no shape with id " shapeId " on this page") {}))
+      (ex-info (dm/str tool ": no shape with id " shapeId " on this page") {})
 
       (some? (locked-problem shape input))
-      (rx/throw (ex-info (locked-problem shape input) {}))
+      (ex-info (locked-problem shape input) {})
 
       (some? (fill-problem fill))
-      (rx/throw (ex-info (dm/str "modify_shape: " (fill-problem fill)) {}))
+      (ex-info (dm/str tool ": " (fill-problem fill)) {})
 
-      (some? (enum-problem "modify_shape" "strokeStyle" strokeStyle stroke-styles))
-      (rx/throw (ex-info (enum-problem "modify_shape" "strokeStyle" strokeStyle stroke-styles) {}))
+      (some? (enum-problem tool "strokeStyle" strokeStyle stroke-styles))
+      (ex-info (enum-problem tool "strokeStyle" strokeStyle stroke-styles) {})
 
       ;; the guard runs last: a rejection naming the rule is the most useful
       ;; message, so it should not mask a plain input error
-      (some #(color-violation state %) (input-colors input))
-      (rx/throw (some #(color-violation state %) (input-colors input)))
-
       :else
-      (let [tx     (random-uuid)
-            styles (style-attrs input)]
+      (some #(color-violation state %) (input-colors input)))))
+
+(defn- emit-shape-update!
+  "Emits one already-validated modify_shape-style update for `id`. No undo
+  transaction of its own — the caller brackets one around the whole call (or
+  the whole batch)."
+  [{:keys [x y width height fill stroke shadow strokeWidth strokeStyle
+           hidden locked rotation flipH flipV] :as input} id]
+  (let [nm     (:name input)
+        styles (style-attrs input)]
+    (when nm
+      (st/emit! (dwsh/update-shapes [id] #(assoc % :name nm))))
+    (when (seq styles)
+      (st/emit! (dwsh/update-shapes [id] #(merge % styles))))
+    (when shadow
+      (st/emit! (dwsh/update-shapes [id] #(assoc % :shadow [(shadow->shape shadow)]))))
+    ;; hide/lock — some? so `false` genuinely unhides/unlocks
+    (when (or (some? hidden) (some? locked))
+      (st/emit! (dwsh/update-shape-flags [id]
+                                         (cond-> {}
+                                           (some? hidden) (assoc :hidden hidden)
+                                           (some? locked) (assoc :blocked locked)))))
+    (when (some? rotation)
+      ;; absolute (the event computes the delta from the shape's current angle)
+      (st/emit! (dwt/increase-rotation [id] rotation)))
+    (when flipH (st/emit! (dwt/flip-horizontal-selected [id])))
+    (when flipV (st/emit! (dwt/flip-vertical-selected [id])))
+    (when (or (some? x) (some? y))
+      (st/emit! (dwt/update-position id (cond-> {}
+                                          (some? x) (assoc :x x)
+                                          (some? y) (assoc :y y)))))
+    (when (some? width)
+      (st/emit! (dwt/update-dimensions [id] :width width)))
+    (when (some? height)
+      (st/emit! (dwt/update-dimensions [id] :height height)))
+    (when fill
+      (st/emit! (dwsh/update-shapes [id] #(assoc % :fills (fill->shape fill)))))
+    (when stroke
+      (st/emit! (dwsh/update-shapes [id] #(assoc % :strokes [{:stroke-color stroke
+                                                              :stroke-opacity 1
+                                                              :stroke-width (or strokeWidth 1)
+                                                              :stroke-style (keyword (or strokeStyle "solid"))
+                                                              :stroke-alignment :center}]))))
+    ;; stroke width/style change with no new color: patch the existing stroke
+    (when (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)))
+      (st/emit! (dwsh/update-shapes [id]
+                                    (fn [s]
+                                      (update s :strokes
+                                              (fn [strokes]
+                                                (let [st0 (or (first strokes)
+                                                              {:stroke-color "#000000" :stroke-opacity 1
+                                                               :stroke-alignment :center})]
+                                                  [(cond-> st0
+                                                     (some? strokeWidth) (assoc :stroke-width strokeWidth)
+                                                     (some? strokeStyle) (assoc :stroke-style (keyword strokeStyle)))])))))))))
+
+(defn- modify-shape
+  [{:keys [shapeId x y width height] :as input}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)]
+    (if-let [throwable (modify-throwable "modify_shape" state objects input)]
+      (rx/throw throwable)
+      (let [id (parse-uuid shapeId)
+            tx (random-uuid)]
         (interrupt!)
         (st/emit! (dwu/start-undo-transaction tx))
-        (when nm
-          (st/emit! (dwsh/update-shapes [id] #(assoc % :name nm))))
-        (when (seq styles)
-          (st/emit! (dwsh/update-shapes [id] #(merge % styles))))
-        (when shadow
-          (st/emit! (dwsh/update-shapes [id] #(assoc % :shadow [(shadow->shape shadow)]))))
-        ;; hide/lock — some? so `false` genuinely unhides/unlocks
-        (when (or (some? hidden) (some? locked))
-          (st/emit! (dwsh/update-shape-flags [id]
-                                             (cond-> {}
-                                               (some? hidden) (assoc :hidden hidden)
-                                               (some? locked) (assoc :blocked locked)))))
-        (when (some? rotation)
-          ;; absolute (the event computes the delta from the shape's current angle)
-          (st/emit! (dwt/increase-rotation [id] rotation)))
-        (when flipH (st/emit! (dwt/flip-horizontal-selected [id])))
-        (when flipV (st/emit! (dwt/flip-vertical-selected [id])))
-        (when (or (some? x) (some? y))
-          (st/emit! (dwt/update-position id (cond-> {}
-                                              (some? x) (assoc :x x)
-                                              (some? y) (assoc :y y)))))
-        (when (some? width)
-          (st/emit! (dwt/update-dimensions [id] :width width)))
-        (when (some? height)
-          (st/emit! (dwt/update-dimensions [id] :height height)))
-        (when fill
-          (st/emit! (dwsh/update-shapes [id] #(assoc % :fills (fill->shape fill)))))
-        (when stroke
-          (st/emit! (dwsh/update-shapes [id] #(assoc % :strokes [{:stroke-color stroke
-                                                                  :stroke-opacity 1
-                                                                  :stroke-width (or strokeWidth 1)
-                                                                  :stroke-style (keyword (or strokeStyle "solid"))
-                                                                  :stroke-alignment :center}]))))
-        ;; stroke width/style change with no new color: patch the existing stroke
-        (when (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)))
-          (st/emit! (dwsh/update-shapes [id]
-                                        (fn [s]
-                                          (update s :strokes
-                                                  (fn [strokes]
-                                                    (let [st0 (or (first strokes)
-                                                                  {:stroke-color "#000000" :stroke-opacity 1
-                                                                   :stroke-alignment :center})]
-                                                      [(cond-> st0
-                                                         (some? strokeWidth) (assoc :stroke-width strokeWidth)
-                                                         (some? strokeStyle) (assoc :stroke-style (keyword strokeStyle)))])))))))
+        (emit-shape-update! input id)
         (st/emit! (dwu/commit-undo-transaction tx))
         (if-not (or (some? x) (some? y) (some? width) (some? height))
           (rx/of {:id shapeId :note "modified — verify with read_design"})
@@ -2254,6 +2426,34 @@
                                   "parent), auto-width text re-measures itself. Do "
                                   "not re-send the same x/y.")
                              "modified — settled at the requested geometry")})))))))))
+
+(defn- update-shapes-batch
+  "update_shapes: many modify_shape-style updates as ONE call and ONE undo
+  step. All-or-nothing — every update is validated before anything is touched,
+  so a bad entry cannot leave the batch half-applied."
+  [{:keys [updates]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)]
+    (if-not (and (sequential? updates) (seq updates))
+      (rx/throw (ex-info (str "update_shapes: pass updates — an array of "
+                              "modify_shape-style {shapeId, …} maps")
+                         {}))
+      (if-let [throwable
+               (some (fn [[i u]]
+                       (when-let [t (modify-throwable "update_shapes" state objects u)]
+                         (ex-info (dm/str "updates[" i "]: " (ex-message t))
+                                  (or (ex-data t) {}))))
+                     (map-indexed vector updates))]
+        (rx/throw throwable)
+        (do
+          (interrupt!)
+          (let [tx (random-uuid)]
+            (st/emit! (dwu/start-undo-transaction tx))
+            (run! (fn [u] (emit-shape-update! u (parse-uuid (:shapeId u)))) updates)
+            (st/emit! (dwu/commit-undo-transaction tx)))
+          (rx/of {:updated (count updates)
+                  :note (str "updated — one undo step. Geometry settles "
+                             "asynchronously; verify with read_design.")}))))))
 
 (defn nest-problem
   "Why `nest_shape` cannot run, or nil. Pure. Public for tests.
@@ -2315,12 +2515,21 @@
              (rx/map (fn [_]
                        (let [shape' (get (dsh/lookup-page-objects @st/state) id)]
                          (if (= pid (:parent-id shape'))
-                           {:id shapeId :parentId parentId
-                            :note (str "reparented"
-                                       (when (ctl/any-layout? parent)
-                                         (str " — the parent lays out its children,"
-                                              " so it now controls this shape's position"))
-                                       ". Verify with read_design.")}
+                           (do
+                             ;; grid CELLS pin children regardless of vector
+                             ;; order — reseat them all in flow order so the
+                             ;; requested position actually lands (the NYT
+                             ;; session re-nested four times to no effect)
+                             (when (ctl/grid-layout? parent)
+                               (st/emit! (dwsh/update-shapes [pid] reflow-grid-cells
+                                                             {:with-objects? true}))
+                               (st/emit! (ptk/data-event :layout/update {:ids [pid]})))
+                             {:id shapeId :parentId parentId
+                              :note (str "reparented"
+                                         (when (ctl/any-layout? parent)
+                                           (str " — the parent lays out its children,"
+                                                " so it now controls this shape's position"))
+                                         ". Verify with read_design.")})
                            (throw (ex-info
                                    (str "nest_shape: the move did not take — Penpot "
                                         "refused it (typically component or variant "
@@ -2710,8 +2919,23 @@
                :layout-grid-rows    (vec (repeat rows ctl/default-track-value))
                :layout-grid-cells   {})
         (ctl/create-cells [1 1 n rows])
+        ;; assign-cells consumes :shapes in VECTOR order, but the canonical
+        ;; vector is REVERSED reading order (reorder-grid-children rebuilds it
+        ;; that way) — flip so the first flow item lands in the first cell;
+        ;; the reorder below restores the canonical vector from the cells.
+        ;; Without this, re-asserting columns seats the LAST child in cell 1
+        ;; (the NYT session's scrambled 2×2).
+        (update :shapes (comp vec rseq))
         (ctl/assign-cells objects)
         (ctl/reorder-grid-children))))
+
+(defn reflow-grid-cells
+  "Reseat ALL of a grid's children into cells following the :shapes vector's
+  flow order — the deterministic answer to \"I re-nested but the grid kept its
+  cell assignments\". Keeps the column count, resets manual placements/spans
+  (agent-built grids are auto-flowed anyway). Public for tests."
+  [shape objects]
+  (rebuild-grid shape objects (max 1 (count (:layout-grid-columns shape)))))
 
 (defn layout-problem
   "Why `set_layout` cannot be applied to `id`, as a message the agent can act on,
@@ -3714,6 +3938,48 @@
                         :note "token created — bind it to shapes with apply_tokens"}
                  target-set (assoc :set (normalize-set target-set))))))))
 
+(defn- create-tokens
+  "create_tokens: many tokens in ONE call — the NYT session spent 20 rounds on
+  what this does in one. All-or-nothing: every entry validates (including its
+  target set existing) before any token is created."
+  [{:keys [tokens] default-set :set}]
+  (let [state (deref st/state)
+        names (set-names state)]
+    (if-not (and (sequential? tokens) (seq tokens))
+      (rx/throw (ex-info (str "create_tokens: pass tokens — an array of "
+                              "{name, type, value, set?}; a top-level `set` is "
+                              "the default for entries without one")
+                         {}))
+      (let [entries  (mapv (fn [t] (update t :set #(or % default-set))) tokens)
+            problems (into []
+                           (keep-indexed
+                            (fn [i t]
+                              (when-let [p (or (token-problem t)
+                                               (some->> (token-set-problem names (:set t))
+                                                        (dm/str "create_tokens: ")))]
+                                (dm/str "tokens[" i "]"
+                                        (when (:name t) (dm/str " (" (:name t) ")"))
+                                        ": " p))))
+                           entries)]
+        (if (seq problems)
+          (rx/throw (ex-info (str/join " | " problems) {}))
+          (do
+            (interrupt!)
+            (run! (fn [{:keys [type name value] target-set :set}]
+                    (let [set-id (if target-set
+                                   (set-id-by-name state target-set)
+                                   (existing-token-set-id state))
+                          token  (ctob/make-token {:type (token-type type)
+                                                   :name name :value value})]
+                      (st/emit! (if set-id
+                                  (dwtl/create-token set-id token)
+                                  (dwtl/create-token token)))))
+                  entries)
+            (rx/of {:created (count entries)
+                    :note (str "tokens created — bind them to shapes with "
+                               "apply_tokens; values referencing other tokens "
+                               "(\"{color.blue.500}\") resolve lazily")})))))))
+
 (defn- create-token-set
   [{:keys [name]}]
   (let [state (deref st/state)]
@@ -4396,6 +4662,297 @@
                           {:cause-hint (ex-message cause)})
                  cause))))))))
 
+;; --- Composition layer: clone_shape / build_tree
+;;
+;; The NYT postmortem's first-ranked strategy: cost is rounds × prefix, and
+;; only collapsing rounds moves it 5-10×. These two tools do in ONE round what
+;; the transcripts show taking 25+ — cloning a card into a grid with per-clone
+;; content, and standing up a whole laid-out subtree.
+
+(def ^:private max-clones 12)
+
+(defn clone-problem
+  "Why `clone_shape` cannot run, or nil. Pure. Public for tests."
+  [objects id pid clones]
+  (let [shape  (get objects id)
+        parent (when pid (get objects pid))]
+    (cond
+      (nil? id)
+      "clone_shape: missing or invalid shapeId"
+
+      (nil? shape)
+      (dm/str "clone_shape: no shape on this page with id " (str id)
+              " — check read_design")
+
+      (not (and (sequential? clones) (seq clones)))
+      (str "clone_shape: pass clones — an array of override maps"
+           " ({} for a plain copy)")
+
+      (> (count clones) max-clones)
+      (dm/str "clone_shape: at most " max-clones " clones per call")
+
+      (not (ctc/allow-duplicate? objects shape))
+      (dm/str "clone_shape: " (shape-label shape) " is inside a component copy,"
+              " whose structure is owned by the main component — clone the main"
+              " instead, or detach_instance first")
+
+      (and (some? pid) (nil? parent))
+      (dm/str "clone_shape: no shape on this page with id " (str pid)
+              " (the parentId) — check read_design")
+
+      (and parent (not (or (cfh/frame-shape? parent) (cfh/group-shape? parent))))
+      (dm/str "clone_shape: " (shape-label parent) " is a "
+              (some-> (:type parent) name)
+              " — the parent must be a board or a group")
+
+      (and parent (or (ctc/in-component-copy? parent)
+                      (ctn/has-any-copy-parent? objects parent)))
+      (dm/str "clone_shape: " (shape-label parent) " is part of a component"
+              " copy — clone into the main component instead"))))
+
+(defn- upload-image-url
+  "External image URL → the image-fill descriptor for `fill->shape`."
+  [url]
+  (->> (rp/cmd! :create-file-media-object-from-url
+                {:name "clone-image" :file-id (:current-file-id @st/state)
+                 :url url :is-local true})
+       (rx/map (fn [media]
+                 {:type "image" :imageId (dm/str (:id media))
+                  :width (:width media) :height (:height media)
+                  :mtype (:mtype media)}))
+       (rx/catch (fn [cause]
+                   (rx/throw (ex-info (media-error-message (:code (ex-data cause)))
+                                      {}))))))
+
+(defn- do-clones!
+  "Duplicates + overrides + relocations for every clone. Side-effecting; the
+  ids come from the generated changes, so nothing here waits on the pipeline."
+  [state objects id pid clones url->fill]
+  (let [page      (dsh/lookup-page state)
+        file-id   (:current-file-id state)
+        libraries (dsh/lookup-libraries state)
+        lib-data  (dsh/lookup-file-data state file-id)
+        shape     (get objects id)
+        parent    (when pid (get objects pid))
+        kids      (cfh/get-children-ids objects id)
+        by-name   (fn [nm] (into [] (filter #(= nm (:name (get objects %)))) kids))]
+    (interrupt!)
+    (let [results
+          (vec
+           (map-indexed
+            (fn [i clone]
+              (let [delta    (if pid
+                               (gpt/point 0 0)
+                               ;; free clones fan out to the right, visibly
+                               (gpt/point (* (inc i) (+ (:width shape) 40)) 0))
+                    changes  (-> (cb/empty-changes)
+                                 (cll/generate-duplicate-changes
+                                  objects page #{id} delta libraries lib-data file-id)
+                                 (cll/generate-duplicate-changes-update-indices
+                                  objects #{id}))
+                    old->new (into {}
+                                   (comp (filter #(= :add-obj (:type %)))
+                                         (keep (fn [ch]
+                                                 (when (:old-id ch)
+                                                   [(:old-id ch) (get-in ch [:obj :id])]))))
+                                   (:redo-changes changes))
+                    new-root (get old->new id)]
+                (st/emit! (dch/commit-changes changes))
+                (when-let [nm (:name clone)]
+                  (st/emit! (dwsh/update-shapes [new-root] #(assoc % :name nm))))
+                ;; text overrides, matched by the ORIGINAL's layer names
+                (doseq [[k text] (:textByName clone)]
+                  (doseq [oid (by-name (name k))]
+                    (when-let [nid (get old->new oid)]
+                      (when (cfh/text-shape? (get objects oid))
+                        (st/emit! (dwsh/update-shapes [nid]
+                                                      #(update % :content txt/change-text text)))
+                        (when (features/active-feature? state "render-wasm/v1")
+                          (st/emit! (dwwt/resize-wasm-text-debounce nid)))))))
+                ;; image overrides: a URL was pre-uploaded, a bare string is an
+                ;; existing imageId
+                (doseq [[k v] (:imageByName clone)]
+                  (when-let [fill (cond
+                                    (and (string? v) (re-matches http-url-re v))
+                                    (get url->fill v)
+
+                                    (string? v)
+                                    {:type "image" :imageId v})]
+                    (doseq [oid (by-name (name k))]
+                      (when-let [nid (get old->new oid)]
+                        (st/emit! (dwsh/update-shapes [nid]
+                                                      #(assoc % :fills (fill->shape fill))))))))
+                ;; append to the parent's flow, in clone order
+                (when pid
+                  (st/emit! (dwsh/relocate-shapes
+                             #{new-root} pid
+                             (if (and (ctl/any-layout? parent)
+                                      (not (ctl/reverse? parent)))
+                               0
+                               (count (:shapes parent))))))
+                {:shapeId (dm/str new-root)
+                 :name (or (:name clone) (:name shape))}))
+            clones))]
+      (when (and pid (ctl/grid-layout? parent))
+        (st/emit! (dwsh/update-shapes [pid] reflow-grid-cells {:with-objects? true}))
+        (st/emit! (ptk/data-event :layout/update {:ids [pid]})))
+      {:clones results
+       :note (str "cloned — overrides matched by layer name"
+                  (when pid ", clones appended to the parent's flow in order")
+                  ". Asynchronous: verify with render_board or read_design.")})))
+
+(defn- clone-shape-tool
+  [{:keys [shapeId parentId clones]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        id      (some-> shapeId parse-uuid)
+        pid     (some-> parentId parse-uuid)]
+    (if-let [problem (clone-problem objects id pid clones)]
+      (rx/throw (ex-info problem {}))
+      (let [urls (into []
+                       (comp (mapcat (fn [c] (vals (or (:imageByName c) {}))))
+                             (filter #(and (string? %) (re-matches http-url-re %)))
+                             (distinct))
+                       clones)]
+        (->> (if (empty? urls)
+               (rx/of {})
+               ;; upload every referenced URL once, then clone with the map
+               (->> (rx/from urls)
+                    (rx/mapcat (fn [u] (->> (upload-image-url u)
+                                            (rx/map (fn [f] [u f])))))
+                    (rx/reduce conj {})))
+             (rx/map (fn [url->fill]
+                       (do-clones! state objects id pid clones url->fill))))))))
+
+;; --- build_tree
+
+(def ^:private tree-node-types #{"board" "rect" "ellipse" "text" "image"})
+(def ^:private max-tree-nodes 80)
+(def ^:private max-tree-depth 6)
+
+(defn tree-problem
+  "Why `build_tree` cannot run, or nil. Pure. Public for tests."
+  [tree]
+  (letfn [(walk [node path depth]
+            (cond
+              (not (map? node))
+              (dm/str "build_tree: " path " is not a node object")
+
+              (> depth max-tree-depth)
+              (dm/str "build_tree: deeper than " max-tree-depth " levels at "
+                      path " — flatten the structure or build in two calls")
+
+              (not (contains? tree-node-types (:type node)))
+              (dm/str "build_tree: " path " has type \"" (:type node)
+                      "\" — use board, rect, ellipse, text or image")
+
+              (and (= "text" (:type node)) (not (string? (:text node))))
+              (dm/str "build_tree: text node " path " needs `text` (the words)")
+
+              (and (= "image" (:type node))
+                   (not (and (string? (:url node))
+                             (re-matches http-url-re (:url node)))))
+              (dm/str "build_tree: image node " path
+                      " needs an absolute http(s) `url`")
+
+              (and (seq (:children node)) (not= "board" (:type node)))
+              (dm/str "build_tree: " path " has children but is a "
+                      (:type node) " — only boards contain children")
+
+              :else
+              (some (fn [[i child]]
+                      (walk child (dm/str path ".children[" i "]") (inc depth)))
+                    (map-indexed vector (:children node)))))]
+    (cond
+      (nil? tree)
+      "build_tree: pass tree — the root node ({type, name, children…})"
+
+      (> (count (tree-seq map? :children tree)) max-tree-nodes)
+      (dm/str "build_tree: more than " max-tree-nodes
+              " nodes — split the build into two calls")
+
+      :else
+      (walk tree "tree" 1))))
+
+(defn- build-node
+  "Creates one node (via the same validated single-shape paths the individual
+  tools use) and, in order: its layout, layout-child sizing, token bindings,
+  font, then its children — each child appended to the flow in listed order."
+  [node parent-id path ids*]
+  (let [t    (:type node)
+        base (case t
+               "board"
+               (create-shape (-> (select-keys node [:x :y :width :height :fill])
+                                 (assoc :type "board" :name (:name node)
+                                        :parentId parent-id)))
+               ("rect" "ellipse")
+               (create-shape (-> (select-keys node [:x :y :width :height :fill])
+                                 (assoc :type t :name (:name node)
+                                        :parentId parent-id)))
+               "text"
+               (create-text (-> (select-keys node [:x :y :fill :align])
+                                (assoc :text (:text node) :name (:name node)
+                                       :parentId parent-id)))
+               "image"
+               (insert-image (-> (select-keys node [:x :y :width :height :url])
+                                 (assoc :name (:name node)
+                                        :parentId parent-id))))]
+    (->> base
+         (rx/mapcat
+          (fn [{:keys [id]}]
+            (swap! ids* assoc (or (:name node) path) id)
+            (reduce
+             (fn [acc step] (rx/concat acc step))
+             (rx/empty)
+             (concat
+              (when (:layout node)
+                [(set-layout (assoc (:layout node) :shapeId id))])
+              (when (:layoutChild node)
+                [(set-layout-child (assoc (:layoutChild node) :shapeId id))])
+              (when (seq (:tokens node))
+                [(apply-tokens
+                  {:applications
+                   (mapv (fn [tk]
+                           (cond-> {:shapeId id :tokenName (:name tk)}
+                             (:properties tk) (assoc :properties (:properties tk))))
+                         (:tokens node))})])
+              (when (and (:font node) (= "text" t))
+                [(set-font {:family (get-in node [:font :family])
+                            :variantId (get-in node [:font :variant])
+                            :shapeIds [id]})])
+              (map-indexed
+               (fn [i child]
+                 (build-node child id (dm/str path ".children[" i "]") ids*))
+               (or (:children node) []))))))
+         (rx/catch
+          (fn [cause]
+            (rx/throw (ex-info (dm/str "at " path ": " (ex-message cause))
+                               (or (ex-data cause) {}))))))))
+
+(defn- build-tree-tool
+  [{:keys [tree parentId]}]
+  (if-let [problem (tree-problem tree)]
+    (rx/throw (ex-info problem {}))
+    (let [ids* (atom {})]
+      (->> (build-node tree parentId "tree" ids*)
+           (rx/reduce (fn [acc _] acc) nil)
+           (rx/map (fn [_]
+                     {:created (count @ids*)
+                      :ids @ids*
+                      :note (str "tree built — ids keyed by node name (or path); "
+                                 "children flow in the listed order. Geometry and "
+                                 "text settle asynchronously; verify with "
+                                 "render_board before presenting.")}))
+           ;; a partial build is a repairable state, not a dead end — hand back
+           ;; what exists so the fix is targeted, not a rebuild
+           (rx/catch (fn [cause]
+                       (rx/of {:created (count @ids*)
+                               :ids @ids*
+                               :error (dm/str "build_tree " (ex-message cause))
+                               :note (str "PARTIAL build — everything in ids exists. "
+                                          "Fix the error with targeted calls; do NOT "
+                                          "re-run the whole tree.")})))))))
+
 ;; --- Playbook nudge
 ;;
 ;; Chat 2 of the Kahoot session made 223 calls and fetched zero playbooks —
@@ -4412,6 +4969,12 @@
   []
   (reset! playbook-fetched* false)
   (reset! playbook-nudged* false))
+
+(defn note-playbook-loaded!
+  "The turn-start injection (agent/match-playbook) delivered a playbook —
+  the one-shot nudge has nothing left to point at."
+  []
+  (reset! playbook-fetched* true))
 
 (def ^:private nudged-tools
   ;; the structural mutations a build task starts with — enough to catch the
@@ -4459,12 +5022,15 @@
          "search_fonts"       (search-fonts input)
          "set_font"           (set-font input)
          "modify_shape"       (modify-shape input)
+         "update_shapes"      (update-shapes-batch input)
          "nest_shape"         (nest-shape input)
          "create_text"        (create-text input)
          "set_text"           (set-text input)
          "create_component"   (create-component input)
          "delete_shape"       (delete-shape input)
          "duplicate_shape"    (duplicate-shape input)
+         "clone_shape"        (clone-shape-tool input)
+         "build_tree"         (build-tree-tool input)
          "group_shapes"       (group-shapes input)
          "ungroup_shapes"     (ungroup-shapes input)
          "set_layout"         (set-layout input)
@@ -4490,6 +5056,7 @@
          "add_variant"        (add-variant input)
          "set_variant_property" (set-variant-property input)
          "create_token"       (create-token input)
+         "create_tokens"      (create-tokens input)
          "create_token_set"   (create-token-set input)
          "create_token_theme" (create-token-theme input)
          "activate_theme"     (activate-theme input)

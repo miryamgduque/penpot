@@ -729,25 +729,42 @@
                  ;; the stored history already contains the paused turn
                  (set-checkpoint nil)
                  (set-busy true))
-          (if-not (agent/compact-due? prior)
-            (turn-stream settings (conj prior user-msg) system stream nil)
-            ;; the history outgrew the compaction threshold: one cheap buffered
-            ;; round rewrites it as [summary + last turn] before the turn runs.
-            ;; The turn-stream seeds from the compacted history, so it is what
-            ;; gets stored when the turn ends — later turns inherit the savings.
-            ;; A compaction failure (no Anthropic key, provider down) must never
-            ;; block the user's turn: it degrades to the uncompacted history,
-            ;; which the trim backstop still bounds.
-            (->> (agent/compact-history prior)
-                 (rx/mapcat
-                  (fn [{:keys [history usage]}]
+          ;; first message of a conversation: one cheap tool-less round names
+          ;; the matching playbook and injects it INTO the user message — the
+          ;; method arrives with the task instead of gambling on a fetch (the
+          ;; NYT session ran 133 rounds without one). Any failure degrades to
+          ;; no injection.
+          (->> (if (seq prior) (rx/of {}) (agent/match-playbook state text))
+               (rx/mapcat
+                (fn [{:keys [skill body usage]}]
+                  (let [user-msg (cond-> user-msg
+                                   skill (assoc :playbook {:skill skill :body body}))]
+                    (when skill (at/note-playbook-loaded!))
                     (rx/concat
-                     (rx/of (accumulate-usage usage)
-                            (append-message "note" "✦ Conversation compacted to save tokens"))
-                     (turn-stream settings (conj (vec history) user-msg) system stream nil))))
-                 (rx/catch
-                  (fn [_]
-                    (turn-stream settings (conj prior user-msg) system stream nil)))))))))))
+                     (if usage (rx/of (accumulate-usage usage)) (rx/empty))
+                     (if skill
+                       (rx/of (append-message "note" (dm/str "✦ Playbook loaded: " skill)))
+                       (rx/empty))
+                     (if-not (agent/compact-due? prior)
+                       (turn-stream settings (conj prior user-msg) system stream nil)
+                       ;; the history outgrew the compaction threshold: one cheap
+                       ;; buffered round rewrites it as [summary + last turn]
+                       ;; before the turn runs. The turn-stream seeds from the
+                       ;; compacted history, so it is what gets stored when the
+                       ;; turn ends — later turns inherit the savings. A
+                       ;; compaction failure (no Anthropic key, provider down)
+                       ;; must never block the user's turn: it degrades to the
+                       ;; uncompacted history, which the trim backstop bounds.
+                       (->> (agent/compact-history prior)
+                            (rx/mapcat
+                             (fn [{:keys [history usage]}]
+                               (rx/concat
+                                (rx/of (accumulate-usage usage)
+                                       (append-message "note" "✦ Conversation compacted to save tokens"))
+                                (turn-stream settings (conj (vec history) user-msg) system stream nil))))
+                            (rx/catch
+                             (fn [_]
+                               (turn-stream settings (conj prior user-msg) system stream nil))))))))))))))))
 
 (defn continue-turn
   "Resumes the turn paused at the runaway checkpoint (see

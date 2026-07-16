@@ -1,6 +1,6 @@
 # Phase 29 — Turn, mirror, stroke
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; suite+live at merge)
 
 The last shape attributes that are neither writable nor readable: **rotation**, **flip**, and
 **stroke depth** (width, style). The read half is what makes this more than completionism —

@@ -1509,6 +1509,20 @@
   (t/is (some? (at/detach-problem {} id-missing))))
 
 ;; ---------------------------------------------------------------------------
+;; --- Phase 26: locked-shape guard
+
+(t/deftest an-unlocked-shape-is-freely-modified
+  (t/is (nil? (at/locked-problem (plain-frame id-a "Free") {:fill "#fff"}))))
+
+(t/deftest a-locked-shape-refuses-mutation
+  (let [problem (at/locked-problem (assoc (plain-frame id-a "Locked") :blocked true) {:fill "#fff"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "locked"))))
+
+(t/deftest unlocking-a-locked-shape-is-allowed
+  ;; locked:false is the escape hatch and must pass the guard.
+  (t/is (nil? (at/locked-problem (assoc (plain-frame id-a "Locked") :blocked true) {:locked false}))))
+
 ;; --- Phase 25: mask / unmask problem-checkers
 
 (t/deftest a-plain-shape-cannot-be-unmasked

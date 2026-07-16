@@ -1,6 +1,6 @@
 # Phase 26 — Hide and lock
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; suite+live at merge)
 
 Two shape flags the agent can neither set nor *see*: `:hidden` and `:blocked`. The write gap
 is ordinary; the read gap is worse — `summarize-shape` reports neither, so a hidden shape reads

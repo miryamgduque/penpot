@@ -1,6 +1,6 @@
 # Phase 30 — Leave a note
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; suite+live at merge — outward-facing + backend, needs live check)
 
 Penpot has a native comment system; the agent cannot touch it. Review-mode skills (`audit`,
 `design-to-code-review`, `document-handoff`'s critique cousin) currently deliver findings only

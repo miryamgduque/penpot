@@ -36,6 +36,8 @@
    [app.common.types.tokens-lib :as ctob]
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
+   [app.main.data.comments :as dc]
+   [app.main.repo :as rp]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.design-doc :as dd]
@@ -510,6 +512,24 @@
 
    {:name "redo_change"
     :description "Re-applies the most recently undone change — the counterpart to undo_change."
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "leave_comment"
+    :description
+    (str "Posts a comment thread pinned to a point on the canvas — the artifact a "
+         "design review produces, unlike ephemeral chat text. OUTWARD-FACING: it "
+         "is written as the current user and notifies collaborators, so only use "
+         "it when the user asked for a review left ON the file, and make the "
+         "content say it is from the design agent (e.g. \"[agent] this fill is a "
+         "raw hex; token color.brand.primary exists\"). Position it at the "
+         "problem — pass the shape's x/y.")
+    :input-schema {:type "object"
+                   :properties {:content {:type "string"}
+                                :x {:type "number"} :y {:type "number"}}
+                   :required ["content"]}}
+
+   {:name "list_comments"
+    :description "Lists the file's existing comment threads (position + content), so you don't duplicate one."
     :input-schema {:type "object" :properties {}}}
 
    {:name "save_version"
@@ -2472,6 +2492,47 @@
                                      "read_design.")}
                    new-id (assoc :shapeId (dm/str new-id)))))))))
 
+;; --- Comments (outward-facing)
+;;
+;; The plan's first OUTWARD-facing tool: a comment is written as the current user
+;; and notifies collaborators. It is the artifact a real review produces — a
+;; finding pinned where the problem is, not ephemeral chat text. The governance
+;; is in the description: make authorship explicit, and only leave comments when
+;; the user asked for a review left ON THE FILE.
+
+(defn- leave-comment
+  [{:keys [content x y]}]
+  (let [state   @st/state
+        clean   (str/trim (str content))]
+    (if (str/blank? clean)
+      (rx/throw (ex-info "leave_comment: content is required" {}))
+      (do
+        (interrupt!)
+        ;; fire-and-report: the thread is created via the backend async. identity
+        ;; + false = don't pop the comment editor open in the user's face.
+        (st/emit! (dc/create-thread-on-workspace
+                   {:page-id (:current-page-id state)
+                    :file-id (:current-file-id state)
+                    :position (gpt/point (or x 0) (or y 0))
+                    :content clean}
+                   identity false))
+        (rx/of {:note (str "comment posted at (" (or x 0) ", " (or y 0) ") — it is written "
+                           "as the current user and notifies collaborators. Make sure the "
+                           "content says it is from the design agent. Verify in the Comments "
+                           "panel.")})))))
+
+(defn- list-comments
+  [_]
+  (let [file-id (:current-file-id @st/state)]
+    (->> (rp/cmd! :get-comment-threads {:file-id file-id})
+         (rx/map (fn [threads]
+                   {:comments (mapv (fn [t]
+                                      (cond-> {:seqn (:seqn t)
+                                               :content (:content t)}
+                                        (:position t) (assoc :x (:x (:position t)) :y (:y (:position t)))
+                                        (:count-comments t) (assoc :replies (dec (:count-comments t)))))
+                                    threads)})))))
+
 ;; --- Save a version
 ;;
 ;; The cheapest insurance in the plan. gotcha #12's prescribed defence is manual
@@ -3410,6 +3471,8 @@
     "create_instance"    (create-instance input)
     "create_from_svg"    (create-from-svg input)
     "save_version"       (save-version input)
+    "leave_comment"      (leave-comment input)
+    "list_comments"      (list-comments input)
     "switch_variant"     (switch-variant input)
     "reset_overrides"    (reset-overrides input)
     "swap_component"     (swap-component input)

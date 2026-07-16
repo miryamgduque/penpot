@@ -458,6 +458,74 @@
       (t/is (= 2 (count blocks)) "5 turns of images encode down to the recent 2"))))
 
 ;; ---------------------------------------------------------------------------
+;; The history cache breakpoint.
+;;
+;; The system block's `cache_control` marker caches tools+system only — the
+;; message history behind it was re-sent UNcached on every round, and a turn is
+;; up to 32 rounds over a history that grows each round. Marking the last block
+;; of the last message extends the cached prefix over the whole conversation:
+;; each round re-reads prior rounds at ~0.1× and pays the write only on its own
+;; tail. These tests pin where the marker lands, because a marker on the wrong
+;; block silently caches nothing — the request succeeds either way.
+;; ---------------------------------------------------------------------------
+
+(defn- marked-blocks
+  "All blocks carrying a cache_control marker, across the encoded history."
+  [encoded]
+  (->> encoded
+       (mapcat #(let [c (:content %)] (if (vector? c) c [])))
+       (filterv :cache_control)))
+
+(t/deftest breakpoint-lands-on-the-last-block-of-the-last-message
+  (let [history [{:role :user :text "hi"}
+                 {:role :assistant :text "hello" :tool-calls []}
+                 {:role :user :text "make it blue"}]
+        out     (agent/mark-history-breakpoint (agent/encode-anthropic history))]
+    (t/testing "exactly one marker in the whole history"
+      (t/is (= 1 (count (marked-blocks out)))))
+    (t/testing "it is the final block of the final message"
+      (let [last-content (:content (peek out))]
+        (t/is (vector? last-content) "a string content is promoted to blocks to carry it")
+        (t/is (= {:type "ephemeral"} (:cache_control (peek last-content))))
+        (t/is (= "make it blue" (:text (peek last-content)) ))))
+    (t/testing "earlier messages are untouched"
+      (t/is (= (agent/encode-anthropic (butlast history))
+               (vec (butlast out)))))))
+
+(t/deftest breakpoint-marks-a-tool-result-tail
+  (t/testing "mid-turn the last message is tool-results — the common case"
+    (let [history (conj turn-with-dangling-calls
+                        {:role :tool-results
+                         :results [{:id "call_1" :content "{}"}
+                                   {:id "call_2" :content "{}"}]})
+          out     (agent/mark-history-breakpoint (agent/encode-anthropic history))
+          blocks  (:content (peek out))]
+      (t/is (= 1 (count (marked-blocks out))))
+      (t/is (= "tool_result" (:type (peek blocks))))
+      (t/is (= {:type "ephemeral"} (:cache_control (peek blocks))))
+      (t/testing "its sibling result is not marked"
+        (t/is (nil? (:cache_control (first blocks))))))))
+
+(t/deftest breakpoint-never-creates-an-empty-text-block
+  (t/testing "Anthropic rejects an empty text block — better unmarked than 400"
+    (let [out (agent/mark-history-breakpoint
+               (agent/encode-anthropic [{:role :user :text ""}]))]
+      (t/is (empty? (marked-blocks out)))
+      (t/is (= "" (:content (peek out))) "the message itself is left as it was"))))
+
+(t/deftest breakpoint-on-empty-history-is-a-no-op
+  (t/is (= [] (agent/mark-history-breakpoint []))))
+
+(t/deftest breakpoint-marks-an-image-tail
+  (t/testing "a user message of only images ends in an image block; marking it is
+              valid and still extends the prefix over everything before it"
+    (let [out (agent/mark-history-breakpoint
+               (agent/encode-anthropic [{:role :user :text "" :images [png]}]))
+          blocks (:content (peek out))]
+      (t/is (= "image" (:type (peek blocks))))
+      (t/is (= {:type "ephemeral"} (:cache_control (peek blocks)))))))
+
+;; ---------------------------------------------------------------------------
 ;; Images coming back FROM a tool (render_board).
 ;;
 ;; A different seam from user attachments and a genuinely asymmetric one:

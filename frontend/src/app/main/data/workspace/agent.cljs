@@ -233,6 +233,38 @@
                                      (:error? r) (assoc :is_error true)))
                                  results)})))))
 
+(defn mark-history-breakpoint
+  "Puts an ephemeral `cache_control` marker on the last block of the last
+  encoded message, extending the cached prefix over the whole conversation.
+
+  Without it the marker on the system block caches tools+system only, and every
+  round re-sends the entire history at full input price — a turn is up to 32
+  rounds over a history that grows each round, so the history term dominates a
+  session's spend. With it, each round re-reads prior rounds at ~0.1× and pays
+  the 1.25× write only on its own tail.
+
+  Interplay, documented rather than avoided: `trim-history` and
+  `prune-history-images` rewrite the history's head, which invalidates this
+  prefix and eats one full re-write when they fire. Both fire rarely (message
+  cap, image window exit) and shrink what they rewrite — net-positive.
+
+  A plain-string content is promoted to a block vector to carry the marker —
+  except an empty string, where the promotion would mint an empty text block
+  (rejected outright by the API): better one unmarked round than a 400."
+  [encoded]
+  (let [message (peek encoded)
+        content (:content message)
+        blocks  (cond
+                  (vector? content)                        content
+                  (and (string? content) (seq content))    [{:type "text" :text content}]
+                  :else                                    nil)]
+    (if (seq blocks)
+      (conj (vec (butlast encoded))
+            (assoc message :content
+                   (conj (vec (butlast blocks))
+                         (assoc (peek blocks) :cache_control {:type "ephemeral"}))))
+      encoded)))
+
 (defn encode-openai
   [system messages]
   (into [{:role "system" :content system}]
@@ -296,7 +328,10 @@
                      ;; the ephemeral marker caches tools+system across rounds
                      :system [{:type "text" :text system
                                :cache_control {:type "ephemeral"}}]
-                     :messages (encode-anthropic messages)}
+                     ;; second marker: the history itself (see
+                     ;; mark-history-breakpoint). OpenAI-dialect providers cache
+                     ;; long prefixes automatically — no marker exists there.
+                     :messages (mark-history-breakpoint (encode-anthropic messages))}
               (seq at/tool-specs) (assoc :tools (anthropic-tools))
               stream?             (assoc :stream true))
             (cond-> {:model model
@@ -753,6 +788,9 @@
                            ;; yields a silent empty reply (learned the hard
                            ;; way on the chat path)
                            :max_tokens 8000
+                           ;; deliberately uncached: ticks are sporadic relative
+                           ;; to the 5-minute cache TTL, so a marker here would
+                           ;; mostly buy 1.25× writes and no reads
                            :system [{:type "text" :text system}]
                            :messages [{:role "user"
                                        :content [{:type "text" :text user-text}]}]}))]

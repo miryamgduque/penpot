@@ -1,6 +1,6 @@
 # Chat History Per File
 
-**Status:** doing
+**Status:** done
 **Created:** 2026-07-16
 **Apps:** `backend`, `frontend`
 **Dependencies:** None (builds on the shipped agent panel; closes out US #5)
@@ -81,7 +81,7 @@ Decisions from the discovery interview (2026-07-16):
 2. [Phase 02 — Frontend persistence layer](./done-phase-02-frontend-persistence.md) — save at turn boundaries, hydrate on panel open, strip-for-save + auto-title helpers
 3. [Phase 03 — Conversation switcher UI](./done-phase-03-conversation-switcher-ui.md) — history popover + New chat in the panel header, load/delete
 4. [Phase 03b — Rename conversations](./done-phase-03b-rename-conversations.md) — inline rename in the popover; renames survive later saves
-5. [Phase 04 — Merge and live verify](./doing-phase-04-merge-and-live-verify.md) — merge the worktree into `feature/ai-skills-prototype` (user gate), then verify everything live in the devenv
+5. [Phase 04 — Merge and live verify](./done-phase-04-merge-and-live-verify.md) — merge the worktree into `feature/ai-skills-prototype` (user gate), then verify everything live in the devenv
 
 ## Acceptance Criteria
 
@@ -99,3 +99,37 @@ Decisions from the discovery interview (2026-07-16):
 - `clj-kondo`, `cljfmt`, `stylelint` clean; shadow compile 0 warnings.
 - All of the above verified **live in the devenv after the merge** (Phase 04) —
   no automated tests, per the execution mode.
+
+## Completion Summary
+
+**Completed:** 2026-07-16
+
+### What Shipped
+- `profile_agent_chat` table (migration **0158** — renumbered from the planned
+  0157, taken meanwhile by US #14) + `agent-chats` RPC: list / get / upsert /
+  delete / rename, all profile-scoped and non-probeable.
+- Turn-boundary persistence: conversations save when a turn completes or is
+  cancelled, images stripped with omission notes, empty chats never saved.
+- Hard-refresh restore: panel open fetches the file's list and reloads the
+  most recent conversation — transcript, canonical history and spend meter.
+- Conversation switcher: New chat + History controls in the panel header;
+  popover with titles, relative timestamps, active marker, inline rename
+  (pentool → input) and per-row delete. Status-row "Clear" became "New chat".
+- Rename durability: the derived title is written on insert only; later saves
+  never touch it.
+
+### What Changed from Original Plan
+- Phase 03b (rename) added mid-plan by user direction — originally out of scope.
+- Execution mode changed by user direction: worktree, no automated tests,
+  phases back-to-back, merge as the single approval gate (Phase 04).
+- Migration number 0157 → 0158 (collision with US #14's reactive migration).
+
+### Lessons & Follow-ups
+- DS glyph gaps: no pencil/edit icon (`pentool` used) — same family as the
+  missing `stop` glyph.
+- Pre-existing lint debt in ai_panel.scss (20 stylelint problems) and
+  ai_panel.cljs (one cljfmt hunk, skills-filter `for`) — untouched, worth a
+  cleanup pass.
+- Not live-exercised: image-omission notes in a restored transcript;
+  cancel-mid-stream then restore.
+- `NOTE(prototype)` in agent_chats.clj: no per-file conversation quota yet.

@@ -787,91 +787,91 @@
   ([settings history system] (run-turn settings history system nil))
   ([settings history system seed]
    (letfn [(run-tool [call]
-            ;; → observable of one {:call :status :content :images :error? :rule :detail}
-            (->> (at/execute-tool (:name call) (:input call))
-                 (rx/map (fn [result]
-                           ;; images ride beside the content, never through it:
-                           ;; `result->content` stringifies and then truncates at
-                           ;; 20k chars, which would shred a 200kB render into a
-                           ;; meaningless base64 prefix
-                           {:call call
-                            :status :ok
-                            :images (:images result)
-                            :content (result->content (dissoc result :images))}))
-                 (rx/catch (fn [cause]
-                             (let [rule (:rule (ex-data cause))]
-                               (rx/of {:call call
-                                       :status (if rule :rejected :error)
-                                       :rule rule
-                                       :detail (ex-message cause)
-                                       :content (or (ex-message cause) "tool error")
-                                       :error? true}))))))
+             ;; → observable of one {:call :status :content :images :error? :rule :detail}
+             (->> (at/execute-tool (:name call) (:input call))
+                  (rx/map (fn [result]
+                            ;; images ride beside the content, never through it:
+                            ;; `result->content` stringifies and then truncates at
+                            ;; 20k chars, which would shred a 200kB render into a
+                            ;; meaningless base64 prefix
+                            {:call call
+                             :status :ok
+                             :images (:images result)
+                             :content (result->content (dissoc result :images))}))
+                  (rx/catch (fn [cause]
+                              (let [rule (:rule (ex-data cause))]
+                                (rx/of {:call call
+                                        :status (if rule :rejected :error)
+                                        :rule rule
+                                        :detail (ex-message cause)
+                                        :content (or (ex-message cause) "tool error")
+                                        :error? true}))))))
 
-          (tool-round [messages' round spent _text calls]
-            ;; no text emission: this round's text already reached the panel as
-            ;; deltas. Run the tools and feed the results into the next round.
-            (rx/concat
-             (->> (rx/from calls)
-                  (rx/mapcat run-tool)
-                  (rx/reduce conj [])
-                  (rx/mapcat
-                   (fn [outcomes]
-                     (rx/concat
-                      (rx/from (mapv tool-outcome->event outcomes))
-                      (step (conj messages' {:role :tool-results
-                                             :results (mapv tool-outcome->result outcomes)})
-                            (inc round)
-                            spent)))))))
-
-          (step [messages round spent]
-            (cond
-              ;; the soft brake first: at the top of step the history ends in
-              ;; tool-results, so it is valid to resume from as-is — that is
-              ;; why the checkpoint lands here and not mid-round
-              (checkpoint-due? (:model settings) round spent)
-              (rx/of {:kind :checkpoint
-                      :rounds (+ (:rounds seed 0) round)
-                      :usage (add-usage (:usage seed) spent)
-                      :history messages})
-
-              (>= round max-rounds)
-              (rx/empty)
-
-              :else
-              (->> (stream-round settings messages system)
+           (tool-round [messages' round spent _text calls]
+             ;; no text emission: this round's text already reached the panel as
+             ;; deltas. Run the tools and feed the results into the next round.
+             (rx/concat
+              (->> (rx/from calls)
+                   (rx/mapcat run-tool)
+                   (rx/reduce conj [])
                    (rx/mapcat
-                    (fn [ev]
-                      ;; deltas flow straight through to the panel; the single
-                      ;; :outcome drives the loop exactly as the decoded
-                      ;; response used to
-                      (if (not= :outcome (:kind ev))
-                        (rx/of ev)
-                        (let [outcome   (:outcome ev)
-                              text      (:text outcome)
-                              calls     (:tool-calls outcome)
-                              spent'    (add-usage spent (:usage outcome))
-                              messages' (conj messages {:role :assistant
-                                                        :text text
-                                                        :tool-calls calls})]
-                          (rx/concat
-                           (rx/of {:kind :usage :usage (:usage outcome)}
-                                  ;; A cancel unsubscribes this stream from the
-                                  ;; outside, so the loop never learns it was
-                                  ;; stopped. Publishing the history as it grows
-                                  ;; is what lets the caller close the turn off.
-                                  {:kind :turn-history :history messages'})
-                           (cond
-                             (and (empty? text) (empty? calls))
-                             ;; nothing streamed, so there is no bubble to seal
-                             (rx/of {:kind :assistant :text (empty-reply-text outcome)}
-                                    {:kind :done :history (trim-history messages')})
+                    (fn [outcomes]
+                      (rx/concat
+                       (rx/from (mapv tool-outcome->event outcomes))
+                       (step (conj messages' {:role :tool-results
+                                              :results (mapv tool-outcome->result outcomes)})
+                             (inc round)
+                             spent)))))))
 
-                             ;; text already streamed — nothing left to render
-                             (empty? calls)
-                             (rx/of {:kind :done :history (trim-history messages')})
+           (step [messages round spent]
+             (cond
+               ;; the soft brake first: at the top of step the history ends in
+               ;; tool-results, so it is valid to resume from as-is — that is
+               ;; why the checkpoint lands here and not mid-round
+               (checkpoint-due? (:model settings) round spent)
+               (rx/of {:kind :checkpoint
+                       :rounds (+ (:rounds seed 0) round)
+                       :usage (add-usage (:usage seed) spent)
+                       :history messages})
 
-                             :else
-                             (tool-round messages' round spent' text calls))))))))))]
+               (>= round max-rounds)
+               (rx/empty)
+
+               :else
+               (->> (stream-round settings messages system)
+                    (rx/mapcat
+                     (fn [ev]
+                       ;; deltas flow straight through to the panel; the single
+                       ;; :outcome drives the loop exactly as the decoded
+                       ;; response used to
+                       (if (not= :outcome (:kind ev))
+                         (rx/of ev)
+                         (let [outcome   (:outcome ev)
+                               text      (:text outcome)
+                               calls     (:tool-calls outcome)
+                               spent'    (add-usage spent (:usage outcome))
+                               messages' (conj messages {:role :assistant
+                                                         :text text
+                                                         :tool-calls calls})]
+                           (rx/concat
+                            (rx/of {:kind :usage :usage (:usage outcome)}
+                                   ;; A cancel unsubscribes this stream from the
+                                   ;; outside, so the loop never learns it was
+                                   ;; stopped. Publishing the history as it grows
+                                   ;; is what lets the caller close the turn off.
+                                   {:kind :turn-history :history messages'})
+                            (cond
+                              (and (empty? text) (empty? calls))
+                              ;; nothing streamed, so there is no bubble to seal
+                              (rx/of {:kind :assistant :text (empty-reply-text outcome)}
+                                     {:kind :done :history (trim-history messages')})
+
+                              ;; text already streamed — nothing left to render
+                              (empty? calls)
+                              (rx/of {:kind :done :history (trim-history messages')})
+
+                              :else
+                              (tool-round messages' round spent' text calls))))))))))]
      (step (vec history) 0 empty-usage))))
 
 ;; --- Auto-compaction (pure halves; the summarizer call is below detect-round)

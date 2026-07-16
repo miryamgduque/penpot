@@ -1267,33 +1267,33 @@
         [:button {:type "button"
                   :class (stl/css-case :model-picker-trigger true
                                        :model-picker-open picker-open?)
-                 :ref trigger-ref
-                 :aria-haspopup "listbox"
-                 :aria-expanded picker-open?
-                 :on-click on-toggle-picker}
-        [:span {:class (stl/css :model-picker-current)}
-         (if settings (:model settings) "No model")]
-        [:> i/icon* {:icon-id i/arrow-down :class (stl/css :model-picker-caret)}]]
+                  :ref trigger-ref
+                  :aria-haspopup "listbox"
+                  :aria-expanded picker-open?
+                  :on-click on-toggle-picker}
+         [:span {:class (stl/css :model-picker-current)}
+          (if settings (:model settings) "No model")]
+         [:> i/icon* {:icon-id i/arrow-down :class (stl/css :model-picker-caret)}]]
 
-       (when picker-open?
-         [:div {:class (stl/css :model-picker-menu)
-                :role "listbox"}
-          (for [[provider entries] (group-by #(:provider (second %)) (map-indexed vector pool))]
-            [:div {:key provider :class (stl/css :model-picker-group)}
-             [:div {:class (stl/css :model-picker-group-label)} provider]
-             (for [[i entry] entries]
-               [:button {:key i
-                         :type "button"
-                         :role "option"
-                         :aria-selected (= i idx)
-                         :class (stl/css-case :model-picker-option true
-                                              :selected (= i idx))
-                         :on-click #(do (reset! selected-model* (model-key entry))
-                                        (reset! picker-open* false))}
-                (:model entry)])])
-          [:a {:class (stl/css :model-picker-manage)
-               :href "#/settings/integrations"}
-           "Manage your models"]])]]]]))
+        (when picker-open?
+          [:div {:class (stl/css :model-picker-menu)
+                 :role "listbox"}
+           (for [[provider entries] (group-by #(:provider (second %)) (map-indexed vector pool))]
+             [:div {:key provider :class (stl/css :model-picker-group)}
+              [:div {:class (stl/css :model-picker-group-label)} provider]
+              (for [[i entry] entries]
+                [:button {:key i
+                          :type "button"
+                          :role "option"
+                          :aria-selected (= i idx)
+                          :class (stl/css-case :model-picker-option true
+                                               :selected (= i idx))
+                          :on-click #(do (reset! selected-model* (model-key entry))
+                                         (reset! picker-open* false))}
+                 (:model entry)])])
+           [:a {:class (stl/css :model-picker-manage)
+                :href "#/settings/integrations"}
+            "Manage your models"]])]]]]))
 
 (mf/defc reactive-badge*
   "The reactive-behavior pill (US #14) shared by the catalog cards and the detail

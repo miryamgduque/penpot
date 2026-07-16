@@ -566,9 +566,12 @@
 
 (def ^:private max-tool-result-chars 20000)
 (def ^:private max-history-messages 40)
-;; ~15k tokens. The message cap alone bounded nothing real — a message can be a
-;; 20k-char tool result, so 40 of them is 800k chars.
-(def ^:private max-history-chars 60000)
+;; ~37k tokens — deliberately ABOVE `compact-threshold-chars`, so the order of
+;; defenses is: stubbing (cheap, targeted) → compaction (rare, lossy, smart) →
+;; this trim (the blunt backstop, reached only when compaction failed or is
+;; unavailable). The message cap alone bounded nothing real — a message can be
+;; a 20k-char tool result, so 40 of them is 800k chars.
+(def ^:private max-history-chars 150000)
 
 ;; --- History hygiene (applied at turn boundaries)
 ;;
@@ -871,6 +874,69 @@
                              (tool-round messages' round spent' text calls))))))))))]
      (step (vec history) 0 empty-usage))))
 
+;; --- Auto-compaction (pure halves; the summarizer call is below detect-round)
+;;
+;; Past `compact-threshold-chars` the history is replaced by [one summary
+;; message + the last turn]: one cheap buffered round writes the agent's own
+;; working memory, and the wire history resets from tens of thousands of tokens
+;; to the summary. Deliberately LOSSY — which is why it is the layer BEHIND
+;; stubbing (phase 02) and fires only on long sessions, at a turn boundary.
+
+(def compact-threshold-chars 100000)
+
+(defn compact-due?
+  "Whether the history has outgrown the compaction threshold (~25k tokens)."
+  [messages]
+  (> (reduce + 0 (map message-chars messages)) compact-threshold-chars))
+
+(defn- last-turn-index
+  "Index of the last plain user message — where the surviving tail begins."
+  [messages]
+  (->> (range (dec (count messages)) -1 -1)
+       (some (fn [i] (when (= :user (:role (nth messages i))) i)))))
+
+(defn compacted-history
+  "`messages` rewritten as [summary-user-message + the last turn]. The summary
+  is flagged `:compacted?` and framed as a replacement, not the user's words.
+  A history that is one giant turn has no head to compact — returned as-is."
+  [messages summary]
+  (let [messages (vec messages)
+        tail-idx (last-turn-index messages)]
+    (if (or (nil? tail-idx) (zero? tail-idx))
+      messages
+      (into [{:role :user
+              :text (str "[Conversation compacted — the messages before this "
+                         "point were replaced by this summary of them]\n\n" summary)
+              :compacted? true}]
+            (subvec messages tail-idx)))))
+
+(defn compaction-transcript
+  "The head of the history (everything the summary will replace) as plain text
+  for the summarizer. Images are stripped first — the summarizer reads text,
+  and base64 would be pure cost."
+  [messages]
+  (let [messages (vec messages)
+        head     (subvec messages 0 (or (last-turn-index messages) (count messages)))]
+    (->> (strip-images head)
+         (map (fn [{:keys [role text tool-calls results]}]
+                (case role
+                  :user
+                  (str "USER: " text)
+
+                  :assistant
+                  (str "ASSISTANT: " text
+                       (when (seq tool-calls)
+                         (str "\n[called: "
+                              (str/join "; "
+                                        (map #(str (:name %) " "
+                                                   (js/JSON.stringify (clj->js (:input % {}))))
+                                             tool-calls))
+                              "]")))
+
+                  :tool-results
+                  (str "TOOL RESULTS:\n" (str/join "\n" (map :content results))))))
+         (str/join "\n\n"))))
+
 ;; --- Semantic detect round (auto-fix watcher tick)
 
 (defn detect-round
@@ -914,3 +980,39 @@
                          :cache-read-tokens (or (:cache_read_input_tokens u) 0)
                          :cache-write-tokens (or (:cache_creation_input_tokens u) 0)
                          :requests 1})}))))))
+
+;; --- Auto-compaction: the summarizer round
+
+;; Hardcoded cheap model, same rationale as the watcher tick: ambient work
+;; never bills like design work. Anthropic-only like detect-round — if the
+;; profile has no Anthropic key the round errors and the caller degrades to
+;; the uncompacted history (the trim backstop still bounds it).
+(def ^:private compact-model "claude-haiku-4-5-20251001")
+
+(def ^:private compact-system
+  (str/join "\n"
+            ["You compress an AI design-agent's conversation history into the agent's own working memory."
+             "Write a structured summary the agent will rely on INSTEAD of the original messages:"
+             ""
+             "## Task — what the user is trying to get done, in their words."
+             "## Done so far — what was built or changed. Name every shape, board, component, token and page by its EXACT name (and id when shown); the agent must be able to act on them without re-reading the file."
+             "## Decisions — choices made and why, including corrections the user gave. These are standing instructions."
+             "## Open — what is in flight, promised or explicitly deferred."
+             ""
+             "Be terse and specific. Never invent names. Keep the whole summary under 3000 characters. Output only the summary."]))
+
+(defn compact-history
+  "One buffered summarizer round over the history's head → an observable of one
+  `{:history :usage}`, where `:history` is `compacted-history`'s rewrite. A
+  blank summary degrades to the original history (a no-op compaction beats a
+  history replaced by nothing); provider/HTTP failures surface as stream errors
+  for the caller to catch — compaction must never block the user's turn."
+  [messages]
+  (->> (detect-round {:provider "anthropic" :model compact-model}
+                     compact-system
+                     (compaction-transcript messages))
+       (rx/map (fn [{:keys [text usage]}]
+                 {:history (if (str/blank? text)
+                             (vec messages)
+                             (compacted-history messages text))
+                  :usage usage}))))

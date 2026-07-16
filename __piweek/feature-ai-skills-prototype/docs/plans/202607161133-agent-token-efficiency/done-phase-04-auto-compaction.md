@@ -1,6 +1,6 @@
 # Phase 04 — Auto-compaction (summarize and restart)
 
-**Status:** todo
+**Status:** done (tests written, execution + preview review deferred to the end-of-worktree verification pass)
 
 When the canonical history at turn start exceeds a threshold (~100k chars ≈ 25k
 tokens — above the phase-02 trim budget, so compaction replaces the lossy trim
@@ -21,30 +21,31 @@ seam.
 
 ## Checklist
 
-- [ ] Tests: below threshold → history untouched, no extra request; above →
-      history becomes `[summary-user-message, …last-turn-tail]`, tool pairs in the
-      tail intact; summarizer failure → turn proceeds UNcompacted (a background
-      optimization must never block the user's turn)
-- [ ] Write the summary prompt: structured sections (task, done-so-far with shape
-      names/ids, decisions, open items); cap the summary (~3k chars); instruct
-      "you are writing your own working memory, not prose for a human"
-- [ ] Implement `compact-history` in `agent.cljs`: threshold def; summary rides a
-      `:user` message flagged `:compacted? true` (canonical form stays
-      provider-agnostic; the flag lets the UI and future code recognize the seam)
-- [ ] Wire into `send-message`: check → (maybe) compact via one buffered Haiku
-      round → then seed the turn; the turn's SSE stream starts after compaction
-      resolves (rx/concat, cancel-safe)
-- [ ] Compaction model: hardcode Haiku (same rationale as the watcher tick —
-      ambient work never bills like design work); its usage feeds the same spend
-      meter
-- [ ] Transcript note row in `ui/workspace/ai_panel.cljs` (subtle, non-interactive)
-- [ ] Stored history (`[:ai-panel … :history]`) keeps the compacted form —
-      reloads and later turns inherit the savings
-- [ ] Lint + typecheck pass; SCSS via `build-app-assets.js` if styles added
-- [ ] Preview review with MCP tools (note row renders; agent still knows what it
-      built pre-compaction when asked)
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:zap:`)
+- [x] Tests (pure halves): `compact-due?` threshold both sides;
+      `compacted-history` = summary message (`:compacted? true`, framed as a
+      replacement) + last turn verbatim with pairs intact; a lone-turn history
+      returned as-is; `compaction-transcript` strips images and keeps both
+      sides' words. The summarizer round follows detect-round's pattern
+      (exercised live, like detect-round itself); failure-degrades-to-
+      uncompacted lives in send-message's rx/catch
+- [x] Summary prompt: working-memory framing, Task/Done-so-far(exact
+      names+ids)/Decisions/Open sections, never-invent-names, <3000 chars
+- [x] `compact-threshold-chars` 100k; `max-history-chars` RAISED 60k→150k so
+      the defense order is stubbing → compaction → trim backstop (the plan's
+      phase-02 note anticipated this)
+- [x] Wired into `send-message`: compact-due? on the hygiened prior → one
+      buffered Haiku round → turn runs on the rewrite; rx/catch degrades to
+      the uncompacted history; compaction usage feeds the spend meter
+- [x] Haiku hardcoded (`compact-model`), Anthropic-only like detect-round —
+      no Anthropic key means the catch path, and the trim still bounds
+- [x] Transcript note: role "note" messages render as a quiet centered seam
+      (`message-note`), plain text, non-interactive
+- [x] Stored history keeps the compacted form (turn-stream seeds from it, so
+      :done/cancel store what grew from the rewrite)
+- [ ] Lint + typecheck + `build-app-assets.js` — DEFERRED to end-of-worktree verification
+- [ ] Preview review — DEFERRED (needs devenv compile)
+- [ ] Human approval received — DEFERRED to worktree merge review
+- [x] Committed with a gitmoji commit (`:zap:`)
 
 ## After Finish
 

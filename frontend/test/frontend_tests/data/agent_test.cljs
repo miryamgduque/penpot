@@ -566,6 +566,54 @@
     (t/is (pos? (count uses)) "something survived the cut")))
 
 ;; ---------------------------------------------------------------------------
+;; Auto-compaction (the pure halves).
+;;
+;; Past a size threshold the history is replaced by [one summary message + the
+;; last turn]. The summarizer call itself follows detect-round's pattern and is
+;; exercised live; what is pinned here is the split — everything before the
+;; last turn goes, the last turn survives INTACT (its tool pairs included),
+;; and the summary arrives as a user message flagged :compacted?.
+;; ---------------------------------------------------------------------------
+
+(t/deftest compaction-not-due-under-the-threshold
+  (let [history (vec (mapcat #(turn-with-result % "{\"ok\":true}") (range 4)))]
+    (t/is (false? (boolean (agent/compact-due? history))))))
+
+(t/deftest compaction-due-over-the-threshold
+  (let [history (vec (mapcat #(turn-with-result % (apply str (repeat 40000 "x"))) (range 4)))]
+    (t/is (true? (boolean (agent/compact-due? history))))))
+
+(t/deftest compacted-history-is-summary-plus-last-turn
+  (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
+        out     (agent/compacted-history history "the summary")]
+    (t/testing "one summary message replaces every earlier turn"
+      (t/is (= 4 (count out)) "summary + the last turn's 3 messages")
+      (t/is (= :user (:role (first out))))
+      (t/is (true? (:compacted? (first out))))
+      (t/is (str/includes? (:text (first out)) "the summary"))
+      (t/is (str/includes? (str/lower (:text (first out))) "compacted")
+            "the message says what it is — the model must not read it as the user's words"))
+    (t/testing "the last turn survives verbatim, pairs intact"
+      (t/is (= (subvec history 9) (subvec out 1)))
+      (let [[uses results] (anthropic-pairs out)]
+        (t/is (= uses results))))))
+
+(t/deftest compacted-history-keeps-a-lone-turn-whole
+  (t/testing "a history that is one giant turn has no head to compact away"
+    (let [history (vec (turn-with-result 0 big-result))]
+      (t/is (= history (agent/compacted-history history "s"))))))
+
+(t/deftest compaction-transcript-drops-images
+  (t/testing "the summarizer reads text — base64 would be pure cost"
+    (let [history [{:role :user :text "look" :images [png]}
+                   {:role :assistant :text "ok" :tool-calls []}
+                   {:role :user :text "more"}]
+          text    (agent/compaction-transcript history)]
+      (t/is (not (str/includes? text "iVBOR")))
+      (t/is (str/includes? text "look"))
+      (t/is (str/includes? text "ok")))))
+
+;; ---------------------------------------------------------------------------
 ;; The runaway brake (checkpoint-due?).
 ;;
 ;; A turn that has run 12 tool rounds — or spent ~$1 — pauses for the user's

@@ -576,8 +576,10 @@
          "from its siblings, or leaves the flow entirely (absolute). Penpot's "
          "words are fill / fix / auto — \"fill\" is CSS flex-grow, \"auto\" is "
          "hug-contents. The parent must already have a layout (set_layout); "
-         "without one these settings are stored and do nothing. Margins accept "
-         "spacing tokens via apply_tokens. Asynchronous.")
+         "without one these settings are stored and do nothing. Exception: on a "
+         "board that itself has a layout, fix/auto sizing works with no parent — "
+         "that is how a top-level board or component hugs its content. Margins "
+         "accept spacing tokens via apply_tokens. Asynchronous.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
                                 :horizontalSizing {:type "string" :enum ["fill" "fix" "auto"]}
@@ -828,6 +830,9 @@
     :description
     (str "Creates a design token of any type in the file's token library — "
          "color, spacing, borderRadius, sizing, opacity, fontSizes and more. "
+         "The target SET must already exist: a fresh file has none, so on the "
+         "first token of a session create the sets first (create_token_set: "
+         "primitives / semantic / modes/light) and a theme to activate them. "
          "This is how a value becomes reusable: author it here, then bind it to "
          "shapes with apply_tokens. Prefer a token over a literal for any value "
          "that repeats — a spacing token on a layout's gap is as much a token as "
@@ -1600,17 +1605,27 @@
   (when (ctl/any-layout? parent)
     (if (ctl/reverse? parent) (count (:shapes parent)) 0)))
 
-(defn flow-index->vector-index
-  "Translates a flow position (0 = first item in reading order) into an
-  insertion index in `parent`'s `:shapes` vector. For a parent without a
-  layout the position is z-order from the back — which is what a bare index
-  always meant there. Public for tests."
-  [parent flow-index]
-  (let [n (count (:shapes parent))
-        i (-> flow-index (max 0) (min n))]
-    (if (and (ctl/any-layout? parent) (not (ctl/reverse? parent)))
-      (- n i)
-      i)))
+(defn nest-vector-index
+  "The relocate index for nesting `id` into `parent` at flow position
+  `flow-index` (0 = first in reading order; nil = end of the flow). For a
+  parent without a layout the position is z-order from the back instead.
+
+  Two Penpot facts meet here: flex lays children out in REVERSE vector order
+  (so a flow position maps to `count - position`), and `d/insert-at-index`
+  applies the index BEFORE removing the moved shape — a same-parent reorder
+  toward the end would land one slot short without the `(inc d)`. Public for
+  tests."
+  [parent id flow-index]
+  (let [shapes  (vec (:shapes parent))
+        same?   (some #(= id %) shapes)
+        o       (when same? (count (take-while #(not= id %) shapes)))
+        final-n (if same? (count shapes) (inc (count shapes)))
+        f       (-> (or flow-index (dec final-n)) (max 0) (min (dec final-n)))
+        ;; d = the desired index in the FINAL vector
+        d       (if (and (ctl/any-layout? parent) (not (ctl/reverse? parent)))
+                  (- (dec final-n) f)
+                  f)]
+    (if (and same? (< o d)) (inc d) d)))
 
 (defn- create-shape
   [{:keys [type x y width height fill parentId] :as input}]
@@ -2288,17 +2303,10 @@
         pid     (some-> parentId parse-uuid)]
     (if-let [problem (nest-problem objects id pid)]
       (rx/throw (ex-info problem {}))
-      (let [parent  (get objects pid)
-            ;; a reorder within the same parent leaves the vector before
-            ;; re-inserting — translate against the count without the shape
-            parent' (cond-> parent
-                      (= pid (:parent-id (get objects id)))
-                      (update :shapes (fn [shapes] (filterv #(not= id %) shapes))))
-            to-idx  (if (some? index)
-                      (flow-index->vector-index parent' (js/Math.round index))
-                      ;; default: end of the flow in a laid-out board, top of
-                      ;; the z-stack in a plain one — visible either way
-                      (flow-index->vector-index parent' (count (:shapes parent'))))]
+      (let [parent (get objects pid)
+            ;; default (nil flow-index): end of the flow in a laid-out board,
+            ;; top of the z-stack in a plain one — visible either way
+            to-idx (nest-vector-index parent id (some-> index js/Math.round))]
         (interrupt!)
         (st/emit! (dwsh/relocate-shapes #{id} pid to-idx))
         ;; relocate-shapes filters its input silently (loops, structure
@@ -2820,10 +2828,28 @@
   The parent-has-no-layout branch is why this is a separate tool rather than part
   of `modify_shape`: `update-layout-child` writes `:layout-item-*` onto any shape
   quite happily. The attrs persist, do nothing, and spring to life the moment
-  someone adds a layout later — a silent no-op wearing a success message."
-  [objects id {:keys [horizontalSizing verticalSizing alignSelf] :as input}]
-  (let [shape  (get objects id)
-        parent (some->> (:parent-id shape) (get objects))]
+  someone adds a layout later — a silent no-op wearing a success message.
+
+  One exception mirrors Penpot's own sidebar: a board that ITSELF has a layout
+  (the 'Flex board' menu) accepts fix/auto sizing with no laid-out parent —
+  that is how a top-level board or component hugs its content. `fill` and the
+  flow attrs (alignSelf, margins, zIndex, absolute) still need a laid-out
+  parent to mean anything."
+  [objects id {:keys [horizontalSizing verticalSizing alignSelf absolute zIndex
+                      margin minWidth maxWidth minHeight maxHeight] :as input}]
+  (let [shape      (get objects id)
+        parent     (some->> (:parent-id shape) (get objects))
+        in-layout? (boolean (and parent
+                                 (not= uuid/zero (:parent-id shape))
+                                 (ctl/any-layout? parent)))
+        ;; sizing-only fix/auto on a shape that owns a layout = hug-content
+        owner-hug? (boolean (and (ctl/any-layout? shape)
+                                 (or (some? horizontalSizing) (some? verticalSizing))
+                                 (not= "fill" horizontalSizing)
+                                 (not= "fill" verticalSizing)
+                                 (nil? alignSelf) (nil? absolute) (nil? zIndex)
+                                 (nil? margin) (nil? minWidth) (nil? maxWidth)
+                                 (nil? minHeight) (nil? maxHeight)))]
     (cond
       (nil? id)
       "set_layout_child: shapeId is required"
@@ -2832,23 +2858,38 @@
       (dm/str "set_layout_child: no shape on this page with id " (str id)
               " — check read_design")
 
+      (enum-problem "set_layout_child" "horizontalSizing" horizontalSizing layout-sizing)
+      (enum-problem "set_layout_child" "horizontalSizing" horizontalSizing layout-sizing)
+
+      (enum-problem "set_layout_child" "verticalSizing" verticalSizing layout-sizing)
+      (enum-problem "set_layout_child" "verticalSizing" verticalSizing layout-sizing)
+
+      (enum-problem "set_layout_child" "alignSelf" alignSelf layout-align-self)
+      (enum-problem "set_layout_child" "alignSelf" alignSelf layout-align-self)
+
+      (or in-layout? owner-hug?)
+      (when (empty? (layout-child-attrs input))
+        (dm/str "set_layout_child: nothing to change — pass horizontalSizing,"
+                " verticalSizing, alignSelf, margin, absolute, zIndex or"
+                " min/max width/height"))
+
+      (ctl/any-layout? shape)
+      (dm/str "set_layout_child: " (shape-label shape) " is a layout board with"
+              " no laid-out parent — only horizontalSizing/verticalSizing"
+              " fix|auto (hug-content) apply here; fill, alignSelf, margins,"
+              " zIndex and absolute need it nested inside a laid-out board"
+              " (nest_shape)")
+
       (or (nil? parent) (= uuid/zero (:parent-id shape)))
       (dm/str "set_layout_child: " (shape-label shape) " is not inside a board"
-              " — nest it with nest_shape first")
-
-      (not (ctl/any-layout? parent))
-      (dm/str "set_layout_child: the parent of " (shape-label shape)
-              " has no layout, so these settings would be stored and do nothing"
-              " — call set_layout on board " (dm/str (:parent-id shape)) " first")
+              " — nest it with nest_shape first; or, to make a board hug its"
+              " own content, give IT a layout (set_layout) and pass fix/auto"
+              " sizing")
 
       :else
-      (or (enum-problem "set_layout_child" "horizontalSizing" horizontalSizing layout-sizing)
-          (enum-problem "set_layout_child" "verticalSizing" verticalSizing layout-sizing)
-          (enum-problem "set_layout_child" "alignSelf" alignSelf layout-align-self)
-          (when (empty? (layout-child-attrs input))
-            (dm/str "set_layout_child: nothing to change — pass horizontalSizing,"
-                    " verticalSizing, alignSelf, margin, absolute, zIndex or"
-                    " min/max width/height"))))))
+      (dm/str "set_layout_child: the parent of " (shape-label shape)
+              " has no layout, so these settings would be stored and do nothing"
+              " — call set_layout on board " (dm/str (:parent-id shape)) " first"))))
 
 (defn- set-layout-child
   [{:keys [shapeId] :as input}]

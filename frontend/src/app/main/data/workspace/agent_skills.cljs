@@ -264,7 +264,8 @@
    "- **Never position UI with raw x/y.** Order + gap + padding + align/justify place children; set_layout_child (fill/fix/auto) expresses sizing intent. Absolute coordinates don't reflow and rot on the first edit — reserve x/y for placing top-level boards on the canvas and for genuine overlays (set_layout_child absolute:true)."
    "- **Plain groups don't lay out** — they only bound shapes. When siblings need arranging or spacing, that is a board with a layout."
    "- **\"Quick\", \"sloppy\" or \"rough\" means rough VALUES** — eyeballed gaps, placeholder content — never absolute positioning. A rough flex board refines in place; hand-placed coordinates must be rebuilt."
-   "- Build order for a screen: root column board → chrome and sections as child boards in reading order → leaves inside each section → spacing and tokens last."])
+   "- Build order for a screen: root column board → chrome and sections as child boards in reading order → leaves inside each section → spacing and tokens last."
+   "- **Canvas placement:** put each new top-level board BESIDE the previous one — tops aligned, one consistent gutter (~100px) — reading the last board's x/width first (read_design or find_shapes). Boards scattered across the canvas make every later render, comparison and handoff harder."])
 
 (def ^:private visual-self-review
   ["## Look at your work before presenting it"
@@ -278,6 +279,7 @@
    "- Applying tokens and creating text settle asynchronously. A tool returning successfully means \"applied\", not \"verified\" — confirm the result with read_design or audit_file instead of trusting the return value."
    "- A new board is born with an opaque white fill. Keep it only on a real surface (the screen root, a card, a control) and bind it to a `color.bg.*` token; clear it on layout-only containers, where it defeats a child's border radius and breaks dark mode."
    "- Colour rules are enforced at the tool boundary: while `token-only-colors` is active a raw hex is rejected outright. Create or apply a token — do not try to route around the rule."
+   "- Token order of operations: SETS exist before tokens, THEMES before resolution. A fresh file has no sets — create_token_set (e.g. primitives / semantic / modes/light) first, then create_token into them, then create_token_theme + activate_theme so bound values actually resolve."
    "- For broad reading — file maps, inventories, cross-shape audits — prefer ONE explore_design call over many read_design/find_shapes rounds: it sweeps in a side context and returns a digest at a fraction of the cost."])
 
 (def inner-knowledge

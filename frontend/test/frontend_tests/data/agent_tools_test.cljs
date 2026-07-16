@@ -1965,18 +1965,35 @@
   (t/is (nil? (at/flow-append-index (plain-frame board-id "Plain")))))
 
 (t/deftest flow-position-zero-is-the-vector-end
+  ;; nesting a NEW child (id-c is not in the board) at flow 0 = vector end
   (let [board (laid-out-board board-id [id-a id-b])]
-    (t/is (= 2 (at/flow-index->vector-index board 0)))
-    (t/is (= 0 (at/flow-index->vector-index board 2)))))
+    (t/is (= 2 (at/nest-vector-index board id-c 0)))
+    (t/is (= 0 (at/nest-vector-index board id-c 2)))))
 
 (t/deftest flow-positions-are-clamped-to-the-vector
   (let [board (laid-out-board board-id [id-a id-b])]
-    (t/is (= 0 (at/flow-index->vector-index board 99)))
-    (t/is (= 2 (at/flow-index->vector-index board -1)))))
+    (t/is (= 0 (at/nest-vector-index board id-c 99)))
+    (t/is (= 2 (at/nest-vector-index board id-c -1)))))
+
+(t/deftest omitting-the-index-appends-to-the-flow-end
+  (let [board (laid-out-board board-id [id-a id-b])]
+    (t/is (= 0 (at/nest-vector-index board id-c nil)))))
 
 (t/deftest a-plain-parent-keeps-z-semantics
   (let [board (assoc (plain-frame board-id "Plain") :shapes [id-a id-b])]
-    (t/is (= 1 (at/flow-index->vector-index board 1)))))
+    (t/is (= 1 (at/nest-vector-index board id-c 1)))))
+
+(t/deftest a-same-parent-reorder-compensates-for-the-pre-removal-index
+  ;; Penpot's insert-at-index applies the index BEFORE removing the moved
+  ;; shape, so moving toward the end lands one short without the (inc d).
+  ;; Vector [a b c] reads as flow [c b a].
+  (let [board (laid-out-board board-id [id-a id-b id-c])]
+    ;; a (vector 0, flow last) to flow FIRST (final vector index 2): o < d -> 3
+    (t/is (= 3 (at/nest-vector-index board id-a 0)))
+    ;; c (vector 2, flow first) to flow LAST (final vector index 0): o > d -> 0
+    (t/is (= 0 (at/nest-vector-index board id-c 2)))
+    ;; b to flow first: d = 2, o = 1 < d -> 3
+    (t/is (= 3 (at/nest-vector-index board id-b 0)))))
 
 ;; ---------------------------------------------------------------------------
 ;; nest-problem — relocate-shapes filters silently; the boundary names it

@@ -86,14 +86,11 @@
   (let [src (db/get conn :profile-skill {:id source-id})]
     (when (not= (:profile-id src) profile-id)
       (ex/raise :type :not-found :code :skill-not-found))
-    (when (:promoted-to src)
-      (ex/raise :type :validation :code :skill-already-promoted))
     ;; label = the team-facing name the promoter reviewed; the slug is inherited
     ;; from the source (deduped within the team) so it stays stable.
     (let [team-skill (db/insert! conn :team-skill
                                  {:team-id team-id
                                   :promoted-by profile-id
-                                  :source-profile-skill-id source-id
                                   :name (unique-name conn team-id (:name src))
                                   :label name
                                   :category (:category src)
@@ -101,7 +98,8 @@
                                   :trigger-on (:trigger-on src)
                                   :description (or description "")
                                   :body (:body src)})]
-      (db/update! conn :profile-skill
-                  {:promoted-to (:id team-skill)}
-                  {:id source-id})
+      ;; promoting MOVES the skill to the team: the original personal copy is not
+      ;; kept (product decision, 2026-07-16). The team version carries it for
+      ;; everyone, the promoter included.
+      (db/delete! conn :profile-skill {:id source-id})
       (row->skill team-skill))))

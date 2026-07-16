@@ -39,7 +39,7 @@
 ;; the project's own domain.
 (def ^:private vibes-body
   (str/join "\n"
-            ["Set (or refresh) this project's vibes: a short design.md the whole file is designed against."
+            ["Set (or refresh) this project's vibes: a short DESIGN.md — token frontmatter + written guidance — the whole file is designed against."
              ""
              "## Method"
              ""
@@ -53,13 +53,20 @@
              "   - Who is it for — both sides if it's a marketplace? (text, optional)"
              "   - How many design directions: one strong direction / 2–3 to compare. (single)"
              "   - A name, if there is one — say you'll use a placeholder otherwise. (text, optional)"
-             "3. **Write the doc** from the answers, as concise markdown:"
-             "   - `# <Name>` and the identity in one sentence."
-             "   - `## Vibe` — the chosen words made CONCRETE: what they mean for palette temperature, corner radius, density, type direction. This section must be able to settle a color/spacing argument."
-             "   - `## Audience`, `## Platform`, `## Design first`, `## Directions`."
-             "   - `## Voice & copy` — tone, capitalization, how playful the microcopy gets."
-             "   - `## Do / Don't` — 4–6 bullets each, grounded in the vibe words."
-             "   Where an answer was `__decide__`, decide well and mark it \"(my call — say the word to change it)\". Where an optional question was skipped, leave its section out. If reference images were attached, READ them and translate what they establish (palette temperature, density, radius, mood) into the Vibe section — that is why they were asked for. Keep the whole doc under 3500 characters."
+             "3. **Write the doc** from the answers, in the DESIGN.md format: YAML frontmatter between `---` fences carrying the machine-readable design tokens, then a markdown body. The frontmatter is where the vibe words become NUMBERS AND VALUES — it must be able to settle a color/spacing argument on its own:"
+             "   - `version: alpha`, `name`, and `description` (the identity in one line)."
+             "   - `colors:` — 4–7 named tokens (primary, accent, surface, text…) with concrete values (hex or any CSS color) chosen from the vibe words. If reference images were attached, READ them and pull the palette temperature from there — that is why they were asked for."
+             "   - `typography:` — at least `heading` and `body`, each a map of `fontFamily`, `fontSize`, `fontWeight` (plus `lineHeight` where it matters)."
+             "   - `rounded:` and `spacing:` — small named scales (sm/md/lg) consistent with the vibe: sharp & utilitarian earns small radii and tight spacing; soft & friendly earns generous ones."
+             "   - `components:` (optional) — key components referencing tokens as `{colors.primary}`; never write a reference to a token that doesn't exist above."
+             "   Then the body, `##` sections in this order (omit any with nothing to say):"
+             "   - `## Overview` — identity, audience, platform, what to design first, how many directions; include the voice & copy guidance (tone, capitalization, how playful the microcopy gets)."
+             "   - `## Colors` — why this palette and where each token is used."
+             "   - `## Typography` — the type direction made concrete."
+             "   - `## Layout` — density, spacing rhythm, what generous vs. tight means here."
+             "   - `## Shapes` — how the radius scale is applied, borders, softness."
+             "   - `## Do's and Don'ts` — 4–6 bullets each, grounded in the vibe words."
+             "   Where an answer was `__decide__`, decide well and mark it \"(my call — say the word to change it)\". Where an optional question was skipped, leave its section out. Keep the whole doc under 5000 characters."
              "4. **Save it** with `set_design_doc`, then confirm in 2–3 sentences: the vibe in one line, what you decided on their behalf, and the natural next step (usually designing the first screen)."
              ""
              "## Rules"
@@ -77,9 +84,9 @@
 (def catalog
   [{:category "Setup"
     :skills [{:name "penpot-project-vibes" :label "Set project vibes"
-              :blurb "Interview → a design.md the agent designs against" :reactive "on-demand" :enabled true
+              :blurb "Interview → a DESIGN.md the agent designs against" :reactive "on-demand" :enabled true
               :example "Set the design vibes for this project."
-              :what "Runs a short kickoff interview as an in-chat form (what to design first, platform, vibe words, audience…) and distills the answers into a design.md stored on this file. The agent then honors it in every design task, and collaborators share it."
+              :what "Runs a short kickoff interview as an in-chat form (what to design first, platform, vibe words, audience…) and distills the answers into a DESIGN.md stored on this file: design tokens (colors, typography, radius, spacing) in YAML frontmatter plus written guidance. The agent then honors it in every design task, and collaborators share it."
               :body vibes-body}]}
    {:category "Audits"
     :skills [{:name "penpot-audit-accessibility" :label "Accessibility audit"

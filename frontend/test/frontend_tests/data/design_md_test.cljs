@@ -8,6 +8,7 @@
   "US #38 Phase 01: parse/serialize/validate the DESIGN.md format —
   YAML token frontmatter + markdown body (google-labs-code/design.md)."
   (:require
+   [app.main.data.workspace.design-doc :as dd]
    [app.main.data.workspace.design-md :as dmd]
    [cljs.test :refer [deftest is]]
    [cuerdas.core :as str]))
@@ -124,3 +125,29 @@
 (deftest canonical-sections-are-exposed
   (is (= "Overview" (first dmd/canonical-sections)))
   (is (some #{"Do's and Don'ts"} dmd/canonical-sections)))
+
+;; ---- doc-problem (design-doc's save gate, US #38 phase 02) — the tool's
+;; validation seam: set_design_doc trusts it, so format rejection lives here.
+
+(deftest doc-problem-accepts-a-valid-design-md
+  (is (nil? (dd/doc-problem (dmd/serialize {:frontmatter valid-frontmatter
+                                            :body valid-body})))))
+
+(deftest doc-problem-accepts-a-legacy-plain-doc
+  (is (nil? (dd/doc-problem "# Vibes\n\nWarm & handcrafted, no frontmatter."))))
+
+(deftest doc-problem-rejects-broken-yaml
+  (let [problem (dd/doc-problem "---\ncolors: [unclosed\n---\nbody")]
+    (is (string? problem))
+    (is (str/includes? problem "YAML"))))
+
+(deftest doc-problem-rejects-dangling-token-refs
+  (let [fm      (assoc-in valid-frontmatter ["components" "button" "background"]
+                          "{colors.missing}")
+        problem (dd/doc-problem (dmd/serialize {:frontmatter fm :body ""}))]
+    (is (string? problem))
+    (is (str/includes? problem "colors.missing"))))
+
+(deftest doc-problem-still-enforces-the-cap
+  (is (= 6000 dd/max-doc-chars))
+  (is (string? (dd/doc-problem (apply str (repeat 6001 "x"))))))

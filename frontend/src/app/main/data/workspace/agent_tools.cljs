@@ -183,15 +183,20 @@
 
    {:name "set_design_doc"
     :description
-    (str "Saves (or replaces) this project's vibes document — a design.md "
+    (str "Saves (or replaces) this project's vibes document — a DESIGN.md "
          "that is inlined into your instructions on every future turn in this "
-         "file and shared with every collaborator. Write concise markdown: "
-         "identity in a sentence, vibe words, audience, platform, what to "
-         "design first, voice, do / don't. Stay well under 4000 characters — "
-         "it is read on every turn. Call it at the end of a vibes interview "
-         "or when the user asks to change the project's design direction; "
-         "pass an empty `doc` to delete the document. The current doc, if "
-         "any, is already in your instructions under 'Project vibes'.")
+         "file and shared with every collaborator. Format: YAML frontmatter "
+         "between --- fences carrying the machine-readable tokens (name, "
+         "description, colors, typography, rounded, spacing, optionally "
+         "components referencing tokens as {colors.primary}), then a markdown "
+         "body in the canonical sections — Overview, Colors, Typography, "
+         "Layout, Shapes, Do's and Don'ts. The doc is validated on save: "
+         "broken YAML or a {token.ref} that resolves to nothing is rejected "
+         "with the reason. Stay well under 6000 characters — it is read on "
+         "every turn. Call it at the end of a vibes interview or when the "
+         "user asks to change the project's design direction; pass an empty "
+         "`doc` to delete the document. The current doc, if any, is already "
+         "in your instructions under 'Project vibes'.")
     :input-schema {:type "object"
                    :properties {:doc {:type "string"
                                       :description "the full markdown document (empty string deletes)"}}

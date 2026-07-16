@@ -21,6 +21,7 @@
   future turn in the file."
   (:require
    [app.main.data.plugins :as dp]
+   [app.main.data.workspace.design-md :as dmd]
    [app.main.store :as st]
    [cuerdas.core :as str]
    [okulary.core :as l]))
@@ -28,7 +29,9 @@
 (def ^:private data-ns :penpot-vibes)
 (def ^:private data-key "design-md")
 
-(def max-doc-chars 4000)
+;; 6000, up from the prose-only 4000: the DESIGN.md format (US #38) spends
+;; ~1.5k of it on the YAML token frontmatter before the body says a word.
+(def max-doc-chars 6000)
 
 (defn get-doc
   "This file's vibes doc (a markdown string), or nil when none is set."
@@ -52,7 +55,14 @@
     (str "the design doc is " (count doc) " characters; keep it under "
          max-doc-chars " — it is read on every single turn")
 
-    :else nil))
+    ;; format gate (US #38): a doc carrying DESIGN.md frontmatter must parse
+    ;; and pass the schema — persisting broken YAML would poison every later
+    ;; read. A plain-markdown doc (no fence) still passes untouched.
+    :else
+    (let [{:keys [error] :as parsed} (dmd/parse doc)]
+      (or error
+          (when-let [problems (dmd/problems parsed)]
+            (str/join "; " problems))))))
 
 (defn set-doc
   "The event persisting `doc` on `file-id` (undoable, synced). The caller
@@ -79,11 +89,16 @@
   'there are vibes but they are blank')."
   [state]
   (when-let [doc (get-doc state)]
-    (str/join "\n"
-              ["## Project vibes (design.md)"
-               (str "The user's chosen design direction for this project, set by them. "
-                    "Honor it in every design decision — palette, type, spacing, layout, tone "
-                    "and copy alike, and say so when you lean on it. When a request conflicts "
-                    "with it, point at the conflict and ask which should win.")
-               ""
-               doc])))
+    (let [tokens? (some? (:frontmatter (dmd/parse doc)))]
+      (str/join "\n"
+                ["## Project vibes (DESIGN.md)"
+                 (str "The user's chosen design direction for this project, set by them. "
+                      "Honor it in every design decision — palette, type, spacing, layout, tone "
+                      "and copy alike, and say so when you lean on it. When a request conflicts "
+                      "with it, point at the conflict and ask which should win."
+                      (when tokens?
+                        (str " Its YAML frontmatter is the token source of truth — colors, "
+                             "typography, rounded, spacing: use those exact values, never "
+                             "near-misses.")))
+                 ""
+                 doc]))))

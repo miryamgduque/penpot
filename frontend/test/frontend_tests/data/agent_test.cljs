@@ -715,8 +715,20 @@
 (t/deftest checkpoint-not-due-early
   (t/is (false? (boolean (agent/checkpoint-due? "claude-sonnet-5" 3 no-spend)))))
 
-(t/deftest checkpoint-due-at-the-round-cap
-  (t/is (true? (boolean (agent/checkpoint-due? "claude-sonnet-5" 12 no-spend)))))
+(t/deftest checkpoint-is-disabled
+  (t/testing "Santi, 2026-07-16: the brake interrupted real design work —
+              disabled behind checkpoint-enabled?, so even the old firing
+              conditions no longer pause the turn. max-rounds stays as the
+              hard backstop. Flip the boolean in agent.cljs to re-enable;
+              these assertions then invert back to the ones in git history."
+    ;; the old round-cap trigger
+    (t/is (false? (boolean (agent/checkpoint-due? "claude-sonnet-5" 12 no-spend))))
+    ;; the old spend trigger: 80k output on opus-4-8 at $25/M = $2
+    (let [spent {:input-tokens 10000 :output-tokens 80000
+                 :cache-read-tokens 0 :cache-write-tokens 0 :requests 3}]
+      (t/is (false? (boolean (agent/checkpoint-due? "claude-opus-4-8" 3 spent)))))
+    ;; the old unpriced-model round trigger
+    (t/is (false? (boolean (agent/checkpoint-due? "some-unpriced-model" 12 no-spend))))))
 
 (t/deftest checkpoint-never-fires-before-the-first-round
   (t/testing "round 0 = nothing has run in this segment yet — even a resumed
@@ -724,20 +736,6 @@
     (let [heavy {:input-tokens 1000000 :output-tokens 1000000
                  :cache-read-tokens 0 :cache-write-tokens 0 :requests 30}]
       (t/is (false? (boolean (agent/checkpoint-due? "claude-sonnet-5" 0 heavy)))))))
-
-(t/deftest checkpoint-due-on-spend-alone
-  (t/testing "a few expensive rounds trip the brake before the round cap"
-    ;; 80k output on opus-4-8 at $25/M = $2 — over the $1 threshold
-    (let [spent {:input-tokens 10000 :output-tokens 80000
-                 :cache-read-tokens 0 :cache-write-tokens 0 :requests 3}]
-      (t/is (true? (boolean (agent/checkpoint-due? "claude-opus-4-8" 3 spent)))))))
-
-(t/deftest checkpoint-unpriced-model-uses-rounds-only
-  (t/testing "no price entry → no cost estimate → the round cap is the brake"
-    (let [spent {:input-tokens 9000000 :output-tokens 9000000
-                 :cache-read-tokens 0 :cache-write-tokens 0 :requests 3}]
-      (t/is (false? (boolean (agent/checkpoint-due? "some-unpriced-model" 3 spent))))
-      (t/is (true? (boolean (agent/checkpoint-due? "some-unpriced-model" 12 spent)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; The history cache breakpoint.
@@ -769,7 +767,7 @@
       (let [last-content (:content (peek out))]
         (t/is (vector? last-content) "a string content is promoted to blocks to carry it")
         (t/is (= {:type "ephemeral"} (:cache_control (peek last-content))))
-        (t/is (= "make it blue" (:text (peek last-content)) ))))
+        (t/is (= "make it blue" (:text (peek last-content))))))
     (t/testing "earlier messages are untouched"
       (t/is (= (agent/encode-anthropic (butlast history))
                (vec (butlast out)))))))

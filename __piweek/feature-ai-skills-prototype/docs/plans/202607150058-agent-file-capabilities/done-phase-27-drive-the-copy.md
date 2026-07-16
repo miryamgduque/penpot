@@ -1,6 +1,6 @@
 # Phase 27 — Drive the copy
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; suite+live at merge)
 
 The sharpest finding of the supply-side sweep: **an instance, once placed, is frozen.** Wave 1
 built variant sets and Wave 5 lets the agent place instances — but `create_instance` is where

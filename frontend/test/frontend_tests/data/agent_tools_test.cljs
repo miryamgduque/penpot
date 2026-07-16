@@ -1650,3 +1650,45 @@
 
 (t/deftest media-error-survives-a-nil-code
   (t/is (string? (at/media-error-message nil))))
+
+;; ---------------------------------------------------------------------------
+;; search_icons / insert_icon — id validation, url building, payload parsing
+;; ---------------------------------------------------------------------------
+
+(t/deftest insert-icon-needs-an-icon-id
+  (t/is (str/includes? (tool-error "insert_icon" {}) "prefix:name")))
+
+(t/deftest insert-icon-points-at-search-when-the-id-is-malformed
+  (t/testing "a component-ish name is not an Iconify id — the message must name the fix"
+    (t/is (str/includes? (tool-error "insert_icon" {:icon "HomeIcon"}) "search_icons"))
+    (t/is (some? (tool-error "insert_icon" {:icon "mdi:"})))
+    (t/is (some? (tool-error "insert_icon" {:icon "a:b:c"})))))
+
+(t/deftest icon-ids-with-hyphens-are-accepted
+  (t/is (nil? (at/icon-id-problem "material-symbols:home-outline")))
+  (t/is (nil? (at/icon-id-problem "mdi:home")))
+  (t/is (nil? (at/icon-id-problem "lucide:house"))))
+
+(t/deftest icon-svg-url-splits-prefix-and-name
+  (t/is (= "https://api.iconify.design/mdi/home.svg?height=24"
+           (at/icon-svg-url "mdi:home" 24))))
+
+(t/deftest search-icons-needs-a-query
+  (t/is (str/includes? (tool-error "search_icons" {}) "query"))
+  (t/is (str/includes? (tool-error "search_icons" {:query "  "}) "query")))
+
+(t/deftest icons-payload-caps-at-the-requested-limit
+  (t/testing "the API floor is 32 results — the tool trims to what was asked"
+    (let [body "{\"icons\":[\"a:one\",\"a:two\",\"a:three\"],\"total\":3}"
+          out  (at/icons-payload body 2)]
+      (t/is (= ["a:one" "a:two"] (:icons out)))
+      (t/is (= 3 (:total out))))))
+
+(t/deftest icons-payload-explains-an-empty-result
+  (let [out (at/icons-payload "{\"icons\":[],\"total\":0}" 24)]
+    (t/is (= [] (:icons out)))
+    (t/is (str/includes? (:note out) "broader"))))
+
+(t/deftest icons-payload-points-at-insert-icon-when-results-exist
+  (let [out (at/icons-payload "{\"icons\":[\"mdi:home\"],\"total\":1}" 24)]
+    (t/is (str/includes? (:note out) "insert_icon"))))

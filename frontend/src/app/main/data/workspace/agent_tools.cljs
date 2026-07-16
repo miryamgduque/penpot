@@ -41,9 +41,11 @@
    [app.main.data.workspace.design-doc :as dd]
    [app.main.data.workspace.groups :as dwg]
    [app.main.data.workspace.libraries :as dwl]
+   [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.shape-layout :as dwsl]
    [app.main.data.workspace.shapes :as dwsh]
+   [app.main.data.workspace.svg-upload :as svg-up]
    [app.main.data.workspace.texts :as dwt-text]
    [app.main.data.workspace.tokens.application :as dwta]
    [app.main.data.workspace.tokens.library-edit :as dwtl]
@@ -56,6 +58,7 @@
    [app.main.store :as st]
    [app.render-wasm.api :as wasm.api]
    [app.util.code-gen :as cg]
+   [app.util.http :as http]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
    [potok.v2.core :as ptk]))
@@ -256,6 +259,33 @@
                                 :height {:type "number"}
                                 :parentId {:type "string" :description "board/group id to nest into"}}
                    :required ["url"]}}
+
+   {:name "search_icons"
+    :description
+    (str "Searches the Iconify catalog (200k+ open-source icons: Material "
+         "Symbols, Lucide, Tabler, Phosphor, Font Awesome…) and returns "
+         "matching icon ids in prefix:name form. Use a short noun query like "
+         "\"home\" or \"arrow left\". Insert a result with insert_icon.")
+    :input-schema {:type "object"
+                   :properties {:query {:type "string"}
+                                :limit {:type "number" :description "max results, default 24"}}
+                   :required ["query"]}}
+
+   {:name "insert_icon"
+    :description
+    (str "Fetches an Iconify icon by id (prefix:name, from search_icons) and "
+         "imports it as vector shapes at the given position (it nests into the "
+         "board under that point, if any). Icons arrive monochrome as authored "
+         "— usually black; to recolor, bind a color token to the created shape "
+         "with apply_tokens rather than passing raw hexes. Geometry settles "
+         "asynchronously — re-read to confirm.")
+    :input-schema {:type "object"
+                   :properties {:icon {:type "string" :description "e.g. lucide:house"}
+                                :x {:type "number"}
+                                :y {:type "number"}
+                                :size {:type "number" :description "height in px, default 24"}
+                                :name {:type "string" :description "layer name; defaults to the icon id"}}
+                   :required ["icon"]}}
 
    {:name "modify_shape"
     :description
@@ -1403,6 +1433,95 @@
             (fn [cause]
               (rx/throw (ex-info (media-error-message (:code (ex-data cause)))
                                  {:cause-hint (ex-message cause)}))))))))
+
+;; --- search_icons / insert_icon (Iconify)
+
+(def ^:private iconify-base "https://api.iconify.design")
+
+(def ^:private icon-id-re
+  #"^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+(defn icon-id-problem
+  "Validation message for an Iconify icon id, nil when acceptable. Public for
+  tests."
+  [icon]
+  (when-not (and (string? icon) (re-matches icon-id-re icon))
+    (str "insert_icon: icon must be an Iconify id in prefix:name form, e.g. "
+         "lucide:house — find one with search_icons.")))
+
+(defn icon-svg-url
+  "The Iconify SVG endpoint for an already-validated icon id. Public for tests."
+  [icon size]
+  (let [[prefix nm] (str/split icon ":")]
+    (str iconify-base "/" prefix "/" nm ".svg?height=" size)))
+
+(defn icons-payload
+  "Parses an Iconify search response body into the tool result. Caps the id
+  list at `limit` — the API's own floor is 32, so it over-returns for smaller
+  asks. Public for tests."
+  [body limit]
+  (let [data  (js/JSON.parse body)
+        icons (vec (take limit (array-seq (.-icons ^js data))))]
+    {:icons icons
+     :total (.-total ^js data)
+     :note  (if (seq icons)
+              "insert with insert_icon {icon: \"prefix:name\"}"
+              "no icons matched — try a broader, single-noun query")}))
+
+(defn- search-icons
+  [{:keys [query limit]}]
+  (if-not (and (string? query) (not (str/blank? query)))
+    (rx/throw (ex-info "search_icons: query is required, e.g. {query: \"home\"}" {}))
+    (let [limit (-> (or limit 24) (max 1) (min 64))]
+      (->> (http/send! {:method :get
+                        :uri (str iconify-base "/search?query="
+                                  (js/encodeURIComponent query)
+                                  ;; below the API's floor it ignores the param
+                                  "&limit=" (max limit 32))})
+           (rx/mapcat
+            (fn [{:keys [status body]}]
+              (if (= 200 status)
+                (rx/of (icons-payload body limit))
+                (rx/throw (ex-info (str "search_icons: the icon service answered "
+                                        status " — try again shortly")
+                                   {})))))))))
+
+(defn- insert-icon
+  [{:keys [icon x y size] :as input}]
+  (if-let [problem (icon-id-problem icon)]
+    (rx/throw (ex-info problem {}))
+    (let [size (-> (or size 24) (max 8) (min 512))
+          nm   (or (:name input) icon)]
+      (->> (http/send! {:method :get :uri (icon-svg-url icon size)})
+           (rx/mapcat
+            (fn [{:keys [status body]}]
+              (cond
+                (not= 200 status)
+                (rx/throw (ex-info (str "insert_icon: icon " icon " was not found "
+                                        "— check the id with search_icons")
+                                   {}))
+
+                (not (dwm/valid-svg-string? body))
+                (rx/throw (ex-info (str "insert_icon: the icon service did not "
+                                        "return SVG — try another icon")
+                                   {}))
+
+                :else
+                (dwm/svg->clj [nm body]))))
+           (rx/map
+            (fn [svg-data]
+              (let [id  (uuid/next)
+                    pos (gpt/point (or x 0) (or y 0))]
+                (interrupt!)
+                ;; ignore-selection?: the agent's insert must not depend on
+                ;; whatever the user happens to have selected
+                (st/emit! (svg-up/add-svg-shapes id svg-data pos
+                                                 {:change-selection? false
+                                                  :ignore-selection? true}))
+                {:id (dm/str id)
+                 :icon icon
+                 :size size
+                 :note "icon inserted as vector shapes"})))))))
 
 (defn shadow->shape
   "A shadow as Penpot stores it. `:color` is a *map* (`schema:color`), not a hex
@@ -3023,6 +3142,8 @@
     "audit_file"         (audit-file)
     "create_shape"       (create-shape input)
     "insert_image"       (insert-image input)
+    "search_icons"       (search-icons input)
+    "insert_icon"        (insert-icon input)
     "modify_shape"       (modify-shape input)
     "nest_shape"         (nest-shape input)
     "create_text"        (create-text input)

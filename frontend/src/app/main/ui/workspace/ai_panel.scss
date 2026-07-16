@@ -421,6 +421,9 @@
   gap: deprecated.$s-8;
   padding: var(--sp-m);
   overflow-y: auto;
+  // The workspace sets `user-select: none` globally; re-enable it here so the
+  // conversation text can be selected and copied.
+  user-select: text;
   // flex items default to min-height:auto, which would size us to content and
   // silently defeat the overflow-y above
   min-height: 0;

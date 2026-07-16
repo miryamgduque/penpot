@@ -40,6 +40,7 @@
    [app.main.data.workspace.design-doc :as dd]
    [app.main.data.workspace.groups :as dwg]
    [app.main.data.workspace.libraries :as dwl]
+   [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.shape-layout :as dwsl]
    [app.main.data.workspace.shapes :as dwsh]
@@ -465,6 +466,19 @@
                                            :description "defaults to the selection"}
                                 :type {:type "string" :enum ["html" "svg"]}
                                 :includeChildren {:type "boolean" :description "default true"}}}}
+
+   {:name "create_from_svg"
+    :description
+    (str "Imports an SVG string as real Penpot shapes — the way to draw an icon "
+         "or a small illustration. Write the SVG yourself and pass it whole; it "
+         "becomes editable shapes (a group when it has several elements), not an "
+         "image. For a plain rectangle, ellipse or board use create_shape "
+         "instead. The SVG's own fills are kept as-is (icons legitimately carry "
+         "raw colors); audit_file still flags them if the file enforces tokens.")
+    :input-schema {:type "object"
+                   :properties {:svg {:type "string" :description "a complete <svg>…</svg> string"}
+                                :x {:type "number"} :y {:type "number"}}
+                   :required ["svg"]}}
 
    {:name "create_instance"
     :description
@@ -1305,6 +1319,34 @@
               :type type
               :parentId (when parent? (dm/str pid))
               :note "created — verify geometry with read_design"}))))
+
+;; --- SVG import
+;;
+;; Vector paths are a blank in the registry, and point-level bezier surgery has
+;; zero playbook demand. The demand that exists — icons — has a cheaper answer
+;; the internals ship: `dwm/create-svg-shape` turns an SVG string into real
+;; Penpot shapes (it powers paste-SVG and the plugin's createShapeFromSvg).
+;; Models write SVG well; this is a passthrough to a tested pipeline.
+
+(defn- create-from-svg
+  [{:keys [svg x y]}]
+  (cond
+    (not (dwm/valid-svg-string? svg))
+    (rx/throw (ex-info (str "create_from_svg: not valid SVG — pass a complete <svg>…</svg> "
+                            "string. Good for icons and small illustrations; for a "
+                            "rectangle/ellipse/board use create_shape.")
+                       {}))
+    :else
+    ;; the root id is caller-supplied, so it is knowable before the async import,
+    ;; as with create_variant. An <svg> with several elements imports as a group.
+    (let [id (uuid/next)]
+      (interrupt!)
+      (st/emit! (dwm/create-svg-shape id "svg" svg (gpt/point (or x 0) (or y 0))))
+      (rx/of {:id (dm/str id)
+              :note (str "SVG imported as real shapes (a group when it has several "
+                         "elements). Its own fills are NOT checked against "
+                         "token-only-colors — that is deliberate for icons, but "
+                         "audit_file still flags raw colors. Verify with read_design.")}))))
 
 (defn shadow->shape
   "A shadow as Penpot stores it. `:color` is a *map* (`schema:color`), not a hex
@@ -2970,6 +3012,7 @@
     "set_layout_child"   (set-layout-child input)
     "generate_code"      (generate-code input)
     "create_instance"    (create-instance input)
+    "create_from_svg"    (create-from-svg input)
     "detach_instance"    (detach-instance input)
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)

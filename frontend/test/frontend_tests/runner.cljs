@@ -11,6 +11,7 @@
    [frontend-tests.data.agent-test]
    [frontend-tests.data.agent-tools-test]
    [frontend-tests.data.ai-providers-test]
+   [frontend-tests.data.design-md-test]
    [frontend-tests.data.nitrate-test]
    [frontend-tests.data.repo-test]
    [frontend-tests.data.uploads-test]
@@ -21,10 +22,10 @@
    [frontend-tests.data.workspace-mcp-test]
    [frontend-tests.data.workspace-media-test]
    [frontend-tests.data.workspace-shortcuts-test]
+   [frontend-tests.data.workspace-skill-gen-test]
    [frontend-tests.data.workspace-skill-state-test]
    [frontend-tests.data.workspace-texts-test]
    [frontend-tests.data.workspace-thumbnails-test]
-   [frontend-tests.data.workspace-skill-gen-test]
    [frontend-tests.data.workspace-user-skills-test]
    [frontend-tests.errors-test]
    [frontend-tests.helpers-shapes-test]
@@ -91,6 +92,7 @@
    'frontend-tests.data.agent-test
    'frontend-tests.data.agent-tools-test
    'frontend-tests.data.ai-providers-test
+   'frontend-tests.data.design-md-test
    'frontend-tests.data.nitrate-test
    'frontend-tests.data.repo-test
    'frontend-tests.data.uploads-test

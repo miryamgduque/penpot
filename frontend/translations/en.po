@@ -3528,6 +3528,22 @@ msgstr "Sketch"
 msgid "labels.sources"
 msgstr "Sources"
 
+#: src/app/main/ui/dashboard/sidebar.cljs
+msgid "labels.agent-skills"
+msgstr "Agent Skills"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "title.agent-skills"
+msgstr "Agent Skills"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.description"
+msgstr "Skills your team promoted, shared with everyone in their agent panel."
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.empty"
+msgstr "No promoted skills yet. Promote a personal skill from the agent panel to share it with the team."
+
 #: src/app/main/ui/onboarding/questions.cljs:53
 msgid "labels.start"
 msgstr "Start"

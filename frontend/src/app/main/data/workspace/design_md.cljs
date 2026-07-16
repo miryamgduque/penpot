@@ -91,6 +91,64 @@
          (or body ""))
     (or body "")))
 
+;; ---- token references
+
+(def ^:private token-ref-re #"\{([^{}]+)\}")
+
+(defn- token-ref-target
+  "The value a `{path.to.token}` reference points at, or nil when dangling."
+  [fm path]
+  (get-in fm (str/split path ".")))
+
+;; ---- display model (what the panel's token summary renders)
+
+(def ^:private typography-prop-order
+  ["fontFamily" "fontSize" "fontWeight" "lineHeight"])
+
+(defn typography-summary
+  "One glanceable line for a typography token's props — the spec's known
+  props first, anything else after, alphabetically."
+  [props]
+  (let [known (keep #(get props %) typography-prop-order)
+        extra (->> (sort-by key props)
+                   (keep (fn [[k v]]
+                           (when-not (some #{k} typography-prop-order) v))))]
+    (str/join " · " (map str (concat known extra)))))
+
+(defn- resolve-swatch
+  "The paintable value behind `v`: a `{path.to.token}` alias resolved against
+  `fm`, any direct value as-is."
+  [fm v]
+  (if-let [[_ path] (re-matches token-ref-re v)]
+    (token-ref-target fm path)
+    v))
+
+(defn display-model
+  "Parsed frontmatter → `{:name :description :colors :typography :rounded
+  :spacing}` with ordered row seqs, or nil when there is no frontmatter.
+  Malformed entries are skipped, not rendered broken — `problems` is where
+  they get REPORTED; this is the read path and read paths stay calm."
+  [fm]
+  (when (map? fm)
+    {:name        (get fm "name")
+     :description (get fm "description")
+     :colors      (when (map? (get fm "colors"))
+                    (vec (for [[k v] (get fm "colors")
+                               :when (string? v)]
+                           {:name k :value v :swatch (resolve-swatch fm v)})))
+     :typography  (when (map? (get fm "typography"))
+                    (vec (for [[k v] (get fm "typography")
+                               :when (map? v)]
+                           {:name k :summary (typography-summary v)})))
+     :rounded     (when (map? (get fm "rounded"))
+                    (vec (for [[k v] (get fm "rounded")
+                               :when (or (string? v) (number? v))]
+                           {:name k :value (str v)})))
+     :spacing     (when (map? (get fm "spacing"))
+                    (vec (for [[k v] (get fm "spacing")
+                               :when (or (string? v) (number? v))]
+                           {:name k :value (str v)})))}))
+
 ;; ---- validation
 
 (def ^:private color-value-re
@@ -100,13 +158,6 @@
   #"(?i)^(#[0-9a-f]{3,8}|[a-z][a-z-]*(\([^)]*\))?)$")
 
 (defn- scalar? [v] (or (string? v) (number? v)))
-
-(def ^:private token-ref-re #"\{([^{}]+)\}")
-
-(defn- token-ref-target
-  "The value a `{path.to.token}` reference points at, or nil when dangling."
-  [fm path]
-  (get-in fm (str/split path ".")))
 
 (defn- string-leaves
   "All string values anywhere under `v` (maps of maps, any depth)."
@@ -123,8 +174,11 @@
   (when-let [m (get fm section)]
     (if-not (map? m)
       [(str section " must be a mapping of token names to " expects)]
-      (for [[k v] m :when (not (valid? v))]
-        (str section "." k " — expected " expects)))))
+      (concat
+       (when (some (fn [[k _]] (str/blank? k)) m)
+         [(str section " has a token with no name")])
+       (for [[k v] m :when (not (valid? v))]
+         (str section "." k " — expected " expects))))))
 
 (defn problems
   "Why parsed `{:frontmatter :body}` fails the DESIGN.md alpha schema, as a
@@ -158,3 +212,94 @@
                   [_ path] (re-seq token-ref-re leaf)
                   :when (nil? (token-ref-target fm path))]
               (str "components references {" path "} but no such token exists")))))))))
+
+;; ---- edit model (the structured editor's writable twin of display-model)
+
+(defn edit-model
+  "Frontmatter → what the form editor binds to: name/description strings,
+  row VECTORS per token section (stable indices for input paths), the spec's
+  typography props broken out per role, and `:extra` carrying everything the
+  form does not edit (version, components, unknown keys) through untouched."
+  [fm]
+  (let [fm (or fm {})]
+    {:name        (str (get fm "name" ""))
+     :description (str (get fm "description" ""))
+     :colors      (vec (for [[k v] (get fm "colors") :when (string? v)]
+                         {:name k :value v}))
+     :typography  (vec (for [[k v] (get fm "typography") :when (map? v)]
+                         {:name        k
+                          :family      (str (get v "fontFamily" ""))
+                          :size        (str (get v "fontSize" ""))
+                          :weight      (str (get v "fontWeight" ""))
+                          :line-height (str (get v "lineHeight" ""))
+                          :extra       (into {} (remove #(some #{(key %)} typography-prop-order) v))}))
+     :rounded     (vec (for [[k v] (get fm "rounded") :when (scalar? v)]
+                         {:name k :value (str v)}))
+     :spacing     (vec (for [[k v] (get fm "spacing") :when (scalar? v)]
+                         {:name k :value (str v)}))
+     :extra       (dissoc fm "name" "description" "colors" "typography"
+                          "rounded" "spacing")}))
+
+(defn- coerce-scalar
+  "Numeric-looking strings back to numbers, so an untouched doc round-trips
+  cleanly (YAML wrote 600, the input made it \"600\", 600 goes back out)."
+  [s]
+  (let [t (str/trim (str s))]
+    (if (re-matches #"-?\d+(\.\d+)?" t) (js/parseFloat t) t)))
+
+(defn- named-rows->map
+  "Form rows → ordered string map. A fully blank row is an abandoned form row
+  and is dropped; a value with a blank name is KEPT (under \"\") so `problems`
+  flags it instead of the save silently discarding user input."
+  [rows coerce?]
+  (let [entries (for [{:keys [name value]} rows
+                      :let [n (str/trim (str (or name "")))
+                            v (str/trim (str (or value "")))]
+                      :when (or (seq n) (seq v))]
+                  [n (if coerce? (coerce-scalar v) v)])]
+    (when (seq entries)
+      (into {} entries))))
+
+(defn- typography-row->props
+  [{:keys [family size weight line-height extra]}]
+  (let [set-prop (fn [m k v coerce?]
+                   (let [v (str/trim (str (or v "")))]
+                     (if (str/blank? v)
+                       m
+                       (assoc m k (if coerce? (coerce-scalar v) v)))))]
+    (-> (or extra {})
+        (set-prop "fontFamily" family false)
+        (set-prop "fontSize" size false)
+        (set-prop "fontWeight" weight true)
+        (set-prop "lineHeight" line-height true))))
+
+(defn edit-model->frontmatter
+  "The inverse of `edit-model`. Returns nil when everything is empty — a doc
+  with no tokens serializes as plain markdown, not as empty frontmatter."
+  [{:keys [name description colors typography rounded spacing extra]}]
+  (let [name        (str/trim (str (or name "")))
+        description (str/trim (str (or description "")))
+        colors-m    (named-rows->map colors false)
+        rounded-m   (named-rows->map rounded true)
+        spacing-m   (named-rows->map spacing true)
+        typ-entries (for [{:keys [name] :as row} typography
+                          :let [n     (str/trim (str (or name "")))
+                                props (typography-row->props row)]
+                          :when (or (seq n) (seq props))]
+                      [n props])
+        typ-m       (when (seq typ-entries) (into {} typ-entries))
+        fm          (cond-> (or extra {})
+                      (seq name)        (assoc "name" name)
+                      (seq description) (assoc "description" description)
+                      (some? colors-m)  (assoc "colors" colors-m)
+                      (some? typ-m)     (assoc "typography" typ-m)
+                      (some? rounded-m) (assoc "rounded" rounded-m)
+                      (some? spacing-m) (assoc "spacing" spacing-m))]
+    (when (seq fm) fm)))
+
+(defn empty-scaffold
+  "A blank edit model to hang a legacy doc's first tokens on — version only;
+  `problems` insists on a name before it can save."
+  []
+  {:name "" :description "" :colors [] :typography []
+   :rounded [] :spacing [] :extra {"version" "alpha"}})

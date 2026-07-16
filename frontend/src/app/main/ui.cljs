@@ -94,6 +94,7 @@
                   :dashboard-invitations
                   :dashboard-legacy-team-webhooks
                   :dashboard-webhooks
+                  :dashboard-agent-skills
                   :dashboard-legacy-team-settings
                   :dashboard-settings)]
 
@@ -227,6 +228,7 @@
         :dashboard-invitations
         :dashboard-webhooks
         :dashboard-skills
+        :dashboard-agent-skills
         :dashboard-settings
         :dashboard-deleted)
        (let [params        (get params :query)

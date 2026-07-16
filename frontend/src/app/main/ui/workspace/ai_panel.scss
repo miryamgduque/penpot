@@ -1535,13 +1535,32 @@
   }
 }
 
-// Project vibes: the pinned card in the Skills list…
-.vibes-card {
+// Foundations (US #38): the list view — scope marker, one card per
+// foundation, the add affordance…
+.foundations-view {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-4;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  overflow-y: auto;
+}
+
+.foundations-scope {
+  @include deprecated.body-small-typography;
+
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+}
+
+.foundation-card {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-12;
   width: 100%;
-  margin-block-end: deprecated.$s-8;
   padding: deprecated.$s-12;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
@@ -1554,20 +1573,64 @@
   }
 }
 
-.vibes-card-title {
+.foundation-card-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: deprecated.$s-32;
+  block-size: deprecated.$s-32;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
+}
+
+.foundation-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  min-inline-size: 0;
+}
+
+.foundation-card-title {
   @include deprecated.body-small-typography;
 
   color: var(--color-foreground-primary);
   font-weight: 600;
 }
 
-.vibes-card-status {
+.foundation-card-summary {
   @include deprecated.body-small-typography;
 
   color: var(--color-foreground-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-// …and its full-panel view: doc, editor, empty state.
+.foundation-add {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-accent-primary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+}
+
+// …the vibes foundation's full view: doc, editor, empty state.
 .vibes-view {
   display: flex;
   flex-direction: column;
@@ -1580,6 +1643,116 @@
   padding: deprecated.$s-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
+  // .message-md inherits its text color; in the transcript the bubble sets
+  // it, but here the workspace default (yellow) would leak through.
+  color: var(--color-foreground-primary);
+}
+
+// The DESIGN.md token summary: frontmatter rendered as swatches, type lines
+// and scale chips above the markdown body (US #38).
+.vibes-tokens {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  margin-block-end: deprecated.$s-12;
+  padding-block-end: deprecated.$s-12;
+  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.vibes-tokens-name {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.vibes-tokens-desc {
+  @include deprecated.body-small-typography;
+
+  margin: 0;
+  color: var(--color-foreground-secondary);
+}
+
+.vibes-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: deprecated.$s-8;
+}
+
+.vibes-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+  min-inline-size: 0;
+}
+
+.vibes-swatch-chip {
+  block-size: deprecated.$s-24;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+}
+
+.vibes-swatch-name {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibes-swatch-value {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibes-type-rows {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.vibes-type-row,
+.vibes-scale-row {
+  display: flex;
+  align-items: baseline;
+  gap: deprecated.$s-8;
+}
+
+.vibes-token-label {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  min-inline-size: 72px;
+  color: var(--color-foreground-secondary);
+}
+
+.vibes-type-summary {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+}
+
+.vibes-scale-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-4;
+}
+
+.vibes-scale-chip {
+  @include deprecated.body-small-typography;
+
+  padding: 0 deprecated.$s-6;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+  color: var(--color-foreground-primary);
+  font-family: monospace;
 }
 
 .vibes-editor {
@@ -1599,6 +1772,128 @@
     outline: none;
     border-color: var(--color-accent-primary);
   }
+}
+
+// The conversational edit path on a foundation's detail (US #38).
+.foundation-ask {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+}
+
+// The structured frontmatter editor (US #38): token fields, never raw YAML.
+.vibes-form {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+}
+
+.vibes-form-field {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+}
+
+.vibes-form-label {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  min-inline-size: 72px;
+  color: var(--color-foreground-secondary);
+}
+
+.vibes-form-input {
+  @include deprecated.body-small-typography;
+
+  flex: 1;
+  min-inline-size: 0;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.vibes-form-input-mono {
+  font-family: monospace;
+}
+
+.vibes-form-section-title {
+  @include deprecated.body-small-typography;
+
+  margin-block-start: deprecated.$s-8;
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.vibes-form-row {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+}
+
+.vibes-form-swatch {
+  flex: none;
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+}
+
+.vibes-form-remove {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  padding: 0 deprecated.$s-4;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-accent-error, #ff3277);
+  }
+}
+
+.vibes-form-add {
+  @include deprecated.body-small-typography;
+
+  align-self: flex-start;
+  padding: 0 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.vibes-form-type {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.vibes-form-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: deprecated.$s-4;
+}
+
+.vibes-form-note {
+  @include deprecated.body-small-typography;
+
+  margin: 0;
+  color: var(--color-foreground-secondary);
+  font-style: italic;
 }
 
 .vibes-counter {
@@ -2106,6 +2401,47 @@ textarea.create-input {
   }
 }
 
+// Promote-to-team confirmation (US #12): the muted note (reactive travels,
+// foundations don't) and the Cancel / Publish footer.
+.promote-note {
+  @include scaled-body-small;
+
+  margin-block-start: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+}
+
+.promote-actions {
+  display: flex;
+  gap: deprecated.$s-12;
+  align-items: center;
+  justify-content: flex-end;
+  margin-block-start: deprecated.$s-8;
+
+  // the accent Publish button drops its own top margin inside the flow footer
+  .create-submit {
+    margin-block-start: 0;
+  }
+}
+
+.promote-cancel {
+  @include scaled-body-small;
+
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
 .catalog-group {
   display: flex;
   flex-direction: column;
@@ -2186,6 +2522,20 @@ textarea.create-input {
   color: var(--color-foreground-secondary);
   white-space: nowrap;
 }
+
+// A team-promoted skill (US #12): a small accent marker so a shared skill is
+// distinguishable from a personal one at a glance.
+.catalog-team {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: 0 deprecated.$s-6;
+  border-radius: deprecated.$br-8;
+  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+  color: var(--color-accent-primary);
+  white-space: nowrap;
+}
+
 
 // Anchors the ⋯ overflow menu inside the clickable row. Muted so it recedes but
 // stays visible without hover (touch-friendly, per the story); full contrast on
@@ -2274,40 +2624,20 @@ textarea.create-input {
   color: var(--color-foreground-secondary);
 }
 
-// A quiet metadata marker rather than a pill: a small dot + muted label, so the
-// reactive behavior reads at a glance without shouting on the card.
+// A quiet metadata label (no dot): the reactive behavior reads plainly without
+// shouting on the card.
 .reactive-badge {
   @include scaled-body-small;
 
-  display: inline-flex;
-  align-items: center;
-  gap: deprecated.$s-4;
   flex-shrink: 0;
   color: var(--color-foreground-secondary);
   white-space: nowrap;
-
-  &::before {
-    content: "";
-    flex-shrink: 0;
-    inline-size: deprecated.$s-6;
-    block-size: deprecated.$s-6;
-    border-radius: 50%;
-    background-color: currentcolor;
-  }
 }
 
-// On-demand — a small accent dot marks the request-driven default; the label
-// itself stays muted.
 .reactive-ondemand {
   color: var(--color-foreground-secondary);
-
-  &::before {
-    background-color: var(--color-accent-primary);
-  }
 }
 
-// Observer — a plain neutral dot (inherits the muted label colour), quieter
-// than the accent it used to carry.
 .reactive-observer {
   color: var(--color-foreground-secondary);
 }

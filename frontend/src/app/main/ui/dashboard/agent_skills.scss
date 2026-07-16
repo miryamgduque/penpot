@@ -1,0 +1,100 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) KALEIDOS INC Sucursal en España SL
+
+@use "refactor/common-refactor.scss" as *;
+@use "ds/typography.scss" as t;
+
+.agent-skills-page {
+  // the dashboard content area is a grid (header row + content row); with no
+  // dashboard header we span both rows so the page fills the area instead of
+  // being clipped to the 64px header row.
+  grid-row: 1 / -1;
+  grid-column: 1 / -1;
+  min-block-size: 0;
+
+  display: flex;
+  flex-direction: column;
+  gap: $s-16;
+  padding: $s-32;
+  overflow-y: auto;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: $s-4;
+}
+
+.hero-title {
+  @include t.use-typography("title-large");
+
+  color: var(--color-foreground-primary);
+}
+
+.hero-desc {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+}
+
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: $s-8;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-inline-size: $s-712;
+}
+
+.skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: $s-6;
+  padding: $s-16;
+  border: $s-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
+  background-color: var(--color-background-primary);
+}
+
+.skill-head {
+  display: flex;
+  gap: $s-8;
+  align-items: center;
+}
+
+.skill-name {
+  @include t.use-typography("body-large");
+
+  color: var(--color-foreground-primary);
+}
+
+.skill-tag {
+  @include t.use-typography("body-small");
+
+  padding: 0 $s-6;
+  border-radius: $br-8;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+}
+
+.skill-desc {
+  @include t.use-typography("body-small");
+
+  margin: 0;
+  color: var(--color-foreground-secondary);
+}
+
+.empty {
+  @include t.use-typography("body-small");
+
+  max-inline-size: $s-712;
+  padding: $s-32;
+  border: $s-1 dashed var(--color-background-quaternary);
+  border-radius: $br-8;
+  color: var(--color-foreground-secondary);
+  text-align: center;
+}

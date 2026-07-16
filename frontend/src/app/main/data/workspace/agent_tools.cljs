@@ -5,8 +5,7 @@
 ;; Copyright (c) KALEIDOS INC Sucursal en España SL
 
 (ns app.main.data.workspace.agent-tools
-  "The Agents' native design tools — the CLJS port of the plugin tools in
-  `ai-skills/src/ui/agent.ts` + `plugin.ts`. Each tool reads or mutates the
+  "The Agents' native design tools. Each tool reads or mutates the
   workspace through Penpot's internal APIs (no plugin runtime, no
   `execute_code`).
 
@@ -28,6 +27,7 @@
    [app.common.types.component :as ctc]
    [app.common.types.components-list :as ctkl]
    [app.common.types.container :as ctn]
+   [app.common.types.file :as ctf]
    [app.common.types.fills :as types.fills]
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
@@ -36,12 +36,16 @@
    [app.common.types.tokens-lib :as ctob]
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
+   [app.main.data.comments :as dc]
+   [app.main.data.common :as dcm]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
+   [app.main.data.workspace.bool :as dwb]
    [app.main.data.workspace.design-doc :as dd]
    [app.main.data.workspace.groups :as dwg]
    [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.media :as dwm]
+   [app.main.data.workspace.pages :as dwpg]
    [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.shape-layout :as dwsl]
    [app.main.data.workspace.shapes :as dwsh]
@@ -52,6 +56,7 @@
    [app.main.data.workspace.transforms :as dwt]
    [app.main.data.workspace.undo :as dwu]
    [app.main.data.workspace.variants :as dwv]
+   [app.main.data.workspace.versions :as dwv-ver]
    [app.main.data.workspace.wasm-text :as dwwt]
    [app.main.features :as features]
    [app.main.fonts :as fonts]
@@ -66,6 +71,9 @@
    [potok.v2.core :as ptk]))
 
 (declare audit-violations)
+;; shared problem-checker helper, defined with the delete/duplicate tools but used
+;; by the earlier mask section too
+(declare ids-problem)
 ;; lives with the token tools it is built from, but read_design (far above them)
 ;; is its only caller
 (declare sets-and-themes)
@@ -188,21 +196,33 @@
                              :required ["id" "question" "type"]}}}
                    :required ["questions"]}}
 
-   {:name "set_design_doc"
+   {:name "set_foundation"
     :description
-    (str "Saves (or replaces) this project's vibes document — a design.md "
-         "that is inlined into your instructions on every future turn in this "
-         "file and shared with every collaborator. Write concise markdown: "
-         "identity in a sentence, vibe words, audience, platform, what to "
-         "design first, voice, do / don't. Stay well under 4000 characters — "
-         "it is read on every turn. Call it at the end of a vibes interview "
-         "or when the user asks to change the project's design direction; "
-         "pass an empty `doc` to delete the document. The current doc, if "
-         "any, is already in your instructions under 'Project vibes'.")
+    (str "Saves (or replaces) ONE of this file's foundations — named standing "
+         "design context (Vibes, Tone of voice, Naming, A11y priorities…) "
+         "that is inlined into your instructions on every future turn in "
+         "this file and shared with every collaborator. `name` picks the "
+         "foundation, creating it if new. Write the doc in the DESIGN.md "
+         "shape: YAML frontmatter between --- fences with at least `name` "
+         "and a one-line `description` (that line becomes the foundation's "
+         "card summary), then short markdown guidance. 'Vibes' is the "
+         "project's design direction and carries the full token schema — "
+         "colors, typography, rounded, spacing, optionally components "
+         "referencing tokens as {colors.primary} — with body sections "
+         "Overview, Colors, Typography, Layout, Shapes, Do's and Don'ts; "
+         "other foundations add tokens only where they earn their per-turn "
+         "prompt weight. Validated on save: broken YAML or a {token.ref} "
+         "that resolves to nothing is rejected with the reason; stay well "
+         "under 6000 characters per foundation — every one is read on every "
+         "turn. Pass an empty `doc` to remove the foundation. The file's "
+         "current foundations are already in your instructions under "
+         "'Foundations'.")
     :input-schema {:type "object"
-                   :properties {:doc {:type "string"
-                                      :description "the full markdown document (empty string deletes)"}}
-                   :required ["doc"]}}
+                   :properties {:name {:type "string"
+                                       :description "which foundation (e.g. \"Vibes\", \"Tone of voice\")"}
+                                :doc {:type "string"
+                                      :description "the full document (empty string removes it)"}}
+                   :required ["name" "doc"]}}
 
    {:name "render_board"
     :description
@@ -362,7 +382,9 @@
          "Only the given fields change. A shadow is the real answer for depth or "
          "a hover state — reach for it instead of faking elevation with a paler "
          "fill. Radius and opacity can also be bound to tokens with apply_tokens, "
-         "which is preferred for any value that repeats. Geometry settles "
+         "which is preferred for any value that repeats. Also: rotation (absolute "
+         "degrees), flipH/flipV, stroke width/style, and hidden/locked. Modifying "
+         "a locked shape is refused unless you set locked:false. Geometry settles "
          "asynchronously — re-read to confirm.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
@@ -394,7 +416,14 @@
                                                       :blur {:type "number"}
                                                       :spread {:type "number"}
                                                       :color {:type "string" :description "hex"}
-                                                      :opacity {:type "number" :description "0–1"}}}}
+                                                      :opacity {:type "number" :description "0–1"}}}
+                                :strokeWidth {:type "number" :description "px"}
+                                :strokeStyle {:type "string" :enum ["solid" "dotted" "dashed" "mixed"]}
+                                :rotation {:type "number" :description "absolute degrees"}
+                                :flipH {:type "boolean" :description "flip horizontally (a toggle)"}
+                                :flipV {:type "boolean" :description "flip vertically (a toggle)"}
+                                :hidden {:type "boolean"}
+                                :locked {:type "boolean" :description "a user lock; the agent respects it unless you set false"}}
                    :required ["shapeId"]}}
 
    {:name "nest_shape"
@@ -558,6 +587,140 @@
                                            :description "defaults to the selection"}
                                 :type {:type "string" :enum ["html" "svg"]}
                                 :includeChildren {:type "boolean" :description "default true"}}}}
+
+   {:name "mask_shapes"
+    :description
+    (str "Clips shapes to a mask — the circle avatar, the photo cropped to a "
+         "card's rounded corner. The topmost shape becomes the mask and clips "
+         "the rest; pass it along with what it should clip. Unlike a board "
+         "(which only clips to a rectangle) a mask clips to any shape. The "
+         "result is a masked group, not a board. Reverse it with unmask_shapes.")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["shapeIds"]}}
+
+   {:name "unmask_shapes"
+    :description "Removes a mask, leaving its children unclipped. Only a masked group (isMask in read_design) can be unmasked."
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["shapeIds"]}}
+
+   {:name "undo_change"
+    :description
+    (str "Reverts the single most recent change — the agent's counterpart to "
+         "⌘Z, and the way to take back a modify_shape that set the wrong value "
+         "(delete_shape only undoes creations). The undo stack is shared with "
+         "the user, so this reverts whatever was done last; it is normally your "
+         "own last action, but say what you undid and verify with read_design. "
+         "Fails while a text/path editor is open or the stack is empty.")
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "redo_change"
+    :description "Re-applies the most recently undone change — the counterpart to undo_change."
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "create_boolean"
+    :description
+    (str "Combines shapes with a boolean operation — union (merge), difference "
+         "(cut the top shapes out of the bottom), intersection (keep the overlap), "
+         "exclusion (keep everything except the overlap). Makes one editable "
+         "boolean shape; the operands become its children. For \"cut a hole in "
+         "this\" when the shapes are already on the canvas. (For an icon, "
+         "create_from_svg is usually easier.) Dissolve with ungroup_shapes.")
+    :input-schema {:type "object"
+                   :properties {:operation {:type "string" :enum ["union" "difference" "intersection" "exclusion"]}
+                                :shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["operation" "shapeIds"]}}
+
+   {:name "create_page"
+    :description
+    (str "Adds a page to the file — a place for explorations or a playground to "
+         "make a mess on, kept off the main design. Does NOT switch to it; the "
+         "other tools keep acting on the current page. read_design lists all "
+         "pages.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string" :description "optional; defaults to \"Page N\""}}}}
+
+   {:name "switch_page"
+    :description
+    (str "Makes another page the current one — MOVES the user's canvas there, so "
+         "tell them. After this, every other tool acts on the new page. Use it "
+         "only when the work is on a different page.")
+    :input-schema {:type "object"
+                   :properties {:pageId {:type "string"}}
+                   :required ["pageId"]}}
+
+   {:name "leave_comment"
+    :description
+    (str "Posts a comment thread pinned to a point on the canvas — the artifact a "
+         "design review produces, unlike ephemeral chat text. OUTWARD-FACING: it "
+         "is written as the current user and notifies collaborators, so only use "
+         "it when the user asked for a review left ON the file, and make the "
+         "content say it is from the design agent (e.g. \"[agent] this fill is a "
+         "raw hex; token color.brand.primary exists\"). Position it at the "
+         "problem — pass the shape's x/y.")
+    :input-schema {:type "object"
+                   :properties {:content {:type "string"}
+                                :x {:type "number"} :y {:type "number"}}
+                   :required ["content"]}}
+
+   {:name "list_comments"
+    :description "Lists the file's existing comment threads (position + content), so you don't duplicate one."
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "save_version"
+    :description
+    (str "Saves a named version snapshot of the file — the cheapest insurance "
+         "before risky work (a long build session, variant surgery). Undo takes "
+         "back the last step; a snapshot takes back the next hundred. Give a "
+         "label saying what it is a checkpoint for; it appears in the History "
+         "panel. Restoring is the user's move there, not the agent's.")
+    :input-schema {:type "object"
+                   :properties {:label {:type "string" :description "e.g. \"before variant surgery\""}}
+                   :required ["label"]}}
+
+   {:name "switch_variant"
+    :description
+    (str "Switches a placed variant instance to the member matching a property "
+         "value — \"make this button show its hover state\". This is what variant "
+         "sets are FOR; use it instead of restyling the copy by hand (which "
+         "manufactures override drift). Nearest match if the exact combination "
+         "has no member.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string" :description "the placed instance"}
+                                :property {:type "string" :description "the axis, e.g. State"}
+                                :value {:type "string" :description "e.g. Hover"}}
+                   :required ["shapeId" "property" "value"]}}
+
+   {:name "reset_overrides"
+    :description "Discards a copy's local changes, snapping it back to its main. Use it to undo drift on an instance."
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string"}}
+                   :required ["shapeId"]}}
+
+   {:name "swap_component"
+    :description
+    (str "Replaces a placed instance with a different component, keeping its "
+         "position — swap a filled button for an outline one. For a component "
+         "from a connected library, pass its fileId.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string"}
+                                :componentId {:type "string"}
+                                :fileId {:type "string" :description "only for a connected library's component"}}
+                   :required ["shapeId" "componentId"]}}
+
+   {:name "create_from_svg"
+    :description
+    (str "Imports an SVG string as real Penpot shapes — the way to draw an icon "
+         "or a small illustration. Write the SVG yourself and pass it whole; it "
+         "becomes editable shapes (a group when it has several elements), not an "
+         "image. For a plain rectangle, ellipse or board use create_shape "
+         "instead. The SVG's own fills are kept as-is (icons legitimately carry "
+         "raw colors); audit_file still flags them if the file enforces tokens.")
+    :input-schema {:type "object"
+                   :properties {:svg {:type "string" :description "a complete <svg>…</svg> string"}
+                                :x {:type "number"} :y {:type "number"}}
+                   :required ["svg"]}}
 
    {:name "create_instance"
     :description
@@ -862,8 +1025,14 @@
   gives an image fill: better a replica that says \"the original also has an 8px
   blur\" than one that silently drops it."
   [shape]
-  (let [{:keys [r1 r2 r3 r4 opacity blend-mode blur shadow]} shape
+  (let [{:keys [r1 r2 r3 r4 opacity blend-mode blur shadow strokes]} shape
         live   (remove :hidden shadow)
+        ;; stroke depth (Phase 29): width + style beyond the plain color, so a
+        ;; 4px dashed border no longer reads identically to a 1px solid one.
+        stroke (when-let [s (first strokes)]
+                 (cond-> {:color (:stroke-color s)}
+                   (some? (:stroke-width s)) (assoc :width (:stroke-width s))
+                   (some? (:stroke-style s)) (assoc :style (name (:stroke-style s)))))
         one    (fn [s] (cond-> {:style (some-> (:style s) name)
                                 :offsetX (:offset-x s)
                                 :offsetY (:offset-y s)
@@ -887,6 +1056,8 @@
 
       (and (some? blur) (not (:hidden blur)))
       (assoc :blur {:type (some-> (:type blur) name) :value (:value blur)})
+
+      (some? stroke) (assoc :stroke stroke)
 
       (= 1 (count live)) (assoc :shadow (one (first live)))
       (< 1 (count live)) (assoc :shadows (mapv one live)))))
@@ -932,7 +1103,20 @@
               :variantName (:variant-name shape))
 
        (:variant-error shape)
-       (assoc :variantError (:variant-error shape))))))
+       (assoc :variantError (:variant-error shape))
+
+       (:masked-group shape)
+       (assoc :isMask true)
+
+       ;; hide/lock flags (Phase 26) — truthy-only, same discipline
+       (:hidden shape)
+       (assoc :hidden true)
+
+       (:blocked shape)
+       (assoc :locked true)
+
+       (and (:rotation shape) (not (zero? (:rotation shape))))
+       (assoc :rotation (:rotation shape))))))
 
 (defn- token-summary
   [t]
@@ -1059,6 +1243,14 @@
                   comps-omitted    (assoc :components comps-omitted))]
     (cond-> {:file (get-in state [:files file-id :name])
              :page (:name page)
+             ;; every page, so the agent knows others exist and can switch/create;
+             ;; the shape lists above are still just THIS page's
+             :pages (let [cur (:current-page-id state)]
+                      (mapv (fn [pid]
+                              (cond-> {:id (dm/str pid)
+                                       :name (get-in data [:pages-index pid :name])}
+                                (= pid cur) (assoc :current true)))
+                            (:pages data)))
              :selection (mapv #(summarize-shape objects % {:look? true}) selected)
              :shapes (mapv #(summarize-shape objects %) shapes)
              :variants variants
@@ -1211,7 +1403,7 @@
 
 ;; --- token-only-colors enforcement (tool boundary)
 ;;
-;; Port of skills-core/src/guard.ts. When the file enforces `token-only-colors`,
+;; When the file enforces `token-only-colors`,
 ;; the color-setting tools accept only colors that are a design token value or a
 ;; library color; a raw hex is rejected with a rule-tagged error the agent
 ;; recovers from by using create_token + apply_tokens. Which rules are
@@ -1704,6 +1896,143 @@
                                           "— try another font")
                                      {}))))))))))
 
+;; --- Mask / unmask
+;;
+;; A mask clips content to any shape (boards only clip to a rectangle). Same
+;; silent-filter disease as group/ungroup: `mask-group` drops copy-children and
+;; no-ops on empty; `unmask-group` keeps only group/bool and commits whatever
+;; survived — pass a rect and it "succeeds" having done nothing. It also changes
+;; the user's selection, which we restore.
+
+(defn mask-problem
+  "Why `mask_shapes` cannot run, or nil. Pure."
+  [objects ids]
+  (or (ids-problem "mask_shapes" objects ids)
+      (let [in-copy (filter #(ctn/has-any-copy-parent? objects (get objects %)) ids)]
+        (when (seq in-copy)
+          (dm/str "mask_shapes: " (labels (map #(get objects %) in-copy))
+                  (if (= 1 (count in-copy)) " is" " are")
+                  " inside a component copy, whose structure is owned by the main"
+                  " component — mask the main instead, or detach the copy first")))))
+
+(defn unmask-problem
+  "Why `unmask_shapes` cannot run, or nil. Pure."
+  [objects ids]
+  (or (ids-problem "unmask_shapes" objects ids)
+      (let [shapes (map #(get objects %) ids)
+            wrong  (remove #(and (or (cfh/group-shape? %) (cfh/bool-shape? %))
+                                 (:masked-group %))
+                           shapes)]
+        (when (seq wrong)
+          (dm/str "unmask_shapes: " (labels wrong)
+                  (if (= 1 (count wrong)) " is not a masked group" " are not masked groups")
+                  " — only a shape created by mask_shapes can be unmasked (see its"
+                  " isMask flag in read_design)")))))
+
+(defn- mask-shapes
+  [{:keys [shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (mask-problem objects ids)]
+      (rx/throw (ex-info problem {}))
+      (let [before (dsh/get-selected-ids state)]
+        (interrupt!)
+        (st/emit! (dwg/mask-group (into #{} ids)))
+        ;; the event re-selects the new mask group; put the user's selection back
+        (st/emit! (dws/select-shapes before))
+        (rx/of {:note (str "masked — the shapes are now a masked group clipped to "
+                           "the topmost of them. Not a board (no layout/fill). "
+                           "Verify with read_design.")})))))
+
+(defn- unmask-shapes
+  [{:keys [shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (unmask-problem objects ids)]
+      (rx/throw (ex-info problem {}))
+      (do
+        (interrupt!)
+        (st/emit! (dwg/unmask-group (into #{} ids)))
+        (rx/of {:note "unmasked — the group's children are no longer clipped. Verify with read_design."})))))
+
+;; --- Undo / redo
+;;
+;; `dwu/undo` / `dwu/redo` are what ⌘Z/⌘⇧Z dispatch. Two guards matter: `undo`
+;; no-ops on an empty stack (index -1) and while a text/path editor session is
+;; open ("editors handle their own undo's") — both would read as success to a
+;; thin passthrough.
+;;
+;; The undo stack is SHARED and per-session: the user's manual edits and the
+;; agent's interleave under one profile, so there is no cheap, reliable way to
+;; prove the top entry is the agent's own (direct-commit tagging does not reach
+;; the delegated events most tools use). Rather than pretend, this tool discloses
+;; that it reverts the single most-recent change — normally the agent's own last
+;; action. Full ownership tracking (watermark/tags) is a flagged follow-up.
+
+(defn undo-problem
+  "Why `undo_change` cannot run right now, or nil. Pure over the relevant state."
+  [{:keys [edition drawing items index]}]
+  (cond
+    (or (some? edition) (some? (:object drawing)))
+    "undo_change: a text or path editor is open — it handles its own undo. Close it first."
+
+    (or (empty? items) (= index -1))
+    "undo_change: nothing to undo."))
+
+(defn- undo-change
+  []
+  (let [state (deref st/state)
+        undo  (:workspace-undo state)
+        ctx   {:edition (get-in state [:workspace-local :edition])
+               :drawing (get state :workspace-drawing)
+               :items   (:items undo)
+               :index   (or (:index undo) (dec (count (:items undo))))}]
+    (if-let [problem (undo-problem ctx)]
+      (rx/throw (ex-info problem {}))
+      (do
+        (interrupt!)
+        (st/emit! dwu/undo)
+        (rx/of {:note (str "undid the most recent change on the shared undo stack — "
+                           "normally your own last action, but the user's if they "
+                           "just edited. Verify with read_design; redo_change puts "
+                           "it back.")})))))
+
+(defn- redo-change
+  []
+  (interrupt!)
+  (st/emit! dwu/redo)
+  (rx/of {:note "redid the most recently undone change. Verify with read_design."}))
+
+;; --- SVG import
+;;
+;; Vector paths are a blank in the registry, and point-level bezier surgery has
+;; zero playbook demand. The demand that exists — icons — has a cheaper answer
+;; the internals ship: `dwm/create-svg-shape` turns an SVG string into real
+;; Penpot shapes (it powers paste-SVG and the plugin's createShapeFromSvg).
+;; Models write SVG well; this is a passthrough to a tested pipeline.
+
+(defn- create-from-svg
+  [{:keys [svg x y]}]
+  (cond
+    (not (dwm/valid-svg-string? svg))
+    (rx/throw (ex-info (str "create_from_svg: not valid SVG — pass a complete <svg>…</svg> "
+                            "string. Good for icons and small illustrations; for a "
+                            "rectangle/ellipse/board use create_shape.")
+                       {}))
+    :else
+    ;; the root id is caller-supplied, so it is knowable before the async import,
+    ;; as with create_variant. An <svg> with several elements imports as a group.
+    (let [id (uuid/next)]
+      (interrupt!)
+      (st/emit! (dwm/create-svg-shape id "svg" svg (gpt/point (or x 0) (or y 0))))
+      (rx/of {:id (dm/str id)
+              :note (str "SVG imported as real shapes (a group when it has several "
+                         "elements). Its own fills are NOT checked against "
+                         "token-only-colors — that is deliberate for icons, but "
+                         "audit_file still flags raw colors. Verify with read_design.")}))))
+
 (defn shadow->shape
   "A shadow as Penpot stores it. `:color` is a *map* (`schema:color`), not a hex
   string — a bare string fails the schema."
@@ -1726,20 +2055,43 @@
     (some? radius) (assoc :r1 radius :r2 radius :r3 radius :r4 radius)
     (some? opacity) (assoc :opacity opacity)))
 
+(def ^:private stroke-styles #{"solid" "dotted" "dashed" "mixed"})
+
+(defn locked-problem
+  "Refuses mutating a locked (`:blocked`) shape, unless the call is unlocking it.
+  A user locks a layer to mean hands-off; the agent should respect that and say
+  how to override. Pure."
+  [shape {:keys [locked] :as _input}]
+  (when (and (:blocked shape) (not (false? locked)))
+    (dm/str "modify_shape: " (shape-label shape) " is locked. A user locks a layer"
+            " to keep it as-is — ask before changing it, or unlock it deliberately"
+            " with modify_shape locked:false.")))
+
 (defn- modify-shape
-  [{:keys [shapeId x y width height fill stroke shadow] :as input}]
-  (let [nm    (:name input)
-        id    (some-> shapeId parse-uuid)
-        state @st/state]
+  [{:keys [shapeId x y width height fill stroke shadow strokeWidth strokeStyle
+           hidden locked rotation flipH flipV] :as input}]
+  (let [nm      (:name input)
+        id      (some-> shapeId parse-uuid)
+        state   @st/state
+        shape   (when id (get (dsh/lookup-page-objects state) id))]
     (cond
       (nil? id)
       (rx/throw (ex-info "modify_shape: missing or invalid shapeId" {}))
 
+      (nil? shape)
+      (rx/throw (ex-info (dm/str "modify_shape: no shape with id " shapeId " on this page") {}))
+
+      (some? (locked-problem shape input))
+      (rx/throw (ex-info (locked-problem shape input) {}))
+
       (some? (fill-problem fill))
       (rx/throw (ex-info (dm/str "modify_shape: " (fill-problem fill)) {}))
 
-      ;; the guard runs last of the three: a rejection naming the rule is the
-      ;; most useful message, so it should not mask a plain input error
+      (some? (enum-problem "modify_shape" "strokeStyle" strokeStyle stroke-styles))
+      (rx/throw (ex-info (enum-problem "modify_shape" "strokeStyle" strokeStyle stroke-styles) {}))
+
+      ;; the guard runs last: a rejection naming the rule is the most useful
+      ;; message, so it should not mask a plain input error
       (some #(color-violation state %) (input-colors input))
       (rx/throw (some #(color-violation state %) (input-colors input)))
 
@@ -1754,6 +2106,17 @@
           (st/emit! (dwsh/update-shapes [id] #(merge % styles))))
         (when shadow
           (st/emit! (dwsh/update-shapes [id] #(assoc % :shadow [(shadow->shape shadow)]))))
+        ;; hide/lock — some? so `false` genuinely unhides/unlocks
+        (when (or (some? hidden) (some? locked))
+          (st/emit! (dwsh/update-shape-flags [id]
+                                             (cond-> {}
+                                               (some? hidden) (assoc :hidden hidden)
+                                               (some? locked) (assoc :blocked locked)))))
+        (when (some? rotation)
+          ;; absolute (the event computes the delta from the shape's current angle)
+          (st/emit! (dwt/increase-rotation [id] rotation)))
+        (when flipH (st/emit! (dwt/flip-horizontal-selected [id])))
+        (when flipV (st/emit! (dwt/flip-vertical-selected [id])))
         (when (or (some? x) (some? y))
           (st/emit! (dwt/update-position id (cond-> {}
                                               (some? x) (assoc :x x)
@@ -1767,9 +2130,21 @@
         (when stroke
           (st/emit! (dwsh/update-shapes [id] #(assoc % :strokes [{:stroke-color stroke
                                                                   :stroke-opacity 1
-                                                                  :stroke-width 1
-                                                                  :stroke-style :solid
+                                                                  :stroke-width (or strokeWidth 1)
+                                                                  :stroke-style (keyword (or strokeStyle "solid"))
                                                                   :stroke-alignment :center}]))))
+        ;; stroke width/style change with no new color: patch the existing stroke
+        (when (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)))
+          (st/emit! (dwsh/update-shapes [id]
+                                        (fn [s]
+                                          (update s :strokes
+                                                  (fn [strokes]
+                                                    (let [st0 (or (first strokes)
+                                                                  {:stroke-color "#000000" :stroke-opacity 1
+                                                                   :stroke-alignment :center})]
+                                                      [(cond-> st0
+                                                         (some? strokeWidth) (assoc :stroke-width strokeWidth)
+                                                         (some? strokeStyle) (assoc :stroke-style (keyword strokeStyle)))])))))))
         (st/emit! (dwu/commit-undo-transaction tx))
         (rx/of {:id shapeId :note "modified — verify with read_design"})))))
 
@@ -2566,6 +2941,271 @@
                                      "read_design.")}
                    new-id (assoc :shapeId (dm/str new-id)))))))))
 
+;; --- Boolean operations
+;;
+;; The one shape-MAKING primitive left out — union / difference / intersection /
+;; exclusion. ungroup_shapes already dissolves a bool, so the registry ended a
+;; capability it could not begin. Same silent filter as group/bool everywhere:
+;; create-bool drops frames, variants and copy-children, no-ops on empty, and
+;; selects the new bool (which we restore).
+
+(def ^:private bool-ops #{"union" "difference" "intersection" "exclusion"})
+
+(defn boolean-problem
+  "Why `create_boolean` cannot run, or nil. Pure — mirrors create-bool's filter."
+  [objects operation ids]
+  (or (enum-problem "create_boolean" "operation" operation bool-ops)
+      (when (< (count ids) 2)
+        (dm/str "create_boolean: needs at least 2 shapes (got " (count ids)
+                ") — a boolean combines shapes"))
+      (ids-problem "create_boolean" objects ids)
+      (let [usable (remove (fn [id]
+                             (let [s (get objects id)]
+                               (or (cfh/frame-shape? s)
+                                   (ctc/is-variant? s)
+                                   (ctn/has-any-copy-parent? objects s))))
+                           ids)]
+        (when (< (count usable) 2)
+          (dm/str "create_boolean: after skipping boards, variants and copy-children"
+                  " fewer than 2 usable shapes remain — a board is not a boolean"
+                  " operand; use plain shapes or paths")))))
+
+(defn- create-boolean
+  [{:keys [operation shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (boolean-problem objects operation ids)]
+      (rx/throw (ex-info problem {}))
+      (let [before  (dsh/get-selected-ids state)
+            bool-id (uuid/next)]
+        (interrupt!)
+        (st/emit! (dwb/create-bool (keyword operation) :ids (into #{} ids) :force-shape-id bool-id))
+        ;; create-bool selects the new bool; put the user's selection back
+        (st/emit! (dws/select-shapes before))
+        (rx/of {:shapeId (dm/str bool-id)
+                :note (str "created a " operation " of the shapes — a single editable "
+                           "boolean shape; the operands are now its children. Dissolve "
+                           "it with ungroup_shapes. Verify with read_design.")})))))
+
+;; --- Pages
+;;
+;; The agent lived its whole life on the current page. read_design now lists every
+;; page; create_page makes a new one (the classic "playground" a skills session
+;; should make its mess on) without switching; switch_page navigates — which moves
+;; the user's canvas, so it discloses loudly. All other tools still operate on the
+;; CURRENT page (option a); threading a pageId through every problem-checker is the
+;; better end state but a far larger change. delete_page is out: it is delete_shape
+;; times everything on the page, and duplicate + rename cover tidiness.
+
+(defn- create-page
+  [{:keys [name]}]
+  (let [state   @st/state
+        file-id (:current-file-id state)
+        id      (uuid/next)]
+    (interrupt!)
+    ;; create-page auto-names "Page N"; rename after if a name was asked for
+    (st/emit! (dwpg/create-page {:page-id id :file-id file-id}))
+    (when (and (string? name) (not (str/blank? name)))
+      (st/emit! (dwpg/rename-page id (str/trim name))))
+    (rx/of {:pageId (dm/str id)
+            :note (str "page created" (when name (str " named \"" (str/trim name) "\""))
+                       " — you are NOT on it; the other tools still act on the current "
+                       "page. Use switch_page to move there.")})))
+
+(defn- switch-page
+  [{:keys [pageId]}]
+  (let [state (deref st/state)
+        pid   (some-> pageId parse-uuid)
+        known (some? (get-in (dsh/lookup-file-data state) [:pages-index pid]))]
+    (cond
+      (nil? pid)
+      (rx/throw (ex-info "switch_page: pageId is required (see the pages in read_design)" {}))
+
+      (not known)
+      (rx/throw (ex-info (dm/str "switch_page: no page with id " pageId " in this file — see read_design") {}))
+
+      :else
+      (do
+        (st/emit! (dcm/go-to-workspace :page-id pid))
+        (rx/of {:note (str "switched — this MOVED the user's canvas to that page. The other "
+                           "tools now act on it. Say so, since the user's view changed.")})))))
+
+;; --- Comments (outward-facing)
+;;
+;; The plan's first OUTWARD-facing tool: a comment is written as the current user
+;; and notifies collaborators. It is the artifact a real review produces — a
+;; finding pinned where the problem is, not ephemeral chat text. The governance
+;; is in the description: make authorship explicit, and only leave comments when
+;; the user asked for a review left ON THE FILE.
+
+(defn- leave-comment
+  [{:keys [content x y]}]
+  (let [state   @st/state
+        clean   (str/trim (str content))]
+    (if (str/blank? clean)
+      (rx/throw (ex-info "leave_comment: content is required" {}))
+      (do
+        (interrupt!)
+        ;; fire-and-report: the thread is created via the backend async. identity
+        ;; + false = don't pop the comment editor open in the user's face.
+        (st/emit! (dc/create-thread-on-workspace
+                   {:page-id (:current-page-id state)
+                    :file-id (:current-file-id state)
+                    :position (gpt/point (or x 0) (or y 0))
+                    :content clean}
+                   identity false))
+        (rx/of {:note (str "comment posted at (" (or x 0) ", " (or y 0) ") — it is written "
+                           "as the current user and notifies collaborators. Make sure the "
+                           "content says it is from the design agent. Verify in the Comments "
+                           "panel.")})))))
+
+(defn- list-comments
+  [_]
+  (let [file-id (:current-file-id @st/state)]
+    (->> (rp/cmd! :get-comment-threads {:file-id file-id})
+         (rx/map (fn [threads]
+                   {:comments (mapv (fn [t]
+                                      (cond-> {:seqn (:seqn t)
+                                               :content (:content t)}
+                                        (:position t) (assoc :x (:x (:position t)) :y (:y (:position t)))
+                                        (:count-comments t) (assoc :replies (dec (:count-comments t)))))
+                                    threads)})))))
+
+;; --- Save a version
+;;
+;; The cheapest insurance in the plan. gotcha #12's prescribed defence is manual
+;; ("duplicate the file before risky work"); this is the first-class answer —
+;; `create-version-from-plugins` force-persists and snapshots. Pairs with undo
+;; exactly where undo is weakest: undo covers the last step, a snapshot covers
+;; the next hundred. Restore is deliberately OUT — that is the user's move in the
+;; History panel, with their own eyes on what they lose.
+
+(defonce ^:private agent-version-count (atom 0))
+(def ^:private max-agent-versions 10)
+
+(defn- save-version
+  [{:keys [label]}]
+  (let [file-id (:current-file-id @st/state)
+        clean   (str/trim (str label))
+        full    (if (str/starts-with? clean "agent:") clean (str "agent: " clean))]
+    (cond
+      (str/blank? clean)
+      (rx/throw (ex-info (str "save_version: label is required — say what the snapshot is for,"
+                              " e.g. \"before variant surgery\"") {}))
+
+      (>= (deref agent-version-count) max-agent-versions)
+      (rx/throw (ex-info (str "save_version: already saved " max-agent-versions " snapshots this"
+                              " session — that is plenty of checkpoints. Prune or restore in the"
+                              " History panel.") {}))
+
+      :else
+      (do
+        (swap! agent-version-count inc)
+        (interrupt!)
+        ;; fire-and-report: the snapshot resolves async through the backend. The
+        ;; result discloses where to find it rather than blocking on the round trip.
+        (st/emit! (dwv-ver/create-version-from-plugins file-id full (fn [_]) (fn [_])))
+        (rx/of {:label full
+                :note (str "snapshot requested — it appears in the History panel › versions "
+                           "once the backend saves it (the file force-persists first). "
+                           "Restoring a version is the user's move there, not mine.")})))))
+
+;; --- Drive the copy
+;;
+;; An instance, once placed, was frozen. These three one-event wraps let the
+;; agent switch a copy to another variant (the point of the sets it can build),
+;; reset a drifted copy to its main, or swap it for a different component —
+;; instead of delete + re-instantiate, or restyling by hand into the very
+;; override drift the audit skill hunts. Push-to-main is deliberately OUT
+;; (a shared-asset edit, never auto-fix).
+
+(defn- instance-copy
+  "The shape as a component COPY head (not a main), or nil. Copies are what these
+  tools drive; a main is the component itself."
+  [objects id]
+  (let [shape (get objects id)]
+    (when (and shape (ctc/instance-head? shape) (not (ctc/main-instance? shape)))
+      shape)))
+
+(defn- not-a-copy-msg
+  [tool shape id]
+  (cond
+    (nil? shape) (dm/str tool ": no shape on this page with id " (str id) " — check read_design")
+    (ctc/main-instance? shape) (dm/str tool ": " (shape-label shape) " is a component MAIN, not a"
+                                       " copy — these drive a placed instance; edit the main directly")
+    :else (dm/str tool ": " (shape-label shape) " is not a component instance — place one with"
+                  " create_instance first")))
+
+(defn- switch-variant
+  [{:keys [shapeId property value]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        libs    (dsh/lookup-libraries state)
+        id      (some-> shapeId parse-uuid)
+        copy    (instance-copy objects id)
+        comp    (when copy (ctf/get-component libs (:component-file copy) (:component-id copy)))
+        props   (when comp (:variant-properties comp))
+        pos     (when props (first (keep-indexed (fn [i p] (when (= (:name p) property) i)) props)))]
+    (cond
+      (nil? copy)
+      (rx/throw (ex-info (not-a-copy-msg "switch_variant" (get objects id) id) {}))
+
+      (not (ctc/is-variant? comp))
+      (rx/throw (ex-info (dm/str "switch_variant: " (shape-label copy) " is not a variant instance"
+                                 " — it belongs to a plain component, not a set") {}))
+
+      (nil? pos)
+      (rx/throw (ex-info (dm/str "switch_variant: no axis named \"" property "\" on this set"
+                                 (when (seq props) (dm/str " (it has: " (str/join ", " (map :name props)) ")"))) {}))
+
+      :else
+      (do
+        (interrupt!)
+        (st/emit! (dwv/variants-switch {:shapes [copy] :pos pos :val value}))
+        (rx/of {:note (str "switched — the copy now shows the member with " property
+                           " = " value " (nearest match if that exact combination has no "
+                           "member). Verify with read_design.")})))))
+
+(defn- reset-overrides
+  [{:keys [shapeId]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        id      (some-> shapeId parse-uuid)
+        copy    (instance-copy objects id)]
+    (if (nil? copy)
+      (rx/throw (ex-info (not-a-copy-msg "reset_overrides" (get objects id) id) {}))
+      (do
+        (interrupt!)
+        (st/emit! (dwl/reset-component id))
+        (rx/of {:note "reset — the copy discards its own overrides and matches its main again. Verify with read_design."})))))
+
+(defn- swap-component
+  [{:keys [shapeId componentId fileId]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        libs    (dsh/lookup-libraries state)
+        cur     (:current-file-id state)
+        id      (some-> shapeId parse-uuid)
+        copy    (instance-copy objects id)
+        file-id (or (some-> fileId parse-uuid) cur)
+        new-cid (some-> componentId parse-uuid)
+        target  (when new-cid (get-in libs [file-id :data :components new-cid]))]
+    (cond
+      (nil? copy)
+      (rx/throw (ex-info (not-a-copy-msg "swap_component" (get objects id) id) {}))
+
+      (nil? target)
+      (rx/throw (ex-info (dm/str "swap_component: no component " componentId
+                                 (if fileId (dm/str " in library " fileId) " in this file")
+                                 " — see the components in read_design") {}))
+
+      :else
+      (do
+        (interrupt!)
+        (st/emit! (dwl/component-swap copy file-id new-cid false))
+        (rx/of {:note "swapped — the instance is now the other component, keeping its position. Verify with read_design."})))))
+
 ;; --- Detach
 ;;
 ;; The missing half of Wave 5, and the plan's standing rule pointed at itself:
@@ -3192,30 +3832,39 @@
          (reset! pending-form-resolve* nil)
          (st/emit! (set-pending-form nil)))))))
 
-;; --- set_design_doc (the project vibes document)
+;; --- set_foundation (any named standing-context doc; US #38 — the vibes
+;;     doc is the foundation named "Vibes"; the old set_design_doc tool is
+;;     retired, this one covers it)
 
-(defn- set-design-doc
-  [{:keys [doc]}]
+(defn- set-foundation
+  [{:keys [name doc]}]
   (let [file-id (:current-file-id @st/state)
+        slug    (dd/slugify name)
         doc     (when (string? doc) (str/trim doc))]
     (cond
+      (str/blank? slug)
+      (rx/throw (ex-info (str "'" name "' does not make a usable foundation "
+                              "name — use letters or digits")
+                         {}))
+
       (nil? file-id)
       (rx/throw (ex-info "no file is open" {}))
 
-      ;; empty means delete — the schema makes `doc` required, so an empty
+      ;; empty means remove — the schema makes `doc` required, so an empty
       ;; string is the explicit "remove it" spelling, not an accident
       (str/blank? doc)
-      (do (st/emit! (dd/clear-doc file-id))
-          (rx/of {:ok true :note "design doc removed"}))
+      (do (st/emit! (dd/clear-foundation file-id slug))
+          (rx/of {:ok true :note (str "foundation '" (dd/display-name slug)
+                                      "' removed")}))
 
       :else
       (if-let [problem (dd/doc-problem doc)]
         (rx/throw (ex-info problem {}))
-        (do (st/emit! (dd/set-doc file-id doc))
+        (do (st/emit! (dd/set-foundation file-id slug doc))
             (rx/of {:ok true
                     :chars (count doc)
-                    :note (str "saved — it will be part of your instructions "
-                               "from the next turn on")}))))))
+                    :note (str "foundation '" (dd/display-name slug) "' saved "
+                               "— in your instructions from the next turn on")}))))))
 
 ;; --- explore_design (the scout tool)
 ;;
@@ -3528,7 +4177,7 @@
     "get_page_meta"      (get-page-meta input)
     "screenshot_page"    (screenshot-page input)
     "ask_user"           (ask-user input)
-    "set_design_doc"     (set-design-doc input)
+    "set_foundation"     (set-foundation input)
     "audit_file"         (audit-file)
     "create_shape"       (create-shape input)
     "insert_image"       (insert-image input)
@@ -3549,6 +4198,20 @@
     "set_layout_child"   (set-layout-child input)
     "generate_code"      (generate-code input)
     "create_instance"    (create-instance input)
+    "create_from_svg"    (create-from-svg input)
+    "save_version"       (save-version input)
+    "create_boolean"     (create-boolean input)
+    "create_page"        (create-page input)
+    "switch_page"        (switch-page input)
+    "leave_comment"      (leave-comment input)
+    "list_comments"      (list-comments input)
+    "switch_variant"     (switch-variant input)
+    "reset_overrides"    (reset-overrides input)
+    "swap_component"     (swap-component input)
+    "undo_change"        (undo-change)
+    "redo_change"        (redo-change)
+    "mask_shapes"        (mask-shapes input)
+    "unmask_shapes"      (unmask-shapes input)
     "detach_instance"    (detach-instance input)
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)

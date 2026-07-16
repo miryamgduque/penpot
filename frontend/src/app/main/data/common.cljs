@@ -433,6 +433,14 @@
       (let [team-id (:current-team-id state)]
         (rx/of (rt/nav :dashboard-skills {:team-id team-id}))))))
 
+(defn go-to-dashboard-agent-skills
+  [& {:keys [team-id] :as options}]
+  (ptk/reify ::go-to-dashboard-agent-skills
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [team-id (or team-id (:current-team-id state))]
+        (rx/of (rt/nav :dashboard-agent-skills {:team-id team-id}))))))
+
 (defn go-to-dashboard-settings
   [& {:as options}]
   (ptk/reify ::go-to-dashboard-settings

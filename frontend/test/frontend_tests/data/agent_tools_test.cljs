@@ -19,6 +19,7 @@
   (:require
    [app.common.uuid :as uuid]
    [app.main.data.workspace.agent-tools :as at]
+   [app.main.data.workspace.media :as dwm]
    [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
    [cuerdas.core :as str]))
@@ -1508,6 +1509,83 @@
   (t/is (some? (at/detach-problem {} id-missing))))
 
 ;; ---------------------------------------------------------------------------
+;; --- Phase 32: boolean-problem
+
+(t/deftest two-plain-shapes-can-be-combined
+  ;; rects, not plain-frame — a :frame (board) is skipped by the operand filter
+  (t/is (nil? (at/boolean-problem (objects {:id id-a :name "A" :type :rect}
+                                           {:id id-b :name "B" :type :rect})
+                                  "union" [id-a id-b]))))
+
+(t/deftest a-bad-operation-is-rejected
+  (let [problem (at/boolean-problem (objects {:id id-a :type :rect} {:id id-b :type :rect})
+                                    "subtract" [id-a id-b])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "difference"))))
+
+(t/deftest one-shape-is-not-a-boolean
+  (t/is (some? (at/boolean-problem (objects {:id id-a :type :rect}) "union" [id-a]))))
+
+(t/deftest boards-are-not-boolean-operands
+  (let [problem (at/boolean-problem (objects (plain-frame id-a "A") (plain-frame id-b "B"))
+                                    "union" [id-a id-b])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "board"))))
+
+;; --- Phase 26: locked-shape guard
+
+(t/deftest an-unlocked-shape-is-freely-modified
+  (t/is (nil? (at/locked-problem (plain-frame id-a "Free") {:fill "#fff"}))))
+
+(t/deftest a-locked-shape-refuses-mutation
+  (let [problem (at/locked-problem (assoc (plain-frame id-a "Locked") :blocked true) {:fill "#fff"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "locked"))))
+
+(t/deftest unlocking-a-locked-shape-is-allowed
+  ;; locked:false is the escape hatch and must pass the guard.
+  (t/is (nil? (at/locked-problem (assoc (plain-frame id-a "Locked") :blocked true) {:locked false}))))
+
+;; --- Phase 25: mask / unmask problem-checkers
+
+(t/deftest a-plain-shape-cannot-be-unmasked
+  (let [problem (at/unmask-problem (objects {:id id-a :name "Box" :type :rect}) [id-a])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "masked group"))))
+
+(t/deftest a-masked-group-can-be-unmasked
+  (let [objs (objects {:id id-a :name "M" :type :group :masked-group true :shapes [id-b]})]
+    (t/is (nil? (at/unmask-problem objs [id-a])))))
+
+(t/deftest an-unmasked-group-cannot-be-unmasked
+  (let [objs (objects {:id id-a :name "G" :type :group :shapes [id-b]})]
+    (t/is (some? (at/unmask-problem objs [id-a])))))
+
+(t/deftest masking-nothing-is-rejected
+  (t/is (some? (at/mask-problem {} []))))
+
+;; --- Phase 24: undo-problem
+
+(t/deftest an-open-editor-blocks-undo
+  (t/is (some? (at/undo-problem {:edition (uuid/custom 1 1) :items [{}] :index 0})))
+  (t/is (str/includes? (at/undo-problem {:edition (uuid/custom 1 1) :items [{}] :index 0}) "editor")))
+
+(t/deftest an-empty-stack-blocks-undo
+  (t/is (some? (at/undo-problem {:items [] :index -1})))
+  (t/is (str/includes? (at/undo-problem {:items [] :index -1}) "nothing")))
+
+(t/deftest a-normal-stack-allows-undo
+  (t/is (nil? (at/undo-problem {:items [{} {}] :index 1}))))
+
+;; --- Phase 23: create_from_svg (the pure gate; the import itself is dwm's, and
+;; the positive path is exercised by Penpot's own paste-SVG — the well-formed
+;; case is live-verified at merge, since tubax's parse behaviour is env-specific)
+
+(t/deftest garbage-is-not-svg
+  (t/is (not (dwm/valid-svg-string? "not svg")))
+  (t/is (not (dwm/valid-svg-string? "")))
+  (t/is (not (dwm/valid-svg-string? nil))))
+
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 
@@ -1555,6 +1633,23 @@
     (rx/subs! #(reset! out %) (constantly nil) (constantly nil)
               (at/execute-tool name input))
     @out))
+
+;; ---------------------------------------------------------------------------
+;; set_foundation — a name that slugifies to nothing must be named as the
+;; problem (US #38); the message says what a usable name looks like
+;; ---------------------------------------------------------------------------
+
+(t/deftest set-foundation-rejects-an-unusable-name
+  (let [msg (tool-error "set_foundation" {:name "™!!" :doc "body"})]
+    (t/is (str/includes? msg "™!!"))
+    (t/is (str/includes? msg "letters or digits"))))
+
+;; set_design_doc is retired — set_foundation (name "Vibes") is the one way
+;; to write the vibes doc. This pins the retirement so a stray skill body or
+;; cached prompt calling the old name fails loudly, not mysteriously.
+(t/deftest set-design-doc-is-gone
+  (t/is (str/includes? (tool-error "set_design_doc" {:doc "x"})
+                       "Unknown tool")))
 
 (t/deftest explore-needs-a-question
   (with-stub-runner (fn [_] (rx/of {:text "d" :usage {}}))

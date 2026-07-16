@@ -37,6 +37,7 @@
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
    [app.main.data.comments :as dc]
+   [app.main.data.common :as dcm]
    [app.main.repo :as rp]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
@@ -51,6 +52,7 @@
    [app.main.data.workspace.tokens.application :as dwta]
    [app.main.data.workspace.tokens.library-edit :as dwtl]
    [app.main.data.workspace.transforms :as dwt]
+   [app.main.data.workspace.pages :as dwpg]
    [app.main.data.workspace.undo :as dwu]
    [app.main.data.workspace.versions :as dwv-ver]
    [app.main.data.workspace.variants :as dwv]
@@ -513,6 +515,24 @@
    {:name "redo_change"
     :description "Re-applies the most recently undone change — the counterpart to undo_change."
     :input-schema {:type "object" :properties {}}}
+
+   {:name "create_page"
+    :description
+    (str "Adds a page to the file — a place for explorations or a playground to "
+         "make a mess on, kept off the main design. Does NOT switch to it; the "
+         "other tools keep acting on the current page. read_design lists all "
+         "pages.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string" :description "optional; defaults to \"Page N\""}}}}
+
+   {:name "switch_page"
+    :description
+    (str "Makes another page the current one — MOVES the user's canvas there, so "
+         "tell them. After this, every other tool acts on the new page. Use it "
+         "only when the work is on a different page.")
+    :input-schema {:type "object"
+                   :properties {:pageId {:type "string"}}
+                   :required ["pageId"]}}
 
    {:name "leave_comment"
     :description
@@ -1107,6 +1127,14 @@
                   comps-omitted    (assoc :components comps-omitted))]
     (cond-> {:file (get-in state [:files file-id :name])
              :page (:name page)
+             ;; every page, so the agent knows others exist and can switch/create;
+             ;; the shape lists above are still just THIS page's
+             :pages (let [cur (:current-page-id state)]
+                      (mapv (fn [pid]
+                              (cond-> {:id (dm/str pid)
+                                       :name (get-in data [:pages-index pid :name])}
+                                (= pid cur) (assoc :current true)))
+                            (:pages data)))
              :selection (mapv #(summarize-shape objects % {:look? true}) selected)
              :shapes (mapv #(summarize-shape objects %) shapes)
              :variants variants
@@ -2492,6 +2520,49 @@
                                      "read_design.")}
                    new-id (assoc :shapeId (dm/str new-id)))))))))
 
+;; --- Pages
+;;
+;; The agent lived its whole life on the current page. read_design now lists every
+;; page; create_page makes a new one (the classic "playground" a skills session
+;; should make its mess on) without switching; switch_page navigates — which moves
+;; the user's canvas, so it discloses loudly. All other tools still operate on the
+;; CURRENT page (option a); threading a pageId through every problem-checker is the
+;; better end state but a far larger change. delete_page is out: it is delete_shape
+;; times everything on the page, and duplicate + rename cover tidiness.
+
+(defn- create-page
+  [{:keys [name]}]
+  (let [state   @st/state
+        file-id (:current-file-id state)
+        id      (uuid/next)]
+    (interrupt!)
+    ;; create-page auto-names "Page N"; rename after if a name was asked for
+    (st/emit! (dwpg/create-page {:page-id id :file-id file-id}))
+    (when (and (string? name) (not (str/blank? name)))
+      (st/emit! (dwpg/rename-page id (str/trim name))))
+    (rx/of {:pageId (dm/str id)
+            :note (str "page created" (when name (str " named \"" (str/trim name) "\""))
+                       " — you are NOT on it; the other tools still act on the current "
+                       "page. Use switch_page to move there.")})))
+
+(defn- switch-page
+  [{:keys [pageId]}]
+  (let [state (deref st/state)
+        pid   (some-> pageId parse-uuid)
+        known (some? (get-in (dsh/lookup-file-data state) [:pages-index pid]))]
+    (cond
+      (nil? pid)
+      (rx/throw (ex-info "switch_page: pageId is required (see the pages in read_design)" {}))
+
+      (not known)
+      (rx/throw (ex-info (dm/str "switch_page: no page with id " pageId " in this file — see read_design") {}))
+
+      :else
+      (do
+        (st/emit! (dcm/go-to-workspace :page-id pid))
+        (rx/of {:note (str "switched — this MOVED the user's canvas to that page. The other "
+                           "tools now act on it. Say so, since the user's view changed.")})))))
+
 ;; --- Comments (outward-facing)
 ;;
 ;; The plan's first OUTWARD-facing tool: a comment is written as the current user
@@ -3471,6 +3542,8 @@
     "create_instance"    (create-instance input)
     "create_from_svg"    (create-from-svg input)
     "save_version"       (save-version input)
+    "create_page"        (create-page input)
+    "switch_page"        (switch-page input)
     "leave_comment"      (leave-comment input)
     "list_comments"      (list-comments input)
     "switch_variant"     (switch-variant input)

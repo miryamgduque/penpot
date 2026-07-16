@@ -1766,3 +1766,46 @@
 
 (t/deftest set-font-needs-a-font-param
   (t/is (some? (tool-error "set_font" {:shapeIds [(str id-a)]}))))
+
+;; ---------------------------------------------------------------------------
+;; fetch_page — validation, prompt assembly, error translation
+;; ---------------------------------------------------------------------------
+
+(t/deftest fetch-page-needs-a-url
+  (t/is (str/includes? (tool-error "fetch_page" {:question "pricing?"}) "http")))
+
+(t/deftest fetch-page-needs-a-question
+  (t/testing "the page is digested toward a question, never returned raw"
+    (t/is (str/includes? (tool-error "fetch_page" {:url "https://acme.test/"})
+                         "question"))))
+
+(t/deftest page-prompt-carries-question-url-and-untrusted-marker
+  (let [prompt (at/page-prompt {:question "what plans exist?"
+                                :url "https://acme.test/pricing"
+                                :title "Acme — pricing"
+                                :text "Plans: Free, Pro"
+                                :truncated false})]
+    (t/is (str/includes? prompt "what plans exist?"))
+    (t/is (str/includes? prompt "https://acme.test/pricing"))
+    (t/is (str/includes? prompt "Acme — pricing"))
+    (t/is (str/includes? prompt "untrusted"))
+    (t/is (str/includes? prompt "Plans: Free, Pro"))))
+
+(t/deftest page-prompt-caps-the-page-text
+  (let [prompt (at/page-prompt {:question "q" :url "https://a.test/"
+                                :text (apply str (repeat 100000 "x"))
+                                :truncated true})]
+    (t/is (< (count prompt) 81000))
+    (t/is (str/includes? prompt "truncated"))))
+
+(t/deftest cap-digest-passes-short-text-and-marks-long-text
+  (t/is (= "short" (at/cap-digest "short")))
+  (let [capped (at/cap-digest (apply str (repeat 20000 "y")))]
+    (t/is (< (count capped) 7000))
+    (t/is (str/includes? capped "truncated"))))
+
+(t/deftest fetch-page-errors-name-the-fix
+  (t/is (str/includes? (at/fetch-page-error-message :ssrf-blocked-target) "private"))
+  (t/is (str/includes? (at/fetch-page-error-message :content-type-not-allowed) "html"))
+  (t/is (str/includes? (at/fetch-page-error-message :unable-to-fetch-page) "fetched"))
+  (t/is (str/includes? (at/fetch-page-error-message :something-else) "something-else")))

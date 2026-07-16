@@ -333,6 +333,7 @@
     (->> (sv/scan-ns
           'app.rpc.commands.access-token
           'app.rpc.commands.agent-chats
+          'app.rpc.commands.agent-web
           'app.rpc.commands.ai-providers
           'app.rpc.commands.audit
           'app.rpc.commands.auth

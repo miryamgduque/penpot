@@ -359,16 +359,44 @@
   overflow: hidden;
 }
 
+// One slim line: the toggle button (eye + headline + count) and the ✕ beside it.
+.observer-header-row {
+  display: flex;
+  align-items: center;
+}
+
 .observer-header {
   display: flex;
   gap: deprecated.$s-8;
   align-items: center;
-  inline-size: 100%;
+  flex: 1;
+  min-inline-size: 0;
   padding: deprecated.$s-8;
   border: none;
   background: none;
   cursor: pointer;
   text-align: start;
+}
+
+.observer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+  margin-inline-end: deprecated.$s-8;
+  padding: 0;
+  border: none;
+  border-radius: deprecated.$br-6;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+    color: var(--color-foreground-primary);
+  }
 }
 
 // Soft neutral square holding the eye — ties the card to Observer behavior
@@ -385,37 +413,24 @@
   color: var(--color-foreground-secondary);
 }
 
-.observer-headline-wrap {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-inline-size: 0;
-}
-
 .observer-headline {
   @include scaled-title-small;
 
   overflow: hidden;
+  flex-shrink: 0;
   color: var(--color-foreground-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+// Inline after the headline on the same line, first to give way when narrow.
 .observer-summary {
   @include scaled-body-small;
 
+  overflow: hidden;
   color: var(--color-foreground-secondary);
-}
-
-.observer-chevron {
-  display: flex;
-  flex-shrink: 0;
-  color: var(--color-foreground-secondary);
-  transition: transform 0.15s ease;
-}
-
-.observer-chevron-open {
-  transform: rotate(180deg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .observer-groups {

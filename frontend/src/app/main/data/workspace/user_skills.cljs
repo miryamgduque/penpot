@@ -34,7 +34,7 @@
            (rx/map user-skills-fetched)))))
 
 (defn create-skill
-  "Persists an already-built skill map (name/label/category/mode/trigger/
+  "Persists an already-built skill map (name/label/category/reactive/trigger/
   description/body) and refetches so it appears in the catalog."
   [params]
   (ptk/reify ::create-skill

@@ -552,6 +552,12 @@
 (def ^:private checkpoint-rounds 12)
 (def ^:private checkpoint-usd 1.0)
 
+;; Santi, 2026-07-16: the checkpoint interrupted real design work mid-flow —
+;; "disable spend alert, just continue working". The machinery stays (the
+;; meter, the Continue/Stop row, the segment counters) so flipping this back
+;; on is one boolean; max-rounds remains the hard backstop either way.
+(def ^:private checkpoint-enabled? false)
+
 (defn checkpoint-due?
   "Whether the turn should pause at the runaway checkpoint. `round` and `spent`
   are the running SEGMENT counters — since the turn started or the user last
@@ -559,7 +565,8 @@
   re-firing immediately. An unpriced model (estimate nil) is braked by the
   round count alone."
   [model round spent]
-  (and (pos? round)
+  (and checkpoint-enabled?
+       (pos? round)
        (or (>= round checkpoint-rounds)
            (>= (or (estimate-cost-usd model spent) 0) checkpoint-usd))))
 

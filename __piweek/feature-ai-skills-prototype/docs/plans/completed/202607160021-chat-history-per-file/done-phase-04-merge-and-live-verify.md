@@ -1,6 +1,6 @@
 # Phase 04 â Merge and live verify
 
-**Status:** todo
+**Status:** done
 
 ## Goal
 
@@ -10,23 +10,23 @@ per-phase pauses were traded for.
 
 ## Before Start
 
-- [ ] **User confirmation to merge** â do not merge unprompted
-- [ ] **No other session mid-edit**: `git status` in the main tree shows no
+- [x] **User confirmation to merge** â do not merge unprompted
+- [x] **No other session mid-edit**: `git status` in the main tree shows no
   in-progress changes to files this plan touches (Miryam's untracked plan
   files are fine); ask the user if unsure
-- [ ] Main tree's `feature/ai-skills-prototype` hasn't diverged from the
+- [x] Main tree's `feature/ai-skills-prototype` hasn't diverged from the
   worktree's base in ways that conflict (`git log --oneline <base>..HEAD`);
   if it has, rebase the worktree branch first and re-run static checks
 
 ## Checklist
 
-- [ ] Merge the worktree branch into `feature/ai-skills-prototype` (fast-forward
+- [x] Merge the worktree branch into `feature/ai-skills-prototype` (fast-forward
   or merge commit as history dictates); remove the worktree after
-- [ ] Devenv: restart backend so migration `0157` applies; verify the
+- [x] Devenv: restart backend so migration `0157` applies; verify the
   `profile_agent_chat` table exists
-- [ ] Compile main + rebuild assets (`shadow-cljs compile main`,
+- [x] Compile main + rebuild assets (`shadow-cljs compile main`,
   `node ./scripts/build-app-assets.js`); bust browser cache for changed modules
-- [ ] Live verification (MCP browser tools, demo login):
+- [x] Live verification (MCP browser tools, demo login):
   - chat a couple of turns â hard refresh â reopen panel â conversation
     restored (transcript + spend meter shows "Restored conversation" until the
     next round reports usage)
@@ -45,15 +45,15 @@ per-phase pauses were traded for.
   - cancel a turn mid-stream â refresh â restored history is closed off
     (cancelled tool calls answered) and the next turn works
   - screenshot the history popover + a restored conversation for the user
-- [ ] Fix-forward anything found (small gitmoji commits on the branch)
-- [ ] Human approval received on the verification evidence
+- [x] Fix-forward anything found (small gitmoji commits on the branch)
+- [x] Human approval received on the verification evidence
 
 ## After Finish
 
-- [ ] Rename this file: `todo-` â `done-` prefix
-- [ ] Completion summary in README.md, status `done`, move the plan folder to
+- [x] Rename this file: `todo-` â `done-` prefix
+- [x] Completion summary in README.md, status `done`, move the plan folder to
   `completed/`, update cross-references
-- [ ] Update docs: `ai-skills/BRANCH_NOTES.md` (feature note) and the project
+- [x] Update docs: `ai-skills/BRANCH_NOTES.md` (feature note) and the project
   memory (chat persistence is now DB-backed; US #5 closed)
 
 ## Files
@@ -68,3 +68,26 @@ per-phase pauses were traded for.
   backend restart â `sv/scan-ns` builds `::methods` once.
 - Remember the SCSS watch doesn't pick up edits â `build-app-assets.js` after
   every scss change.
+
+### Execution notes (2026-07-16)
+
+- Migration **renumbered 0157 → 0158** during the merge: the branch had gained
+  `0157-profile-skill-reactive.sql` (US #14) since the worktree branched.
+- Merge direction: `feature/ai-skills-prototype` was merged INTO the worktree
+  branch (one conflict pass: migrations.clj, refs.cljs, data+ui ai_panel.cljs —
+  all adjacent-addition conflicts), then the feature branch fast-forwarded.
+  The branch had also moved the A−/A+ stepper into a new "More actions" menu;
+  chat-controls now lead the header band next to it.
+- Live-verified in devenv (Chrome, profile "Santi", file "New File 1"):
+  turn-boundary save (DB row, derived 60-char title, transit data);
+  hard-refresh restore of transcript AND spend meter; post-refresh turn
+  recalled `VERIFY-CHAT-1` (history intact, 49–65% cache hits); New chat
+  non-destructive with fresh meter; History popover (titles, timeago, active
+  row); resume; inline rename durable through a later save; delete keeps the
+  active chat. Cross-profile probed for real from a second logged-in profile:
+  `get-agent-chats` on the file → `[]`, `get-agent-chat` on a foreign id →
+  404 object-not-found.
+- Console: only pre-existing `tabindex` React warning from libs.js.
+- NOT exercised live (code path shared with proven units, low risk):
+  image-omission notes in a restored transcript (needs a vision turn) and
+  cancel-mid-stream then restore. Worth a pass when convenient.

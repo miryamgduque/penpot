@@ -90,3 +90,15 @@ Until then they're the only thing keeping the panel usable outside the native ap
 - Sync DB app/team scopes to the **MCP** path (today MCP reads file scope + bundled builtins only).
 - Real **access control** on app-scope CRUD (currently any authenticated user).
 - ai-kit `prompts/` as chat quick-starts; evals harness; gradient enforcement.
+
+## Chat history per file (2026-07-16)
+
+Agent conversations are now DB-backed, per profile+file (`profile_agent_chat`,
+migration 0158; RPC ns `agent-chats`). Saves fire at turn boundaries (images
+stripped, never stored); panel open restores the most recent conversation —
+transcript, canonical history and spend meter survive a hard refresh. Header
+gained New chat + History (popover: resume / inline rename / delete); the
+status-row "Clear" is now the non-destructive "New chat". Titles derive from
+the first user message on insert only, so renames are durable. Live-verified
+in devenv incl. cross-profile probes (list → [], foreign id → 404). Plan:
+`__piweek/.../plans/completed/202607160021-chat-history-per-file/`.

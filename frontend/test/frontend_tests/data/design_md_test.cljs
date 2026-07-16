@@ -217,7 +217,7 @@
               (dmd/problems {:frontmatter fm :body ""})))))
 
 ;; ---- doc-problem (design-doc's save gate, US #38 phase 02) — the tool's
-;; validation seam: set_design_doc trusts it, so format rejection lives here.
+;; validation seam: set_foundation trusts it, so format rejection lives here.
 
 (deftest doc-problem-accepts-a-valid-design-md
   (is (nil? (dd/doc-problem (dmd/serialize {:frontmatter valid-frontmatter

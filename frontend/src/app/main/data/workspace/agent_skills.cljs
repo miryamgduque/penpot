@@ -67,7 +67,7 @@
              "   - `## Shapes` — how the radius scale is applied, borders, softness."
              "   - `## Do's and Don'ts` — 4–6 bullets each, grounded in the vibe words."
              "   Where an answer was `__decide__`, decide well and mark it \"(my call — say the word to change it)\". Where an optional question was skipped, leave its section out. Keep the whole doc under 5000 characters."
-             "4. **Save it** with `set_design_doc`, then confirm in 2–3 sentences: the vibe in one line, what you decided on their behalf, and the natural next step (usually designing the first screen)."
+             "4. **Save it** with `set_foundation` (name \"Vibes\"), then confirm in 2–3 sentences: the vibe in one line, what you decided on their behalf, and the natural next step (usually designing the first screen)."
              ""
              "## Rules"
              "- One ask_user call per interview — never re-interview question by question in prose."

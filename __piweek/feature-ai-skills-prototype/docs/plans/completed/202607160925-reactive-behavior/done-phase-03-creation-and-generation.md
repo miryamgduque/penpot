@@ -15,7 +15,7 @@ generator files skills under the two remaining categories.
 
 - [ ] Re-read `skill-create*` (ui/workspace/ai_panel.cljs:1057) + `propose-mode`
       (:191), and `create-from-answers` (data/workspace/user_skills.cljs).
-- [ ] Re-read [skill_gen.cljs](../../../../../frontend/src/app/main/data/workspace/skill_gen.cljs):
+- [ ] Re-read [skill_gen.cljs](../../../../../../frontend/src/app/main/data/workspace/skill_gen.cljs):
       `categories` (:22), `answers->user-message` (:45), `parse-generation` (:107).
 
 ## Checklist

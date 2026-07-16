@@ -12,7 +12,7 @@ view, next to the category — and retire the old mode badge.
 
 ## Before Start
 
-- [ ] Re-read in [ui/workspace/ai_panel.cljs](../../../../../frontend/src/app/main/ui/workspace/ai_panel.cljs):
+- [ ] Re-read in [ui/workspace/ai_panel.cljs](../../../../../../frontend/src/app/main/ui/workspace/ai_panel.cljs):
       `mode-badge*` (:895), `skill-detail*` (:905), `skill-row*` (:927) — the card,
       which per US #30 currently shows only label + blurb + an "Off" pill.
 - [ ] Re-read the badge SCSS (`mode-badge`, `mode-suggest/review/autofix`) in

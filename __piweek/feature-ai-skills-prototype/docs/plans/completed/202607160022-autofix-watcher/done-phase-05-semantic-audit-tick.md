@@ -99,5 +99,12 @@ while the panel is open.
   rule+shape, deterministic wins); semantic entries carry a ✦ marker.
 - `tick-settings` resolves ONLY a declared skill model from the enabled pool —
   no fallback to the chat model by design (ambient spend stays cheap or off).
-- Observed per-tick cost: NOT yet measured (needs the live key) — record it
-  during post-merge testing; it decides whether panel-open consent stays right.
+- Observed per-tick cost (live, 2026-07-16, Haiku 4.5): **206 in / 89 out
+  ≈ $0.0007 per tick**. Panel-open consent is comfortably right at this price.
+- LIVE FINDING — the tick over-flags at scale: with only the skill's `:what`
+  blurb as criteria, Haiku flags PascalCase component names (`Card`, `Ticket`,
+  `Icon`) and even valid role names (`icon`) as violations — after a mass
+  Fix-it-now rename the strip held 62 ✦ entries that are mostly false
+  positives. Follow-ups: inline the naming-conventions block in the tick
+  system prompt; pre-filter obviously-valid names out of the batch; skip
+  component mains/root frames entirely.

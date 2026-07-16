@@ -1,6 +1,6 @@
 # Auto-fix Watcher
 
-**Status:** doing
+**Status:** done
 **Created:** 2026-07-16
 
 > **Execution mode (user directive, 2026-07-16):** built in the worktree
@@ -112,3 +112,58 @@ Grounding (verified in code, 2026-07-16):
 - (Phase 05) Semantic detection issues **at most one request at a time**, batched
   over all dirty shapes; a burst of 40 edits costs one Haiku call; usage appears
   in the existing spend meter.
+
+## Completion Summary
+
+**Completed:** 2026-07-16 (built in worktree `feature/autofix-watcher`, merged
+as `e6f8e4e7e2` + seed fix `89a99792b0`, live-verified in devenv on the user's
+account with a real Anthropic key)
+
+### What Shipped
+- Data-layer watcher on `::dch/commit` (IDeref → `:redo-changes`; sees remote
+  collaborators too): debounced deterministic re-scan into
+  `[:ai-panel <file-id> :violations]`, dirty-id accumulation, panel-open gated.
+- Affected strip below the context chip: one-liner summary, expandable
+  per-rule breakdown, chip click = select + zoom, ✦ marks semantic verdicts.
+- Fix it now (global + per-rule): visible pre-resolved message (ids capped at
+  20, overflow named), one-slot pending queue with preview + ✕ when a turn is
+  running, auto-drain on turn end.
+- Per-skill `:rule`/`:detect`/`:model` catalog fields; `fix-settings` routes
+  fix turns to the skill's declared model with panel fallback; enforced rules
+  seed from enabled skills' `:rule`s on panel open (`89a99792b0`).
+- Semantic audit tick: single-in-flight batched buffered `:ai-agent-round` on
+  the skill's model, ≤50 shapes/tick, self-re-arming until dry,
+  evaluation-as-invalidation, usage in the spend meter.
+
+### Live verification (2026-07-16, user's Chrome, file "New File 1")
+- Panel open → initial scan: 137 layers · 2 rules (seeded rules worked).
+- Draw rect → 138/111/40 within ~1.5s, zero requests. Rename → 40→39.
+- Tick: exactly ONE request ~4s after idle; verdict merged ("Generic
+  'Rectangle' name lacks semantic HTML or role identity"), ✦ rendered;
+  rename → next tick cleared it; dirty drained to 0; ~$0.0007/tick.
+- Chip click → select + zoom (758%) onto the shape.
+- Fix it now (layer-naming): visible message with 20 ids + "+19 more via
+  audit_file"; Haiku fetched the skill, audited, renamed in batches; the
+  strip shrank live 39→0 deterministic as the agent worked.
+- Mid-turn Fix (token colors) → "Queued — sends when the current turn ends"
+  chip; auto-drained into the next turn, which created 11 tokens and
+  batch-bound 111 violating shapes — Token-only colors left the strip.
+
+### What Changed from Original Plan
+- Tests waived (user directive); per-phase gates were compile+kondo+cljfmt,
+  one review at merge.
+- Added post-plan: enforced-rules seeding (`watched-rules`) — nothing ever
+  dispatched `set-enforced-rules`, so the watcher would have shipped dead.
+- `penpot-audit-tokens` carries `:rule "token-only-colors"`.
+
+### Lessons & Follow-ups
+- **Semantic tick over-flags** (the one real quality gap): blurb-only criteria
+  make Haiku flag PascalCase component names and valid role names. Fix by
+  inlining naming conventions in the tick prompt, pre-filtering
+  obviously-valid names, and skipping component mains/root frames.
+- Not live-exercised (code-reviewed only): pending-fix ✕ cancel; panel-closed
+  no-work (double-guarded: take-until + open? no-op); "via <model>" note on
+  the queued chip (panel model was already Haiku here).
+- Skill enable/disable does not re-seed enforced rules until panel reopen.
+- DB columns for `detect`/`model`/`rule` (custom skills in the watcher) remain
+  the documented follow-up.

@@ -614,6 +614,81 @@
     (effect [_ _ _]
       (at/submit-pending-form! payload))))
 
+(defn- set-checkpoint
+  "Sets (or, with nil, clears) the pending runaway checkpoint for this file:
+  `{:rounds :usage :history :settings}` — everything a resume needs, stashed
+  at pause time so the turn continues on the settings it was running with."
+  [cp]
+  (ptk/reify ::set-checkpoint
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (if (some? cp)
+          (assoc-in state [:ai-panel file-id :checkpoint] cp)
+          (update-in state [:ai-panel file-id] dissoc :checkpoint))
+        state))))
+
+(defn- turn-stream
+  "The shared run→panel pipeline behind a fresh turn (`send-message`) and a
+  checkpoint resume (`continue-turn`): maps agent turn events onto transcript
+  events, stores the history when the turn ends or pauses, and closes a
+  cancelled turn's history off. `seed` is a resume's cumulative
+  `{:rounds :usage}` so the next checkpoint reports whole-turn figures."
+  [settings history system stream seed]
+  (let [stopper (rx/filter (ptk/type? ::cancel-turn) stream)
+        ;; the turn's history as it grows, so a cancel can close it off;
+        ;; seeded so it survives an early stop
+        latest* (atom history)
+        ;; tells "ran to completion / paused / errored" apart from "cancelled"
+        ;; — `take-until` completes the stream either way
+        ended?* (atom false)]
+    (rx/concat
+     ;; `take-until` wraps the pipeline, errors included; `set-busy false`
+     ;; must stay outside it or a cancel leaves the panel stuck busy
+     (->> (agent/run-turn settings history system seed)
+          (rx/mapcat (fn [ev]
+                       (case (:kind ev)
+                         :assistant       (rx/of (append-message "assistant" (:text ev)))
+                         :assistant-delta (rx/of (append-delta (:text ev)))
+                         :tool         (rx/of (append-tool (dissoc ev :kind)))
+                         :usage        (rx/of (accumulate-usage (:usage ev)))
+                         :turn-history (do (reset! latest* (:history ev))
+                                           (rx/empty))
+                         ;; a checkpoint history ends in tool-results — already
+                         ;; closed, so it is stored as-is and resumable as-is
+                         :checkpoint   (do (reset! ended?* true)
+                                           (rx/of (store-history (:history ev))
+                                                  (set-checkpoint
+                                                   (-> (select-keys ev [:rounds :usage :history])
+                                                       (assoc :settings settings)))))
+                         :done         (do (reset! ended?* true)
+                                           (rx/of (store-history (:history ev))))
+                         (rx/empty))))
+          (rx/catch (fn [cause]
+                      (reset! ended?* true)
+                      (let [data (ex-data cause)
+                            msg  (or (:hint data)
+                                     (some-> (:code data) name)
+                                     (ex-message cause)
+                                     "request failed")]
+                        (rx/of (append-message "assistant" (dm/str "⚠️ " msg))))))
+          (rx/take-until stopper))
+
+     ;; deferred: `concat` subscribes here only once the turn is over, so
+     ;; the atoms have settled by the time this decides what happened.
+     ;; `persist-chat` runs on every path — the turn boundary is the save
+     ;; point, and a cancelled or checkpoint-paused turn is part of the
+     ;; conversation too.
+     (->> (rx/of ::end)
+          (rx/mapcat (fn [_]
+                       (if @ended?*
+                         (rx/of (set-busy false)
+                                (agent-chats/persist-chat))
+                         (rx/of (append-message "assistant" "⏹ Stopped.")
+                                (store-history (agent/cancel-history @latest*))
+                                (set-busy false)
+                                (agent-chats/persist-chat)))))))))
+
 (defn send-message
   "Runs one user turn: appends the user message, runs the agent turn through
   the backend proxy (executing native tools between rounds), and streams the
@@ -646,53 +721,45 @@
              ;; system prompt stays a stable, cacheable prefix built from `state`
              history (conj prior (cond-> {:role :user :text text :context context}
                                    (seq images) (assoc :images images)))
-             system  (agent/build-system-prompt state)
-             stopper (rx/filter (ptk/type? ::cancel-turn) stream)
-
-             ;; the turn's history as it grows, so a cancel can close it off;
-             ;; seeded with the user message so it survives an early stop
-             latest* (atom history)
-             ;; tells "ran to completion / errored" apart from "cancelled" —
-             ;; `take-until` completes the stream either way
-             ended?* (atom false)]
+             system  (agent/build-system-prompt state)]
          (rx/concat
           (rx/of (append-message "user" text images)
+                 ;; a new message while a checkpoint is pending supersedes it —
+                 ;; the stored history already contains the paused turn
+                 (set-checkpoint nil)
                  (set-busy true))
+          (turn-stream settings history system stream nil)))))))
 
-          ;; `take-until` wraps the pipeline, errors included; `set-busy false`
-          ;; must stay outside it or a cancel leaves the panel stuck busy
-          (->> (agent/run-turn settings history system)
-               (rx/mapcat (fn [ev]
-                            (case (:kind ev)
-                              :assistant       (rx/of (append-message "assistant" (:text ev)))
-                              :assistant-delta (rx/of (append-delta (:text ev)))
-                              :tool         (rx/of (append-tool (dissoc ev :kind)))
-                              :usage        (rx/of (accumulate-usage (:usage ev)))
-                              :turn-history (do (reset! latest* (:history ev))
-                                                (rx/empty))
-                              :done         (do (reset! ended?* true)
-                                                (rx/of (store-history (:history ev))))
-                              (rx/empty))))
-               (rx/catch (fn [cause]
-                           (reset! ended?* true)
-                           (let [data (ex-data cause)
-                                 msg  (or (:hint data)
-                                          (some-> (:code data) name)
-                                          (ex-message cause)
-                                          "request failed")]
-                             (rx/of (append-message "assistant" (dm/str "⚠️ " msg))))))
-               (rx/take-until stopper))
+(defn continue-turn
+  "Resumes the turn paused at the runaway checkpoint (see
+  `agent/checkpoint-due?`). The stored checkpoint history ends in tool-results,
+  so the loop simply picks up where it stopped — no synthetic user message, the
+  wire history must not grow. Counters carry over so the NEXT checkpoint
+  reports whole-turn figures while earning a fresh allowance."
+  []
+  (ptk/reify ::continue-turn
+    ptk/WatchEvent
+    (watch [_ state stream]
+      (let [file-id (:current-file-id state)
+            cp      (dm/get-in state [:ai-panel file-id :checkpoint])]
+        (if-not cp
+          (rx/empty)
+          (rx/concat
+           (rx/of (set-checkpoint nil)
+                  (set-busy true))
+           (turn-stream (:settings cp) (:history cp)
+                        (agent/build-system-prompt state) stream
+                        (select-keys cp [:rounds :usage]))))))))
 
-          ;; deferred: `concat` subscribes here only once the turn is over, so
-          ;; the atoms have settled by the time this decides what happened.
-          ;; `persist-chat` runs on both paths — the turn boundary is the save
-          ;; point, and a cancelled turn is part of the conversation too.
-          (->> (rx/of ::end)
-               (rx/mapcat (fn [_]
-                            (if @ended?*
-                              (rx/of (set-busy false)
-                                     (agent-chats/persist-chat))
-                              (rx/of (append-message "assistant" "⏹ Stopped.")
-                                     (store-history (agent/cancel-history @latest*))
-                                     (set-busy false)
-                                     (agent-chats/persist-chat))))))))))))
+(defn dismiss-checkpoint
+  "Declines to continue past the checkpoint. The paused turn's history was
+  stored (and the chat persisted) when it paused, so this only clears the
+  pending state and seals the transcript with a visible stop — then persists
+  again so the saved conversation carries the stop marker."
+  []
+  (ptk/reify ::dismiss-checkpoint
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (rx/of (set-checkpoint nil)
+             (append-message "assistant" "⏹ Stopped at the checkpoint.")
+             (agent-chats/persist-chat)))))

@@ -515,12 +515,15 @@
   never pin to the latest — and once the content outgrows the panel the
   sentinel is never seen, leaving it wrongly detached forever."
   {::mf/private true}
-  [{:keys [messages busy? form]}]
+  [{:keys [messages busy? form checkpoint]}]
   (let [;; consecutive tool calls collapse into one row; `partition-by` on the
         ;; role predicate yields alternating runs of tools / everything else
         runs          (mf/with-memo [messages]
                         (->> (map-indexed vector messages)
                              (partition-by (fn [[_ m]] (= "tool" (:role m))))))
+
+        on-continue   (mf/use-fn #(st/emit! (dwaip/continue-turn)))
+        on-stop-here  (mf/use-fn #(st/emit! (dwaip/dismiss-checkpoint)))
 
         scroll-ref    (mf/use-ref nil)
         ;; a fresh transcript starts pinned to the newest message
@@ -548,8 +551,9 @@
     (mf/with-layout-effect []
       (scroll-to-end))
 
-    ;; `form` is in the deps: an interview appearing is new content to follow
-    (mf/with-layout-effect [messages busy? form]
+    ;; `form`/`checkpoint` are in the deps: an interview or a pause appearing
+    ;; is new content to follow
+    (mf/with-layout-effect [messages busy? form checkpoint]
       (when ^boolean (mf/ref-val at-bottom-ref)
         (scroll-to-end)))
 
@@ -592,6 +596,25 @@
       ;; a "Thinking…" bubble under the form would be a lie
       (when (some? form)
         [:> elicitation-form* {:key (hash form) :form form}])
+      ;; the runaway brake: the turn crossed its round/spend allowance and is
+      ;; paused, resumable as-is — the user decides whether it keeps going
+      (when (some? checkpoint)
+        (let [{:keys [rounds usage settings]} checkpoint
+              cost (agent/estimate-cost-usd (:model settings) usage)]
+          [:div {:class (stl/css :checkpoint)}
+           [:div {:class (stl/css :checkpoint-label)}
+            (dm/str "Still working — " rounds " tool rounds"
+                    (when cost (dm/str " and ~$" (.toFixed cost 2)))
+                    " this turn. Keep going?")]
+           [:div {:class (stl/css :checkpoint-actions)}
+            [:button {:type "button"
+                      :class (stl/css :checkpoint-continue)
+                      :on-click on-continue}
+             "Continue"]
+            [:button {:type "button"
+                      :class (stl/css :checkpoint-stop)
+                      :on-click on-stop-here}
+             "Stop here"]]]))
       (when (and busy? (nil? form))
         [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
 
@@ -781,6 +804,7 @@
         providers (mf/deref refs/ai-providers)
         busy?     (mf/deref refs/ai-panel-busy?)
         usage     (mf/deref refs/ai-panel-usage)
+        checkpoint (mf/deref refs/ai-panel-checkpoint)
         pending-fix (mf/deref refs/ai-panel-pending-fix)
         pending-form (mf/deref refs/ai-panel-pending-form)
         composer-seed (mf/deref refs/ai-panel-composer-seed)
@@ -941,12 +965,14 @@
         on-toggle-picker (mf/use-fn #(swap! picker-open* not))
 
         send      (mf/use-fn
-                   (mf/deps input images settings busy? page selected objects on-create-skill)
+                   (mf/deps input images settings busy? checkpoint page selected objects on-create-skill)
                    (fn []
                      (let [text (str/trim input)]
                        ;; an image on its own is a legitimate message — "what is
-                       ;; this?" is often carried entirely by the picture
-                       (when (and (or (seq text) (seq images)) (not busy?))
+                       ;; this?" is often carried entirely by the picture.
+                       ;; A pending checkpoint blocks sending like a running
+                       ;; turn does: the user answers the pause first.
+                       (when (and (or (seq text) (seq images)) (not busy?) (nil? checkpoint))
                          (if-let [seed (skill-create-intent text)]
                            ;; "create a skill …" → hand off to the Skills view
                            ;; creation flow rather than sending to the agent.
@@ -964,12 +990,14 @@
         ;; resolve which model runs it (the skill's declared cheap model when
         ;; the pool has it); if a turn is running, park both in the pending slot
         on-fix    (mf/use-fn
-                   (mf/deps settings busy? pool page selected objects)
+                   (mf/deps settings busy? checkpoint pool page selected objects)
                    (fn [violations]
                      (when (and settings (seq violations))
                        (let [text   (dwaip/compose-fix-message violations)
                              fix-st (dwaip/fix-settings violations pool settings)]
-                         (if busy?
+                         ;; a pending checkpoint parks the fix like a running
+                         ;; turn does — it drains once the pause is answered
+                         (if (or busy? (some? checkpoint))
                            (st/emit! (dwaip/set-pending-fix text fix-st))
                            (st/emit! (dwaip/send-message fix-st text (chat-context page selected objects))))))))
 
@@ -1063,8 +1091,8 @@
     ;; drain the pending Fix-it-now once the running turn ends: the queued
     ;; message becomes a normal visible send, with fresh page/selection context
     ;; but the settings resolved when it was queued (the skill's model)
-    (mf/with-effect [busy? pending-fix settings page selected objects]
-      (when (and (not busy?) (seq (:text pending-fix)) settings)
+    (mf/with-effect [busy? checkpoint pending-fix settings page selected objects]
+      (when (and (not busy?) (nil? checkpoint) (seq (:text pending-fix)) settings)
         (st/emit! (dwaip/clear-pending-fix)
                   (dwaip/send-message (or (:settings pending-fix) settings)
                                       (:text pending-fix)
@@ -1080,7 +1108,8 @@
      [:> observer-notifications* {:on-fix on-fix}]
 
      (if (or (seq messages) (some? pending-form))
-       [:> transcript* {:messages messages :busy? busy? :form pending-form}]
+       [:> transcript* {:messages messages :busy? busy? :form pending-form
+                        :checkpoint checkpoint}]
        [:div {:class (stl/css :transcript-empty)}
         [:> i/icon* {:icon-id i/bot-message-square
                      :size "m"

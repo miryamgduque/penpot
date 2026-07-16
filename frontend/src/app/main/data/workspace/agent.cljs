@@ -544,6 +544,26 @@
 ;; the model stops calling tools.
 
 (def ^:private max-rounds 32)
+
+;; The runaway brake: a turn that has run this many tool rounds — or spent this
+;; much — pauses for the user's go-ahead instead of grinding on. max-rounds
+;; stays as the hard backstop behind it. Motivated by a real incident: a model
+;; ignored a skill's stop rule and spent ~$4 building an unrequested landing
+;; page; the meter showed it, nothing acted on it.
+(def ^:private checkpoint-rounds 12)
+(def ^:private checkpoint-usd 1.0)
+
+(defn checkpoint-due?
+  "Whether the turn should pause at the runaway checkpoint. `round` and `spent`
+  are the running SEGMENT counters — since the turn started or the user last
+  said continue — so a resumed turn earns a full fresh allowance rather than
+  re-firing immediately. An unpriced model (estimate nil) is braked by the
+  round count alone."
+  [model round spent]
+  (and (pos? round)
+       (or (>= round checkpoint-rounds)
+           (>= (or (estimate-cost-usd model spent) 0) checkpoint-usd))))
+
 (def ^:private max-tool-result-chars 20000)
 (def ^:private max-history-messages 40)
 ;; ~15k tokens. The message cap alone bounded nothing real — a message can be a
@@ -758,8 +778,12 @@
               (rx/empty)))))))
 
 (defn run-turn
-  [settings history system]
-  (letfn [(run-tool [call]
+  "→ observable of turn events (see the section comment above). `seed` carries a
+  checkpoint resume's cumulative `{:rounds :usage}` so the NEXT checkpoint
+  reports whole-turn figures; thresholds themselves run on the fresh segment."
+  ([settings history system] (run-turn settings history system nil))
+  ([settings history system seed]
+   (letfn [(run-tool [call]
             ;; → observable of one {:call :status :content :images :error? :rule :detail}
             (->> (at/execute-tool (:name call) (:input call))
                  (rx/map (fn [result]
@@ -780,7 +804,7 @@
                                        :content (or (ex-message cause) "tool error")
                                        :error? true}))))))
 
-          (tool-round [messages' round _text calls]
+          (tool-round [messages' round spent _text calls]
             ;; no text emission: this round's text already reached the panel as
             ;; deltas. Run the tools and feed the results into the next round.
             (rx/concat
@@ -793,11 +817,24 @@
                       (rx/from (mapv tool-outcome->event outcomes))
                       (step (conj messages' {:role :tool-results
                                              :results (mapv tool-outcome->result outcomes)})
-                            (inc round))))))))
+                            (inc round)
+                            spent)))))))
 
-          (step [messages round]
-            (if (>= round max-rounds)
+          (step [messages round spent]
+            (cond
+              ;; the soft brake first: at the top of step the history ends in
+              ;; tool-results, so it is valid to resume from as-is — that is
+              ;; why the checkpoint lands here and not mid-round
+              (checkpoint-due? (:model settings) round spent)
+              (rx/of {:kind :checkpoint
+                      :rounds (+ (:rounds seed 0) round)
+                      :usage (add-usage (:usage seed) spent)
+                      :history messages})
+
+              (>= round max-rounds)
               (rx/empty)
+
+              :else
               (->> (stream-round settings messages system)
                    (rx/mapcat
                     (fn [ev]
@@ -809,6 +846,7 @@
                         (let [outcome   (:outcome ev)
                               text      (:text outcome)
                               calls     (:tool-calls outcome)
+                              spent'    (add-usage spent (:usage outcome))
                               messages' (conj messages {:role :assistant
                                                         :text text
                                                         :tool-calls calls})]
@@ -830,8 +868,8 @@
                              (rx/of {:kind :done :history (trim-history messages')})
 
                              :else
-                             (tool-round messages' round text calls))))))))))]
-    (step (vec history) 0)))
+                             (tool-round messages' round spent' text calls))))))))))]
+     (step (vec history) 0 empty-usage))))
 
 ;; --- Semantic detect round (auto-fix watcher tick)
 

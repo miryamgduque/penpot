@@ -1733,7 +1733,11 @@
                         :uri (str iconify-base "/search?query="
                                   (js/encodeURIComponent query)
                                   ;; below the API's floor it ignores the param
-                                  "&limit=" (max limit 32))})
+                                  "&limit=" (max limit 32))
+                        ;; Penpot's default x-frontend-version/x-client headers
+                        ;; are not in Iconify's allowed-headers, so they trip a
+                        ;; CORS preflight the API rejects — drop them
+                        :omit-default-headers true})
            (rx/mapcat
             (fn [{:keys [status body]}]
               (if (= 200 status)
@@ -1748,7 +1752,10 @@
     (rx/throw (ex-info problem {}))
     (let [size (-> (or size 24) (max 8) (min 512))
           nm   (or (:name input) icon)]
-      (->> (http/send! {:method :get :uri (icon-svg-url icon size)})
+      (->> (http/send! {:method :get :uri (icon-svg-url icon size)
+                        ;; see search-icons: drop the default headers to keep
+                        ;; this a preflight-free simple CORS GET
+                        :omit-default-headers true})
            (rx/mapcat
             (fn [{:keys [status body]}]
               (cond

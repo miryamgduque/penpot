@@ -28,6 +28,7 @@
    [app.common.types.component :as ctc]
    [app.common.types.components-list :as ctkl]
    [app.common.types.container :as ctn]
+   [app.common.types.fills :as types.fills]
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
    [app.common.types.text :as txt]
@@ -51,6 +52,7 @@
    [app.main.data.workspace.variants :as dwv]
    [app.main.data.workspace.wasm-text :as dwwt]
    [app.main.features :as features]
+   [app.main.repo :as rp]
    [app.main.store :as st]
    [app.render-wasm.api :as wasm.api]
    [app.util.code-gen :as cg]
@@ -231,6 +233,29 @@
                                 :fill {:type "string" :description "solid fill hex, e.g. #6366f1"}
                                 :parentId {:type "string" :description "board/group id to nest into"}}
                    :required ["type" "x" "y" "width" "height"]}}
+
+   {:name "insert_image"
+    :description
+    (str "Fetches an image from an http(s) URL (downloaded server-side) and "
+         "places it as an image shape. Ideal for mock content from keyless "
+         "placeholder services — photos: https://picsum.photos/{w}/{h} (insert "
+         "/seed/{word}/ before the size for a stable pick), labeled blocks: "
+         "https://placehold.co/{w}x{h}/{bghex}/{fghex}.png?text={label}, "
+         "avatars: https://api.dicebear.com/9.x/{style}/png?seed={name} "
+         "(styles: lorelei, avataaars, shapes, initials). Any public image URL "
+         "works; private hosts are rejected by the server. Omit width/height "
+         "to keep the image's intrinsic size, or give just one to scale "
+         "preserving aspect ratio. Pass parentId to nest into a board. "
+         "Geometry settles asynchronously — re-read to confirm.")
+    :input-schema {:type "object"
+                   :properties {:url {:type "string" :description "absolute http(s) image URL"}
+                                :name {:type "string" :description "layer name, e.g. \"Hero photo\""}
+                                :x {:type "number"}
+                                :y {:type "number"}
+                                :width {:type "number"}
+                                :height {:type "number"}
+                                :parentId {:type "string" :description "board/group id to nest into"}}
+                   :required ["url"]}}
 
    {:name "modify_shape"
     :description
@@ -1232,6 +1257,24 @@
                          ".")
                  {:rule "token-only-colors"})))))
 
+(defn- reflow-parent!
+  "A child added to a laid-out board must flow into it, or it lands at its raw
+  x/y outside the layout — a grid gallery stops being a gallery on the next
+  card. `:layout/update` only reflows POSITIONS, so grid needs assign-cells
+  first (it auto-adds a track for the orphan); flex just needs the reflow."
+  [objects pid]
+  (let [parent (get objects pid)]
+    (cond
+      (ctl/grid-layout? parent)
+      (do (st/emit! (dwsh/update-shapes [pid]
+                                        (fn [p objs] (-> (ctl/assign-cells p objs)
+                                                         (ctl/reorder-grid-children)))
+                                        {:with-objects? true}))
+          (st/emit! (ptk/data-event :layout/update {:ids [pid]})))
+
+      (ctl/flex-layout? parent)
+      (st/emit! (ptk/data-event :layout/update {:ids [pid]})))))
+
 (defn- create-shape
   [{:keys [type x y width height fill parentId] :as input}]
   ;; via input-colors, not `fill` directly: both colour-setting tools share one
@@ -1258,27 +1301,108 @@
                       (cb/add-object shape))]
       (interrupt!)
       (st/emit! (dch/commit-changes changes))
-      ;; a child added to a laid-out board must flow into it, or it lands at its
-      ;; raw x/y outside the layout — a grid gallery stops being a gallery on the
-      ;; next card. `:layout/update` only reflows POSITIONS, so grid needs
-      ;; assign-cells first (it auto-adds a track for the orphan); flex just needs
-      ;; the reflow.
       (when parent?
-        (let [parent (get objects pid)]
-          (cond
-            (ctl/grid-layout? parent)
-            (do (st/emit! (dwsh/update-shapes [pid]
-                                              (fn [p objs] (-> (ctl/assign-cells p objs)
-                                                               (ctl/reorder-grid-children)))
-                                              {:with-objects? true}))
-                (st/emit! (ptk/data-event :layout/update {:ids [pid]})))
-
-            (ctl/flex-layout? parent)
-            (st/emit! (ptk/data-event :layout/update {:ids [pid]})))))
+        (reflow-parent! objects pid))
       (rx/of {:id (dm/str (:id shape))
               :type type
               :parentId (when parent? (dm/str pid))
               :note "created — verify geometry with read_design"}))))
+
+;; --- insert_image
+
+(def ^:private http-url-re
+  #"(?i)^https?://\S+$")
+
+(defn insert-image-problem
+  "Validation message for an insert_image call, nil when acceptable. Public for
+  tests."
+  [{:keys [url]}]
+  (when-not (and (string? url) (re-matches http-url-re url))
+    (str "insert_image: url must be an absolute http(s) URL, e.g. "
+         "https://picsum.photos/600/400.")))
+
+(defn image-geometry
+  "Final geometry for the image shape: intrinsic media size unless overridden;
+  a single given dimension scales the other to keep the image's aspect ratio.
+  Public for tests."
+  [{:keys [x y width height]} media]
+  (let [mw (:width media)
+        mh (:height media)
+        [w h] (cond
+                (and width height) [width height]
+                (some? width)      [width (js/Math.round (* mh (/ width mw)))]
+                (some? height)     [(js/Math.round (* mw (/ height mh))) height]
+                :else              [mw mh])]
+    {:x (or x 0) :y (or y 0) :width w :height h}))
+
+(def ^:private media-error-hints
+  {:ssrf-blocked-target
+   "the host is private or blocked by this Penpot instance; use a public image URL"
+   :unknown-size
+   (str "the server sent no content-length header, which Penpot requires; "
+        "picsum.photos, placehold.co and api.dicebear.com all send it")
+   :media-type-not-allowed
+   (str "the URL did not return a supported image type; for placehold.co "
+        "request an explicit format, e.g. .../600x400.png")
+   :media-max-file-size-reached
+   "the image exceeds this instance's media size limit; request smaller dimensions"
+   :unable-to-download-image
+   "the image could not be downloaded (unreachable host, timeout, or error status)"})
+
+(defn media-error-message
+  "One-line agent-facing message for a media download/processing failure,
+  naming the fix where one is known. Public for tests."
+  [code]
+  (str "insert_image: "
+       (or (get media-error-hints code)
+           (str "the upload failed" (when code (str " (" (name code) ")"))))
+       "."))
+
+(defn- insert-image
+  [{:keys [url parentId] :as input}]
+  (if-let [problem (insert-image-problem input)]
+    (rx/throw (ex-info problem {}))
+    (let [file-id (:current-file-id @st/state)
+          nm      (or (:name input) "image")]
+      (->> (rp/cmd! :create-file-media-object-from-url
+                    {:name nm :file-id file-id :url url :is-local true})
+           (rx/map
+            (fn [media]
+              (let [state   @st/state
+                    page    (dsh/lookup-page state)
+                    objects (:objects page)
+                    pid     (some-> parentId parse-uuid)
+                    parent? (boolean (and pid (contains? objects pid)))
+                    geom    (image-geometry input media)
+                    fills   (types.fills/create
+                             {:fill-opacity 1
+                              :fill-image {:width (:width media)
+                                           :height (:height media)
+                                           :mtype (:mtype media)
+                                           :id (:id media)
+                                           :keep-aspect-ratio true}})
+                    shape   (cond-> (-> (cts/setup-shape
+                                         (assoc geom :type :rect :name nm))
+                                        (assoc :fills fills))
+                              parent? (assoc :parent-id pid :frame-id pid))
+                    changes (-> (cb/empty-changes)
+                                (cb/with-page page)
+                                (cb/with-objects objects)
+                                (cb/add-object shape))]
+                (interrupt!)
+                (st/emit! (dch/commit-changes changes))
+                (when parent?
+                  (reflow-parent! objects pid))
+                {:id (dm/str (:id shape))
+                 :mediaId (dm/str (:id media))
+                 :width (:width geom)
+                 :height (:height geom)
+                 :parentId (when parent? (dm/str pid))
+                 :note "image inserted — verify geometry with read_design"})))
+           (rx/catch
+            (fn [cause]
+              (rx/throw (ex-info (media-error-message (:code (ex-data cause)))
+                                 {:cause-hint (ex-message cause)}))))))))
 
 (defn shadow->shape
   "A shadow as Penpot stores it. `:color` is a *map* (`schema:color`), not a hex
@@ -2898,6 +3022,7 @@
     "set_design_doc"     (set-design-doc input)
     "audit_file"         (audit-file)
     "create_shape"       (create-shape input)
+    "insert_image"       (insert-image input)
     "modify_shape"       (modify-shape input)
     "nest_shape"         (nest-shape input)
     "create_text"        (create-text input)

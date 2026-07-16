@@ -288,28 +288,60 @@
 
 (defn- user-skill->entry
   [us]
-  {:id       (:id us)
-   :name     (:name us)
-   :label    (:label us)
-   :blurb    (:description us)
-   :reactive (:reactive us)
-   :category (:category us)
-   :enabled  (:enabled us)
-   :example  (:trigger us)
-   :what     (:description us)
-   :body     (:body us)
-   :user?    true})
+  {:id          (:id us)
+   :name        (:name us)
+   :label       (:label us)
+   :blurb       (:description us)
+   :reactive    (:reactive us)
+   :category    (:category us)
+   :enabled     (:enabled us)
+   :example     (:trigger us)
+   :what        (:description us)
+   :body        (:body us)
+   :user?       true
+   ;; set once promoted to a team (US #12): the personal copy is shown disabled +
+   ;; lightly linked and dropped from the active/router set (see `enabled-skills`)
+   :promoted?   (some? (:promoted-to us))
+   :promoted-to (:promoted-to us)})
+
+;; A team-promoted skill (US #12, from `[:team-skills]`) is shaped exactly like a
+;; user skill so it merges into the catalog by name with no special-casing —
+;; every member sees it, default on. `:team? true` is only a display marker.
+(defn- team-skill->entry
+  [ts]
+  {:id       (:id ts)
+   :name     (:name ts)
+   :label    (:label ts)
+   :blurb    (:description ts)
+   :reactive (:reactive ts)
+   :category (:category ts)
+   :enabled  true
+   :example  (:trigger ts)
+   :what     (:description ts)
+   :body     (:body ts)
+   :team?    true})
 
 (defn user-skills
   "The user's created skills (from app-db) shaped as catalog entries."
   [state]
   (mapv user-skill->entry (get state :user-skills)))
 
-(defn full-catalog
-  "The built-in `catalog` with the user's created skills merged into their
-  category — a new group is appended for any category the built-ins don't have."
+(defn team-skills
+  "The current team's promoted skills (from app-db) shaped as catalog entries."
   [state]
-  (let [by-cat    (group-by :category (user-skills state))
+  (mapv team-skill->entry (get state :team-skills)))
+
+(defn- extra-skills
+  "User-created + team-promoted skills merged into the built-in catalog."
+  [state]
+  (into (user-skills state) (team-skills state)))
+
+(defn full-catalog
+  "The built-in `catalog` with the user's created + team-promoted skills merged
+  into their category — a new group is appended for any category the built-ins
+  don't have."
+  [state]
+  (let [by-cat    (group-by :category (extra-skills state))
         base-cats (into #{} (map :category) catalog)]
     (concat
      (for [{:keys [category skills]} catalog]
@@ -325,8 +357,8 @@
   e.g. project-vibes) is served verbatim; the remaining built-ins return their
   aikit body reframed for the native tool surface."
   [state name]
-  (if-let [us (some #(when (= name (:name %)) %) (user-skills state))]
-    (:body us)
+  (if-let [s (some #(when (= name (:name %)) %) (extra-skills state))]
+    (:body s)
     (or (some (fn [{:keys [skills]}]
                 (some #(when (= name (:name %)) (:body %)) skills))
               catalog)
@@ -381,7 +413,9 @@
   [state]
   (vec (for [{:keys [category skills]} (resolved-catalog state)
              skill skills
-             :when (:enabled skill)]
+             ;; a promoted personal copy is inactive for its owner — the team
+             ;; version carries it instead (US #12)
+             :when (and (:enabled skill) (not (:promoted? skill)))]
          (assoc skill :category category))))
 
 (defn watched-rules

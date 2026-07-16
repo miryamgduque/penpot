@@ -2412,6 +2412,32 @@ textarea.create-input {
   white-space: nowrap;
 }
 
+// A team-promoted skill (US #12): a small accent marker so a shared skill is
+// distinguishable from a personal one at a glance.
+.catalog-team {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: 0 deprecated.$s-6;
+  border-radius: deprecated.$br-8;
+  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+  color: var(--color-accent-primary);
+  white-space: nowrap;
+}
+
+// The promoter's personal copy, now lightly linked to the team version — a
+// muted "Promoted to team" reference standing in for the "Off" pill.
+.catalog-promoted {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: 0 deprecated.$s-6;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
 // Anchors the ⋯ overflow menu inside the clickable row. Muted so it recedes but
 // stays visible without hover (touch-friendly, per the story); full contrast on
 // hover/focus.

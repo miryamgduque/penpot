@@ -35,6 +35,7 @@
    [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.skill-state :as skst]
    [app.main.data.workspace.slash-commands :as slc]
+   [app.main.data.workspace.team-skills :as dwts]
    [app.main.data.workspace.user-skills :as dusk]
    [app.main.data.workspace.zoom :as dwz]
    [app.main.refs :as refs]
@@ -1469,7 +1470,7 @@
   clicks so it doesn't. Enable/Disable is instant; Fork / Promote to team are
   entry points only (disabled — wired by US #10 / US #12)."
   {::mf/private true}
-  [{:keys [label blurb reactive enabled on-open on-set-enabled]}]
+  [{:keys [label blurb reactive enabled team? promoted? on-open on-set-enabled]}]
   (let [show-menu?  (mf/use-state false)
         toggle-menu (mf/use-fn #(swap! show-menu? not))
         close-menu  (mf/use-fn #(reset! show-menu? false))
@@ -1483,7 +1484,7 @@
                      (mf/deps on-set-enabled enabled)
                      (fn []
                        (on-set-enabled (not enabled))))]
-    [:div {:class (stl/css-case :catalog-card true :disabled (not enabled))
+    [:div {:class (stl/css-case :catalog-card true :disabled (or (not enabled) promoted?))
            :role "button"
            :tab-index 0
            :on-click on-open
@@ -1491,8 +1492,12 @@
      [:div {:class (stl/css :catalog-card-head)}
       [:span {:class (stl/css :catalog-name)} label]
       [:> reactive-badge* {:reactive reactive}]
-      (when-not enabled
-        [:span {:class (stl/css :catalog-off)} "Off"])
+      (when team?
+        [:span {:class (stl/css :catalog-team)} "Team"])
+      (cond
+        ;; a personal skill already promoted to the team — the light link (US #12)
+        promoted?     [:span {:class (stl/css :catalog-promoted)} "Promoted to team"]
+        (not enabled) [:span {:class (stl/css :catalog-off)} "Off"])
       ;; The menu lives inside the clickable row, so swallow its click/keydown to
       ;; keep them from opening the detail view.
       [:div {:class (stl/css :catalog-menu)
@@ -1874,11 +1879,13 @@
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
             [:div {:class (stl/css :catalog-group-label)} category]
-            (for [{:keys [name label blurb reactive]} rows]
+            (for [{:keys [name label blurb reactive team? promoted?]} rows]
               [:> skill-row* {:key name
                               :label label
                               :blurb blurb
                               :reactive reactive
+                              :team? team?
+                              :promoted? promoted?
                               :enabled (get enabled-map name true)
                               :on-open #(on-select name)
                               :on-set-enabled #(toggle name %)}])])
@@ -2284,6 +2291,9 @@
       (st/emit! (dai/fetch-ai-providers)
                 (skst/fetch-skill-states)
                 (dusk/fetch-user-skills)
+                ;; team-promoted skills for the current team (US #12) — every
+                ;; member picks up promotions on panel open
+                (dwts/fetch-team-skills (:id (deref refs/team)))
                 (dwach/fetch-chats true)))
 
     [:aside {:class (stl/css :ai-panel)

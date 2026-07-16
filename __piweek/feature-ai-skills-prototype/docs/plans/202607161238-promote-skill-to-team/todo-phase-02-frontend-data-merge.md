@@ -1,6 +1,12 @@
 # Phase 02 — Frontend data + catalog merge
 
-**Status:** todo
+**Status:** done (2026-07-16) — `team_skills.cljs` (fetch-team-skills /
+promote-skill, refetching team + user); fetched on panel open via
+`(:id @refs/team)`; `team-skill->entry` + `team-skills` merged into
+`full-catalog`/`skill-body` via `extra-skills`; `user-skill->entry` carries
+`:promoted?`/`:promoted-to` and `enabled-skills` drops promoted copies; "Team"
+marker + "Promoted to team" reference on the card. Verified live: a directly-
+inserted team_skill merged in as a card with the Observer badge + "Team" marker.
 
 ## Goal
 

@@ -1314,6 +1314,49 @@
     (t/is (= 8 (:radius out)))))
 
 ;; ---------------------------------------------------------------------------
+;; text-problem — Phase 19: edit the words
+;;
+;; Scope: content and alignment. Size / family / weight are already reachable via
+;; apply_tokens (fontSize, fontFamily, fontWeight …), so this covers the rest —
+;; per the phase's own "check the token path first".
+;; ---------------------------------------------------------------------------
+
+(defn- text-shape
+  [id name]
+  {:id id :name name :type :text})
+
+(t/deftest a-text-shapes-content-can-be-rewritten
+  (t/is (nil? (at/text-problem (objects (text-shape id-a "Heading")) id-a {:text "New words"}))))
+
+(t/deftest a-text-shape-can-be-aligned
+  (t/is (nil? (at/text-problem (objects (text-shape id-a "Heading")) id-a {:align "center"}))))
+
+(t/deftest a-non-text-shape-is-rejected
+  ;; The trap this guards: modify_shape's `name` renames the LAYER. An agent that
+  ;; aims set_text at a board is confusing the label with the words.
+  (let [problem (at/text-problem (objects (plain-frame id-a "Board")) id-a {:text "hi"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "text"))))
+
+(t/deftest set-text-on-an-unknown-shape-is-rejected
+  (t/is (some? (at/text-problem {} id-missing {:text "hi"}))))
+
+(t/deftest set-text-with-nothing-to-change-is-rejected
+  (let [problem (at/text-problem (objects (text-shape id-a "Heading")) id-a {})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "text"))))
+
+(t/deftest an-unknown-align-is-rejected-with-the-real-ones
+  (let [problem (at/text-problem (objects (text-shape id-a "H")) id-a {:align "middle"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "center"))))
+
+(t/deftest an-empty-string-is-a-real-edit
+  ;; "" clears the text — a legitimate instruction, and the `some?`-not-truthy
+  ;; trap for the fifth time (absolute false, "0" token, x: 0, opacity 0).
+  (t/is (nil? (at/text-problem (objects (text-shape id-a "H")) id-a {:text ""}))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

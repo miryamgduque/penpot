@@ -1809,3 +1809,28 @@
   (t/is (str/includes? (at/fetch-page-error-message :content-type-not-allowed) "html"))
   (t/is (str/includes? (at/fetch-page-error-message :unable-to-fetch-page) "fetched"))
   (t/is (str/includes? (at/fetch-page-error-message :something-else) "something-else")))
+
+;; ---------------------------------------------------------------------------
+;; screenshot_page — validation, encoding, size guard, error translation
+;; ---------------------------------------------------------------------------
+
+(t/deftest screenshot-page-needs-a-url
+  (t/is (str/includes? (tool-error "screenshot_page" {}) "http")))
+
+(t/deftest data-url-strips-down-to-the-base64-payload
+  (t/is (= "iVBORw0KGgo="
+           (at/data-url->b64 "data:image/png;base64,iVBORw0KGgo="))))
+
+(t/deftest screenshot-size-guard-passes-normal-shots
+  (t/is (nil? (at/screenshot-size-problem "aGVsbG8="))))
+
+(t/deftest screenshot-size-guard-names-the-full-page-fix
+  (let [msg (at/screenshot-size-problem (apply str (repeat 1600001 "a")))]
+    (t/is (str/includes? msg "fullPage"))))
+
+(t/deftest screenshot-errors-name-the-fix
+  (t/is (str/includes? (at/screenshot-error-message :blocked-host) "private"))
+  (t/is (str/includes? (at/screenshot-error-message :unauthorized) "session"))
+  (t/is (str/includes? (at/screenshot-error-message :unable-to-load-page) "loaded"))
+  (t/is (str/includes? (at/screenshot-error-message :timeout) "busy"))
+  (t/is (str/includes? (at/screenshot-error-message :odd-code) "odd-code")))

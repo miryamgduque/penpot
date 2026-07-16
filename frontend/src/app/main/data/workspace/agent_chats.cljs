@@ -100,11 +100,16 @@
                            (if (= file-id (:current-file-id state))
                              (update-in state [:ai-panel file-id]
                                         (fn [panel]
-                                          (assoc panel
-                                                 :chat-id id
-                                                 :messages (vec (:messages data))
-                                                 :history (vec (:history data))
-                                                 :usage (:usage data))))
+                                          (-> panel
+                                              ;; a pending pause belongs to the
+                                              ;; conversation it interrupted —
+                                              ;; never carry it into another
+                                              (dissoc :checkpoint)
+                                              (assoc
+                                               :chat-id id
+                                               :messages (vec (:messages data))
+                                               :history (vec (:history data))
+                                               :usage (:usage data)))))
                              state)))))
              ;; a vanished row (deleted in another tab) is not worth an error
              ;; bubble on open — the empty composer is the correct outcome
@@ -214,7 +219,10 @@
     (update [_ state]
       (if-let [file-id (:current-file-id state)]
         (update-in state [:ai-panel file-id]
-                   (fn [panel] (dissoc panel :messages :history :usage :chat-id)))
+                   ;; :checkpoint goes too — a pending pause belongs to the
+                   ;; conversation that paused; offering Continue here would
+                   ;; resume the previous conversation's turn
+                   (fn [panel] (dissoc panel :messages :history :usage :chat-id :checkpoint)))
         state))))
 
 (defn delete-chat

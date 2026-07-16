@@ -1418,8 +1418,8 @@
   regenerated from the aikit, so they stay read-only. `on-close` returns to the
   list after a delete."
   {::mf/private true}
-  [{:keys [skill enabled on-toggle on-close]}]
-  (let [{:keys [label category reactive example what user? body]} skill
+  [{:keys [skill enabled on-toggle on-close on-promote]}]
+  (let [{:keys [label category reactive example what user? promoted? body]} skill
         editing?* (mf/use-state false)
         editing?  (deref editing?*)
         confirm?* (mf/use-state false)
@@ -1456,6 +1456,9 @@
           [:div {:class (stl/css :vibes-actions)}
            [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
             "Edit"]
+           (when (and (not promoted?) on-promote)
+             [:button {:type "button" :class (stl/css :vibes-button) :on-click on-promote}
+              "Promote to team"])
            [:button {:type "button"
                      :class (stl/css-case :vibes-button true
                                           :vibes-button-danger true
@@ -1470,7 +1473,7 @@
   clicks so it doesn't. Enable/Disable is instant; Fork / Promote to team are
   entry points only (disabled — wired by US #10 / US #12)."
   {::mf/private true}
-  [{:keys [label blurb reactive enabled team? promoted? on-open on-set-enabled]}]
+  [{:keys [label blurb reactive enabled team? promoted? user? on-open on-set-enabled on-promote]}]
   (let [show-menu?  (mf/use-state false)
         toggle-menu (mf/use-fn #(swap! show-menu? not))
         close-menu  (mf/use-fn #(reset! show-menu? false))
@@ -1516,9 +1519,16 @@
          [:li {:class (stl/css-case :menu-option true :menu-option-disabled true)
                :aria-disabled true}
           "Fork"]
-         [:li {:class (stl/css-case :menu-option true :menu-option-disabled true)
-               :aria-disabled true}
-          "Promote to team"]]]]]
+         ;; Promote to team (US #12): live only for a personal skill not already
+         ;; promoted; built-ins and team skills keep it disabled.
+         (if (and user? (not promoted?) on-promote)
+           [:li {:class (stl/css :menu-option)
+                 :role "button"
+                 :on-click #(do (on-promote) (close-menu))}
+            "Promote to team"]
+           [:li {:class (stl/css-case :menu-option true :menu-option-disabled true)
+                 :aria-disabled true}
+            "Promote to team"])]]]]
      [:div {:class (stl/css :catalog-desc)}
       [:span {:class (stl/css :catalog-blurb)} blurb]]]))
 
@@ -1827,7 +1837,7 @@
   `on-select` opens one, `on-create` opens the creation flow (US #9). Back
   navigation lives in the panel header (US #35)."
   {::mf/private true}
-  [{:keys [selected on-select on-create on-open-vibes]}]
+  [{:keys [selected on-select on-create on-open-vibes on-promote]}]
   (let [vibes-set?  (some? (mf/deref dd/doc-ref))
         catalog     (mf/deref refs/skills-catalog)
         skill       (when selected
@@ -1850,7 +1860,8 @@
         [:> skill-detail* {:skill skill
                            :enabled enabled?
                            :on-toggle #(toggle (:name skill) %)
-                           :on-close #(on-select nil)}])
+                           :on-close #(on-select nil)
+                           :on-promote #(on-promote skill)}])
       [:div {:class (stl/css :skills-tab)}
        ;; Project vibes: pinned above the catalog — it is file-level state,
        ;; not a toggleable skill, so it gets a place rather than a row.
@@ -1879,16 +1890,18 @@
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
             [:div {:class (stl/css :catalog-group-label)} category]
-            (for [{:keys [name label blurb reactive team? promoted?]} rows]
+            (for [{:keys [name label blurb reactive team? promoted? user?] :as entry} rows]
               [:> skill-row* {:key name
                               :label label
                               :blurb blurb
                               :reactive reactive
                               :team? team?
                               :promoted? promoted?
+                              :user? user?
                               :enabled (get enabled-map name true)
                               :on-open #(on-select name)
-                              :on-set-enabled #(toggle name %)}])])
+                              :on-set-enabled #(toggle name %)
+                              :on-promote #(on-promote entry)}])])
          [:div {:class (stl/css :skills-empty)}
           "No enabled skills. Switch to All to see everything."])])))
 
@@ -1990,6 +2003,74 @@
                  :disabled (not ready?)
                  :on-click submit}
         (if busy? "Generating…" "Create skill")]])))
+
+(mf/defc skill-promote*
+  "The promote-to-team confirmation (US #12): review the team-facing name +
+  description the skill's presentation gets before it goes live, then publish.
+  Lives in the Skills view; the header owns the back nav. `on-done` pops back to
+  the list (used for Cancel and after a successful publish — the refetch then
+  surfaces the team card + the now-linked personal copy)."
+  {::mf/private true}
+  [{:keys [skill on-done]}]
+  (let [team     (mf/deref refs/team)
+        team-id  (:id team)
+        name*    (mf/use-state (or (:label skill) ""))
+        desc*    (mf/use-state (or (:what skill) (:blurb skill) ""))
+        status*  (mf/use-state :idle)
+        name     (deref name*)
+        desc     (deref desc*)
+        status   (deref status*)
+        busy?    (= status :publishing)
+        ready?   (and (seq (str/trim name)) (some? team-id) (not busy?))
+        on-name  (mf/use-fn #(reset! name* (dom/get-value (dom/get-target %))))
+        on-desc  (mf/use-fn #(reset! desc* (dom/get-value (dom/get-target %))))
+        publish  (mf/use-fn
+                  (mf/deps skill name desc team-id busy?)
+                  (fn []
+                    (when (and (seq (str/trim name)) team-id (not busy?))
+                      (reset! status* :publishing)
+                      (st/emit!
+                       (dwts/promote-skill
+                        {:source-id (:id skill) :team-id team-id
+                         :name (str/trim name) :description (str/trim desc)}
+                        {:on-success (fn [_] (reset! status* :idle) (on-done))
+                         :on-error   (fn [_] (reset! status* :error))})))))]
+    (if (nil? team-id)
+      [:div {:class (stl/css :skill-create)}
+       [:p {:class (stl/css :create-guard)} "Open a team file to promote a skill."]]
+      [:div {:class (stl/css :skill-create)}
+       [:p {:class (stl/css :create-intro)}
+        "Teammates will see this in Agent Skills. Review before publishing."]
+
+       [:label {:class (stl/css :create-label)} "Name"]
+       [:input {:class (stl/css :create-input)
+                :value name
+                :disabled busy?
+                :on-change on-name}]
+
+       [:label {:class (stl/css :create-label)} "Description"]
+       [:textarea {:class (stl/css :create-input)
+                   :value desc
+                   :disabled busy?
+                   :on-change on-desc}]
+
+       ;; reactive behavior travels with the skill; foundations don't (they're
+       ;; per-file — the skill reads whatever file it runs in) — US #12/#14
+       [:p {:class (stl/css :promote-note)}
+        (dm/str (get ask/reactive-label (:reactive skill) (:reactive skill))
+                " · reads file foundations")]
+
+       (when (= status :error)
+         [:p {:class (stl/css :create-error)}
+          "Couldn't publish that skill — try again."])
+
+       [:div {:class (stl/css :promote-actions)}
+        [:button {:type "button" :class (stl/css :promote-cancel)
+                  :disabled busy? :on-click on-done}
+         "Cancel"]
+        [:button {:type "button" :class (stl/css :create-submit)
+                  :disabled (not ready?) :on-click publish}
+         (if busy? "Publishing…" "Publish")]]])))
 
 ;; --- Panel resize
 ;;
@@ -2217,12 +2298,18 @@
         ;; detail/create — the header back pops it to the list)
         vibes?*     (mf/use-state false)
         vibes?      (deref vibes?*)
+        ;; the skill being promoted to the team (nil = not promoting) — another
+        ;; leaf within Skills; the header back pops it to the list (US #12)
+        promoting*  (mf/use-state nil)
+        promoting   (deref promoting*)
         ;; description carried over when creation is started from Chat (US #9).
         seed*       (mf/use-state nil)
 
-        open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! vibes?* false) (reset! view* :skills)))
+        open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! vibes?* false) (reset! promoting* nil) (reset! view* :skills)))
         on-select   (mf/use-fn #(reset! skill* %))
         open-create (mf/use-fn (fn [] (reset! seed* nil) (reset! creating* true)))
+        open-promote (mf/use-fn (fn [sk] (reset! promoting* sk)))
+        close-promote (mf/use-fn (fn [] (reset! promoting* nil)))
         on-created  (mf/use-fn #(reset! creating* false))
         open-vibes  (mf/use-fn #(reset! vibes?* true))
         ;; "Set the vibes" / "Re-run interview": hand the chat a ready-to-send
@@ -2245,13 +2332,14 @@
         ;; `skill`/`creating?` (in deps) — reading the atoms from a no-deps
         ;; callback captures their initial nil/false and jumps straight to chat.
         on-back     (mf/use-fn
-                     (mf/deps skill creating? vibes?)
+                     (mf/deps skill creating? vibes? promoting)
                      (fn []
                        (cond
-                         creating?     (reset! creating* false) ;; create → list
-                         vibes?        (reset! vibes?* false)   ;; vibes → list
-                         (some? skill) (reset! skill* nil)      ;; detail → list
-                         :else         (reset! view* :chat))))  ;; list → chat
+                         creating?         (reset! creating* false)  ;; create → list
+                         vibes?            (reset! vibes?* false)     ;; vibes → list
+                         (some? promoting) (reset! promoting* nil)    ;; promote → list
+                         (some? skill)     (reset! skill* nil)        ;; detail → list
+                         :else             (reset! view* :chat))))    ;; list → chat
 
         providers   (mf/deref refs/ai-providers)
         pool        (mf/with-memo [providers] (provider-pool providers))
@@ -2316,7 +2404,8 @@
                            :on-click on-back
                            :icon i/arrow-left}]
          [:span {:class (stl/css :title)}
-          (cond creating? "New skill" vibes? "Project vibes" skill "Skill info" :else "Skills")]]
+          (cond creating? "New skill" vibes? "Project vibes" promoting "Promote to team"
+                skill "Skill info" :else "Skills")]]
         [:span {:class (stl/css :title)} "Agent"])
       (when-not skills?
         [:div {:class (stl/css :header-actions)}
@@ -2362,9 +2451,11 @@
         skills?       (cond
                         creating? [:> skill-create* {:settings settings :seed (deref seed*) :on-created on-created}]
                         vibes?    [:> vibes-view* {:on-interview on-vibes-interview}]
+                        promoting [:> skill-promote* {:skill promoting :on-done close-promote}]
                         :else     [:> skills-tab* {:selected skill
                                                    :on-select on-select
                                                    :on-create open-create
-                                                   :on-open-vibes open-vibes}])
+                                                   :on-open-vibes open-vibes
+                                                   :on-promote open-promote}])
         (empty? pool) [:> connect-empty*]
         :else         [:> chat-tab* {:on-create-skill on-create-skill}])]]))

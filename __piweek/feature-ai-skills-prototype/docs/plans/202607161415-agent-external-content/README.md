@@ -64,7 +64,7 @@ text and brand phases, and brand extraction composes everything before it.
 1. [Phase 01 — insert_image tool](./done-phase-01-insert-image.md) — URL → media → image shape; placeholder recipes (Picsum/placehold.co/DiceBear) in the tool description
 2. [Phase 02 — Iconify icons](./done-phase-02-iconify-icons.md) — `search_icons` + `insert_icon` via api.iconify.design → SVG import
 3. [Phase 03 — Google Fonts](./done-phase-03-google-fonts.md) — `search_fonts` + `set_font` over the in-memory catalog + `ensure-loaded!`
-4. [Phase 04 — fetch-web-page RPC](./todo-phase-04-fetch-web-page-rpc.md) — backend command: SSRF-guarded fetch, HTML→text, metadata extraction, size caps
+4. [Phase 04 — fetch-web-page RPC](./done-phase-04-fetch-web-page-rpc.md) — backend command: SSRF-guarded fetch, HTML→text, metadata extraction, size caps
 5. [Phase 05 — fetch_page tool via side-turn](./todo-phase-05-fetch-page-side-turn.md) — untrusted page text digested by a toolless Haiku side turn; only the digest reaches the main agent
 6. [Phase 06 — exporter screenshot-url cmd](./todo-phase-06-exporter-screenshot.md) — new exporter handler on the browser pool, WITH a Node-side SSRF guard
 7. [Phase 07 — screenshot_page tool](./todo-phase-07-screenshot-tool.md) — screenshots ride the `:images` path to vision models; payload-cap-aware sizing

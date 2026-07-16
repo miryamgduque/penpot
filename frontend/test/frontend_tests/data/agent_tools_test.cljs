@@ -1119,12 +1119,12 @@
 ;; --- and the payload economy the phase's own notes demand
 
 (t/deftest a-shape-without-fills-carries-no-fills-key
-  (t/is (not (contains? (at/summarize-shape (objects (plain-frame id-a "Bare")) id-a {:fills? true})
+  (t/is (not (contains? (at/summarize-shape (objects (plain-frame id-a "Bare")) id-a {:look? true})
                         :fills))))
 
 (t/deftest a-filled-shape-carries-its-fills-when-asked
   (let [objs (objects (assoc (plain-frame id-a "Card") :fills [{:fill-color "#6366f1"}]))
-        out  (at/summarize-shape objs id-a {:fills? true})]
+        out  (at/summarize-shape objs id-a {:look? true})]
     (t/is (= [{:type "solid" :color "#6366f1"}] (:fills out)))))
 
 (t/deftest fills-are-off-by-default
@@ -1216,6 +1216,102 @@
 
 (t/deftest a-solid-descriptor-is-collected-for-the-guard
   (t/is (= ["#6366f1"] (at/input-colors {:fill {:type "solid" :color "#6366f1"}}))))
+
+;; ---------------------------------------------------------------------------
+;; effect-summary — Phase 18: read a shape's effects
+;;
+;; The descriptor MIRRORS Phase 14's write params 1:1, so read -> write is a
+;; straight copy with no attr-name translation. Only present, non-default attrs
+;; are emitted: a plain shape must add nothing.
+;; ---------------------------------------------------------------------------
+
+(t/deftest a-plain-shape-has-no-effects
+  (t/is (empty? (at/effect-summary (plain-frame id-a "Bare")))))
+
+(t/deftest a-uniform-radius-reads-back-as-phase-14-writes-it
+  ;; Phase 14 takes `radius: 12`; the read must say `radius: 12`, not :r1..:r4.
+  (t/is (= 12 (:radius (at/effect-summary (assoc (plain-frame id-a "C")
+                                                 :r1 12 :r2 12 :r3 12 :r4 12))))))
+
+(t/deftest a-zero-radius-is-not-reported
+  ;; Every shape has r1..r4 = 0 by default; reporting it would cost the budget
+  ;; for nothing.
+  (t/is (nil? (:radius (at/effect-summary (assoc (plain-frame id-a "C")
+                                                 :r1 0 :r2 0 :r3 0 :r4 0))))))
+
+(t/deftest a-mixed-radius-reports-each-corner
+  ;; Phase 14 can only write one radius for all four, so a mixed radius cannot
+  ;; be copied in one call — say so rather than report a misleading single number.
+  (let [out (at/effect-summary (assoc (plain-frame id-a "C") :r1 4 :r2 8 :r3 4 :r4 8))]
+    (t/is (= {:topLeft 4 :topRight 8 :bottomRight 4 :bottomLeft 8} (:radius out)))))
+
+(t/deftest a-reduced-opacity-is-reported
+  (t/is (= 0.5 (:opacity (at/effect-summary (assoc (plain-frame id-a "C") :opacity 0.5))))))
+
+(t/deftest a-full-opacity-is-not-reported
+  (t/is (nil? (:opacity (at/effect-summary (assoc (plain-frame id-a "C") :opacity 1))))))
+
+(t/deftest a-shadow-reads-back-in-phase-14s-own-param-names
+  ;; The 1:1 mirror: these keys are exactly modify_shape's shadow params.
+  (let [out (at/effect-summary
+             (assoc (plain-frame id-a "C")
+                    :shadow [{:style :drop-shadow :offset-x 0 :offset-y 4 :blur 12 :spread 0
+                              :hidden false :color {:color "#000000" :opacity 0.25}}]))
+        s   (:shadow out)]
+    (t/is (= "drop-shadow" (:style s)))
+    (t/is (= 0 (:offsetX s)))
+    (t/is (= 4 (:offsetY s)))
+    (t/is (= 12 (:blur s)))
+    (t/is (= "#000000" (:color s)))
+    (t/is (= 0.25 (:opacity s)))))
+
+(t/deftest a-hidden-shadow-is-not-reported
+  ;; It contributes nothing to the look, and copying it would be wrong.
+  (t/is (nil? (:shadow (at/effect-summary
+                        (assoc (plain-frame id-a "C")
+                               :shadow [{:style :drop-shadow :hidden true :blur 4
+                                         :color {:color "#000"}}]))))))
+
+(t/deftest several-shadows-report-as-a-list
+  (let [out (at/effect-summary
+             (assoc (plain-frame id-a "C")
+                    :shadow [{:style :drop-shadow :blur 4 :hidden false :color {:color "#111111"}}
+                             {:style :inner-shadow :blur 8 :hidden false :color {:color "#222222"}}]))]
+    (t/is (= 2 (count (:shadows out))))
+    (t/is (nil? (:shadow out)))))
+
+(t/deftest a-blur-is-reported-even-though-it-cannot-be-written
+  ;; The transcript's complaint was a "glow" it could see but not inspect. A blur
+  ;; IS that glow. modify_shape cannot write one, so — like an image fill in
+  ;; Phase 17 — the honest move is to NAME it, not drop it silently.
+  (let [out (at/effect-summary (assoc (plain-frame id-a "C")
+                                      :blur {:type :layer-blur :value 8 :hidden false}))]
+    (t/is (= 8 (:value (:blur out))))
+    (t/is (= "layer-blur" (:type (:blur out))))))
+
+(t/deftest a-hidden-blur-is-not-reported
+  (t/is (nil? (:blur (at/effect-summary (assoc (plain-frame id-a "C")
+                                               :blur {:type :layer-blur :value 8 :hidden true}))))))
+
+(t/deftest a-non-normal-blend-mode-is-reported
+  (t/is (= "multiply" (:blendMode (at/effect-summary (assoc (plain-frame id-a "C")
+                                                            :blend-mode :multiply))))))
+
+(t/deftest a-normal-blend-mode-is-not-reported
+  (t/is (nil? (:blendMode (at/effect-summary (assoc (plain-frame id-a "C")
+                                                    :blend-mode :normal))))))
+
+;; --- payload economy, same rule as fills
+
+(t/deftest effects-are-off-by-default
+  (let [objs (objects (assoc (plain-frame id-a "C") :opacity 0.5))]
+    (t/is (not (contains? (at/summarize-shape objs id-a) :opacity)))))
+
+(t/deftest effects-appear-when-the-look-is-asked-for
+  (let [objs (objects (assoc (plain-frame id-a "C") :opacity 0.5 :r1 8 :r2 8 :r3 8 :r4 8))
+        out  (at/summarize-shape objs id-a {:look? true})]
+    (t/is (= 0.5 (:opacity out)))
+    (t/is (= 8 (:radius out)))))
 
 ;; ---------------------------------------------------------------------------
 ;; order preservation

@@ -1,6 +1,15 @@
 # Phase 03 — Promote flow UI
 
-**Status:** todo
+**Status:** done (2026-07-16) — ⋯ "Promote to team" live for personal,
+not-yet-promoted skills (+ a Promote button in the detail view); a `skill-promote*`
+confirmation view (editable Name/Description prefilled, "<reactive> · reads file
+foundations" note, Cancel/Publish) wired as a new `:promote` leaf in the panel
+view state with header back nav. Verified live end-to-end on "Passive voice
+flagger": menu → WF2 confirmation → Publish → team_skill created (reactive
+observer traveled), profile_skill.promoted_to set, personal card dimmed +
+"Promoted to team", new team card active with the "Team" marker. Cross-account
+"every member sees it" relies on the P2 merge (proven with a probe row); a
+second-account check is deferred to the final review.
 
 ## Goal
 

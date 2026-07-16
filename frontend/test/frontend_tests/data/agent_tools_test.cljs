@@ -1509,6 +1509,30 @@
   (t/is (some? (at/detach-problem {} id-missing))))
 
 ;; ---------------------------------------------------------------------------
+;; --- Phase 32: boolean-problem
+
+(t/deftest two-plain-shapes-can-be-combined
+  (let [objs (objects (plain-frame id-a "A") {:id id-b :name "B" :type :rect})]
+    ;; note plain-frame is a :frame (board) which the filter skips — use rects
+    (t/is (nil? (at/boolean-problem (objects {:id id-a :name "A" :type :rect}
+                                             {:id id-b :name "B" :type :rect})
+                                    "union" [id-a id-b])))))
+
+(t/deftest a-bad-operation-is-rejected
+  (let [problem (at/boolean-problem (objects {:id id-a :type :rect} {:id id-b :type :rect})
+                                    "subtract" [id-a id-b])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "difference"))))
+
+(t/deftest one-shape-is-not-a-boolean
+  (t/is (some? (at/boolean-problem (objects {:id id-a :type :rect}) "union" [id-a]))))
+
+(t/deftest boards-are-not-boolean-operands
+  (let [problem (at/boolean-problem (objects (plain-frame id-a "A") (plain-frame id-b "B"))
+                                    "union" [id-a id-b])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "board"))))
+
 ;; --- Phase 26: locked-shape guard
 
 (t/deftest an-unlocked-shape-is-freely-modified

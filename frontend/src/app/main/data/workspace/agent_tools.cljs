@@ -52,6 +52,7 @@
    [app.main.data.workspace.tokens.application :as dwta]
    [app.main.data.workspace.tokens.library-edit :as dwtl]
    [app.main.data.workspace.transforms :as dwt]
+   [app.main.data.workspace.bool :as dwb]
    [app.main.data.workspace.pages :as dwpg]
    [app.main.data.workspace.undo :as dwu]
    [app.main.data.workspace.versions :as dwv-ver]
@@ -515,6 +516,19 @@
    {:name "redo_change"
     :description "Re-applies the most recently undone change — the counterpart to undo_change."
     :input-schema {:type "object" :properties {}}}
+
+   {:name "create_boolean"
+    :description
+    (str "Combines shapes with a boolean operation — union (merge), difference "
+         "(cut the top shapes out of the bottom), intersection (keep the overlap), "
+         "exclusion (keep everything except the overlap). Makes one editable "
+         "boolean shape; the operands become its children. For \"cut a hole in "
+         "this\" when the shapes are already on the canvas. (For an icon, "
+         "create_from_svg is usually easier.) Dissolve with ungroup_shapes.")
+    :input-schema {:type "object"
+                   :properties {:operation {:type "string" :enum ["union" "difference" "intersection" "exclusion"]}
+                                :shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["operation" "shapeIds"]}}
 
    {:name "create_page"
     :description
@@ -2520,6 +2534,53 @@
                                      "read_design.")}
                    new-id (assoc :shapeId (dm/str new-id)))))))))
 
+;; --- Boolean operations
+;;
+;; The one shape-MAKING primitive left out — union / difference / intersection /
+;; exclusion. ungroup_shapes already dissolves a bool, so the registry ended a
+;; capability it could not begin. Same silent filter as group/bool everywhere:
+;; create-bool drops frames, variants and copy-children, no-ops on empty, and
+;; selects the new bool (which we restore).
+
+(def ^:private bool-ops #{"union" "difference" "intersection" "exclusion"})
+
+(defn boolean-problem
+  "Why `create_boolean` cannot run, or nil. Pure — mirrors create-bool's filter."
+  [objects operation ids]
+  (or (enum-problem "create_boolean" "operation" operation bool-ops)
+      (when (< (count ids) 2)
+        (dm/str "create_boolean: needs at least 2 shapes (got " (count ids)
+                ") — a boolean combines shapes"))
+      (ids-problem "create_boolean" objects ids)
+      (let [usable (remove (fn [id]
+                             (let [s (get objects id)]
+                               (or (cfh/frame-shape? s)
+                                   (ctc/is-variant? s)
+                                   (ctn/has-any-copy-parent? objects s))))
+                           ids)]
+        (when (< (count usable) 2)
+          (dm/str "create_boolean: after skipping boards, variants and copy-children"
+                  " fewer than 2 usable shapes remain — a board is not a boolean"
+                  " operand; use plain shapes or paths")))))
+
+(defn- create-boolean
+  [{:keys [operation shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (boolean-problem objects operation ids)]
+      (rx/throw (ex-info problem {}))
+      (let [before  (dsh/get-selected-ids state)
+            bool-id (uuid/next)]
+        (interrupt!)
+        (st/emit! (dwb/create-bool (keyword operation) :ids (into #{} ids) :force-shape-id bool-id))
+        ;; create-bool selects the new bool; put the user's selection back
+        (st/emit! (dws/select-shapes before))
+        (rx/of {:shapeId (dm/str bool-id)
+                :note (str "created a " operation " of the shapes — a single editable "
+                           "boolean shape; the operands are now its children. Dissolve "
+                           "it with ungroup_shapes. Verify with read_design.")})))))
+
 ;; --- Pages
 ;;
 ;; The agent lived its whole life on the current page. read_design now lists every
@@ -3542,6 +3603,7 @@
     "create_instance"    (create-instance input)
     "create_from_svg"    (create-from-svg input)
     "save_version"       (save-version input)
+    "create_boolean"     (create-boolean input)
     "create_page"        (create-page input)
     "switch_page"        (switch-page input)
     "leave_comment"      (leave-comment input)

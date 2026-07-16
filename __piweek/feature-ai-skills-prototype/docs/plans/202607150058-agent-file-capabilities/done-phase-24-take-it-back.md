@@ -1,6 +1,6 @@
 # Phase 24 — Take it back
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; ownership tracking deferred — see Notes; suite+live at merge)
 
 The agent's only recovery tool is `delete_shape` — which covers *creations* and nothing else.
 A `modify_shape` that set the wrong fill, resized the wrong board, or renamed the wrong layer
@@ -67,3 +67,7 @@ since my last edit"), which is information the agent currently has no way to get
 **Scope stays at one step (or one agent transaction).** No `undo_n`, no history browsing —
 `undo-to-index` exists but walking the user's history is not this tool's business. The history
 panel is the user's; the agent gets "take back my last change" and nothing more.
+
+## Notes — execution (worktree batch)
+
+Shipped the honest disclosive version, not full ownership tracking. The undo stack is shared and per-session under one profile; direct-commit `:tags` do not reach the delegated events most tools use (variant/group/instance/layout all commit internally), and per-mutation watermarking on an async stack is fragile. So `undo_change` guards the two genuinely-unsafe cases (editor session open, empty stack) and **discloses** that it reverts the single most-recent change — normally the agent's own last action. `redo_change` is the symmetric counterpart. Full ownership (watermark or tag-forwarding through delegated events) is a flagged follow-up; it is a larger change than the rest of this phase and out of scope for the batch.

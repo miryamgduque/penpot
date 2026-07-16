@@ -467,6 +467,20 @@
                                 :type {:type "string" :enum ["html" "svg"]}
                                 :includeChildren {:type "boolean" :description "default true"}}}}
 
+   {:name "undo_change"
+    :description
+    (str "Reverts the single most recent change — the agent's counterpart to "
+         "⌘Z, and the way to take back a modify_shape that set the wrong value "
+         "(delete_shape only undoes creations). The undo stack is shared with "
+         "the user, so this reverts whatever was done last; it is normally your "
+         "own last action, but say what you undid and verify with read_design. "
+         "Fails while a text/path editor is open or the stack is empty.")
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "redo_change"
+    :description "Re-applies the most recently undone change — the counterpart to undo_change."
+    :input-schema {:type "object" :properties {}}}
+
    {:name "create_from_svg"
     :description
     (str "Imports an SVG string as real Penpot shapes — the way to draw an icon "
@@ -1319,6 +1333,54 @@
               :type type
               :parentId (when parent? (dm/str pid))
               :note "created — verify geometry with read_design"}))))
+
+;; --- Undo / redo
+;;
+;; `dwu/undo` / `dwu/redo` are what ⌘Z/⌘⇧Z dispatch. Two guards matter: `undo`
+;; no-ops on an empty stack (index -1) and while a text/path editor session is
+;; open ("editors handle their own undo's") — both would read as success to a
+;; thin passthrough.
+;;
+;; The undo stack is SHARED and per-session: the user's manual edits and the
+;; agent's interleave under one profile, so there is no cheap, reliable way to
+;; prove the top entry is the agent's own (direct-commit tagging does not reach
+;; the delegated events most tools use). Rather than pretend, this tool discloses
+;; that it reverts the single most-recent change — normally the agent's own last
+;; action. Full ownership tracking (watermark/tags) is a flagged follow-up.
+
+(defn undo-problem
+  "Why `undo_change` cannot run right now, or nil. Pure over the relevant state."
+  [{:keys [edition drawing items index]}]
+  (cond
+    (or (some? edition) (some? (:object drawing)))
+    "undo_change: a text or path editor is open — it handles its own undo. Close it first."
+
+    (or (empty? items) (= index -1))
+    "undo_change: nothing to undo."))
+
+(defn- undo-change
+  []
+  (let [state (deref st/state)
+        undo  (:workspace-undo state)
+        ctx   {:edition (get-in state [:workspace-local :edition])
+               :drawing (get state :workspace-drawing)
+               :items   (:items undo)
+               :index   (or (:index undo) (dec (count (:items undo))))}]
+    (if-let [problem (undo-problem ctx)]
+      (rx/throw (ex-info problem {}))
+      (do
+        (interrupt!)
+        (st/emit! dwu/undo)
+        (rx/of {:note (str "undid the most recent change on the shared undo stack — "
+                           "normally your own last action, but the user's if they "
+                           "just edited. Verify with read_design; redo_change puts "
+                           "it back.")})))))
+
+(defn- redo-change
+  []
+  (interrupt!)
+  (st/emit! dwu/redo)
+  (rx/of {:note "redid the most recently undone change. Verify with read_design."}))
 
 ;; --- SVG import
 ;;
@@ -3013,6 +3075,8 @@
     "generate_code"      (generate-code input)
     "create_instance"    (create-instance input)
     "create_from_svg"    (create-from-svg input)
+    "undo_change"        (undo-change)
+    "redo_change"        (redo-change)
     "detach_instance"    (detach-instance input)
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)

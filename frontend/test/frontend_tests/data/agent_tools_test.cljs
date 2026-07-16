@@ -1509,6 +1509,19 @@
   (t/is (some? (at/detach-problem {} id-missing))))
 
 ;; ---------------------------------------------------------------------------
+;; --- Phase 24: undo-problem
+
+(t/deftest an-open-editor-blocks-undo
+  (t/is (some? (at/undo-problem {:edition (uuid/custom 1 1) :items [{}] :index 0})))
+  (t/is (str/includes? (at/undo-problem {:edition (uuid/custom 1 1) :items [{}] :index 0}) "editor")))
+
+(t/deftest an-empty-stack-blocks-undo
+  (t/is (some? (at/undo-problem {:items [] :index -1})))
+  (t/is (str/includes? (at/undo-problem {:items [] :index -1}) "nothing")))
+
+(t/deftest a-normal-stack-allows-undo
+  (t/is (nil? (at/undo-problem {:items [{} {}] :index 1}))))
+
 ;; --- Phase 23: create_from_svg (the pure gate; the import itself is dwm's)
 
 (t/deftest a-complete-svg-string-passes-the-gate

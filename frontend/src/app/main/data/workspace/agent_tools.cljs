@@ -273,7 +273,9 @@
          "Only the given fields change. A shadow is the real answer for depth or "
          "a hover state — reach for it instead of faking elevation with a paler "
          "fill. Radius and opacity can also be bound to tokens with apply_tokens, "
-         "which is preferred for any value that repeats. Geometry settles "
+         "which is preferred for any value that repeats. Also: rotation (absolute "
+         "degrees), flipH/flipV, stroke width/style, and hidden/locked. Modifying "
+         "a locked shape is refused unless you set locked:false. Geometry settles "
          "asynchronously — re-read to confirm.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
@@ -305,7 +307,14 @@
                                                       :blur {:type "number"}
                                                       :spread {:type "number"}
                                                       :color {:type "string" :description "hex"}
-                                                      :opacity {:type "number" :description "0–1"}}}}
+                                                      :opacity {:type "number" :description "0–1"}}}
+                                :strokeWidth {:type "number" :description "px"}
+                                :strokeStyle {:type "string" :enum ["solid" "dotted" "dashed" "mixed"]}
+                                :rotation {:type "number" :description "absolute degrees"}
+                                :flipH {:type "boolean" :description "flip horizontally (a toggle)"}
+                                :flipV {:type "boolean" :description "flip vertically (a toggle)"}
+                                :hidden {:type "boolean"}
+                                :locked {:type "boolean" :description "a user lock; the agent respects it unless you set false"}}
                    :required ["shapeId"]}}
 
    {:name "nest_shape"
@@ -817,8 +826,14 @@
   gives an image fill: better a replica that says \"the original also has an 8px
   blur\" than one that silently drops it."
   [shape]
-  (let [{:keys [r1 r2 r3 r4 opacity blend-mode blur shadow]} shape
+  (let [{:keys [r1 r2 r3 r4 opacity blend-mode blur shadow strokes]} shape
         live   (remove :hidden shadow)
+        ;; stroke depth (Phase 29): width + style beyond the plain color, so a
+        ;; 4px dashed border no longer reads identically to a 1px solid one.
+        stroke (when-let [s (first strokes)]
+                 (cond-> {:color (:stroke-color s)}
+                   (some? (:stroke-width s)) (assoc :width (:stroke-width s))
+                   (some? (:stroke-style s)) (assoc :style (name (:stroke-style s)))))
         one    (fn [s] (cond-> {:style (some-> (:style s) name)
                                 :offsetX (:offset-x s)
                                 :offsetY (:offset-y s)
@@ -842,6 +857,8 @@
 
       (and (some? blur) (not (:hidden blur)))
       (assoc :blur {:type (some-> (:type blur) name) :value (:value blur)})
+
+      (some? stroke) (assoc :stroke stroke)
 
       (= 1 (count live)) (assoc :shadow (one (first live)))
       (< 1 (count live)) (assoc :shadows (mapv one live)))))
@@ -1526,20 +1543,43 @@
     (some? radius) (assoc :r1 radius :r2 radius :r3 radius :r4 radius)
     (some? opacity) (assoc :opacity opacity)))
 
+(def ^:private stroke-styles #{"solid" "dotted" "dashed" "mixed"})
+
+(defn locked-problem
+  "Refuses mutating a locked (`:blocked`) shape, unless the call is unlocking it.
+  A user locks a layer to mean hands-off; the agent should respect that and say
+  how to override. Pure."
+  [shape {:keys [locked] :as _input}]
+  (when (and (:blocked shape) (not (false? locked)))
+    (dm/str "modify_shape: " (shape-label shape) " is locked. A user locks a layer"
+            " to keep it as-is — ask before changing it, or unlock it deliberately"
+            " with modify_shape locked:false.")))
+
 (defn- modify-shape
-  [{:keys [shapeId x y width height fill stroke shadow] :as input}]
-  (let [nm    (:name input)
-        id    (some-> shapeId parse-uuid)
-        state @st/state]
+  [{:keys [shapeId x y width height fill stroke shadow strokeWidth strokeStyle
+           hidden locked rotation flipH flipV] :as input}]
+  (let [nm      (:name input)
+        id      (some-> shapeId parse-uuid)
+        state   @st/state
+        shape   (when id (get (dsh/lookup-page-objects state) id))]
     (cond
       (nil? id)
       (rx/throw (ex-info "modify_shape: missing or invalid shapeId" {}))
 
+      (nil? shape)
+      (rx/throw (ex-info (dm/str "modify_shape: no shape with id " shapeId " on this page") {}))
+
+      (some? (locked-problem shape input))
+      (rx/throw (ex-info (locked-problem shape input) {}))
+
       (some? (fill-problem fill))
       (rx/throw (ex-info (dm/str "modify_shape: " (fill-problem fill)) {}))
 
-      ;; the guard runs last of the three: a rejection naming the rule is the
-      ;; most useful message, so it should not mask a plain input error
+      (some? (enum-problem "modify_shape" "strokeStyle" strokeStyle stroke-styles))
+      (rx/throw (ex-info (enum-problem "modify_shape" "strokeStyle" strokeStyle stroke-styles) {}))
+
+      ;; the guard runs last: a rejection naming the rule is the most useful
+      ;; message, so it should not mask a plain input error
       (some #(color-violation state %) (input-colors input))
       (rx/throw (some #(color-violation state %) (input-colors input)))
 
@@ -1554,6 +1594,17 @@
           (st/emit! (dwsh/update-shapes [id] #(merge % styles))))
         (when shadow
           (st/emit! (dwsh/update-shapes [id] #(assoc % :shadow [(shadow->shape shadow)]))))
+        ;; hide/lock — some? so `false` genuinely unhides/unlocks
+        (when (or (some? hidden) (some? locked))
+          (st/emit! (dwsh/update-shape-flags [id]
+                                             (cond-> {}
+                                               (some? hidden) (assoc :hidden hidden)
+                                               (some? locked) (assoc :blocked locked)))))
+        (when (some? rotation)
+          ;; absolute (the event computes the delta from the shape's current angle)
+          (st/emit! (dwt/increase-rotation [id] rotation)))
+        (when flipH (st/emit! (dwt/flip-horizontal-selected [id])))
+        (when flipV (st/emit! (dwt/flip-vertical-selected [id])))
         (when (or (some? x) (some? y))
           (st/emit! (dwt/update-position id (cond-> {}
                                               (some? x) (assoc :x x)
@@ -1567,9 +1618,21 @@
         (when stroke
           (st/emit! (dwsh/update-shapes [id] #(assoc % :strokes [{:stroke-color stroke
                                                                   :stroke-opacity 1
-                                                                  :stroke-width 1
-                                                                  :stroke-style :solid
+                                                                  :stroke-width (or strokeWidth 1)
+                                                                  :stroke-style (keyword (or strokeStyle "solid"))
                                                                   :stroke-alignment :center}]))))
+        ;; stroke width/style change with no new color: patch the existing stroke
+        (when (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)))
+          (st/emit! (dwsh/update-shapes [id]
+                                        (fn [s]
+                                          (update s :strokes
+                                                  (fn [strokes]
+                                                    (let [st0 (or (first strokes)
+                                                                  {:stroke-color "#000000" :stroke-opacity 1
+                                                                   :stroke-alignment :center})]
+                                                      [(cond-> st0
+                                                         (some? strokeWidth) (assoc :stroke-width strokeWidth)
+                                                         (some? strokeStyle) (assoc :stroke-style (keyword strokeStyle)))])))))))
         (st/emit! (dwu/commit-undo-transaction tx))
         (rx/of {:id shapeId :note "modified — verify with read_design"})))))
 

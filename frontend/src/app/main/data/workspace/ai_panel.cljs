@@ -278,15 +278,28 @@
   []
   (ptk/reify ::stop-watcher))
 
+(defn- seed-enforced-rules
+  "Populate the file's `:enforced-rules` from the enabled skills' declared
+  `:rule`s — but only when nothing has set them yet (a console dispatch, a
+  test, or a future real per-file resolution wins over the seed)."
+  []
+  (ptk/reify ::seed-enforced-rules
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :enforced-rules]
+                   (fn [rules] (or rules (ask/watched-rules state))))
+        state))))
+
 (declare run-semantic-tick)
 
 (defn- start-watcher
-  "Subscribe to commits until `::stop-watcher`. Emits an immediate initial
-  scan (a file can already be messy when the panel opens), tracks dirty ids
-  per commit, and re-scans debounced. Also re-scans when the enforced-rules
-  set changes, so toggling a rule updates the live set without an edit.
-  A longer idle debounce drives the semantic tick — its own guards decide
-  whether a request actually goes out."
+  "Subscribe to commits until `::stop-watcher`. Seeds the enforced rules and
+  emits an immediate initial scan (a file can already be messy when the panel
+  opens), tracks dirty ids per commit, and re-scans debounced. Also re-scans
+  when the enforced-rules set changes, so toggling a rule updates the live
+  set without an edit. A longer idle debounce drives the semantic tick — its
+  own guards decide whether a request actually goes out."
   []
   (ptk/reify ::start-watcher
     ptk/WatchEvent
@@ -296,7 +309,7 @@
                          (rx/filter (ptk/type? ::dch/commit))
                          (rx/map deref))]
         (->> (rx/merge
-              (rx/of (refresh-violations))
+              (rx/of (seed-enforced-rules) (refresh-violations))
               (->> commits
                    (rx/map (fn [{:keys [redo-changes]}]
                              (track-dirty (touched-shape-ids redo-changes)))))

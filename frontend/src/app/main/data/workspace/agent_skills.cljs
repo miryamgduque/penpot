@@ -44,6 +44,7 @@
               :example "Check this screen for accessibility problems."
               :what "Runs a WCAG 2.1/2.2 AA audit covering contrast, tap-target sizes, heading structure, and focus order. Returns a severity-ranked report without changing the file."}
              {:name "penpot-audit-tokens" :label "Tokens governance audit"
+              :rule "token-only-colors"
               :blurb "Hardcoded values, off-grid spacing" :mode "suggest" :enabled true
               :example "Audit this file for design-system issues."
               :what "Flags hardcoded values where a token exists, off-grid spacing, orphan or unused tokens, and detached instances. Suggests semantic-token swaps; reports only, no changes."}
@@ -315,6 +316,15 @@
              skill skills
              :when (:enabled skill)]
          (assoc skill :category category))))
+
+(defn watched-rules
+  "The rule names declared (via `:rule`) by the currently-enabled skills —
+  what the auto-fix watcher enforces when nothing else has set the file's
+  rules. Disabling the declaring skill takes its rule out of the watch."
+  [state]
+  (->> (enabled-skills state)
+       (keep :rule)
+       (set)))
 
 (defn catalog-manifest
   "Backs the `get_design_skills` tool. Listing (1-arity) stays metadata-only and

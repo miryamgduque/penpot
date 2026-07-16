@@ -2554,40 +2554,20 @@ textarea.create-input {
   color: var(--color-foreground-secondary);
 }
 
-// A quiet metadata marker rather than a pill: a small dot + muted label, so the
-// reactive behavior reads at a glance without shouting on the card.
+// A quiet metadata label (no dot): the reactive behavior reads plainly without
+// shouting on the card.
 .reactive-badge {
   @include scaled-body-small;
 
-  display: inline-flex;
-  align-items: center;
-  gap: deprecated.$s-4;
   flex-shrink: 0;
   color: var(--color-foreground-secondary);
   white-space: nowrap;
-
-  &::before {
-    content: "";
-    flex-shrink: 0;
-    inline-size: deprecated.$s-6;
-    block-size: deprecated.$s-6;
-    border-radius: 50%;
-    background-color: currentcolor;
-  }
 }
 
-// On-demand — a small accent dot marks the request-driven default; the label
-// itself stays muted.
 .reactive-ondemand {
   color: var(--color-foreground-secondary);
-
-  &::before {
-    background-color: var(--color-accent-primary);
-  }
 }
 
-// Observer — a plain neutral dot (inherits the muted label colour), quieter
-// than the accent it used to carry.
 .reactive-observer {
   color: var(--color-foreground-secondary);
 }

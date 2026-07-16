@@ -1419,7 +1419,7 @@
   list after a delete."
   {::mf/private true}
   [{:keys [skill enabled on-toggle on-close on-promote]}]
-  (let [{:keys [label category reactive example what user? body]} skill
+  (let [{:keys [label category reactive example what user? team? body]} skill
         editing?* (mf/use-state false)
         editing?  (deref editing?*)
         confirm?* (mf/use-state false)
@@ -1444,7 +1444,9 @@
                      :aria-label (dm/str (if enabled "Disable " "Enable ") label)
                      :on-change on-toggle}]]
        [:div {:class (stl/css :detail-tags)}
-        [:> reactive-badge* {:reactive reactive}]]
+        [:> reactive-badge* {:reactive reactive}]
+        (when team?
+          [:span {:class (stl/css :catalog-team)} "Team"])]
        [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
        [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
        [:div {:class (stl/css :detail-section-label)} "What it does"]
@@ -1473,7 +1475,7 @@
   clicks so it doesn't. Enable/Disable is instant; Fork / Promote to team are
   entry points only (disabled — wired by US #10 / US #12)."
   {::mf/private true}
-  [{:keys [label blurb reactive enabled team? user? on-open on-set-enabled on-promote]}]
+  [{:keys [label blurb reactive enabled user? on-open on-set-enabled on-promote]}]
   (let [show-menu?  (mf/use-state false)
         toggle-menu (mf/use-fn #(swap! show-menu? not))
         close-menu  (mf/use-fn #(reset! show-menu? false))
@@ -1495,8 +1497,6 @@
      [:div {:class (stl/css :catalog-card-head)}
       [:span {:class (stl/css :catalog-name)} label]
       [:> reactive-badge* {:reactive reactive}]
-      (when team?
-        [:span {:class (stl/css :catalog-team)} "Team"])
       (when-not enabled
         [:span {:class (stl/css :catalog-off)} "Off"])
       ;; The menu lives inside the clickable row, so swallow its click/keydown to
@@ -1888,12 +1888,11 @@
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
             [:div {:class (stl/css :catalog-group-label)} category]
-            (for [{:keys [name label blurb reactive team? user?] :as entry} rows]
+            (for [{:keys [name label blurb reactive user?] :as entry} rows]
               [:> skill-row* {:key name
                               :label label
                               :blurb blurb
                               :reactive reactive
-                              :team? team?
                               :user? user?
                               :enabled (get enabled-map name true)
                               :on-open #(on-select name)

@@ -88,3 +88,32 @@
 (deftest import-brand-flows-through-the-router
   (is (contains? (set (map :name (ask/catalog-manifest {})))
                  "penpot-import-brand")))
+
+;; --- References (second disclosure level, 2026-07-16 re-import)
+
+(deftest kit-references-are-served-with-the-translation-preamble
+  (testing "an imported reference exists and is reframed for the native tools"
+    (let [text (ask/skill-reference "penpot-build-screen" "03-layout-composition")]
+      (is (some? text))
+      (is (.startsWith text ">"))
+      (is (.includes text "Layout")))))
+
+(deftest native-references-are-served-verbatim
+  (testing "the taxonomy is native-born: no translation preamble"
+    (let [text (ask/skill-reference "penpot-build-screen" "ui-element-taxonomy")]
+      (is (some? text))
+      (is (.startsWith text "# UI element taxonomy")))))
+
+(deftest the-taxonomy-rides-every-build-family-skill
+  (doseq [skill ["penpot-build-screen" "penpot-build-from-code" "penpot-migrate"]]
+    (is (contains? (ask/skill-references skill) "ui-element-taxonomy") skill)))
+
+(deftest an-unknown-reference-returns-nil
+  (is (nil? (ask/skill-reference "penpot-build-screen" "99-nope")))
+  (is (nil? (ask/skill-reference "no-such-skill" "01-discovery"))))
+
+(deftest the-manifest-lists-references
+  (testing "a named fetch names its references so the second fetch is not a guess"
+    (let [entry (ask/catalog-manifest {} "penpot-build-screen")]
+      (is (some #{"03-layout-composition"} (:references entry)))
+      (is (some #{"ui-element-taxonomy"} (:references entry))))))

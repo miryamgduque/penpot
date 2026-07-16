@@ -564,6 +564,14 @@
 
 (def ^:private max-rounds 32)
 
+;; Santi, 2026-07-17: the round cap must not interrupt either — a long build
+;; legitimately runs past 32 rounds, and the user has the stop button and the
+;; live meter. Disabled, not removed (same treatment as checkpoint-enabled?):
+;; flip this back on and the cap pauses at the resumable Continue/Stop row
+;; below. With BOTH switches off the only brakes are the user's stop, the
+;; window/payload bounds, and the provider itself.
+(def ^:private round-cap-enabled? false)
+
 ;; The runaway brake: a turn that has run this many tool rounds — or spent this
 ;; much — pauses for the user's go-ahead instead of grinding on. max-rounds
 ;; stays as the hard backstop behind it. Motivated by a real incident: a model
@@ -865,7 +873,7 @@
                ;; the panel could only render as a bare "⏹ Stopped." (the NYT
                ;; session's mystery stops). History ends in tool-results at the
                ;; top of step, so it is valid to resume from as-is.
-               (>= round max-rounds)
+               (and round-cap-enabled? (>= round max-rounds))
                (rx/of {:kind :checkpoint
                        :rounds (+ (:rounds seed 0) round)
                        :usage (add-usage (:usage seed) spent)

@@ -12,8 +12,9 @@
   Two tabs (Chat / Skills). The Chat tab shows a per-file transcript that
   survives navigation and a context chip with the current page + selection;
   the composer appends messages to that transcript. The live agent turn that
-  produces assistant replies is the CLJS port of the `ai-skills` agent (a
-  separate plan). The Skills manager tab is owned by its own story."
+  produces assistant replies is the native agent in
+  `app.main.data.workspace.agent` (a separate plan). The Skills manager tab is
+  owned by its own story."
   (:require-macros [app.main.style :as stl])
   (:require
    [app.common.data :as d]

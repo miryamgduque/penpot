@@ -27,6 +27,7 @@
    [app.common.path-names :as cpn]
    [app.common.types.component :as ctc]
    [app.common.types.components-list :as ctkl]
+   [app.common.types.file :as ctf]
    [app.common.types.container :as ctn]
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
@@ -509,6 +510,36 @@
    {:name "redo_change"
     :description "Re-applies the most recently undone change — the counterpart to undo_change."
     :input-schema {:type "object" :properties {}}}
+
+   {:name "switch_variant"
+    :description
+    (str "Switches a placed variant instance to the member matching a property "
+         "value — \"make this button show its hover state\". This is what variant "
+         "sets are FOR; use it instead of restyling the copy by hand (which "
+         "manufactures override drift). Nearest match if the exact combination "
+         "has no member.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string" :description "the placed instance"}
+                                :property {:type "string" :description "the axis, e.g. State"}
+                                :value {:type "string" :description "e.g. Hover"}}
+                   :required ["shapeId" "property" "value"]}}
+
+   {:name "reset_overrides"
+    :description "Discards a copy's local changes, snapping it back to its main. Use it to undo drift on an instance."
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string"}}
+                   :required ["shapeId"]}}
+
+   {:name "swap_component"
+    :description
+    (str "Replaces a placed instance with a different component, keeping its "
+         "position — swap a filled button for an outline one. For a component "
+         "from a connected library, pass its fileId.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string"}
+                                :componentId {:type "string"}
+                                :fileId {:type "string" :description "only for a connected library's component"}}
+                   :required ["shapeId" "componentId"]}}
 
    {:name "create_from_svg"
     :description
@@ -2429,6 +2460,101 @@
                                      "read_design.")}
                    new-id (assoc :shapeId (dm/str new-id)))))))))
 
+;; --- Drive the copy
+;;
+;; An instance, once placed, was frozen. These three one-event wraps let the
+;; agent switch a copy to another variant (the point of the sets it can build),
+;; reset a drifted copy to its main, or swap it for a different component —
+;; instead of delete + re-instantiate, or restyling by hand into the very
+;; override drift the audit skill hunts. Push-to-main is deliberately OUT
+;; (a shared-asset edit, never auto-fix).
+
+(defn- instance-copy
+  "The shape as a component COPY head (not a main), or nil. Copies are what these
+  tools drive; a main is the component itself."
+  [objects id]
+  (let [shape (get objects id)]
+    (when (and shape (ctc/instance-head? shape) (not (ctc/main-instance? shape)))
+      shape)))
+
+(defn- not-a-copy-msg
+  [tool shape id]
+  (cond
+    (nil? shape) (dm/str tool ": no shape on this page with id " (str id) " — check read_design")
+    (ctc/main-instance? shape) (dm/str tool ": " (shape-label shape) " is a component MAIN, not a"
+                                       " copy — these drive a placed instance; edit the main directly")
+    :else (dm/str tool ": " (shape-label shape) " is not a component instance — place one with"
+                  " create_instance first")))
+
+(defn- switch-variant
+  [{:keys [shapeId property value]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        libs    (dsh/lookup-libraries state)
+        id      (some-> shapeId parse-uuid)
+        copy    (instance-copy objects id)
+        comp    (when copy (ctf/get-component libs (:component-file copy) (:component-id copy)))
+        props   (when comp (:variant-properties comp))
+        pos     (when props (first (keep-indexed (fn [i p] (when (= (:name p) property) i)) props)))]
+    (cond
+      (nil? copy)
+      (rx/throw (ex-info (not-a-copy-msg "switch_variant" (get objects id) id) {}))
+
+      (not (ctc/is-variant? comp))
+      (rx/throw (ex-info (dm/str "switch_variant: " (shape-label copy) " is not a variant instance"
+                                 " — it belongs to a plain component, not a set") {}))
+
+      (nil? pos)
+      (rx/throw (ex-info (dm/str "switch_variant: no axis named \"" property "\" on this set"
+                                 (when (seq props) (dm/str " (it has: " (str/join ", " (map :name props)) ")"))) {}))
+
+      :else
+      (do
+        (interrupt!)
+        (st/emit! (dwv/variants-switch {:shapes [copy] :pos pos :val value}))
+        (rx/of {:note (str "switched — the copy now shows the member with " property
+                           " = " value " (nearest match if that exact combination has no "
+                           "member). Verify with read_design.")})))))
+
+(defn- reset-overrides
+  [{:keys [shapeId]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        id      (some-> shapeId parse-uuid)
+        copy    (instance-copy objects id)]
+    (if (nil? copy)
+      (rx/throw (ex-info (not-a-copy-msg "reset_overrides" (get objects id) id) {}))
+      (do
+        (interrupt!)
+        (st/emit! (dwl/reset-component id))
+        (rx/of {:note "reset — the copy discards its own overrides and matches its main again. Verify with read_design."})))))
+
+(defn- swap-component
+  [{:keys [shapeId componentId fileId]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        libs    (dsh/lookup-libraries state)
+        cur     (:current-file-id state)
+        id      (some-> shapeId parse-uuid)
+        copy    (instance-copy objects id)
+        file-id (or (some-> fileId parse-uuid) cur)
+        new-cid (some-> componentId parse-uuid)
+        target  (when new-cid (get-in libs [file-id :data :components new-cid]))]
+    (cond
+      (nil? copy)
+      (rx/throw (ex-info (not-a-copy-msg "swap_component" (get objects id) id) {}))
+
+      (nil? target)
+      (rx/throw (ex-info (dm/str "swap_component: no component " componentId
+                                 (if fileId (dm/str " in library " fileId) " in this file")
+                                 " — see the components in read_design") {}))
+
+      :else
+      (do
+        (interrupt!)
+        (st/emit! (dwl/component-swap copy file-id new-cid false))
+        (rx/of {:note "swapped — the instance is now the other component, keeping its position. Verify with read_design."})))))
+
 ;; --- Detach
 ;;
 ;; The missing half of Wave 5, and the plan's standing rule pointed at itself:
@@ -3232,6 +3358,9 @@
     "generate_code"      (generate-code input)
     "create_instance"    (create-instance input)
     "create_from_svg"    (create-from-svg input)
+    "switch_variant"     (switch-variant input)
+    "reset_overrides"    (reset-overrides input)
+    "swap_component"     (swap-component input)
     "undo_change"        (undo-change)
     "redo_change"        (redo-change)
     "mask_shapes"        (mask-shapes input)

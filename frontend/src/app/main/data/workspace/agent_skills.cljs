@@ -143,6 +143,16 @@
        (keep :model)
        (first)))
 
+(def rule->skill
+  "`rule → {:name :label}` for the Observer skill that owns each watched rule —
+  drives the notification headline (issue #37): a rule's flags are surfaced under
+  the skill that watches for them. Built from the catalog's `:rule` declarations."
+  (into {}
+        (for [group catalog
+              skill (:skills group)
+              :when (:rule skill)]
+          [(:rule skill) {:name (:name skill) :label (:label skill)}])))
+
 (def reactive-label
   "The human label for a skill's reactive behavior (US #14): On-call acts only
   when invoked; Observer keeps ambient awareness and notifies in the panel."

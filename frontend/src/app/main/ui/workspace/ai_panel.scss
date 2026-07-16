@@ -243,154 +243,248 @@
   overflow: hidden;
 }
 
-// --- Affected strip (auto-fix watcher)
+// --- Observer notifications (issue #37)
 // A fixed-height sibling ABOVE .transcript-wrap — never part of the scroll
-// area, so it cannot re-trigger the min-height:0 grid overflow bug. The
-// expanded detail gets its own bounded scroll instead.
+// area, so it cannot re-trigger the min-height:0 grid overflow bug. Each card's
+// expanded groups get their own bounded scroll instead. The look is a calm,
+// neutral toast-style card (no coloured tint); accent lands only on actions.
 
-.affected-strip {
+.observer-list {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8 var(--sp-m);
   border-block-end: deprecated.$s-1 solid var(--color-background-tertiary);
-  background-color: var(--color-background-secondary);
 }
 
-.affected-row {
+.observer-card {
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  overflow: hidden;
+}
+
+.observer-header {
+  display: flex;
+  gap: deprecated.$s-8;
+  align-items: center;
+  inline-size: 100%;
+  padding: deprecated.$s-8;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: start;
+}
+
+// Soft neutral square holding the eye — ties the card to Observer behavior
+// without shouting like the old amber bolt did.
+.observer-eye {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-6;
-  padding-inline-end: var(--sp-m);
+  justify-content: center;
+  flex-shrink: 0;
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+  border-radius: deprecated.$br-6;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
 }
 
-.affected-fix {
+.observer-headline-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.observer-headline {
+  @include scaled-title-small;
+
+  overflow: hidden;
+  color: var(--color-foreground-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.observer-summary {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+.observer-chevron {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--color-foreground-secondary);
+  transition: transform 0.15s ease;
+}
+
+.observer-chevron-open {
+  transform: rotate(180deg);
+}
+
+.observer-groups {
+  @extend %new-scrollbar;
+
+  max-block-size: deprecated.$s-248;
+  overflow-y: auto;
+  padding: 0 deprecated.$s-8;
+}
+
+.observer-group {
+  padding-block: deprecated.$s-4 deprecated.$s-8;
+
+  & + & {
+    border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+  }
+}
+
+.observer-group-head {
+  display: flex;
+  gap: deprecated.$s-6;
+  align-items: center;
+  padding-block: deprecated.$s-6;
+}
+
+.observer-group-label {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.observer-group-count {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+// A quiet accent text action — apply just this rule's fixes.
+.observer-group-fix {
+  @include scaled-body-small;
+
+  margin-inline-start: auto;
+  padding: 0 deprecated.$s-4;
+  border: none;
+  background: none;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.observer-rows {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// A flagged layer: reads as its own clickable surface (border + padding + a
+// jump affordance) so it's clearly "locate", distinct from Fix and Dismiss.
+.observer-row {
+  display: flex;
+  gap: deprecated.$s-8;
+  align-items: center;
+  inline-size: 100%;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-6;
+  background: none;
+  cursor: pointer;
+  text-align: start;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+.observer-swatch {
+  flex-shrink: 0;
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
+  border-radius: deprecated.$br-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+// No colour to show (e.g. layer naming): a neutral checker-ish marker.
+.observer-swatch-neutral {
+  background-color: var(--color-background-quaternary);
+}
+
+.observer-row-name {
+  @include scaled-body-small;
+
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--color-foreground-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.observer-semantic {
+  color: var(--color-accent-primary);
+}
+
+.observer-showmore {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-4 0 0;
+  border: none;
+  background: none;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.observer-footer {
+  display: flex;
+  gap: deprecated.$s-12;
+  align-items: center;
+  justify-content: flex-end;
+  padding: deprecated.$s-8;
+  border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+}
+
+// Muted, low-emphasis — clearly secondary to Fix all.
+.observer-dismiss {
+  @include scaled-body-small;
+
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+}
+
+// Primary action: solid accent.
+.observer-fixall {
   @include scaled-body-small;
 
   flex-shrink: 0;
-  padding: deprecated.$s-2 deprecated.$s-8;
+  padding: deprecated.$s-4 deprecated.$s-12;
   border: none;
-  border-radius: deprecated.$br-4;
+  border-radius: deprecated.$br-6;
   background-color: var(--color-accent-primary);
-  color: var(--color-background-secondary);
+  color: var(--color-background-primary);
   cursor: pointer;
 
   &:hover {
     background-color: var(--color-accent-primary-muted);
     color: var(--color-foreground-primary);
   }
-}
-
-.affected-group-fix {
-  @include scaled-body-small;
-
-  margin-inline-start: auto;
-  padding: 0 deprecated.$s-6;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-4;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    color: var(--color-accent-primary);
-    border-color: var(--color-accent-primary);
-  }
-}
-
-.affected-summary {
-  @include scaled-body-small;
-
-  display: flex;
-  gap: deprecated.$s-6;
-  align-items: center;
-  inline-size: 100%;
-  padding: deprecated.$s-8 var(--sp-m);
-  border: none;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-  text-align: start;
-
-  &:hover {
-    color: var(--color-foreground-primary);
-  }
-}
-
-.affected-bolt {
-  color: var(--color-accent-warning);
-}
-
-.affected-text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.affected-chevron {
-  color: var(--color-foreground-secondary);
-}
-
-.affected-detail {
-  @extend %new-scrollbar;
-
-  max-block-size: deprecated.$s-200;
-  overflow-y: auto;
-  padding: 0 var(--sp-m) deprecated.$s-8;
-}
-
-.affected-group {
-  padding-block-start: deprecated.$s-4;
-}
-
-.affected-group-head {
-  @include scaled-body-small;
-
-  display: flex;
-  gap: deprecated.$s-6;
-  align-items: center;
-  color: var(--color-foreground-primary);
-}
-
-.affected-group-count {
-  @include scaled-body-small;
-
-  padding: 0 deprecated.$s-6;
-  border-radius: deprecated.$br-4;
-  background-color: var(--color-background-quaternary);
-  color: var(--color-foreground-secondary);
-}
-
-.affected-shapes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: deprecated.$s-4;
-  margin: deprecated.$s-4 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.affected-shape {
-  @include scaled-body-small;
-
-  padding: 0 deprecated.$s-6;
-  border: none;
-  border-radius: deprecated.$br-4;
-  background-color: var(--color-background-tertiary);
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    background-color: var(--color-background-quaternary);
-    color: var(--color-foreground-primary);
-  }
-}
-
-.affected-more {
-  @include scaled-body-small;
-
-  color: var(--color-foreground-secondary);
-}
-
-.affected-semantic {
-  color: var(--color-accent-primary);
 }
 
 // A Fix-it-now parked behind the running turn.

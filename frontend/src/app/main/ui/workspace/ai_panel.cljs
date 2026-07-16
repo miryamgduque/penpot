@@ -600,56 +600,156 @@
                          :on-click scroll-to-end
                          :icon i/arrow-down}])]))
 
-;; --- Affected strip (auto-fix watcher)
+;; --- Observer notifications (issue #37)
 ;;
-;; Surfaces the live violations set kept by the data-layer watcher
-;; (`dwaip/start-watcher`): a one-line summary between the context chip and
-;; the transcript, expandable into a per-rule breakdown. Zero violations
-;; renders nothing at all — the strip is presence, not chrome.
+;; The concrete surface of the "Observer" reactive behavior (US #14): while the
+;; panel is open, the data-layer watcher (`dwaip/start-watcher`) keeps a live
+;; violation set, and each affected Observer skill surfaces one calm card here,
+;; between the context chip and the transcript. A card names its skill, folds a
+;; per-rule breakdown open, and lists the flagged layers as rows you can jump to.
+;; Zero violations — or a dismissed set that hasn't changed — renders nothing.
 
 (def ^:private rule-labels
   {"layer-naming"      "Layer naming"
    "token-only-colors" "Token-only colors"})
 
-(def ^:private max-strip-shapes 8)
+(def ^:private max-row-shapes 3)
 
-(defn- group-violations
-  "violations → [{:rule :label :n :shapes}] — biggest group first, then by
-  rule name so equal counts render stably."
+(defn- parse-swatch
+  "The first hex colour named in a violation `:reason` — token-only-colors spells
+  out the offending raw colours, so a row can show the actual swatch. nil for
+  rules with no colour (layer naming), where the row shows a neutral marker."
+  [reason]
+  (when (string? reason)
+    (re-find #"#[0-9a-fA-F]{3,8}" reason)))
+
+(defn- rule-groups
+  "One skill's violations → [{:rule :label :n :shapes}], biggest group first,
+  then by rule name so equal counts render stably."
   [violations]
   (->> violations
        (group-by :rule)
        (map (fn [[rule vs]]
-              {:rule   rule
-               :label  (get rule-labels rule rule)
-               :n      (count vs)
-               :shapes vs}))
+              {:rule rule :label (get rule-labels rule rule) :n (count vs) :shapes vs}))
        (sort-by (juxt (comp - :n) :rule))
        (vec)))
 
-(defn- strip-summary
-  "\"12 layers need attention · 2 rules\" — layers counted distinct (one shape
-  can violate several rules)."
+(defn- summary-line
+  "\"12 layers need attention · 2 rules\" for one skill's violations — layers
+  counted distinct (a shape can trip several rules)."
   [violations]
   (let [shapes (count (into #{} (map :shapeId) violations))
         rules  (count (into #{} (map :rule) violations))]
     (dm/str shapes (if (= 1 shapes) " layer needs attention · " " layers need attention · ")
             rules (if (= 1 rules) " rule" " rules"))))
 
-(mf/defc affected-strip*
+(defn- observer-cards
+  "Group the live violation set by owning Observer skill → one card model each,
+  biggest first. `:signature` is a stable hash of the skill's exact violation set
+  (rule+shape), so a dismissal can tell 'same findings' from 'new findings'."
+  [violations]
+  (->> violations
+       (group-by (fn [v] (:name (ask/rule->skill (:rule v)))))
+       (map (fn [[skill-name vs]]
+              (let [sk (ask/rule->skill (:rule (first vs)))]
+                {:name      skill-name
+                 :label     (or (:label sk) (get rule-labels (:rule (first vs)) skill-name))
+                 :shapes    vs
+                 :groups    (rule-groups vs)
+                 :summary   (summary-line vs)
+                 :signature (hash (vec (sort (map (juxt :rule :shapeId) vs))))})))
+       (sort-by (comp - count :shapes))
+       (vec)))
+
+(mf/defc observer-card*
+  "One Observer skill's notification (issue #37): a calm neutral card — eye +
+  skill headline + summary + expand chevron, an always-visible Dismiss / Fix all
+  footer, and, when expanded, per-rule groups whose rows jump to the layer on the
+  canvas. `on-fix` takes the violations to fix; `on-dismiss` waves this card off."
+  {::mf/private true}
+  [{:keys [card on-fix on-dismiss on-shape-click]}]
+  (let [{:keys [label shapes groups summary]} card
+        expanded*   (mf/use-state false)
+        expanded?   (deref expanded*)
+        on-toggle   (mf/use-fn #(swap! expanded* not))
+        ;; which rule groups have their full list shown (vs the first few)
+        open-rules* (mf/use-state #{})
+        open-rules  (deref open-rules*)]
+    [:div {:class (stl/css :observer-card)}
+     [:button {:type "button"
+               :class (stl/css :observer-header)
+               :aria-expanded expanded?
+               :on-click on-toggle}
+      [:span {:class (stl/css :observer-eye) :aria-hidden true}
+       [:> i/icon* {:icon-id i/shown}]]
+      [:span {:class (stl/css :observer-headline-wrap)}
+       [:span {:class (stl/css :observer-headline)} label]
+       [:span {:class (stl/css :observer-summary)} summary]]
+      [:span {:class (stl/css-case :observer-chevron true :observer-chevron-open expanded?)
+              :aria-hidden true}
+       [:> i/icon* {:icon-id i/arrow-down}]]]
+
+     (when expanded?
+       [:div {:class (stl/css :observer-groups)}
+        (for [{:keys [rule label n] g-shapes :shapes} groups]
+          (let [open? (contains? open-rules rule)
+                shown (if open? g-shapes (take max-row-shapes g-shapes))]
+            [:div {:key rule :class (stl/css :observer-group)}
+             [:div {:class (stl/css :observer-group-head)}
+              [:span {:class (stl/css :observer-group-label)} label]
+              [:span {:class (stl/css :observer-group-count)} (dm/str "· " n)]
+              [:button {:type "button"
+                        :class (stl/css :observer-group-fix)
+                        :title (dm/str "Fix only the " label " findings")
+                        ;; render-time closure, deliberately: hooks cannot live
+                        ;; inside `for`, and the group list is tiny
+                        :on-click (fn [_] (on-fix g-shapes))}
+               "Fix"]]
+             [:ul {:class (stl/css :observer-rows)}
+              (for [v shown]
+                (let [hex (parse-swatch (:reason v))]
+                  [:li {:key (:shapeId v)}
+                   [:button {:type "button"
+                             :class (stl/css :observer-row)
+                             :title (:reason v)
+                             :data-id (:shapeId v)
+                             :on-click on-shape-click}
+                    [:span {:class (stl/css-case :observer-swatch true
+                                                 :observer-swatch-neutral (nil? hex))
+                            :style (when hex #js {:backgroundColor hex})}]
+                    [:span {:class (stl/css :observer-row-name)}
+                     ;; ✦ = flagged by the semantic tick, not the native scan
+                     (when (:semantic v)
+                       [:span {:aria-hidden true :class (stl/css :observer-semantic)} "✦ "])
+                     (:shapeName v)]]]))
+              (when (and (not open?) (> n max-row-shapes))
+                [:li
+                 [:button {:type "button"
+                           :class (stl/css :observer-showmore)
+                           :on-click (fn [_] (swap! open-rules* conj rule))}
+                  (dm/str "Show " (- n max-row-shapes) " more")]])]]))])
+
+     [:div {:class (stl/css :observer-footer)}
+      [:button {:type "button"
+                :class (stl/css :observer-dismiss)
+                :on-click on-dismiss}
+       "Dismiss"]
+      [:button {:type "button"
+                :class (stl/css :observer-fixall)
+                :title "Ask the agent to fix everything listed, in this conversation"
+                :on-click (fn [_] (on-fix shapes))}
+       "Fix all"]]]))
+
+(mf/defc observer-notifications*
+  "The Observer notification stack (issue #37): one calm card per affected
+  Observer skill, hidden entirely at zero violations or when the user has
+  dismissed the current set."
   {::mf/private true}
   [{:keys [on-fix]}]
   (let [violations (mf/deref refs/ai-panel-violations)
-        expanded*  (mf/use-state false)
-        expanded?  (deref expanded*)
-        on-toggle  (mf/use-fn #(swap! expanded* not))
-
-        on-fix-all (mf/use-fn
-                    (mf/deps on-fix violations)
-                    (fn [] (when on-fix (on-fix violations))))
-
-        ;; click a layer name → select + zoom on canvas, so the strip doubles
-        ;; as navigation to the offending shape
+        dismissed  (mf/deref refs/ai-panel-observer-dismissed)
+        ;; click a layer row → select + zoom on canvas; the card stays open so
+        ;; the user can walk through the flagged layers one after another
         on-shape-click
         (mf/use-fn
          (fn [event]
@@ -657,53 +757,17 @@
                              (dom/get-data "id")
                              (uuid/parse*))]
              (st/emit! (dws/select-shape id)
-                       dwz/zoom-to-selected-shape))))]
-    (when (seq violations)
-      [:div {:class (stl/css :affected-strip)}
-       [:div {:class (stl/css :affected-row)}
-        [:button {:type "button"
-                  :class (stl/css :affected-summary)
-                  :aria-expanded expanded?
-                  :on-click on-toggle}
-         [:span {:aria-hidden true :class (stl/css :affected-bolt)} "⚡"]
-         [:span {:class (stl/css :affected-text)} (strip-summary violations)]
-         [:span {:aria-hidden true :class (stl/css :affected-chevron)}
-          (if expanded? "▾" "▸")]]
-        [:button {:type "button"
-                  :class (stl/css :affected-fix)
-                  :title "Ask the agent to fix everything listed, in this conversation"
-                  :on-click on-fix-all}
-         "✦ Fix it now"]]
-       (when expanded?
-         [:div {:class (stl/css :affected-detail)}
-          (for [{:keys [rule label n shapes]} (group-violations violations)]
-            [:div {:key rule :class (stl/css :affected-group)}
-             [:div {:class (stl/css :affected-group-head)}
-              [:span {:class (stl/css :affected-group-label)} label]
-              [:span {:class (stl/css :affected-group-count)} n]
-              (when on-fix
-                [:button {:type "button"
-                          :class (stl/css :affected-group-fix)
-                          :title (dm/str "Fix only the " label " violations")
-                          ;; render-time closure, deliberately: hooks cannot
-                          ;; live inside `for`, and the list is tiny
-                          :on-click (fn [_] (on-fix shapes))}
-                 "Fix"])]
-             [:ul {:class (stl/css :affected-shapes)}
-              (for [v (take max-strip-shapes shapes)]
-                [:li {:key (:shapeId v)}
-                 [:button {:type "button"
-                           :class (stl/css :affected-shape)
-                           :title (:reason v)
-                           :data-id (:shapeId v)
-                           :on-click on-shape-click}
-                  ;; ✦ = flagged by the semantic tick, not the native scan
-                  (when (:semantic v)
-                    [:span {:aria-hidden true :class (stl/css :affected-semantic)} "✦ "])
-                  (:shapeName v)]])
-              (when (> n max-strip-shapes)
-                [:li {:class (stl/css :affected-more)}
-                 (dm/str "+" (- n max-strip-shapes) " more")])]])])])))
+                       dwz/zoom-to-selected-shape))))
+        cards (->> (observer-cards violations)
+                   (remove (fn [c] (= (get dismissed (:name c)) (:signature c)))))]
+    (when (seq cards)
+      [:div {:class (stl/css :observer-list)}
+       (for [c cards]
+         [:> observer-card* {:key (:name c)
+                             :card c
+                             :on-fix on-fix
+                             :on-shape-click on-shape-click
+                             :on-dismiss (fn [_] (st/emit! (dwaip/dismiss-observer (:name c) (:signature c))))}])])))
 
 (mf/defc chat-tab*
   {::mf/private true}
@@ -1011,7 +1075,7 @@
       [:span {:class (stl/css :context-sep)} "·"]
       [:span {:class (stl/css :context-selection)} (selection-label selected objects)]]
 
-     [:> affected-strip* {:on-fix on-fix}]
+     [:> observer-notifications* {:on-fix on-fix}]
 
      (if (or (seq messages) (some? pending-form))
        [:> transcript* {:messages messages :busy? busy? :form pending-form}]

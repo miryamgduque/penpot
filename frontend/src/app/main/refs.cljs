@@ -335,6 +335,15 @@
                          sem))))
              st/state))
 
+(def ai-panel-observer-dismissed
+  "`{skill-name signature}` of Observer notifications the user waved off
+  (issue #37): a card whose current signature matches its dismissed one stays
+  hidden until the violation set changes."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :observer-dismissed])))
+             st/state))
+
 (def ai-panel-pending-fix
   "A Fix-it-now message queued while a turn was running; drained by the
   panel when the turn ends."

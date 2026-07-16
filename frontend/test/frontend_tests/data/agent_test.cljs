@@ -566,6 +566,52 @@
     (t/is (pos? (count uses)) "something survived the cut")))
 
 ;; ---------------------------------------------------------------------------
+;; The side-context runner (constructible/pure parts).
+;;
+;; run-side-turn is a bounded, READ-ONLY tool loop on a cheap model whose
+;; whole conversation lives outside the main history. The allowlist is a
+;; safety boundary, so it is enforced twice: at construction (a write tool in
+;; the requested set is a code bug — fail fast) and per call (a model naming a
+;; tool it was never offered gets an error result, not an execution).
+;; ---------------------------------------------------------------------------
+
+(t/deftest side-turn-rejects-write-tools-at-construction
+  (t/is (thrown-with-msg? js/Error #"read-only"
+                          (agent/run-side-turn {:model "m" :system "s" :user-text "u"
+                                                :tools ["read_design" "create_shape"]}))))
+
+(t/deftest side-turn-accepts-the-readonly-set
+  (t/testing "constructing with only read tools returns an observable (no throw)"
+    (t/is (some? (agent/run-side-turn {:model "m" :system "s" :user-text "u"
+                                       :tools ["read_design" "find_shapes"
+                                               "audit_file" "get_design_skills"]})))))
+
+(defn- buffered-response
+  [payload]
+  {:status 200 :body (js/JSON.stringify (clj->js payload))})
+
+(t/deftest decode-buffered-round-parses-text-tools-and-usage
+  (let [out (agent/decode-buffered-round
+             (buffered-response
+              {:content [{:type "text" :text "Hel"}
+                         {:type "text" :text "lo"}
+                         {:type "tool_use" :id "c1" :name "read_design" :input {:depth 2}}]
+               :usage {:input_tokens 10 :output_tokens 25
+                       :cache_read_input_tokens 4 :cache_creation_input_tokens 2}}))]
+    (t/is (= "Hello" (:text out)) "text blocks concatenate")
+    (t/is (= [{:id "c1" :name "read_design" :input {:depth 2}}] (:tool-calls out)))
+    (t/is (= {:input-tokens 10 :output-tokens 25 :cache-read-tokens 4
+              :cache-write-tokens 2 :requests 1}
+             (:usage out)))))
+
+(t/deftest decode-buffered-round-throws-on-provider-error
+  (t/is (thrown-with-msg? js/Error #"nope"
+                          (agent/decode-buffered-round
+                           {:status 400
+                            :body (js/JSON.stringify
+                                   (clj->js {:error {:message "nope"}}))}))))
+
+;; ---------------------------------------------------------------------------
 ;; Auto-compaction (the pure halves).
 ;;
 ;; Past a size threshold the history is replaced by [one summary message + the

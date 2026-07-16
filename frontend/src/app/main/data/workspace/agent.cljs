@@ -937,49 +937,144 @@
                   (str "TOOL RESULTS:\n" (str/join "\n" (map :content results))))))
          (str/join "\n\n"))))
 
+;; --- Side turns: a bounded, buffered tool loop outside the main history
+;;
+;; run-turn's little sibling on detect-round's transport: everything a side
+;; turn reads and every intermediate round lives — and dies — in its own
+;; context; only the final text (and summed usage) comes back. This is what
+;; lets exploratory work run on a cheap model without dragging its 20k-char
+;; tool results into the expensive, forever-re-sent main history.
+;;
+;; Buffered (`:ai-agent-round`) rather than SSE on purpose: nobody watches a
+;; side context type, and the buffered command needs no accumulator.
+
+(defn decode-buffered-round
+  "One buffered Anthropic response → `{:text :tool-calls :usage}`. A non-200
+  becomes a thrown ex-info carrying the provider's own message."
+  [{:keys [status body]}]
+  (let [data (js->clj (js/JSON.parse body) :keywordize-keys true)]
+    (when (not= 200 status)
+      (throw (ex-info (or (get-in data [:error :message])
+                          (str "provider status " status))
+                      {:status status})))
+    {:text (->> (:content data)
+                (filter #(= "text" (:type %)))
+                (map :text)
+                (str/join ""))
+     :tool-calls (->> (:content data)
+                      (filter #(= "tool_use" (:type %)))
+                      (mapv (fn [b] {:id (:id b) :name (:name b) :input (:input b)})))
+     :usage (let [u (:usage data)]
+              {:input-tokens (or (:input_tokens u) 0)
+               :output-tokens (or (:output_tokens u) 0)
+               :cache-read-tokens (or (:cache_read_input_tokens u) 0)
+               :cache-write-tokens (or (:cache_creation_input_tokens u) 0)
+               :requests 1})}))
+
+;; The read-only tool surface a side turn may be given. A safety boundary, not
+;; a default: writes from a context the user never watches would bypass the
+;; whole apply-with-review posture, so it is enforced at construction AND per
+;; call (a model can name a tool it was never offered).
+(def side-readonly-tools
+  #{"read_design" "find_shapes" "audit_file" "get_design_skills"})
+
+(defn- side-round-payload
+  [{:keys [model system tools cache? max-tokens]} messages]
+  (js/JSON.stringify
+   (clj->js
+    (cond-> {:model model
+             ;; adaptive-thinking models spend from this same budget before
+             ;; any visible output — too small yields a silent empty reply
+             ;; (learned the hard way on the chat path)
+             :max_tokens max-tokens
+             ;; the system marker pays off ACROSS a side turn's own rounds
+             ;; (seconds apart); the message breakpoint is skipped — a side
+             ;; history never grows big enough to matter
+             :system [(cond-> {:type "text" :text system}
+                        cache? (assoc :cache_control {:type "ephemeral"}))]
+             :messages (encode-anthropic messages)}
+      (seq tools)
+      (assoc :tools (mapv (fn [t] {:name (:name t)
+                                   :description (:description t)
+                                   :input_schema (:input-schema t)})
+                          (filter #(contains? tools (:name %)) at/tool-specs)))))))
+
+(defn- run-side-tool
+  "Executes one side-turn tool call → observable of one canonical result.
+  Images never ride a side result (text digests only, keeps it cheap), and a
+  call outside `allowed` gets an error result rather than an execution."
+  [allowed call]
+  (if-not (contains? allowed (:name call))
+    (rx/of {:id (:id call)
+            :content (str "The tool \"" (:name call) "\" is not available in "
+                          "this read-only context.")
+            :error? true})
+    (->> (at/execute-tool (:name call) (:input call))
+         (rx/map (fn [result]
+                   {:id (:id call)
+                    :content (result->content (dissoc result :images))}))
+         (rx/catch (fn [cause]
+                     (rx/of {:id (:id call)
+                             :content (or (ex-message cause) "tool error")
+                             :error? true}))))))
+
+(defn run-side-turn
+  "A bounded buffered tool loop → observable of ONE `{:text :usage}`: the final
+  round's text and the usage summed across rounds. Anthropic-only by design —
+  side work runs on models we choose, not the panel selection. `tools` must be
+  a subset of `side-readonly-tools`; anything else throws at construction.
+  Provider/HTTP failures surface as stream errors for the caller to handle —
+  background work must never toast the user."
+  [{:keys [provider tools max-rounds]
+    :or {provider "anthropic" max-rounds 8}
+    :as opts}]
+  (let [tools (set tools)
+        opts  (merge {:cache? true :max-tokens 8000} opts {:tools tools})]
+    (when-let [bad (seq (remove side-readonly-tools tools))]
+      (throw (ex-info "side turns are read-only" {:code :side-turn-read-only
+                                                  :hint "side turns are read-only"
+                                                  :tools (vec bad)})))
+    (letfn [(round [messages n spent]
+              (->> (rp/cmd! :ai-agent-round
+                            {:provider provider
+                             :payload (side-round-payload opts messages)})
+                   (rx/map decode-buffered-round)
+                   (rx/mapcat
+                    (fn [{:keys [text tool-calls usage]}]
+                      (let [spent' (add-usage spent usage)]
+                        (if (or (empty? tool-calls) (>= (inc n) max-rounds))
+                          (rx/of {:text text :usage spent'})
+                          (->> (rx/from tool-calls)
+                               (rx/mapcat (partial run-side-tool tools))
+                               (rx/reduce conj [])
+                               (rx/mapcat
+                                (fn [results]
+                                  (round (conj messages
+                                               {:role :assistant :text text :tool-calls tool-calls}
+                                               {:role :tool-results :results results})
+                                         (inc n)
+                                         spent'))))))))))]
+      (round [{:role :user :text (:user-text opts)}] 0 empty-usage))))
+
 ;; --- Semantic detect round (auto-fix watcher tick)
 
 (defn detect-round
-  "One buffered, tool-less provider round for the semantic audit tick.
-  Anthropic-only by design: the tick only fires when it resolves a skill's
-  declared fix model, and those are Anthropic. Returns a stream of one
-  `{:text :usage}`; provider/HTTP failures surface as stream errors for the
-  caller to log and drop — a background tick must never toast the user.
-
-  Buffered (`:ai-agent-round`) rather than SSE on purpose: nobody watches a
-  background tick type, and the buffered command needs no accumulator."
+  "One buffered, tool-less provider round for the semantic audit tick — a
+  one-round side turn. Anthropic-only by design: the tick only fires when it
+  resolves a skill's declared fix model, and those are Anthropic. Returns a
+  stream of one `{:text :usage}`; failures surface as stream errors for the
+  caller to log and drop — a background tick must never toast the user."
   [{:keys [provider model]} system user-text]
-  (let [payload (js/JSON.stringify
-                 (clj->js {:model model
-                           ;; adaptive-thinking models spend from this same
-                           ;; budget before any visible output — too small
-                           ;; yields a silent empty reply (learned the hard
-                           ;; way on the chat path)
-                           :max_tokens 8000
-                           ;; deliberately uncached: ticks are sporadic relative
-                           ;; to the 5-minute cache TTL, so a marker here would
-                           ;; mostly buy 1.25× writes and no reads
-                           :system [{:type "text" :text system}]
-                           :messages [{:role "user"
-                                       :content [{:type "text" :text user-text}]}]}))]
-    (->> (rp/cmd! :ai-agent-round {:provider provider :payload payload})
-         (rx/map
-          (fn [{:keys [status body]}]
-            (let [data (js->clj (js/JSON.parse body) :keywordize-keys true)]
-              (when (not= 200 status)
-                (throw (ex-info (or (get-in data [:error :message])
-                                    (str "provider status " status))
-                                {:status status})))
-              {:text (->> (:content data)
-                          (filter #(= "text" (:type %)))
-                          (map :text)
-                          (str/join ""))
-               :usage (let [u (:usage data)]
-                        {:input-tokens (or (:input_tokens u) 0)
-                         :output-tokens (or (:output_tokens u) 0)
-                         :cache-read-tokens (or (:cache_read_input_tokens u) 0)
-                         :cache-write-tokens (or (:cache_creation_input_tokens u) 0)
-                         :requests 1})}))))))
+  (run-side-turn {:provider provider
+                  :model model
+                  :system system
+                  :user-text user-text
+                  :tools nil
+                  :max-rounds 1
+                  ;; deliberately uncached: ticks are sporadic relative to the
+                  ;; 5-minute cache TTL, so a marker would mostly buy 1.25×
+                  ;; writes and no reads
+                  :cache? false}))
 
 ;; --- Auto-compaction: the summarizer round
 

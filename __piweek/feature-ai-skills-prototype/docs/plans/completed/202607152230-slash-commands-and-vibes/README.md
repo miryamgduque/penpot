@@ -104,7 +104,19 @@ and the preview reviews skipped per phase).
 
 ## Completion Summary
 
-**Completed:** 2026-07-15 (code-complete; live verification pending — see below)
+**Completed:** 2026-07-16 — merged into `feature/ai-skills-prototype` (6c56dda25e) and live-verified in the devenv on Claude (opus-4-8 + haiku-4-5):
+slash menu (open/filter/keyboard-pick/insert-not-send); /vibes end-to-end
+(skill routing → read_design → ONE adaptive ask_user — domain-tuned chips,
+invented light/dark question — → doc written+saved); reference image attached
+through the form and READ by the model (it quoted `#0D1220` off the picture);
+answers-summary bubble with thumbnail; replace-existing-doc path; doc
+persisted across hard reload; vibes view render/edit/save (counter, changes
+pipeline); re-run seeds the composer; cancel-mid-form leaves no zombie;
+update-skill/delete-skill RPC + edit/delete UI round-tripped. Vibes influence
+on output proven (the agent's build followed the stored doc's palette/tone).
+FINDING: haiku-4-5 ignored the skill's "stop at the saved doc" rule and built
+a whole landing page unprompted; opus-4-8 stopped and asked, exactly per the
+playbook — prefer Opus/Sonnet for the demo, or harden the stop rule.
 
 ### What Shipped
 - Slash-command menu in the agent composer: `/` opens a filterable,

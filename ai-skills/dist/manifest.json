@@ -1,0 +1,14 @@
+{
+  "name": "Penpot Skills",
+  "description": "Design intent that lives in the file: layered skills, enforced rules and an embedded chat agent",
+  "code": "plugin.js",
+  "icon": "icon.png",
+  "version": 2,
+  "permissions": [
+    "content:read",
+    "content:write",
+    "library:read",
+    "library:write",
+    "allow:localstorage"
+  ]
+}

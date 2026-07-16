@@ -660,6 +660,47 @@
       (t/is (str/includes? text "ok")))))
 
 ;; ---------------------------------------------------------------------------
+;; Fresh-chat handoff (the pure halves).
+;;
+;; Past `handoff-notice-chars` the panel suggests summarizing into a NEW chat
+;; (the old one stays in the saved list — chat management is per-file now).
+;; Unlike auto-compaction, the summary here covers the WHOLE conversation —
+;; nothing of the old history rides along, so the last turn must be in the
+;; summarizer's transcript, not carried verbatim.
+;; ---------------------------------------------------------------------------
+
+(t/deftest handoff-seed-is-one-flagged-user-message
+  (let [seed (agent/handoff-seed "the summary")]
+    (t/is (= 1 (count seed)))
+    (t/is (= :user (:role (first seed))))
+    (t/is (true? (:compacted? (first seed))))
+    (t/is (str/includes? (:text (first seed)) "the summary"))
+    (t/is (str/includes? (str/lower (:text (first seed))) "earlier conversation")
+          "framed as carried-over context, not as the user's words")))
+
+(t/deftest conversation-transcript-includes-the-last-turn
+  (t/testing "the whole conversation is summarized — compaction-transcript's
+              head-only slice would silently drop the newest work"
+    (let [history [{:role :user :text "first ask"}
+                   {:role :assistant :text "did it" :tool-calls []}
+                   {:role :user :text "newest ask"}
+                   {:role :assistant :text "newest reply" :tool-calls []}]
+          all     (agent/conversation-transcript history)
+          head    (agent/compaction-transcript history)]
+      (t/is (str/includes? all "newest ask"))
+      (t/is (str/includes? all "newest reply"))
+      (t/is (not (str/includes? head "newest ask")) "sanity: the head slice excludes it"))))
+
+(t/deftest handoff-notice-threshold-sits-below-compaction
+  (t/testing "the user gets the choice BEFORE the automatic backstop fires"
+    (t/is (< agent/handoff-notice-chars agent/compact-threshold-chars))))
+
+(t/deftest history-chars-counts-text-and-results
+  (let [history (vec (turn-with-result 0 (apply str (repeat 500 "x"))))]
+    (t/is (> (agent/history-chars history) 500))
+    (t/is (zero? (agent/history-chars [])))))
+
+;; ---------------------------------------------------------------------------
 ;; The runaway brake (checkpoint-due?).
 ;;
 ;; A turn that has run 12 tool rounds — or spent ~$1 — pauses for the user's

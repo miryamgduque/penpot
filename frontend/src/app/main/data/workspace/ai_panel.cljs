@@ -781,3 +781,57 @@
       (rx/of (set-checkpoint nil)
              (append-message "assistant" "⏹ Stopped at the checkpoint.")
              (agent-chats/persist-chat)))))
+
+;; --- Fresh-chat handoff
+;;
+;; Past `agent/handoff-notice-chars` the panel suggests summarizing into a NEW
+;; chat: unlike auto-compaction (silent, in place, a backstop) this is the
+;; user's call and leans on per-file chat management — the old conversation
+;; stays whole in the saved list, and the new one starts from a working-memory
+;; summary of ALL of it.
+
+(defn dismiss-handoff-notice
+  "Waves the suggestion off for this conversation. Cleared with the rest of
+  the conversation-scoped state on new-chat/load-chat, so another long
+  conversation gets its own notice."
+  []
+  (ptk/reify ::dismiss-handoff-notice
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (assoc-in state [:ai-panel file-id :handoff-dismissed] true)
+        state))))
+
+(defn summarize-into-new-chat
+  "The notice's action: persist the current conversation as it stands, run one
+  cheap summarizer round over ALL of it, and start a fresh chat seeded with
+  the summary (`agent/handoff-seed`). Guarded by the UI against running turns.
+  On failure nothing changes but a note — the user must never lose the working
+  conversation to a failed optimization."
+  []
+  (ptk/reify ::summarize-into-new-chat
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [file-id (:current-file-id state)
+            history (vec (dm/get-in state [:ai-panel file-id :history]))]
+        (if (empty? history)
+          (rx/of (agent-chats/new-chat))
+          (rx/concat
+           (rx/of (set-busy true)
+                  ;; the old conversation's last word may be a note appended
+                  ;; after its last turn-boundary save — persist before leaving
+                  (agent-chats/persist-chat))
+           (->> (agent/summarize-history history)
+                (rx/mapcat
+                 (fn [{:keys [text usage]}]
+                   (rx/of (agent-chats/new-chat)
+                          ;; after new-chat: the seed belongs to the NEW
+                          ;; conversation, as does the summary round's spend
+                          (store-history (agent/handoff-seed text))
+                          (append-message "note" "✦ Fresh chat — carrying a summary of the previous conversation (the full version stays in your history)")
+                          (accumulate-usage usage)
+                          (set-busy false))))
+                (rx/catch
+                 (fn [_]
+                   (rx/of (append-message "note" "✦ Couldn't summarize — this conversation was left untouched")
+                          (set-busy false)))))))))))

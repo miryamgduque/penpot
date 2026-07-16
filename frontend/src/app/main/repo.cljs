@@ -262,6 +262,20 @@
          (rx/map http/conditional-decode-transit)
          (rx/mapcat handle-response))))
 
+(defn- decode-blob-error
+  "On a `:blob?` export the body is a Blob, so a transit ERROR body (status
+  >= 400) reaches `handle-response` undecoded and degrades to the generic
+  `:unable-to-process-repository-response`. Read the blob back to text and
+  transit-decode it so the real error code survives. Success bodies (the
+  actual binary) are left untouched."
+  [{:keys [status body] :as response}]
+  (if (and (>= status 400) (http/blob? body))
+    (->> (rx/from (.text ^js body))
+         (rx/map (fn [text]
+                   (assoc response :body
+                          (if (str/blank? text) text (t/decode-str text))))))
+    (rx/of response)))
+
 (defn- send-export
   [{:keys [blob?] :as params}]
   (->> (http/send! {:method :post
@@ -272,6 +286,7 @@
                     :credentials "include"
                     :response-type (if blob? :blob :text)})
        (rx/map http/conditional-decode-transit)
+       (rx/mapcat decode-blob-error)
        (rx/mapcat handle-response)))
 
 (defmethod cmd! :export

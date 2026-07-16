@@ -1,6 +1,6 @@
 # Phase 23 — Draw it in SVG
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; suite+live deferred to merge)
 
 Vector paths are a true blank in the registry: `create_shape` offers rect/ellipse/board, no
 tool can create or edit a path, and `summarize-shape` reports one only as `type: "path"` plus

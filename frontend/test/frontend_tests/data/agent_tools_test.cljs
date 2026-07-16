@@ -19,6 +19,7 @@
   (:require
    [app.common.uuid :as uuid]
    [app.main.data.workspace.agent-tools :as at]
+   [app.main.data.workspace.media :as dwm]
    [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
    [cuerdas.core :as str]))
@@ -1508,6 +1509,16 @@
   (t/is (some? (at/detach-problem {} id-missing))))
 
 ;; ---------------------------------------------------------------------------
+;; --- Phase 23: create_from_svg (the pure gate; the import itself is dwm's)
+
+(t/deftest a-complete-svg-string-passes-the-gate
+  (t/is (dwm/valid-svg-string? "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"4\" height=\"4\"/></svg>")))
+
+(t/deftest garbage-is-not-svg
+  (t/is (not (dwm/valid-svg-string? "not svg")))
+  (t/is (not (dwm/valid-svg-string? "")))
+  (t/is (not (dwm/valid-svg-string? nil))))
+
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

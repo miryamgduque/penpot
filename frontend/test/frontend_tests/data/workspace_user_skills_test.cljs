@@ -65,3 +65,26 @@
     (let [found (ask/find-skill state "tone-of-voice-checker")]
       (is (= "Audits" (:category found)))
       (is (= "Tone of voice checker" (:label found))))))
+
+;; --- penpot-import-brand (external-content plan, phase 08): a native-born
+;; built-in like vibes — body served verbatim, listed in the router.
+
+(deftest import-brand-is-a-native-setup-skill
+  (let [entry (ask/find-skill {} "penpot-import-brand")]
+    (is (= "Setup" (:category entry)))
+    (is (= "on-demand" (:reactive entry)))
+    (is (true? (:enabled entry)))))
+
+(deftest import-brand-body-is-served-verbatim
+  (testing "native-born: no aikit 'written for another surface' preamble"
+    (let [b (ask/skill-body {} "penpot-import-brand")]
+      (is (string? b))
+      (is (not (re-find #"How to read this playbook" b)))
+      (is (re-find #"THE STOP IS HARD" b))
+      (is (re-find #"get_page_meta" b))
+      (is (re-find #"screenshot_page" b))
+      (is (re-find #"insert_image" b)))))
+
+(deftest import-brand-flows-through-the-router
+  (is (contains? (set (map :name (ask/catalog-manifest {})))
+                 "penpot-import-brand")))

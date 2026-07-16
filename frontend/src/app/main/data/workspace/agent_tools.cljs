@@ -339,6 +339,18 @@
                                 :fullPage {:type "boolean" :description "capture beyond the first viewport"}}
                    :required ["url"]}}
 
+   {:name "get_page_meta"
+    :description
+    (str "Fetches ONLY a page's structured metadata — title, description, "
+         "og:image, favicon and theme-color, with image URLs resolved "
+         "absolute. No page text, no side model: the cheap first call for "
+         "brand work. Feed the favicon/og:image URL to insert_image and the "
+         "theme-color into a proposed token; use fetch_page for content "
+         "questions and screenshot_page for the visual.")
+    :input-schema {:type "object"
+                   :properties {:url {:type "string" :description "absolute http(s) URL"}}
+                   :required ["url"]}}
+
    {:name "modify_shape"
     :description
     (str "Modifies an existing shape: rename, move (x/y), resize (width/height), "
@@ -3347,12 +3359,14 @@
    "the url is not an html or plain-text page"})
 
 (defn fetch-page-error-message
-  "One-line agent-facing message for a page-fetch failure. Public for tests."
-  [code]
-  (str "fetch_page: "
-       (or (get fetch-page-error-hints code)
-           (str "the fetch failed" (when code (str " (" (name code) ")"))))
-       "."))
+  "One-line agent-facing message for a page-fetch failure, prefixed with the
+  tool that surfaced it. Public for tests."
+  ([code] (fetch-page-error-message "fetch_page" code))
+  ([tool code]
+   (str tool ": "
+        (or (get fetch-page-error-hints code)
+            (str "the fetch failed" (when code (str " (" (name code) ")"))))
+        ".")))
 
 (defn- fetch-page
   [{:keys [url question]}]
@@ -3399,6 +3413,33 @@
                       {:digest (cap-digest text)
                        :title title
                        :truncated (boolean truncated)})))))))))
+
+;; --- get_page_meta
+;;
+;; The structured slice of the phase-04 RPC, without the side-turn toll:
+;; metadata is parsed fields (URLs, a hex, a title), not free-running prose,
+;; so it doesn't warrant the digest containment fetch_page pays for. The page
+;; TEXT still never enters the main conversation through this tool — it is
+;; dropped server-side of the result map.
+
+(defn- get-page-meta
+  [{:keys [url]}]
+  (if-not (and (string? url) (re-matches http-url-re url))
+    (rx/throw (ex-info (str "get_page_meta: url must be an absolute http(s) "
+                            "URL, e.g. https://example.com")
+                       {}))
+    (->> (rp/cmd! :fetch-web-page {:url url})
+         (rx/map
+          (fn [{:keys [title meta]}]
+            {:title title
+             :meta meta
+             :note (str "metadata only — fetch_page answers content "
+                        "questions, screenshot_page shows the visual")}))
+         (rx/catch
+          (fn [cause]
+            (rx/throw (ex-info (fetch-page-error-message
+                                "get_page_meta" (:code (ex-data cause)))
+                               {:cause-hint (ex-message cause)})))))))
 
 ;; --- screenshot_page
 ;;
@@ -3484,6 +3525,7 @@
     "get_design_skills"  (get-design-skills input)
     "explore_design"     (explore-design input)
     "fetch_page"         (fetch-page input)
+    "get_page_meta"      (get-page-meta input)
     "screenshot_page"    (screenshot-page input)
     "ask_user"           (ask-user input)
     "set_design_doc"     (set-design-doc input)

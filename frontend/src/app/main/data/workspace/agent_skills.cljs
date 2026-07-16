@@ -67,6 +67,30 @@
              "- The doc is a contract, not a mood board: every future design task in this file follows it, so write it concrete enough to constrain real choices."
              "- Do not start designing screens in this task; end at the saved doc + summary."]))
 
+;; import-brand is the composition proof for the external-content tools
+;; (get_page_meta + screenshot_page + insert_image + the token tools): if the
+;; playbook needs machinery these primitives don't cover, that is a finding
+;; about the primitives. Native-born like vibes — served verbatim. The stop
+;; rule is numbered and hard because the vibes rollout showed weak stop rules
+;; get ignored by cheaper models (a haiku run built a full landing page
+;; unprompted).
+(def ^:private import-brand-body
+  (str/join "\n"
+            ["Import a brand from a website into this file: proposed color tokens, logo imagery, and a visual reference board — nothing touches existing shapes."
+             ""
+             "## Method"
+             ""
+             "1. **Read the brand surface.** Call `get_page_meta` on the URL (title, description, theme-color, favicon, og:image). Then `screenshot_page` for the visual; add `fullPage: true` only if the first viewport looked empty."
+             "2. **Extract the palette FROM THE SCREENSHOT** — 3–6 colors that carry the brand: primary action, accent, background, text. Cross-check against the theme-color meta. Name only what you can see; if you cannot see images on this model, say so and work from theme-color plus fetch_page questions instead of guessing."
+             "3. **Propose, then STOP.** Present a short table — role, hex, where you saw it — plus which imagery you would import (favicon / og:image) and the token names you intend (`color.brand.primary`, `color.brand.accent`, `color.bg.default`, `color.text.default`, in a set named `brand`). Ask whether a brand guide exists with the real values. END YOUR TURN HERE and wait."
+             "4. **On approval only:** create the token set and tokens (create_token_set / create_token), then build one \"Brand reference\" board: the logo via insert_image (favicon or og:image URL), labeled color swatches (create_shape + apply_tokens binding the NEW tokens — never raw hexes; token-only-colors rejects the shortcut anyway), and the site title as text."
+             "5. **Confirm** in 2–3 sentences: what was created, where the reference board sits, and the natural next step (applying brand tokens to existing screens is a separate task the user asks for)."
+             ""
+             "## Rules"
+             "- Rule 1 — THE STOP IS HARD: no token, shape or image is created before the step-3 approval. The proposal is the end of that turn."
+             "- Extracted colors are proposals, not facts — offer to correct them against a real brand guide."
+             "- Do not restyle or retoken any existing shape in this task, even if asked to \"import the brand\" — applying it is its own task with its own review."]))
+
 ;; Grouped by category in display order; the dispatch router and the shared/core
 ;; house-rule docs are intentionally excluded. Every built-in skill ships
 ;; enabled (US #8 — the story is about removing what you don't want, so the
@@ -80,7 +104,12 @@
               :blurb "Interview → a design.md the agent designs against" :reactive "on-demand" :enabled true
               :example "Set the design vibes for this project."
               :what "Runs a short kickoff interview as an in-chat form (what to design first, platform, vibe words, audience…) and distills the answers into a design.md stored on this file. The agent then honors it in every design task, and collaborators share it."
-              :body vibes-body}]}
+              :body vibes-body}
+             {:name "penpot-import-brand" :label "Import brand from URL"
+              :blurb "Website → proposed color tokens + logo + reference board" :reactive "on-demand" :enabled true
+              :example "Import the brand from acme.com."
+              :what "Reads a website's metadata and a screenshot, proposes a brand palette and token names for approval, and only then creates the tokens plus a reference board with the logo and labeled swatches. Existing shapes are never touched."
+              :body import-brand-body}]}
    {:category "Audits"
     :skills [{:name "penpot-audit-accessibility" :label "Accessibility audit"
               :blurb "WCAG 2.1/2.2 AA checks" :reactive "on-demand" :enabled true

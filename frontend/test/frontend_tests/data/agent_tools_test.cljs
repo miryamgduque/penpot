@@ -1834,3 +1834,17 @@
   (t/is (str/includes? (at/screenshot-error-message :unable-to-load-page) "loaded"))
   (t/is (str/includes? (at/screenshot-error-message :timeout) "busy"))
   (t/is (str/includes? (at/screenshot-error-message :odd-code) "odd-code")))
+
+;; ---------------------------------------------------------------------------
+;; get_page_meta — validation and error prefixing
+;; ---------------------------------------------------------------------------
+
+(t/deftest get-page-meta-needs-a-url
+  (t/is (str/includes? (tool-error "get_page_meta" {}) "http")))
+
+(t/deftest fetch-errors-carry-the-surfacing-tool-prefix
+  (t/testing "the same backend failure reads as the tool the agent actually called"
+    (t/is (str/starts-with? (at/fetch-page-error-message "get_page_meta" :ssrf-blocked-target)
+                            "get_page_meta:"))
+    (t/is (str/starts-with? (at/fetch-page-error-message :ssrf-blocked-target)
+                            "fetch_page:"))))

@@ -50,13 +50,53 @@ non-findings below):
 | Token sets + themes (dark mode) | foundations' whole method: `modes/light`/`modes/dark` + `addTheme` (`theme` ×16, `dark` ×15) | `create_token` targets the library's *first* set, always | 20 |
 | Detach instance | `detach()` ×5, always governance-wrapped; our own rejections say "detach the copy first" | **none** — we recommend a tool that doesn't exist | 21 |
 | Grid layout | "flex/**grid** Board" is the skills' prescribed alternative to x/y; `addGridLayout` ×1 | `set_layout` is flex-only | 22 |
+| Vectors: icons via SVG import | `icon` in the naming taxonomy + severity rubrics; today an icon is faked from rects | **none** — no path create, edit or read | 23 |
+| Undo/redo own edits | recovery asymmetry: `delete_shape` covers creations only; our results tell the user "⌘Z" for what the agent broke | **none** — a bad `modify_shape` is unrecoverable | 24 |
+| Mask / unmask | zero corpus demand — added by request; natural demand (clipped images, avatar crops) arrives with Phase 17 | **none** — `group_shapes` makes only plain groups | 25 |
 
 Checked and deliberately **not** phases — the counts collapse on reading context:
 prototyping/interactions (every `flow` is "workflow"/"reflow"), component swap (every `swap`
 is a *token* swap — noted in Phase 21 as a sibling if demand appears), boolean ops, pages,
 rotation/flip, and z-order (`nest_shape`'s `index` already covers it, and layout order is
 append order). Stroke depth (width/style/alignment) has near-zero mentions; if it surfaces,
-it belongs in Phase 14's widening, not its own phase.
+it belongs in Phase 14's widening, not its own phase. Point-level **path editing** is also
+out: demand is zero (every playbook `path` is prose), and the internals are an interactive
+editor state machine with no headless entry — Phase 23 covers the icon need through the
+shipped SVG-import pipeline instead. **Mask/unmask** started in this list for the same
+zero-demand reason, then moved to Phase 25 by explicit request — the honest accounting is in
+that phase's own header.
+
+### Third sweep (2026-07-16) — supply side
+
+The first two sweeps asked *what do the skills demand*; this one asked *what can the
+application do* — the full plugin-API surface and the workspace event layer, cataloged and
+diffed against the registry (24 tools by now) and phases 20–25. The mask/undo lesson applied
+systematically. Three findings became phases:
+
+| Capability | Why it matters | Internals | Phase |
+|---|---|---|---|
+| Hide / lock, read AND write | a hidden shape currently reads as visible — the agent reasons about shapes that aren't on screen; locked shapes aren't respected by any tool | `update-shape-flags` (shapes.cljs:444) | 26 |
+| Drive a placed copy: switch variant, reset overrides, swap | **an instance, once placed, is frozen** — the sets Wave 1 builds cannot be switched on the instances Wave 5 places; push-to-main deliberately excluded ("shared-asset edit, never auto-fix") | `dwv/variants-switch`, `dwl/reset-component` (:843), `dwl/component-swap` (:1044) | 27 |
+| Version snapshots | gotcha #12's defense ("duplicate the file first") made real; pairs with Phase 24 — undo covers the last step, a snapshot covers the next hundred; restore deliberately excluded | `create-version-from-plugins` (versions.cljs:343), purpose-built headless | 28 |
+
+This supersedes two second-sweep judgments: *component swap* was dismissed because every
+playbook "swap" is a token swap — true, but the frozen-instance framing (switch/reset/swap as
+one capability) is demand the tally couldn't see. *Z-order "covered by nest_shape"* still
+holds for reordering, but the hidden/locked read gap sat in the same "layer state" territory
+and was real.
+
+Four more were borderline — reachable, zero corpus demand — and became phases 29–32 by
+explicit decision (rotation/flip/stroke depth; comments; pages; booleans), each carrying that
+accounting in its header.
+
+Cataloged and still **not** phases, with reasons: interactions/prototyping and flows (full
+API exists, zero corpus demand — the biggest deliberate omission; revisit if a prototyping
+skill is ever imported); align/distribute (flex layout is the plan's answer to arrangement);
+viewport/zoom and set-selection (presentation, not file content); ruler guides, page
+background, `clipContent`, plugin-data storage, library publish/link/sync, clipboard,
+`replaceColor` (bulk raw-color swaps fight token governance — `apply_tokens` + `audit_file`
+is the governed path), library color/typography asset CRUD (tokens are this plan's asset
+layer), stroke caps/alignment, `backgroundBlur`, event listeners, binary file export.
 
 Three patterns explain the transcript better than any single missing tool does:
 
@@ -117,15 +157,21 @@ and get fleshed out at their Before Start rather than guessed at now.
 
 11. [Phase 11 — Undo the agent's own mess](./done-phase-11-delete-and-duplicate.md) — `delete_shape`, `duplicate_shape`
 12. [Phase 12 — Group and ungroup](./done-phase-12-group-and-ungroup.md) — `group_shapes`, `ungroup_shapes`
+24. [Phase 24 — Take it back](./todo-phase-24-take-it-back.md) — `undo_change`/`redo_change` over the ⌘Z events; the phase is the ownership guard (never undo the *user's* edit), not the emit
+25. [Phase 25 — Mask and unmask](./todo-phase-25-mask-and-unmask.md) — `mask_shapes`/`unmask_shapes`, clipping to any shape; the mask-child-by-order rule is the UX, and both events filter silently (Phase 12's sibling)
+26. [Phase 26 — Hide and lock](./todo-phase-26-hide-and-lock.md) — the flags on `modify_shape` + `read_design`; the real content is the lock-respect decision, which touches every mutating tool
+28. [Phase 28 — Save a version](./todo-phase-28-save-a-version.md) — `save_version` over the purpose-built headless snapshot event; gotcha #12's "duplicate the file first" made real (restore stays the user's move)
 
 ### Wave 5 — Components as a system
 
 13. [Phase 13 — Place a component](./done-phase-13-place-a-component.md) — `create_instance`, so a built library is no longer write-only
 21. [Phase 21 — Detach an instance](./todo-phase-21-detach-an-instance.md) — `detach_instance`, the move our own rejection messages already recommend; the guards (never a variant member) are the phase
+27. [Phase 27 — Drive the copy](./todo-phase-27-drive-the-copy.md) — `switch_variant` / `reset_overrides` / `swap_component`: a placed instance stops being frozen, and Waves 1 + 5 finally compose
 
 ### Wave 6 — Styling depth
 
-14. [Phase 14 — Radius, shadow, opacity](./todo-phase-14-radius-shadow-opacity.md) — widen `modify_shape` past fill/stroke
+14. [Phase 14 — Radius, shadow, opacity](./done-phase-14-radius-shadow-opacity.md) — widen `modify_shape` past fill/stroke
+29. [Phase 29 — Turn, mirror, stroke](./todo-phase-29-turn-mirror-stroke.md) — rotation, flip and stroke width/style, write AND read: the last attrs invisible to replicate-accurately
 
 > Export / render (55 mentions, 13 of 15 skills — the widest-reaching gap by skill count) is
 > **not** a phase here. It is [agent-vision Phase 06](../completed/202607150027-agent-vision/done-phase-06-render-board-tool.md).
@@ -133,11 +179,11 @@ and get fleshed out at their Before Start rather than guessed at now.
 
 ### Wave 7 — Seeing the file
 
-15. [Phase 15 — Deeper than top level](./todo-phase-15-deeper-than-top-level.md) — `read_design` walks nested shapes; `find_shapes` queries them
+15. [Phase 15 — Deeper than top level](./done-phase-15-deeper-than-top-level.md) — `read_design` walks nested shapes; `find_shapes` queries them
 
 ### Wave 8 — Handoff
 
-16. [Phase 16 — Markup and style](./todo-phase-16-markup-and-style.md) — `generate_markup` / `generate_style`, the whole method of `penpot-design-to-code-review`
+16. [Phase 16 — Markup and style](./done-phase-16-markup-and-style.md) — `generate_markup` / `generate_style`, the whole method of `penpot-design-to-code-review`
 
 ### Wave 9 — Reading a shape's look (the replicate gap)
 
@@ -149,12 +195,12 @@ returns geometry only — no fills, no effects. This is the **read/inspect** sid
 (Phase 14) *writes* radius/shadow/opacity, Wave 7 (Phase 15) reads *depth* — neither surfaces a
 shape's paint or effects for the model to copy, and image fills are unreachable entirely.
 
-17. [Phase 17 — Inspect fills and image content](./todo-phase-17-inspect-fill-and-image.md) — `read_design` reports each shape's fills (solid / gradient / **image** with its ref); image-fill write is scope-gated
-18. [Phase 18 — Inspect effects and filters](./todo-phase-18-inspect-effects-and-filters.md) — `read_design` reports present shadow / blur / opacity / radius, mirroring Phase 14's write params so read → copy → write is a straight path
+17. [Phase 17 — Inspect fills and image content](./done-phase-17-inspect-fill-and-image.md) — `read_design` reports each shape's fills (solid / gradient / **image** with its ref); image-fill write is scope-gated
+18. [Phase 18 — Inspect effects and filters](./done-phase-18-inspect-effects-and-filters.md) — `read_design` reports present shadow / blur / opacity / radius, mirroring Phase 14's write params so read → copy → write is a straight path
 
 ### Wave 10 — Text (from the second sweep)
 
-19. [Phase 19 — Edit the words](./todo-phase-19-edit-the-words.md) — `set_text` + a widened `create_text`: content and typography (size, family, weight, align), so a heading can be a heading
+19. [Phase 19 — Edit the words](./done-phase-19-edit-the-words.md) — `set_text` + a widened `create_text`: content and typography (size, family, weight, align), so a heading can be a heading
 
 ### Wave 11 — Sets and themes (dark mode)
 
@@ -163,6 +209,19 @@ shape's paint or effects for the model to copy, and image fills are unreachable 
 ### Wave 12 — Grid layout
 
 22. [Phase 22 — Grid layout](./todo-phase-22-grid-layout.md) — `set_layout` learns grid tracks; the smaller half of Wave 2's escape from absolute positioning
+
+### Wave 13 — Vectors, without the vector editor
+
+23. [Phase 23 — Draw it in SVG](./todo-phase-23-draw-it-in-svg.md) — `create_from_svg` over the shipped import pipeline: icons the model draws, paths it never point-edits
+32. [Phase 32 — Cut and combine](./todo-phase-32-cut-and-combine.md) — `boolean_shapes` (union/difference/intersection/exclusion); ungroup can already dissolve a bool the registry cannot begin
+
+### Wave 14 — Collaboration
+
+30. [Phase 30 — Leave a note](./todo-phase-30-leave-a-note.md) — positioned comment threads for review findings; the plan's first outward-facing tool, so attribution is the governance
+
+### Wave 15 — Pages
+
+31. [Phase 31 — Another page](./todo-phase-31-another-page.md) — create/rename/duplicate pages + a page list in `read_design`; switching is navigation and gets decided, not assumed
 
 ## Sequencing notes
 
@@ -178,11 +237,21 @@ shape's paint or effects for the model to copy, and image fills are unreachable 
   board is exactly the mistake that wants a delete.
 - **Waves 5–8 are ranked but not scheduled.** Re-read the demand table before starting one — the
   tally is a snapshot of the current aikit import and can move.
-- **Of the second-sweep waves (10–12), text first.** Phase 19 blocks every screen-building
+- **Of the second-sweep waves (10–13), text first.** Phase 19 blocks every screen-building
   skill in a way the model cannot route around (there is no workaround for "all text is the
   same size"); Phase 20 unlocks one skill's headline feature; Phase 21 is small and
-  policy-shaped, and closes rejection messages that currently point at a missing tool; Phase 22
-  waits for demand. None depend on each other.
+  policy-shaped, and closes rejection messages that currently point at a missing tool; Phases
+  22 and 23 wait for demand — 23 is near-free (a passthrough to a shipped pipeline) and may
+  jump the queue the first time a demo wants an icon. None depend on each other.
+- **Of the third-sweep phases, 27 first, then 28, then 26.** Phase 27 is the one users will
+  hit ("show me the hover state" is unanswerable today); 28 is tiny and should land before any
+  variant-heavy session (it is the gotcha-#12 insurance); 26's lock-respect decision, like 24's
+  ownership plumbing, touches every mutating tool and gets dearer the longer it waits.
+- **Phase 24 (undo) is Wave 4's missing half and rises with tool volume.** The more mutating
+  tools ship, the more often the agent needs to take an edit back — pull it forward the first
+  time a session leaves a wrong fill it cannot revert. Its ownership plumbing (tagging or
+  watermarking agent edits) touches every mutating tool, so landing it *before* Waves 10–13
+  add five more of them is cheaper than after.
 
 ## Acceptance Criteria
 

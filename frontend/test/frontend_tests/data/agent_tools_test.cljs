@@ -19,6 +19,7 @@
   (:require
    [app.common.uuid :as uuid]
    [app.main.data.workspace.agent-tools :as at]
+   [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
    [cuerdas.core :as str]))
 
@@ -1521,3 +1522,69 @@
 (t/deftest unparseable-ids-are-dropped-not-crashed
   (let [ids (at/variant-member-ids ["not-a-uuid"])]
     (t/is (= [] ids))))
+
+;; ---------------------------------------------------------------------------
+;; explore_design (the scout tool)
+;;
+;; Delegates broad READING to a side context and returns one digest. What is
+;; pinned here: input validation names the fix, a missing runner degrades to a
+;; readable error (the tool description tells the model to read directly), the
+;; digest is bounded, and the runner is invoked with the read-only tool set.
+;; The runner itself is agent/run-side-turn, tested in agent-test.
+;; ---------------------------------------------------------------------------
+
+(defn- with-stub-runner
+  "Runs `f` with the side-turn runner stubbed to `runner`, restoring after."
+  [runner f]
+  (let [prev (at/registered-side-turn-runner)]
+    (at/register-side-turn-runner! runner)
+    (try (f) (finally (at/register-side-turn-runner! prev)))))
+
+(defn- tool-error
+  "Executes a tool expected to FAIL synchronously → its error message."
+  [name input]
+  (let [out (atom nil)]
+    (rx/subs! (fn [_]) #(reset! out (ex-message %)) (constantly nil)
+              (at/execute-tool name input))
+    @out))
+
+(defn- tool-value
+  "Executes a tool expected to succeed synchronously → its result value."
+  [name input]
+  (let [out (atom nil)]
+    (rx/subs! #(reset! out %) (constantly nil) (constantly nil)
+              (at/execute-tool name input))
+    @out))
+
+(t/deftest explore-needs-a-question
+  (with-stub-runner (fn [_] (rx/of {:text "d" :usage {}}))
+    #(t/is (str/includes? (tool-error "explore_design" {}) "question"))))
+
+(t/deftest explore-without-a-runner-says-to-read-directly
+  (with-stub-runner nil
+    #(t/is (str/includes? (str/lower (tool-error "explore_design" {:question "map the file"}))
+                          "directly"))))
+
+(t/deftest explore-returns-the-digest
+  (with-stub-runner (fn [_] (rx/of {:text "the digest" :usage {:requests 1}}))
+    #(t/is (= "the digest" (:digest (tool-value "explore_design" {:question "map the file"}))))))
+
+(t/deftest explore-passes-only-readonly-tools
+  (let [seen (atom nil)]
+    (with-stub-runner (fn [opts] (reset! seen opts) (rx/of {:text "d" :usage {}}))
+      (fn []
+        (tool-value "explore_design" {:question "map the file"})
+        (t/is (= #{"read_design" "find_shapes" "audit_file" "get_design_skills"}
+                 (set (:tools @seen))))
+        (t/is (str/includes? (:user-text @seen) "map the file"))))))
+
+(t/deftest explore-bounds-the-digest
+  (with-stub-runner (fn [_] (rx/of {:text (apply str (repeat 20000 "x")) :usage {}}))
+    #(let [digest (:digest (tool-value "explore_design" {:question "q"}))]
+       (t/is (< (count digest) 7000))
+       (t/is (str/includes? digest "truncated")))))
+
+(t/deftest explore-empty-digest-is-an-error
+  (t/testing "a scout that came back empty must not read as 'nothing found'"
+    (with-stub-runner (fn [_] (rx/of {:text "" :usage {}}))
+      #(t/is (some? (tool-error "explore_design" {:question "q"}))))))

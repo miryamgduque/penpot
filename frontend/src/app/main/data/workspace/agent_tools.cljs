@@ -126,6 +126,22 @@
     :input-schema {:type "object"
                    :properties {:name {:type "string" :description "return this skill's full playbook"}}}}
 
+   {:name "explore_design"
+    :description
+    (str "Delegate broad or multi-step READING to a fast side agent: file "
+         "maps and inventories, cross-shape audits, \"which screens use X\" "
+         "sweeps. It runs the read-only tools in its own context and returns "
+         "one compact digest naming shapes, boards, components and tokens by "
+         "exact name and id — far cheaper than doing many large reads here.\n"
+         "Do NOT use it for a single-shape or single-page lookup (call "
+         "read_design or find_shapes directly), and it cannot make changes. "
+         "If it errors, fall back to reading the design directly yourself.")
+    :input-schema {:type "object"
+                   :required ["question"]
+                   :properties {:question {:type "string"
+                                           :description (str "what to find out, self-contained — the "
+                                                             "side agent sees only this text and the file")}}}}
+
    {:name "ask_user"
     :description
     (str "Ask the user structured questions, rendered as an interactive form in "
@@ -2777,6 +2793,97 @@
                     :note (str "saved — it will be part of your instructions "
                                "from the next turn on")}))))))
 
+;; --- explore_design (the scout tool)
+;;
+;; Delegates broad reading to `agent/run-side-turn` on a cheap model. The
+;; runner arrives through a module atom rather than a require: agent.cljs
+;; already requires THIS ns (for tool-specs/execute-tool), so requiring it
+;; back would be a cycle — the same seam ask_user's resolver uses. agent.cljs
+;; registers the runner at load.
+
+(defonce ^:private side-turn-runner* (atom nil))
+
+(defn register-side-turn-runner!
+  "Called by agent.cljs at load (and by tests to stub the runner)."
+  [f]
+  (reset! side-turn-runner* f))
+
+(defn registered-side-turn-runner
+  "The currently registered runner (tests save/restore around a stub)."
+  []
+  (deref side-turn-runner*))
+
+;; Hardcoded cheap model, same rationale as the watcher tick and compaction:
+;; ambient reading never bills like design work.
+(def ^:private scout-model "claude-haiku-4-5-20251001")
+
+(def ^:private scout-tools
+  ["read_design" "find_shapes" "audit_file" "get_design_skills"])
+
+(def ^:private scout-system
+  (str "You are a read-only scout inside Penpot, answering one question about "
+       "the current design file for another agent. Use your tools — "
+       "read_design first for orientation, find_shapes to reach inside "
+       "boards, audit_file for governance findings — and be exhaustive "
+       "within the question's scope.\n"
+       "Answer as a compact digest the requesting agent can act on WITHOUT "
+       "re-reading the file: name every relevant shape, board, component, "
+       "token and page by its EXACT name (and id when you have one). Plain "
+       "markdown, under 5000 characters. If the question cannot be answered "
+       "with read-only tools, say precisely what is missing instead of "
+       "guessing."))
+
+(def ^:private max-digest-chars 6000)
+
+(defn- meter-scout-usage
+  "Adds the scout's spend to the panel meter. A local twin of the panel's
+  accumulate-usage (requiring data.workspace.ai-panel here would cycle):
+  side-context work must never be invisible spend."
+  [usage]
+  (ptk/reify ::meter-scout-usage
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :usage]
+                   (fn [u]
+                     (merge-with + (or u {:input-tokens 0 :output-tokens 0
+                                          :cache-read-tokens 0 :cache-write-tokens 0
+                                          :requests 0})
+                                 usage)))
+        state))))
+
+(defn- explore-design
+  [{:keys [question]}]
+  (let [run (deref side-turn-runner*)]
+    (cond
+      (or (not (string? question)) (str/blank? question))
+      (rx/throw (ex-info "explore_design needs a non-empty `question`" {}))
+
+      (nil? run)
+      (rx/throw (ex-info (str "the explorer is not available in this context "
+                              "— read the design directly instead")
+                         {}))
+
+      :else
+      (->> (run {:model scout-model
+                 :system scout-system
+                 :user-text question
+                 :tools scout-tools})
+           (rx/map
+            (fn [{:keys [text usage]}]
+              (when (seq usage)
+                (st/emit! (meter-scout-usage usage)))
+              (when (str/blank? text)
+                ;; an empty digest must not read as "nothing found"
+                (throw (ex-info (str "the scout returned nothing — read the "
+                                     "design directly instead")
+                                {})))
+              {:digest (if (> (count text) max-digest-chars)
+                         (str (subs text 0 max-digest-chars)
+                              "\n\n[digest truncated at " max-digest-chars
+                              " chars — ask a narrower question for the rest]")
+                         text)}))))))
+
 ;; --- Dispatch
 
 (defn execute-tool
@@ -2786,6 +2893,7 @@
     "find_shapes"        (find-shapes input)
     "render_board"       (render-board input)
     "get_design_skills"  (get-design-skills input)
+    "explore_design"     (explore-design input)
     "ask_user"           (ask-user input)
     "set_design_doc"     (set-design-doc input)
     "audit_file"         (audit-file)

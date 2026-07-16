@@ -1056,6 +1056,12 @@
                                          spent'))))))))))]
       (round [{:role :user :text (:user-text opts)}] 0 empty-usage))))
 
+;; The scout tool (agent-tools/explore_design) runs on this loop. Registered
+;; through a module atom because the require points the other way (this ns
+;; requires agent-tools for tool-specs) — the same seam ask_user's resolver
+;; uses.
+(at/register-side-turn-runner! run-side-turn)
+
 ;; --- Semantic detect round (auto-fix watcher tick)
 
 (defn detect-round

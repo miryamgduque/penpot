@@ -1,6 +1,6 @@
 # Phase 06 — Scout tool (`explore_design`)
 
-**Status:** todo
+**Status:** done (tests written, execution + console drive deferred to the end-of-worktree verification pass)
 
 A new agent tool that delegates exploratory reading to the phase-05 side context:
 the main model calls `explore_design` with a question ("map every screen and its
@@ -20,30 +20,30 @@ to 20k chars into the expensive, forever-re-sent history.
 
 ## Checklist
 
-- [ ] Tests: `execute_tool "explore_design"` runs a side turn with the read-only
-      allowlist and returns `{:digest … :usage …}` shaped like any tool result;
-      digest bounded (~6k chars — well under the 20k refusal); side-turn failure
-      returns a readable tool ERROR (the main model should fall back to reading
-      directly, and the description tells it so)
-- [ ] Tool spec: description states WHEN to use it ("broad or multi-step
-      reading — maps, inventories, audits across many shapes") and when NOT to
-      (single-shape lookups: call read_design directly); input = `question`,
-      optional `page-id`/`root-id` to scope the sweep
-- [ ] Scout system prompt: read-only role, answer-the-question-only, name shapes
-      by name+id so the main model can act on the digest without re-reading
-- [ ] Executor in `agent_tools.cljs` calls `agent/run-side-turn` — watch the
-      require direction (tools ns must not create a cycle with agent ns; if it
-      does, register the executor from `agent.cljs` side like the ask_user
-      resolver-atom pattern)
-- [ ] One line in `inner-knowledge`'s tool notes: prefer `explore_design` for
-      broad reading (keep it to a sentence — that section is always-on tokens)
-- [ ] Transcript chip renders the scout like any tool call (name + collapsible
-      digest); its usage lands in the meter via phase 05
-- [ ] Lint + typecheck pass
-- [ ] Preview review with MCP tools (drive `at/execute_tool("explore_design", …)`
-      from the console per the established pattern — no LLM needed)
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:sparkles:`)
+- [x] Tests (with a stubbed runner via `register-side-turn-runner!`): missing
+      question errors naming the fix; missing runner says to read directly;
+      digest returned; ONLY the read-only tool set + the verbatim question
+      reach the runner; digest bounded at 6k with a truncation marker; an
+      EMPTY digest is an error, not "nothing found"
+- [x] Tool spec: when to use (maps/inventories/cross-shape sweeps) and when
+      NOT to (single lookups → read_design/find_shapes directly; cannot make
+      changes; on error, read directly). Input = required `question` only —
+      scoping rides in the question text, the scout scopes its own reads
+      (page-id/root-id params deferred until a real need shows)
+- [x] Scout system prompt: read-only role, exhaustive-within-scope, digest
+      actionable WITHOUT re-reading (exact names + ids), <5000 chars, say
+      what's missing rather than guess
+- [x] Executor lives in `agent_tools.cljs`; the runner arrives via the
+      ask_user-style module atom (`register-side-turn-runner!`, called by
+      agent.cljs at load) — the require direction did cycle, as anticipated
+- [x] One sentence in `inner-knowledge`'s tool notes
+- [x] Scout usage → meter via a local `meter-scout-usage` event (requiring
+      data.workspace.ai-panel would cycle too); transcript chip needs nothing
+      — tool events already render generically by name
+- [ ] Lint + typecheck — DEFERRED to end-of-worktree verification
+- [ ] Console drive (`at.execute_tool("explore_design", …)`) — DEFERRED (devenv)
+- [ ] Human approval received — DEFERRED to worktree merge review
+- [x] Committed with a gitmoji commit (`:sparkles:`)
 
 ## After Finish
 

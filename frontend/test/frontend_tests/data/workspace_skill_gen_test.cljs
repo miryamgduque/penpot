@@ -14,7 +14,10 @@
 (def answers
   {:what "Check all copy against a tone"
    :trigger "Check the tone on this screen."
-   :mode "suggest"})
+   ;; US #14 replaced the old suggest/review/auto-fix `mode` with a `reactive`
+   ;; string ("on-call" / "observer"); parse-generation threads it through the
+   ;; same way `mode` used to.
+   :reactive "on-call"})
 
 (deftest extract-json-tolerates-fences-and-prose
   (is (= "{\"a\":1}" (sg/extract-json "```json\n{\"a\":1}\n```")))
@@ -27,17 +30,19 @@
   (is (= "Audits" (sg/clamp-category "Audits")))
   (is (= "Audits" (sg/clamp-category "audit")))
   (is (= "Build" (sg/clamp-category "build")))
-  (is (= "Auto-fix" (sg/clamp-category "auto")))
+  ;; US #14 dropped the "Auto-fix" category — the list is now ["Audits" "Build"],
+  ;; so an unrecognised value falls back to Audits.
+  (is (= "Audits" (sg/clamp-category "auto")))
   (is (= "Audits" (sg/clamp-category "Something else"))))
 
 (deftest parse-generation-builds-a-skill
-  (testing "model supplies name/label/category/body; user's mode/trigger/what win"
+  (testing "model supplies name/label/category/body; user's reactive/trigger/what win"
     (let [text  "```json\n{\"name\":\"Tone Checker!\",\"label\":\"Tone checker\",\"category\":\"audits\",\"body\":\"# Playbook\\nDo things.\"}\n```"
           skill (sg/parse-generation answers text)]
       (is (= "tone-checker" (:name skill)))
       (is (= "Tone checker" (:label skill)))
       (is (= "Audits" (:category skill)))
-      (is (= "suggest" (:mode skill)))
+      (is (= "on-call" (:reactive skill)))
       (is (= "Check the tone on this screen." (:trigger skill)))
       (is (= "Check all copy against a tone" (:description skill)))
       (is (str/includes? (:body skill) "Playbook")))))

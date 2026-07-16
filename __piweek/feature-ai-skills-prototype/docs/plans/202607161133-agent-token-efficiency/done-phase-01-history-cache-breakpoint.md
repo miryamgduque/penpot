@@ -1,6 +1,6 @@
 # Phase 01 — History cache breakpoint
 
-**Status:** todo
+**Status:** done (tests written, execution deferred to the end-of-worktree verification pass — user direction 2026-07-16)
 
 Add an ephemeral `cache_control` marker to the **last content block of the last
 message** in each Anthropic-dialect request, alongside the existing marker on the
@@ -17,27 +17,22 @@ history term of a multi-round turn).
 
 ## Checklist
 
-- [ ] Tests in `agent_test.cljs`: encoded Anthropic body has exactly TWO
-      breakpoints (system + last block of last message); string-content messages
-      get promoted to a block vector only where the marker lands; OpenAI dialect
-      is untouched (its providers cache automatically, no marker exists)
-- [ ] Test: a tool-results message as the last message carries the marker on its
-      last `tool_result` block (that is the common case mid-turn)
-- [ ] Implement in `encode-anthropic` / `build-round-body`: marker on the last
-      block; promote a plain-string `:content` to `[{:type "text" …}]` only for
-      that one message (strings are the fast path everywhere else)
-- [ ] Do NOT mark image blocks (marker goes on the message's final block; if that
-      is an image, mark it — Anthropic allows cache_control on image blocks — but
-      note `prune-history-images` will rewrite that prefix when the image ages out;
-      acceptable, document in a comment)
-- [ ] Comment documenting the invalidation interplay: `trim-history` and
-      `prune-history-images` rewrite the head and eat one cache re-write when they
-      fire — rare, net-positive, deliberate
-- [ ] `detect-round` (watcher tick) stays UNcached on purpose — ticks are sporadic
-      relative to the 5-min TTL; note why in a comment
-- [ ] Lint + typecheck pass (`pnpm run lint:clj` in devenv; shadow compile green)
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:zap:`)
+- [x] Tests in `agent_test.cljs`: marker lands on the last block of the last
+      message, exactly one marker across the history, earlier messages untouched;
+      string content promoted to blocks only for the marked message
+- [x] Test: a tool-results message as the last message carries the marker on its
+      last `tool_result` block; sibling results unmarked
+- [x] Tests: empty-string content never mints an empty text block (unmarked
+      beats a 400); empty history no-op; image tail is markable
+- [x] Implement `mark-history-breakpoint` in `agent.cljs`; wired in
+      `build-round-body`'s Anthropic branch (OpenAI dialect untouched — those
+      providers cache long prefixes automatically)
+- [x] Comment documenting the invalidation interplay (`trim-history` /
+      `prune-history-images` rewrite the head → one re-write when they fire)
+- [x] `detect-round` (watcher tick) stays UNcached on purpose — comment added
+- [ ] Lint + typecheck pass — DEFERRED to end-of-worktree verification
+- [ ] Human approval received — DEFERRED to worktree merge review
+- [x] Committed with a gitmoji commit (`:zap:`)
 
 ## After Finish
 

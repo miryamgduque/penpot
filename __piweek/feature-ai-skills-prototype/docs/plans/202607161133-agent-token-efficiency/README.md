@@ -1,6 +1,6 @@
 # Agent Token Efficiency
 
-**Status:** todo
+**Status:** doing
 **Created:** 2026-07-16
 **Apps:** `frontend`
 **Dependencies:** None (builds on the US #26 metaprompt work — context already rides the user message)
@@ -42,7 +42,7 @@ lands (demo is Friday 2026-07-17; phase 01 is the safest pre-demo candidate).
 
 ## Phases
 
-1. [Phase 01 — History cache breakpoint](./todo-phase-01-history-cache-breakpoint.md) — cache the conversation, not just tools+system (~8–10× on the dominant term)
+1. [Phase 01 — History cache breakpoint](./done-phase-01-history-cache-breakpoint.md) — cache the conversation, not just tools+system (~8–10× on the dominant term)
 2. [Phase 02 — History hygiene](./todo-phase-02-history-hygiene.md) — stub stale tool results (microcompaction) + token-budget trim
 3. [Phase 03 — Runaway brake](./todo-phase-03-runaway-brake.md) — mid-turn pause-and-ask checkpoint after N rounds / ~$X
 4. [Phase 04 — Auto-compaction](./todo-phase-04-auto-compaction.md) — summarize-and-restart at a history threshold, subtle transcript note

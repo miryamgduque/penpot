@@ -244,7 +244,11 @@ hypothesis and shipping a decision instead of code.
 - **History hygiene:** `stub-stale-tool-results` (cheap, targeted) → `compact-history` (Haiku
   summarize-and-restart past 100k chars) → `trim-history` (blunt 150k backstop).
 - **Runaway brake:** a pause-and-ask checkpoint at 12 rounds or $1.00, resumable with carried
-  usage; a pending checkpoint is dropped on conversation switch.
+  usage; a pending checkpoint is dropped on conversation switch. **Both brakes are currently
+  disabled by user direction** (`checkpoint-enabled?` / `round-cap-enabled?` in `agent.cljs` —
+  disabled, not removed): interrupting real design work cost more than it saved, the user has the
+  stop button and the live meter, and flipping either boolean restores the pause. With both off,
+  a turn ends only when the model stops calling tools or the user stops it.
 - **Side-turns:** `run-side-turn` — a bounded, read-only, buffered Haiku loop powering the
   `explore_design` scout (broad reading delegated out of the expensive context, returns a ≤6k-char
   digest), the watcher's semantic tick, and auto-compaction.
@@ -293,6 +297,102 @@ docked into the workspace — since removed) and remains a general runtime capab
 host's `#plugin-dock` container, dispatch `resize`), `plugin-modal.ts` (skip drag when docked),
 `plugin.modal.css`. The workspace renders the `#plugin-dock` aside.
 
+## 13. Honest tools — the Kahoot postmortem
+
+**What it does.** Makes the tool boundary tell the truth about Penpot's semantics instead of
+letting the model discover them the hard way. Sources: a call-by-call review of two live sessions
+([`docs/kahoot-session-postmortem.md`](docs/kahoot-session-postmortem.md)) where ~150 of 223 calls
+were spent fighting the tools, not designing.
+
+**Design motivation.** Penpot lays flex children out in **reverse `:shapes`-vector order**, and the
+tools spoke vector space — so creation order rendered backwards, `nest_shape index 0` meant *last*,
+and the model "solved" it by authoring `row-reverse` layouts (semantically backwards files).
+Several events also filter silently (`relocate-shapes`, grid cell pinning), which reads as success
+to an agent and produces wild-goose diagnosis loops.
+
+**Implementation** ([`agent_tools.cljs`](../../frontend/src/app/main/data/workspace/agent_tools.cljs)):
+- **Tools speak reading order.** Creation into a laid-out board lands in creation order;
+  `nest_shape`'s index is the flow position; `nest-vector-index` also compensates
+  `insert-at-index`'s pre-removal indexing on same-parent reorders. Grids follow: `rebuild-grid`
+  seats cells in flow order and re-nesting reseats them (`reflow-grid-cells`).
+- **No silent failures.** `nest_shape` validates (stale ids, cycles, copy-owned parents) and reads
+  the move back after the pipeline settles; `delete_shape` discloses cascaded children;
+  `modify_shape` returns the **settled** geometry and names the owner when a write didn't take
+  (this is what let the next session crack absolute-child coordinates in 3 rounds).
+- **Capability honesty:** `set_layout_child` accepts fix/auto on a board that itself has a layout
+  (Penpot's own "Flex board" hug); `create_token` teaches sets-before-tokens; `insert_image` points
+  at a keyword-capable placeholder source.
+- **Knowledge that was stranded now loads:** the ai-kit re-import ships each skill's
+  `references/*.md` behind a second `get_design_skills {name, reference}` disclosure level, a
+  native `ui-element-taxonomy` reference teaches reference-image decomposition, and the always-on
+  inner knowledge gained the layout doctrine ("sloppy ≠ absolute positioning") and a
+  render-and-look self-review rule.
+
+## 14. Context-window strategy — the NYT postmortem
+
+**What it does.** Cuts the structural cost of long build sessions and removes their failure modes.
+Source: a session that spent 133 rounds / ~$3.91 on one screen and hard-aborted twice at the 4M
+payload cap ([`docs/nyt-session-postmortem.md`](docs/nyt-session-postmortem.md)). The finding:
+caching already worked (94% hits) — cost is `rounds × prefix`, and only collapsing rounds moves it.
+
+**Implementation.**
+- **Composition tools** (the big lever): `build_tree` (one call builds a nested, laid-out,
+  token-bound subtree; partial failures return the ids that exist for targeted repair),
+  `clone_shape` (N copies into a laid-out parent with per-clone name/text/image overrides matched
+  by layer name — the session's 25-round card dance in one call), `create_tokens` and
+  `update_shapes` (all-or-nothing batches). Inner knowledge tells the agent to reach for them
+  first and to issue independent calls together.
+- **Image lifecycle** (the abort-killer): `render_board` budgets its output — photographic renders
+  re-encode as JPEG q0.8 (~10× smaller; measured 556k vs multi-MB base64), oversized ones are
+  refused with the fix named; and an over-cap payload strips its images (omission notes remain)
+  and retries once before erroring.
+- **Playbook injection:** the first message of a conversation runs one tool-less Haiku round that
+  names the matching skill; the body is injected into the user message itself — cache-compatible,
+  zero extra agent rounds, no reliance on the model choosing to fetch. A deterministic one-shot
+  nudge backstops conversations where nothing matched.
+- Prefix measured rather than dieted: 57 tool specs ≈ 11k tokens is cents per session at cached
+  rates; the win of trimming would be window headroom, not money — deferred.
+
+## 15. Native agent vs MCP — what the branch taught us
+
+The branch started with an MCP door beside the embedded agent and deliberately retired it. What
+follows is the honest scorecard, informed by shipping both.
+
+**Where native wins:**
+
+- **No drift.** An MCP server + skill kit version independently of the app; the native agent, its
+  tools, and its skills ship **in the project with every release** — the tool boundary is compiled
+  against the same internals it mutates, so a Penpot refactor breaks it at build time, not at a
+  user's desk.
+- **Skills are organizational objects, not files on someone's laptop.** Multi-level and reusable —
+  built-in/app scope, team scope (promote/consult via the dashboard), personal skills, and
+  per-file state — with inheritance and per-level enable/disable. An MCP client's skills live in
+  its own config, per machine, per user, unshared.
+- **Reactive skills exist at all.** Observer skills (the watcher, ambient audits, "Fix all")
+  require standing presence in the running workspace — there is no MCP shape for "notice
+  violations as the user works"; a protocol client only acts when called.
+- **A better API surface than MCP.** The tools are typed, validated, and *semantic*: reading-order
+  translation, read-back verification, settled-geometry returns, enforcement (token-only-colors)
+  at the write path where it cannot be routed around, and composition tools that batch whole
+  workflows. `execute_code` over a plugin API can express none of that — and the section-13 record
+  shows what generic surfaces cost in practice.
+- **Design direction lives with the file.** DESIGN.md/foundations ride plugin-data, load into
+  every conversation, and travel with duplicate/export — not with whichever machine had the prompt.
+- (Also: caching, spend metering, per-file durable chats, in-canvas forms (`ask_user`), and wasm
+  renders — all integration points a protocol client doesn't get.)
+
+**Where native costs:**
+
+- **Context memory management is ours to solve.** Claude Code/Cursor bring their own compaction
+  and caching; here every layer — breakpoints, stubbing, compaction, handoff, image windows,
+  payload degrade — had to be built and tuned by hand (sections 9 and 14 are that bill).
+- **Model + tool support relays on Penpot.** Provider dialects, streaming codecs, vision quirks,
+  model catalogs — all maintained in-tree (the OpenAI image path is still live-unverified). An MCP
+  user gets new models the day their client ships them.
+- **External agents lost their door.** Retiring MCP means Claude Code/Cursor/CI can no longer
+  drive Penpot under the same skills + enforcement. If that matters later, the answer is a thin
+  MCP facade over the SAME native tool registry — not a second implementation.
+
 ---
 
 ## Testing
@@ -320,6 +420,9 @@ host's `#plugin-dock` container, dispatch `resize`), `plugin-modal.ts` (skip dra
 ## Known gaps / deferred (tracked in the plans)
 
 - Semantic watcher tick over-flags valid names (fix wanted before the Friday demo).
+- Both spend/round brakes disabled by direction — a pathological tool loop now runs until the user
+  stops it; revisit before any multi-user rollout.
+- Playbook injection and all side-work (scout, compaction, watcher tick) are Anthropic-only.
 - Token-efficiency Phase 07: scripted live before/after measurement.
 - Provider API keys stored plaintext; no per-file conversation quota; app-scope skill CRUD lacks
   real access control; evals harness.

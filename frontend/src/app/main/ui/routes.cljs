@@ -63,6 +63,7 @@
     ["/invitations"          :dashboard-invitations]
     ["/webhooks"             :dashboard-webhooks]
     ["/skills"               :dashboard-skills]
+    ["/agent-skills"         :dashboard-agent-skills]
     ["/settings"             :dashboard-settings]
     ["/recent"               :dashboard-recent]
     ["/search"               :dashboard-search]

@@ -973,6 +973,7 @@
         projects?   (= section :dashboard-recent)
         fonts?      (= section :dashboard-fonts)
         libs?       (= section :dashboard-libraries)
+        agent-skills? (= section :dashboard-agent-skills)
         drafts?     (and (= section :dashboard-files)
                          (= (:id project) default-project-id))
         container   (mf/use-ref nil)
@@ -1039,6 +1040,11 @@
         (mf/use-fn
          (mf/deps team-id)
          (fn [] (st/emit! (dcm/go-to-dashboard-libraries :team-id team-id))))
+
+        go-agent-skills
+        (mf/use-fn
+         (mf/deps team-id)
+         (fn [] (st/emit! (dcm/go-to-dashboard-agent-skills :team-id team-id))))
 
         go-libs-with-key
         (mf/use-fn
@@ -1116,7 +1122,14 @@
                      :data-testid "libs-link-sidebar"
                      :class (stl/css :sidebar-link)
                      :keyboard-action go-libs-with-key}
-           [:span {:class (stl/css :element-title)} (tr "labels.shared-libraries")]]]]]
+           [:span {:class (stl/css :element-title)} (tr "labels.shared-libraries")]]]
+         ;; Agent Skills — the team home for promoted skills (US #12)
+         [:li {:class (stl/css-case :current agent-skills?
+                                    :sidebar-nav-item true)}
+          [:> link* {:action go-agent-skills
+                     :data-testid "agent-skills-link-sidebar"
+                     :class (stl/css :sidebar-link)}
+           [:span {:class (stl/css :element-title)} (tr "labels.agent-skills")]]]]]
 
 
        [:div {:class (stl/css :sidebar-content-section)

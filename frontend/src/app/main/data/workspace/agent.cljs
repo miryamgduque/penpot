@@ -546,23 +546,87 @@
 (def ^:private max-rounds 32)
 (def ^:private max-tool-result-chars 20000)
 (def ^:private max-history-messages 40)
+;; ~15k tokens. The message cap alone bounded nothing real — a message can be a
+;; 20k-char tool result, so 40 of them is 800k chars.
+(def ^:private max-history-chars 60000)
+
+;; --- History hygiene (applied at turn boundaries)
+;;
+;; Both rewrites below shrink the history's head, which invalidates the cached
+;; prefix (see mark-history-breakpoint) — that is why they run once per TURN,
+;; in send-message before round 0, and never between rounds: one cache re-write
+;; per turn instead of one per round, and mid-turn the model may still be
+;; reading a result it just asked for.
+
+(def ^:private stale-result-min-chars 400)
+(def ^:private stale-result-keep-messages 8)
+(def ^:private stale-result-stub
+  "[old result cleared to save space — call the tool again if you need it]")
+
+(defn stub-stale-tool-results
+  "Replaces the CONTENT of large tool results older than the last
+  `stale-result-keep-messages` messages with a one-line stub.
+
+  A tool result is the deadest weight the history carries: a read_design dump
+  from five turns ago is almost never re-read, but — the whole history being
+  re-encoded every round — it is re-sent forever. Only the content goes; the
+  result's `:id` and `:error?` stay, so the tool_use/tool_result pairing both
+  providers enforce is untouched. Thresholds are the retired TS app's proven
+  values (`pruneStaleToolResults`), lost in the native port and restored here."
+  [messages]
+  (let [messages (vec messages)
+        cutoff   (- (count messages) stale-result-keep-messages)
+        stale?   (fn [r] (> (count (:content r)) stale-result-min-chars))]
+    (if-not (pos? cutoff)
+      messages
+      (into (mapv (fn [{:keys [role results] :as m}]
+                    (if (and (= :tool-results role) (some stale? results))
+                      (assoc m :results
+                             (mapv #(if (stale? %) (assoc % :content stale-result-stub) %)
+                                   results))
+                      m))
+                  (subvec messages 0 cutoff))
+            (subvec messages cutoff)))))
+
+(defn- message-chars
+  "Rough payload size of one canonical message. Images are deliberately NOT
+  counted: they have their own bound (`prune-history-images`, a turn-count
+  window) and counting their base64 here would let two screenshots evict the
+  entire text history."
+  [{:keys [text context tool-calls results]}]
+  (+ (count text)
+     (if context (count (js/JSON.stringify (clj->js context))) 0)
+     (reduce + 0 (map #(count (js/JSON.stringify (clj->js (:input % {})))) tool-calls))
+     (reduce + 0 (map #(count (:content %)) results))))
 
 (defn trim-history
   "Bounds the canonical history without splitting a tool call from its results:
   only cuts at a plain user message (every turn starts with one), so
-  tool_use/tool_result pairs stay intact."
+  tool_use/tool_result pairs stay intact.
+
+  Two caps: `max-history-messages` (the legacy backstop) and
+  `max-history-chars` (the one that bounds actual size — messages are not
+  created equal, a tool result runs to 20k chars). The newest turn is always
+  kept whole, even when it alone exceeds the budget: a turn the model is
+  mid-way through must never lose its own context."
   [history]
-  (let [history (vec history)
-        n       (count history)]
-    (if (<= n max-history-messages)
+  (let [history   (vec history)
+        n         (count history)
+        user-idxs (into [] (keep-indexed (fn [i m] (when (= :user (:role m)) i))) history)
+        sizes     (mapv message-chars history)
+        total     (reduce + 0 sizes)
+        from      (max 0 (- n max-history-messages))]
+    (if (and (zero? from) (<= total max-history-chars))
       history
-      (let [turn-start? (fn [m] (= :user (:role m)))
-            from        (- n max-history-messages)]
-        (or (some (fn [i] (when (turn-start? (nth history i)) (subvec history i)))
-                  (range from n))
-            (some (fn [i] (when (turn-start? (nth history i)) (subvec history i)))
-                  (range (dec n) -1 -1))
-            history)))))
+      (let [suffix-chars (fn [i] (reduce + 0 (subvec sizes i)))
+            start (or ;; earliest turn start satisfying BOTH caps…
+                   (some (fn [i] (when (and (>= i from)
+                                            (<= (suffix-chars i) max-history-chars)) i))
+                         user-idxs)
+                   ;; …or keep the newest turn whole, budget notwithstanding
+                   (peek user-idxs)
+                   0)]
+        (if (zero? start) history (subvec history start))))))
 
 (defn- empty-reply-text
   [outcome]

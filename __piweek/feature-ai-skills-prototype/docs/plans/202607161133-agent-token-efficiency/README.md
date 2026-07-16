@@ -43,7 +43,7 @@ lands (demo is Friday 2026-07-17; phase 01 is the safest pre-demo candidate).
 ## Phases
 
 1. [Phase 01 — History cache breakpoint](./done-phase-01-history-cache-breakpoint.md) — cache the conversation, not just tools+system (~8–10× on the dominant term)
-2. [Phase 02 — History hygiene](./todo-phase-02-history-hygiene.md) — stub stale tool results (microcompaction) + token-budget trim
+2. [Phase 02 — History hygiene](./done-phase-02-history-hygiene.md) — stub stale tool results (microcompaction) + token-budget trim
 3. [Phase 03 — Runaway brake](./todo-phase-03-runaway-brake.md) — mid-turn pause-and-ask checkpoint after N rounds / ~$X
 4. [Phase 04 — Auto-compaction](./todo-phase-04-auto-compaction.md) — summarize-and-restart at a history threshold, subtle transcript note
 5. [Phase 05 — Side-context runner](./todo-phase-05-side-context-runner.md) — a buffered tool-loop on a cheap model (generalizes `detect-round`)

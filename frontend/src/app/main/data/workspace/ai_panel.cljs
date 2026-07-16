@@ -635,11 +635,17 @@
      ptk/WatchEvent
      (watch [_ state stream]
        (let [file-id (:current-file-id state)
-             prior   (dm/get-in state [:ai-panel file-id :history])
+             ;; hygiene runs HERE, at the turn boundary, not between rounds:
+             ;; stubbing old tool results and the size trim both rewrite the
+             ;; history's head, which invalidates the cached prefix — once per
+             ;; turn is the cheap place to pay that (see agent/mark-history-breakpoint)
+             prior   (-> (vec (dm/get-in state [:ai-panel file-id :history]))
+                         (agent/stub-stale-tool-results)
+                         (agent/trim-history))
              ;; context rides on the user message (the volatile slot), while the
              ;; system prompt stays a stable, cacheable prefix built from `state`
-             history (conj (vec prior) (cond-> {:role :user :text text :context context}
-                                         (seq images) (assoc :images images)))
+             history (conj prior (cond-> {:role :user :text text :context context}
+                                   (seq images) (assoc :images images)))
              system  (agent/build-system-prompt state)
              stopper (rx/filter (ptk/type? ::cancel-turn) stream)
 

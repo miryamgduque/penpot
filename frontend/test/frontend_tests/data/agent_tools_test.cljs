@@ -1417,6 +1417,59 @@
     (t/is (str/includes? problem "already"))))
 
 ;; ---------------------------------------------------------------------------
+;; detach-problem — Phase 21
+;;
+;; The capability is a one-liner over dwl/detach-component; the value is refusing
+;; the shapes of it that destroy something, and naming what the caller meant.
+;; ---------------------------------------------------------------------------
+
+(defn- copy-root
+  [id name]
+  {:id id :name name :type :frame
+   :shape-ref (uuid/custom 4 9) :component-id (uuid/custom 4 8) :component-root true})
+
+(t/deftest a-plain-copy-detaches
+  (t/is (nil? (at/detach-problem (objects (copy-root id-a "Card copy")) id-a))))
+
+(t/deftest a-shape-that-is-not-a-component-is-rejected
+  (let [problem (at/detach-problem (objects (plain-frame id-a "Just a board")) id-a)]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "not a component copy"))))
+
+(t/deftest detaching-a-MAIN-is-rejected-and-says-what-they-meant
+  ;; Detaching a main is nonsense — it IS the component. The agent almost
+  ;; certainly meant one of its copies.
+  (let [problem (at/detach-problem (objects (main-instance id-a "Card")) id-a)]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "main"))))
+
+(t/deftest detaching-a-variant-MEMBER-is-rejected
+  ;; A member is the set's structure — detaching it would gut the set. Note the
+  ;; message must NOT claim file corruption: gotcha #12 was refuted natively.
+  (let [problem (at/detach-problem (objects (variant-member id-a "Card" vid)) id-a)]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "variant set"))))
+
+(t/deftest the-variant-rejection-does-not-claim-corruption
+  ;; The playbook's "corrupted files and hung all subsequent saves" is the
+  ;; PLUGIN path. Verified natively: saves continued, edits persisted, the file
+  ;; reloaded clean. Repeating the claim would be a lie the agent acts on.
+  (let [problem (at/detach-problem (objects (variant-member id-a "Card" vid)) id-a)]
+    (t/is (not (str/includes? (str/lower problem) "corrupt")))))
+
+(t/deftest a-nested-shape-inside-a-copy-names-the-root-to-detach
+  ;; You cannot detach a piece of a copy — the message has to carry the root id
+  ;; or the agent has nothing to act on.
+  (let [root  (copy-root id-b "Card copy")
+        inner (assoc (plain-frame id-a "Inner") :parent-id id-b :shape-ref (uuid/custom 4 7))
+        problem (at/detach-problem (objects root inner) id-a)]
+    (t/is (some? problem))
+    (t/is (str/includes? problem (str id-b)))))
+
+(t/deftest an-unknown-shape-is-rejected-by-detach
+  (t/is (some? (at/detach-problem {} id-missing))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

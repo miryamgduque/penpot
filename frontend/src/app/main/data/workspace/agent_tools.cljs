@@ -375,6 +375,19 @@
                                 :x {:type "number"} :y {:type "number"}}
                    :required ["componentId" "x" "y"]}}
 
+   {:name "detach_instance"
+    :description
+    (str "Severs a component copy from its main, making it a plain local group. "
+         "A LAST RESORT, and governed: the copy stops following the main forever, "
+         "which is the opposite of why the component exists. Prefer editing the "
+         "main (every copy follows), or add a variant if the difference is a real "
+         "state. If you do detach, TELL THE USER — it is not undone by editing the "
+         "main. Cannot detach a main, a variant set member, or a piece of a copy "
+         "(detach the copy's root instead).")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string" :description "the copy's root"}}
+                   :required ["shapeId"]}}
+
    {:name "create_variant"
     :description
     (str "Combines two or more main components into a Penpot variant set — the "
@@ -1400,7 +1413,8 @@
           (dm/str "duplicate_shape: " (labels (map #(get objects %) blocked))
                   (if (= 1 (count blocked)) " is" " are")
                   " inside a component copy, whose structure is owned by the main"
-                  " component — duplicate the main instead, or detach the copy first")))))
+                  " component — duplicate the main instead, or sever this copy with"
+                  " detach_instance first")))))
 
 (defn- delete-shape
   [{:keys [shapeIds]}]
@@ -1473,7 +1487,8 @@
           (dm/str "group_shapes: " (labels in-copy)
                   (if (= 1 (count in-copy)) " is" " are")
                   " inside a component copy, whose structure is owned by the main"
-                  " component — group the main instead, or detach the copy first")))))
+                  " component — group the main instead, or sever this copy with"
+                  " detach_instance first")))))
 
 (defn ungroup-problem
   "Why `ungroup_shapes` cannot run, or nil. Mirrors `ungroup-shapes`' filters
@@ -1499,7 +1514,8 @@
           (seq comps)
           (dm/str "ungroup_shapes: " (labels comps)
                   (if (= 1 (count comps)) " is a component" " are components")
-                  " and components cannot be ungrouped — detach the copy, or delete the component")
+                  " and components cannot be ungrouped — sever a copy with detach_instance,"
+                  " or delete the component")
 
           (seq in-copy)
           (dm/str "ungroup_shapes: " (labels in-copy)
@@ -1967,6 +1983,67 @@
                                      "so editing the main updates it. Verify with "
                                      "read_design.")}
                    new-id (assoc :shapeId (dm/str new-id)))))))))
+
+;; --- Detach
+;;
+;; The missing half of Wave 5, and the plan's standing rule pointed at itself:
+;; `duplicate_shape` and `group_shapes` already reject with "…or detach the copy
+;; first", naming a tool that did not exist.
+;;
+;; Gotcha #12 — detaching a variant instance "has corrupted files and hung all
+;; subsequent saves" — is about the PLUGIN path. Tested natively on a scratch
+;; file: revn advanced 97→100, later edits persisted, the file reloaded clean.
+;; So the variant guard here refuses for the honest reason (a member is the set's
+;; structure) rather than repeating a corruption claim we could not reproduce.
+
+(defn detach-problem
+  "Why `detach_instance` cannot run, or nil. Pure."
+  [objects id]
+  (let [shape (get objects id)]
+    (cond
+      (nil? id)
+      "detach_instance: shapeId is required"
+
+      (nil? shape)
+      (dm/str "detach_instance: no shape on this page with id " (str id)
+              " — check read_design")
+
+      (ctc/is-variant? shape)
+      (dm/str "detach_instance: " (shape-label shape) " is a member of a variant set"
+              " — a member is the set's structure, so detaching it would gut the set."
+              " Detach a COPY of it instead, or delete the member if you meant to"
+              " shrink the set")
+
+      (ctc/main-instance? shape)
+      (dm/str "detach_instance: " (shape-label shape) " is a component's MAIN"
+              " — it is the component, so there is nothing to detach it from. You"
+              " probably meant one of its copies; place one with create_instance,"
+              " or edit the main directly")
+
+      (not (ctc/in-component-copy? shape))
+      (dm/str "detach_instance: " (shape-label shape) " is not a component copy"
+              " — it has no main to be severed from")
+
+      (not (ctc/instance-root? shape))
+      (let [root (ctn/get-instance-root objects shape)]
+        (dm/str "detach_instance: " (shape-label shape) " is a piece of a copy,"
+                " not the copy itself — detach its root instead"
+                (when root (dm/str ": " (dm/str (:id root)))))))))
+
+(defn- detach-instance
+  [{:keys [shapeId]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        id      (some-> shapeId parse-uuid)]
+    (if-let [problem (detach-problem objects id)]
+      (rx/throw (ex-info problem {}))
+      (do
+        (interrupt!)
+        (st/emit! (dwl/detach-component id))
+        (rx/of {:shapeId shapeId
+                :note (str "detached — these shapes are now local copies and will "
+                           "NOT follow their main any more. Tell the user you did "
+                           "this; it is not reversible by editing the main.")})))))
 
 ;; --- Variant properties
 ;;
@@ -2466,6 +2543,7 @@
     "set_layout_child"   (set-layout-child input)
     "generate_code"      (generate-code input)
     "create_instance"    (create-instance input)
+    "detach_instance"    (detach-instance input)
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)
     "set_variant_property" (set-variant-property input)

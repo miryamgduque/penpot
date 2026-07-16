@@ -2037,3 +2037,103 @@
   (let [objs (objects (plain-frame board-id "Board")
                       (plain-frame id-a "Item"))]
     (t/is (nil? (at/nest-problem objs id-a board-id)))))
+
+;; ---------------------------------------------------------------------------
+;; reflow-grid-cells — grid cells follow flow order (reversed vector)
+;; ---------------------------------------------------------------------------
+
+(t/deftest grid-cells-follow-flow-order
+  ;; canonical vector [c b a] reads as flow a, b, c — cell 1 must hold a
+  (let [track {:type :flex :value 1}
+        board {:id board-id :name "Grid" :type :frame :layout :grid
+               :layout-grid-dir :row
+               :layout-grid-columns [track track]
+               :layout-grid-rows [track]
+               :layout-grid-cells {}
+               :shapes [id-c id-b id-a]}
+        objs  (assoc (objects (plain-frame id-a "A")
+                              (plain-frame id-b "B")
+                              (plain-frame id-c "C"))
+                     board-id board)
+        out   (at/reflow-grid-cells board objs)
+        cells (->> (vals (:layout-grid-cells out))
+                   (sort-by (juxt :row :column))
+                   (keep (comp first :shapes))
+                   (vec))]
+    (t/is (= [id-a id-b id-c] cells))
+    ;; the vector stays canonical (reversed reading order)
+    (t/is (= [id-c id-b id-a] (:shapes out)))))
+
+;; ---------------------------------------------------------------------------
+;; batch tools — empty batches are named, not silently accepted
+;; ---------------------------------------------------------------------------
+
+(t/deftest update-shapes-needs-updates
+  (t/is (str/includes? (tool-error "update_shapes" {}) "updates")))
+
+(t/deftest create-tokens-needs-tokens
+  (t/is (str/includes? (tool-error "create_tokens" {}) "tokens")))
+
+(t/deftest update-shapes-batch-rejects-whole-on-one-bad-entry
+  ;; the message names the failing index so the retry is targeted
+  (let [problem (tool-error "update_shapes"
+                            {:updates [{:shapeId (str id-missing) :x 1}]})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "updates[0]"))))
+
+;; ---------------------------------------------------------------------------
+;; clone_shape / build_tree — the composition layer's validation
+;; ---------------------------------------------------------------------------
+
+(t/deftest clone-needs-a-real-shape
+  (t/is (str/includes? (at/clone-problem {} id-missing nil [{}]) "no shape")))
+
+(t/deftest clone-needs-clones
+  (let [objs (objects (plain-frame id-a "Card"))]
+    (t/is (str/includes? (at/clone-problem objs id-a nil []) "clones"))))
+
+(t/deftest clone-caps-the-batch
+  (let [objs (objects (plain-frame id-a "Card"))]
+    (t/is (str/includes? (at/clone-problem objs id-a nil (repeat 13 {})) "12"))))
+
+(t/deftest clone-into-a-copy-parent-is-rejected
+  (let [objs (objects (plain-frame id-a "Card")
+                      (assoc (plain-frame board-id "CopyBoard")
+                             :shape-ref (uuid/custom 5 5)))]
+    (t/is (str/includes? (at/clone-problem objs id-a board-id [{}]) "copy"))))
+
+(t/deftest a-valid-clone-passes
+  (let [objs (objects (plain-frame id-a "Card") (plain-frame board-id "Grid"))]
+    (t/is (nil? (at/clone-problem objs id-a board-id [{:name "Card 2"}])))))
+
+(t/deftest tree-rejects-unknown-types
+  (t/is (str/includes? (at/tree-problem {:type "circle"}) "board, rect, ellipse")))
+
+(t/deftest tree-rejects-children-on-leaves
+  (let [p (at/tree-problem {:type "rect" :children [{:type "text" :text "x"}]})]
+    (t/is (str/includes? p "only boards contain children"))))
+
+(t/deftest tree-text-needs-words
+  (t/is (str/includes? (at/tree-problem {:type "text"}) "text")))
+
+(t/deftest tree-image-needs-a-url
+  (t/is (str/includes? (at/tree-problem {:type "image"}) "url")))
+
+(t/deftest tree-depth-is-capped
+  (let [deep (reduce (fn [child _] {:type "board" :children [child]})
+                     {:type "rect"}
+                     (range 7))]
+    (t/is (str/includes? (at/tree-problem deep) "deeper"))))
+
+(t/deftest tree-node-count-is-capped
+  (let [wide {:type "board"
+              :children (vec (repeat 81 {:type "rect"}))}]
+    (t/is (str/includes? (at/tree-problem wide) "80"))))
+
+(t/deftest a-valid-tree-passes
+  (t/is (nil? (at/tree-problem
+               {:type "board" :name "section"
+                :layout {:dir "column"}
+                :children [{:type "text" :text "Hello"}
+                           {:type "board" :name "row"
+                            :children [{:type "rect"}]}]}))))

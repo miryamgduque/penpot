@@ -69,6 +69,10 @@ the **agent panel**.
    ⋯ "Promote to team" entry (+ detail view), a `skill-promote*` confirmation
    view (editable name/description + reactive/foundations note + Cancel/Publish),
    panel view wiring, and the post-publish disable + light link.
+4. [Phase 04 — Team Dashboard "Agent Skills" entry](./todo-phase-04-dashboard-agent-skills-entry.md)
+   — a new **Agent Skills** entry in the Team Dashboard's Sources section
+   (alongside Fonts/Libraries) that lists the team's promoted skills. Read-only
+   list for now; editing/removing is story #13.
 
 ## Acceptance Criteria
 
@@ -85,8 +89,9 @@ the **agent panel**.
 
 ## Out of scope (per US #12 — separate stories)
 
-- Team-side management of promoted skills (Team Dashboard → Sources → Agent
-  Skills): **story #13**.
+- Team-side **management** (edit / remove / inspect) of promoted skills in the
+  Agent Skills dashboard page: **story #13**. Phase 04 adds only the Sources nav
+  entry + a read-only list of the team's promoted skills.
 - The "baseline changed" **awareness notice** when someone else updates the team
   skill: deferred until Fork/**story #10** establishes the mechanism (MVP link
   only here).

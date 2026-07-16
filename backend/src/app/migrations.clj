@@ -518,7 +518,13 @@
     :fn (mg/resource "app/migrations/sql/0158-add-profile-agent-chat-table.sql")}
 
    {:name "0159-profile-skill-on-demand"
-    :fn (mg/resource "app/migrations/sql/0159-profile-skill-on-demand.sql")}])
+    :fn (mg/resource "app/migrations/sql/0159-profile-skill-on-demand.sql")}
+
+   {:name "0160-add-team-skill-table"
+    :fn (mg/resource "app/migrations/sql/0160-add-team-skill-table.sql")}
+
+   {:name "0161-add-profile-skill-promoted-to"
+    :fn (mg/resource "app/migrations/sql/0161-add-profile-skill-promoted-to.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]

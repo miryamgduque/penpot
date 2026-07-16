@@ -884,10 +884,20 @@
 
 (def compact-threshold-chars 100000)
 
+;; Below the compaction threshold on purpose: the panel SUGGESTS summarizing
+;; into a fresh chat (the user's choice, conversation switch and all) before
+;; the automatic in-place backstop fires.
+(def handoff-notice-chars 60000)
+
+(defn history-chars
+  "Rough payload size of the whole canonical history."
+  [messages]
+  (reduce + 0 (map message-chars messages)))
+
 (defn compact-due?
   "Whether the history has outgrown the compaction threshold (~25k tokens)."
   [messages]
-  (> (reduce + 0 (map message-chars messages)) compact-threshold-chars))
+  (> (history-chars messages) compact-threshold-chars))
 
 (defn- last-turn-index
   "Index of the last plain user message — where the surviving tail begins."
@@ -910,32 +920,49 @@
               :compacted? true}]
             (subvec messages tail-idx)))))
 
-(defn compaction-transcript
-  "The head of the history (everything the summary will replace) as plain text
-  for the summarizer. Images are stripped first — the summarizer reads text,
-  and base64 would be pure cost."
+(defn conversation-transcript
+  "The WHOLE history as plain text for a summarizer. Images are stripped
+  first — the summarizer reads text, and base64 would be pure cost."
   [messages]
-  (let [messages (vec messages)
-        head     (subvec messages 0 (or (last-turn-index messages) (count messages)))]
-    (->> (strip-images head)
-         (map (fn [{:keys [role text tool-calls results]}]
-                (case role
-                  :user
-                  (str "USER: " text)
+  (->> (strip-images (vec messages))
+       (map (fn [{:keys [role text tool-calls results]}]
+              (case role
+                :user
+                (str "USER: " text)
 
-                  :assistant
-                  (str "ASSISTANT: " text
-                       (when (seq tool-calls)
-                         (str "\n[called: "
-                              (str/join "; "
-                                        (map #(str (:name %) " "
-                                                   (js/JSON.stringify (clj->js (:input % {}))))
-                                             tool-calls))
-                              "]")))
+                :assistant
+                (str "ASSISTANT: " text
+                     (when (seq tool-calls)
+                       (str "\n[called: "
+                            (str/join "; "
+                                      (map #(str (:name %) " "
+                                                 (js/JSON.stringify (clj->js (:input % {}))))
+                                           tool-calls))
+                            "]")))
 
-                  :tool-results
-                  (str "TOOL RESULTS:\n" (str/join "\n" (map :content results))))))
-         (str/join "\n\n"))))
+                :tool-results
+                (str "TOOL RESULTS:\n" (str/join "\n" (map :content results))))))
+       (str/join "\n\n")))
+
+(defn compaction-transcript
+  "The head of the history only — everything in-place compaction will replace.
+  The last turn is excluded because `compacted-history` carries it verbatim;
+  summarizing it too would say everything twice."
+  [messages]
+  (let [messages (vec messages)]
+    (conversation-transcript
+     (subvec messages 0 (or (last-turn-index messages) (count messages))))))
+
+(defn handoff-seed
+  "The seeded history for a FRESH conversation carrying `summary` — the
+  fresh-chat sibling of `compacted-history`. One flagged user message and
+  nothing else: the old conversation stays whole in the saved chats list, so
+  nothing verbatim needs to ride along."
+  [summary]
+  [{:role :user
+    :text (str "[This chat continues an earlier conversation — a summary of "
+               "it follows. The full version is saved separately.]\n\n" summary)
+    :compacted? true}])
 
 ;; --- Side turns: a bounded, buffered tool loop outside the main history
 ;;
@@ -1117,3 +1144,18 @@
                              (vec messages)
                              (compacted-history messages text))
                   :usage usage}))))
+
+(defn summarize-history
+  "One buffered summarizer round over the WHOLE history → an observable of one
+  `{:text :usage}` — the fresh-chat handoff's half of what `compact-history`
+  does in place. A blank summary is thrown here (unlike compaction there is no
+  sensible degrade: the caller is about to seed a new chat with this text and
+  must instead stay in the current one)."
+  [messages]
+  (->> (detect-round {:provider "anthropic" :model compact-model}
+                     compact-system
+                     (conversation-transcript messages))
+       (rx/map (fn [{:keys [text] :as out}]
+                 (if (str/blank? text)
+                   (throw (ex-info "the summarizer returned nothing" {}))
+                   out)))))

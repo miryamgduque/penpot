@@ -103,8 +103,9 @@
                                           (-> panel
                                               ;; a pending pause belongs to the
                                               ;; conversation it interrupted —
-                                              ;; never carry it into another
-                                              (dissoc :checkpoint)
+                                              ;; never carry it into another;
+                                              ;; ditto the notice dismissal
+                                              (dissoc :checkpoint :handoff-dismissed)
                                               (assoc
                                                :chat-id id
                                                :messages (vec (:messages data))
@@ -221,8 +222,10 @@
         (update-in state [:ai-panel file-id]
                    ;; :checkpoint goes too — a pending pause belongs to the
                    ;; conversation that paused; offering Continue here would
-                   ;; resume the previous conversation's turn
-                   (fn [panel] (dissoc panel :messages :history :usage :chat-id :checkpoint)))
+                   ;; resume the previous conversation's turn. Same for the
+                   ;; handoff-notice dismissal: it is conversation-scoped.
+                   (fn [panel] (dissoc panel :messages :history :usage :chat-id
+                                       :checkpoint :handoff-dismissed)))
         state))))
 
 (defn delete-chat

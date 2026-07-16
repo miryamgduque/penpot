@@ -627,6 +627,57 @@
   cursor: pointer;
 }
 
+// Fresh-chat suggestion: the conversation outgrew the handoff threshold.
+.handoff-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: deprecated.$s-6;
+  margin: 0 var(--sp-m);
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+}
+
+.handoff-text {
+  @include scaled-body-small;
+
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--color-foreground-secondary);
+}
+
+.handoff-action {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-2 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background: none;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.handoff-dismiss {
+  @include scaled-body-small;
+
+  flex: none;
+  padding: 0 deprecated.$s-4;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+}
+
 // A Fix-it-now parked behind the running turn.
 .pending-fix {
   display: flex;

@@ -810,6 +810,20 @@
         busy?     (mf/deref refs/ai-panel-busy?)
         usage     (mf/deref refs/ai-panel-usage)
         checkpoint (mf/deref refs/ai-panel-checkpoint)
+        history   (mf/deref refs/ai-panel-history)
+        handoff-dismissed? (mf/deref refs/ai-panel-handoff-dismissed)
+        ;; history identity only changes at turn boundaries — the size memo
+        ;; recomputes then, not per render
+        history-chars (mf/with-memo [history] (agent/history-chars history))
+        ;; suggest a fresh chat once the conversation is big enough that every
+        ;; reply re-reads a lot of it; hidden mid-turn, at a checkpoint, or
+        ;; once waved off (conversation-scoped — see dismiss-handoff-notice)
+        handoff? (and (> history-chars agent/handoff-notice-chars)
+                      (not busy?)
+                      (nil? checkpoint)
+                      (not handoff-dismissed?))
+        on-handoff (mf/use-fn #(st/emit! (dwaip/summarize-into-new-chat)))
+        on-handoff-dismiss (mf/use-fn #(st/emit! (dwaip/dismiss-handoff-notice)))
         pending-fix (mf/deref refs/ai-panel-pending-fix)
         pending-form (mf/deref refs/ai-panel-pending-form)
         composer-seed (mf/deref refs/ai-panel-composer-seed)
@@ -1137,6 +1151,26 @@
                   :on-click on-clear}
          [:span {:aria-hidden true} "+"]
          "New chat"]])
+
+     ;; Fresh-chat suggestion: the conversation is big enough that every reply
+     ;; re-reads a lot of it. The action summarizes ALL of it (one cheap round)
+     ;; and starts a new chat seeded with the summary; the old conversation
+     ;; stays whole in History.
+     (when handoff?
+       [:div {:class (stl/css :handoff-notice)}
+        [:span {:class (stl/css :handoff-text)}
+         "This conversation is getting long — replies re-read all of it."]
+        [:button {:type "button"
+                  :class (stl/css :handoff-action)
+                  :title "Summarize this conversation and continue in a fresh chat — this one is kept in History"
+                  :on-click on-handoff}
+         [:span {:aria-hidden true} "✦ "]
+         "Summarize into a new chat"]
+        [:button {:type "button"
+                  :class (stl/css :handoff-dismiss)
+                  :aria-label "Dismiss this suggestion"
+                  :on-click on-handoff-dismiss}
+         [:span {:aria-hidden true} "✕"]]])
 
      ;; A Fix-it-now queued behind the running turn: visible, cancellable,
      ;; sends itself when the turn ends (drain effect above).

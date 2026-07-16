@@ -321,6 +321,23 @@
                  (dm/get-in state [:ai-panel file-id :usage])))
              st/state))
 
+(def ai-panel-history
+  "The canonical wire history for the current file's chat. Consumers derive
+  sizes from it with `with-memo` — its identity only changes at turn
+  boundaries, so memoizing on it is cheap."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :history])))
+             st/state))
+
+(def ai-panel-handoff-dismissed
+  "Whether the fresh-chat suggestion was waved off for the current
+  conversation (conversation-scoped; cleared on new-chat/load-chat)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :handoff-dismissed])))
+             st/state))
+
 (def ai-panel-checkpoint
   "The pending runaway checkpoint for the current file's chat, when a turn has
   paused for the user's go-ahead (`{:rounds :usage :history :settings}`)."

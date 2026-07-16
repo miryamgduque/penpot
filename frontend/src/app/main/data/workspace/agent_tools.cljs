@@ -355,14 +355,21 @@
 
    {:name "set_layout"
     :description
-    (str "Gives a board a flex layout, or updates the one it has — this is how "
-         "you arrange children in Penpot. They reflow automatically, so prefer "
-         "this over positioning each child with x/y: a laid-out board survives "
-         "content changes, hand-placed coordinates do not. Gaps and padding "
-         "accept spacing tokens via apply_tokens (rowGap, columnGap, paddingTop…). "
-         "Only boards can have a layout. Asynchronous: verify with read_design.")
+    (str "Gives a board a flex or grid layout, or updates the one it has — this "
+         "is how you arrange children in Penpot. They reflow automatically, so "
+         "prefer this over positioning each child with x/y: a laid-out board "
+         "survives content changes, hand-placed coordinates do not. Use `type: "
+         "grid` for a gallery, a pricing table or any two-dimensional wrap, with "
+         "`columns` for how many; flex (the default) for a single row or column. "
+         "Gaps and padding accept spacing tokens via apply_tokens (rowGap, "
+         "columnGap, paddingTop…). Only boards can have a layout. Asynchronous: "
+         "verify with read_design.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string" :description "board id"}
+                                :type {:type "string" :enum ["flex" "grid"]
+                                       :description "default flex; grid for a gallery/table"}
+                                :columns {:type "number"
+                                          :description "grid only: number of equal columns; omit to infer from the children"}
                                 :dir {:type "string" :enum ["row" "column" "row-reverse" "column-reverse"]}
                                 :alignItems {:type "string" :enum ["start" "end" "center" "stretch"]}
                                 :justifyContent {:type "string"
@@ -1235,6 +1242,23 @@
                       (cb/add-object shape))]
       (interrupt!)
       (st/emit! (dch/commit-changes changes))
+      ;; a child added to a laid-out board must flow into it, or it lands at its
+      ;; raw x/y outside the layout — a grid gallery stops being a gallery on the
+      ;; next card. `:layout/update` only reflows POSITIONS, so grid needs
+      ;; assign-cells first (it auto-adds a track for the orphan); flex just needs
+      ;; the reflow.
+      (when parent?
+        (let [parent (get objects pid)]
+          (cond
+            (ctl/grid-layout? parent)
+            (do (st/emit! (dwsh/update-shapes [pid]
+                                              (fn [p objs] (-> (ctl/assign-cells p objs)
+                                                               (ctl/reorder-grid-children)))
+                                              {:with-objects? true}))
+                (st/emit! (ptk/data-event :layout/update {:ids [pid]})))
+
+            (ctl/flex-layout? parent)
+            (st/emit! (ptk/data-event :layout/update {:ids [pid]})))))
       (rx/of {:id (dm/str (:id shape))
               :type type
               :parentId (when parent? (dm/str pid))
@@ -1656,10 +1680,42 @@
       (seq pad)              (assoc :layout-padding pad))))
 
 
+(def ^:private layout-kinds #{"flex" "grid"})
+
+(defn grid-tracks
+  "N equal free-space columns, each Penpot's `default-track-value` (`{:type :flex
+  :value 1}` — a `1fr` track). Nil/0 columns means \"let calculate-params infer
+  the tracks from the children\", which is the auto-grid's whole point, so it
+  adds none."
+  [columns]
+  (if (and (number? columns) (pos? columns))
+    (vec (repeat columns {:type :flex :value 1}))
+    []))
+
+(defn rebuild-grid
+  "Force a grid to N columns and flow its children across them in append order.
+
+  `create-layout-from-id`'s auto-grid infers tracks from child *positions*, so
+  near-aligned children collapse into a single column — `columns: N` must mean
+  N columns regardless of where the children happen to sit. Resets the tracks and
+  cells (like `calculate-params`' empty-children branch, but for a populated
+  board) and re-assigns."
+  [shape objects n]
+  (let [n    (max 1 (int n))
+        kids (count (:shapes shape))
+        rows (max 1 (js/Math.ceil (/ kids n)))]
+    (-> shape
+        (assoc :layout-grid-columns (vec (repeat n ctl/default-track-value))
+               :layout-grid-rows    (vec (repeat rows ctl/default-track-value))
+               :layout-grid-cells   {})
+        (ctl/create-cells [1 1 n rows])
+        (ctl/assign-cells objects)
+        (ctl/reorder-grid-children))))
+
 (defn layout-problem
   "Why `set_layout` cannot be applied to `id`, as a message the agent can act on,
   or nil. Pure."
-  [objects id {:keys [dir alignItems justifyContent remove] :as input}]
+  [objects id {:keys [type dir alignItems justifyContent remove] :as input}]
   (let [shape (get objects id)]
     (cond
       (nil? id)
@@ -1679,23 +1735,34 @@
       (dm/str "set_layout: " (shape-label shape) " has no layout to remove")
 
       :else
-      (or (enum-problem "set_layout" "dir" dir layout-dirs)
+      (or (enum-problem "set_layout" "type" type layout-kinds)
+          (enum-problem "set_layout" "dir" dir layout-dirs)
           (enum-problem "set_layout" "alignItems" alignItems layout-align-items)
           (enum-problem "set_layout" "justifyContent" justifyContent layout-justify-content)
-          (when (and (not remove) (empty? (layout-changes input)))
-            (dm/str "set_layout: nothing to change — pass dir, alignItems,"
-                    " justifyContent, rowGap, columnGap, padding or wrap"
-                    " (or remove: true)"))))))
+          ;; `type` is itself a change ("make this a grid"), so it satisfies the
+          ;; nothing-to-change guard on its own
+          (when (and (not remove) (nil? type) (empty? (layout-changes input)))
+            (dm/str "set_layout: nothing to change — pass type (flex/grid), dir,"
+                    " alignItems, justifyContent, rowGap, columnGap, padding or"
+                    " wrap (or remove: true)"))))))
 
 (defn- set-layout
-  [{:keys [shapeId remove] :as input}]
+  [{:keys [shapeId type columns remove] :as input}]
   (let [state   @st/state
         objects (dsh/lookup-page-objects state)
         id      (some-> shapeId parse-uuid)]
     (if-let [problem (layout-problem objects id input)]
       (rx/throw (ex-info problem {}))
       (let [shape    (get objects id)
-            changes  (layout-changes input)]
+            changes  (layout-changes input)
+            existing (:layout shape)
+            ;; default to flex, as before; honour an explicit type; a board that
+            ;; already has a layout keeps its kind unless type says otherwise
+            kind     (cond type (keyword type)
+                           existing existing
+                           :else :flex)
+            grid?    (= :grid kind)
+            tracks   (grid-tracks columns)]
         (interrupt!)
         (cond
           remove
@@ -1704,14 +1771,28 @@
 
           :else
           (do
-            ;; a board with no layout needs one created before it can be patched
-            (when (nil? (:layout shape))
-              (st/emit! (dwsl/create-layout-from-id id :flex)))
+            ;; (re)create when there is no layout, or when switching kinds —
+            ;; create-layout-from-id seeds the right initializer for each
+            (when (or (nil? existing) (not= existing kind))
+              (st/emit! (dwsl/create-layout-from-id id kind)))
             (when (seq changes)
               (st/emit! (dwsl/update-layout [id] changes)))
-            (rx/of {:note (str "flex layout applied — children now reflow, so stop "
-                               "setting their x/y. Gaps and padding accept spacing "
-                               "tokens via apply_tokens. Verify with read_design.")})))))))
+            ;; explicit columns: rebuild the grid so children actually flow
+            ;; across N columns, not just widen the track vector under cells the
+            ;; auto-grid already stacked into column 1. {:with-objects? true}
+            ;; gives the update fn the fresh objects assign-cells needs.
+            (when (and grid? (seq tracks))
+              (st/emit! (dwsh/update-shapes [id]
+                                            (fn [shape objs] (rebuild-grid shape objs columns))
+                                            {:with-objects? true})))
+            (rx/of {:note (if grid?
+                            (str "grid layout applied — children flow into cells and "
+                                 "reflow as you add more, so stop setting their x/y. "
+                                 "Gaps and padding accept spacing tokens via "
+                                 "apply_tokens. Verify with read_design.")
+                            (str "flex layout applied — children now reflow, so stop "
+                                 "setting their x/y. Gaps and padding accept spacing "
+                                 "tokens via apply_tokens. Verify with read_design."))})))))))
 
 (def ^:private layout-sizing #{"fill" "fix" "auto"})
 (def ^:private layout-align-self #{"start" "end" "center" "stretch"})

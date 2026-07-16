@@ -1,6 +1,6 @@
 # Phase 25 — Mask and unmask
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; suite+live at merge)
 
 Clipping content to a shape — the circle avatar, the image cropped to a card's rounded corner,
 the photo peeking through a logotype. Boards clip to a rectangle; a mask clips to *any* shape.

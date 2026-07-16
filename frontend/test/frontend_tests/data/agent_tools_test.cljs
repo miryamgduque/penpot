@@ -1509,6 +1509,24 @@
   (t/is (some? (at/detach-problem {} id-missing))))
 
 ;; ---------------------------------------------------------------------------
+;; --- Phase 25: mask / unmask problem-checkers
+
+(t/deftest a-plain-shape-cannot-be-unmasked
+  (let [problem (at/unmask-problem (objects {:id id-a :name "Box" :type :rect}) [id-a])]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "masked group"))))
+
+(t/deftest a-masked-group-can-be-unmasked
+  (let [objs (objects {:id id-a :name "M" :type :group :masked-group true :shapes [id-b]})]
+    (t/is (nil? (at/unmask-problem objs [id-a])))))
+
+(t/deftest an-unmasked-group-cannot-be-unmasked
+  (let [objs (objects {:id id-a :name "G" :type :group :shapes [id-b]})]
+    (t/is (some? (at/unmask-problem objs [id-a])))))
+
+(t/deftest masking-nothing-is-rejected
+  (t/is (some? (at/mask-problem {} []))))
+
 ;; --- Phase 24: undo-problem
 
 (t/deftest an-open-editor-blocks-undo

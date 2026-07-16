@@ -60,6 +60,9 @@
    [potok.v2.core :as ptk]))
 
 (declare audit-violations)
+;; shared problem-checker helper, defined with the delete/duplicate tools but used
+;; by the earlier mask section too
+(declare ids-problem)
 ;; lives with the token tools it is built from, but read_design (far above them)
 ;; is its only caller
 (declare sets-and-themes)
@@ -467,6 +470,23 @@
                                 :type {:type "string" :enum ["html" "svg"]}
                                 :includeChildren {:type "boolean" :description "default true"}}}}
 
+   {:name "mask_shapes"
+    :description
+    (str "Clips shapes to a mask — the circle avatar, the photo cropped to a "
+         "card's rounded corner. The topmost shape becomes the mask and clips "
+         "the rest; pass it along with what it should clip. Unlike a board "
+         "(which only clips to a rectangle) a mask clips to any shape. The "
+         "result is a masked group, not a board. Reverse it with unmask_shapes.")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["shapeIds"]}}
+
+   {:name "unmask_shapes"
+    :description "Removes a mask, leaving its children unclipped. Only a masked group (isMask in read_design) can be unmasked."
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}}}
+                   :required ["shapeIds"]}}
+
    {:name "undo_change"
     :description
     (str "Reverts the single most recent change — the agent's counterpart to "
@@ -867,7 +887,20 @@
               :variantName (:variant-name shape))
 
        (:variant-error shape)
-       (assoc :variantError (:variant-error shape))))))
+       (assoc :variantError (:variant-error shape))
+
+       (:masked-group shape)
+       (assoc :isMask true)
+
+       ;; hide/lock flags (Phase 26) — truthy-only, same discipline
+       (:hidden shape)
+       (assoc :hidden true)
+
+       (:blocked shape)
+       (assoc :locked true)
+
+       (and (:rotation shape) (not (zero? (:rotation shape))))
+       (assoc :rotation (:rotation shape))))))
 
 (defn- token-summary
   [t]
@@ -1333,6 +1366,67 @@
               :type type
               :parentId (when parent? (dm/str pid))
               :note "created — verify geometry with read_design"}))))
+
+;; --- Mask / unmask
+;;
+;; A mask clips content to any shape (boards only clip to a rectangle). Same
+;; silent-filter disease as group/ungroup: `mask-group` drops copy-children and
+;; no-ops on empty; `unmask-group` keeps only group/bool and commits whatever
+;; survived — pass a rect and it "succeeds" having done nothing. It also changes
+;; the user's selection, which we restore.
+
+(defn mask-problem
+  "Why `mask_shapes` cannot run, or nil. Pure."
+  [objects ids]
+  (or (ids-problem "mask_shapes" objects ids)
+      (let [in-copy (filter #(ctn/has-any-copy-parent? objects (get objects %)) ids)]
+        (when (seq in-copy)
+          (dm/str "mask_shapes: " (labels (map #(get objects %) in-copy))
+                  (if (= 1 (count in-copy)) " is" " are")
+                  " inside a component copy, whose structure is owned by the main"
+                  " component — mask the main instead, or detach the copy first")))))
+
+(defn unmask-problem
+  "Why `unmask_shapes` cannot run, or nil. Pure."
+  [objects ids]
+  (or (ids-problem "unmask_shapes" objects ids)
+      (let [shapes (map #(get objects %) ids)
+            wrong  (remove #(and (or (cfh/group-shape? %) (cfh/bool-shape? %))
+                                 (:masked-group %))
+                           shapes)]
+        (when (seq wrong)
+          (dm/str "unmask_shapes: " (labels wrong)
+                  (if (= 1 (count wrong)) " is not a masked group" " are not masked groups")
+                  " — only a shape created by mask_shapes can be unmasked (see its"
+                  " isMask flag in read_design)")))))
+
+(defn- mask-shapes
+  [{:keys [shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (mask-problem objects ids)]
+      (rx/throw (ex-info problem {}))
+      (let [before (dsh/get-selected-ids state)]
+        (interrupt!)
+        (st/emit! (dwg/mask-group (into #{} ids)))
+        ;; the event re-selects the new mask group; put the user's selection back
+        (st/emit! (dws/select-shapes before))
+        (rx/of {:note (str "masked — the shapes are now a masked group clipped to "
+                           "the topmost of them. Not a board (no layout/fill). "
+                           "Verify with read_design.")})))))
+
+(defn- unmask-shapes
+  [{:keys [shapeIds]}]
+  (let [state   @st/state
+        objects (dsh/lookup-page-objects state)
+        ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
+    (if-let [problem (unmask-problem objects ids)]
+      (rx/throw (ex-info problem {}))
+      (do
+        (interrupt!)
+        (st/emit! (dwg/unmask-group (into #{} ids)))
+        (rx/of {:note "unmasked — the group's children are no longer clipped. Verify with read_design."})))))
 
 ;; --- Undo / redo
 ;;
@@ -3077,6 +3171,8 @@
     "create_from_svg"    (create-from-svg input)
     "undo_change"        (undo-change)
     "redo_change"        (redo-change)
+    "mask_shapes"        (mask-shapes input)
+    "unmask_shapes"      (unmask-shapes input)
     "detach_instance"    (detach-instance input)
     "create_variant"     (create-variant input)
     "add_variant"        (add-variant input)

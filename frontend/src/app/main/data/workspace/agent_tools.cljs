@@ -135,11 +135,16 @@
     (str "Your playbooks for this file. Called with no argument it lists them "
          "(name, category, mode, what it does) — cheap. Called with a `name` it "
          "returns that skill's FULL playbook: the method, the order to work in, "
-         "the critical rules and the checkpoints. When a task matches a skill in "
-         "your instructions' skills list, fetch it by name and follow it — do "
-         "not guess or reconstruct its content from the blurb.")
+         "the critical rules and the checkpoints, plus its `references` — deeper "
+         "method documents (layout composition, style profiles, component "
+         "recipes…) fetched one at a time by adding `reference`. When a task "
+         "matches a skill in your instructions' skills list, fetch it by name "
+         "and follow it — do not guess or reconstruct its content from the "
+         "blurb.")
     :input-schema {:type "object"
-                   :properties {:name {:type "string" :description "return this skill's full playbook"}}}}
+                   :properties {:name {:type "string" :description "return this skill's full playbook"}
+                                :reference {:type "string"
+                                            :description "with name: return this reference document instead (the playbook cites references/NN-x.md; pass \"NN-x\")"}}}}
 
    {:name "explore_design"
     :description
@@ -3843,9 +3848,21 @@
 ;; --- Skills
 
 (defn- get-design-skills
-  [{:keys [name]}]
+  [{:keys [name reference]}]
   (let [state @st/state]
-    (rx/of (if name
+    (rx/of (cond
+             ;; second disclosure level: one reference document of one skill
+             (and name reference)
+             (if (nil? (ask/catalog-manifest state name))
+               {:error (dm/str "No skill named \"" name "\". Use one of the names below "
+                               "(the `name` field, not the label).")
+                :available (mapv :name (ask/catalog-manifest state))}
+               (or (when-let [text (ask/skill-reference name reference)]
+                     {:skill name :reference reference :body text})
+                   {:error (dm/str "No reference \"" reference "\" on skill \"" name "\".")
+                    :available (vec (sort (keys (ask/skill-references name))))}))
+
+             name
              (or (ask/catalog-manifest state name)
                  ;; A miss is usually the human label ("Accessibility audit")
                  ;; rather than the key ("penpot-audit-accessibility"). Hand back
@@ -3853,6 +3870,8 @@
                  {:error (dm/str "No skill named \"" name "\". Use one of the names below "
                                  "(the `name` field, not the label).")
                   :available (mapv :name (ask/catalog-manifest state))})
+
+             :else
              (ask/catalog-manifest state)))))
 
 ;; --- audit_file

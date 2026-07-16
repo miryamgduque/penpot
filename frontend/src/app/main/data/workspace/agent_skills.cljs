@@ -25,6 +25,7 @@
   skills)."
   (:require
    [app.main.data.workspace.aikit-bodies :as ab]
+   [app.main.data.workspace.aikit-refs :as ar]
    [app.main.data.workspace.skill-state :as skst]
    [cuerdas.core :as str]))
 
@@ -320,9 +321,21 @@
              "> references that set — keep that, drop the method name. Discarding the constraint"
              "> along with the syntax is the main way to misread this document."
              ">"
+             "> **The `references/NN-name.md` files this playbook cites ARE available**: fetch one"
+             "> with get_design_skills {name: this skill, reference: \"NN-name\"} (this result lists"
+             "> them under `references`). They carry the method detail — layout composition, style"
+             "> profiles, component recipes, critique framework — read the ones the step you are on"
+             "> points at."
+             ">"
              "> Its governance and naming sections were removed because you already carry them."
              "> What is left is the part worth having: the method — what to build, in what order,"
              "> where to stop for review, and what good looks like."
+             ""]))
+
+(def ^:private ref-preamble
+  (str/join "\n"
+            ["> Reference for a playbook written against the plugin-API surface — translate any"
+             "> API names onto your own tools; the method and constraints are the point."
              ""]))
 
 ;; --- User-created skills (US #9)
@@ -410,6 +423,71 @@
         (when-let [body (get ab/bodies name)]
           (str body-preamble "\n" body)))))
 
+;; --- References (the second disclosure level)
+;;
+;; The kit's per-skill `references/*.md` carry the design knowledge the
+;; playbooks lean on — until the 2026-07-16 re-import the bodies cited them as
+;; dangling pointers. Imported whole into `aikit-refs`; NATIVE references (like
+;; the taxonomy below, written for these tools) merge in per skill and are
+;; served without the translation preamble.
+
+;; The Kahoot postmortem's decomposition ask: a shared vocabulary for reading a
+;; reference image into named regions, so structure and layer names come out
+;; consistent across sessions. Attached to the build-family skills.
+(def ^:private ui-element-taxonomy
+  (str/join "\n"
+            ["# UI element taxonomy — decomposing a reference image"
+             ""
+             "Before creating anything from a screenshot or mockup, name every region top-to-bottom, outside-in, in this vocabulary — and keep those names as your board/layer names, so the layer tree reads like the screen."
+             ""
+             "## Mobile chrome (iOS / Android)"
+             "- `status-bar` — clock left; cellular/wifi/battery cluster right. OS chrome, not app UI: build once, componentize, instance on every screen."
+             "- `nav-bar` / `app-bar` — leading back/close control, screen title, optional trailing action. Sits under the status bar."
+             "- `tab-bar` — 3–5 icon+label destinations pinned to the bottom."
+             "- `home-indicator` — the centered dark pill at the very bottom (iOS)."
+             "- `modal-sheet` — a rounded-top surface over a dimmed or peeking parent (the parent shows as a sliver at the very top). The sheet's header stays fixed; content scrolls under it. Model scroll states as ONE content component clipped by the frame at different offsets."
+             "- `keypad` — 3×4 numeric grid, letter sub-labels under digits, action key bottom-right."
+             ""
+             "## Content patterns"
+             "- `section` — heading + body or list; separated by spacing, or a `divider` (thin rect bound to a subtle border token)."
+             "- `info-card` / callout — leading icon + title + supporting text on a subtle surface with radius. Icon fixed, text column fills."
+             "- `list-item` — leading icon/avatar + primary/secondary text + trailing meta or chevron; a list is a column board of them."
+             "- numbered/bulleted list — simplest faithful form: one text block per list with markers inline; upgrade to marker+text rows only when the design styles markers separately."
+             "- `illustration` / media block — use a placeholder image sized to the reference until real art exists."
+             "- `segmented-control` — 2–3 exclusive options in a pill container; active segment filled."
+             "- buttons — one PRIMARY (filled) per screen; secondary = tonal/outline; tertiary = text-only."
+             "- `field` — label + input + helper/error text, a small column board."
+             "- footer caption / attribution bar — e.g. a curator bar in reference-site screenshots. Part of the mockup, not the app: build it if visible, keep it a clearly-named component so it can be dropped."
+             ""
+             "## Web equivalents"
+             "- `top-nav` (logo, links, trailing actions), `sidebar`, `breadcrumbs`, `footer` (link columns + legal), `banner`/consent bar."
+             ""
+             "## Method"
+             "1. List the regions you see BEFORE the first create call; if scope is ambiguous, show the list and ask."
+             "2. Each region is a board with a layout (see your layout doctrine), named from this vocabulary."
+             "3. Chrome repeats across screens — component + instances, never rebuilt per screen."
+             "4. Compare your render against the reference region by region before calling it done."]))
+
+(def ^:private native-references
+  {"penpot-build-screen"    {"ui-element-taxonomy" ui-element-taxonomy}
+   "penpot-build-from-code" {"ui-element-taxonomy" ui-element-taxonomy}
+   "penpot-migrate"         {"ui-element-taxonomy" ui-element-taxonomy}})
+
+(defn skill-references
+  "reference-key → text for `name`: the imported kit references merged with the
+  native extras. Empty when the skill has none."
+  [name]
+  (merge (get ar/references name) (get native-references name)))
+
+(defn skill-reference
+  "One reference document, or nil. Kit references get the translation preamble;
+  native ones (written for these tools) are served verbatim."
+  [name ref]
+  (when-let [text (get (skill-references name) ref)]
+    (if (get-in native-references [name ref])
+      text
+      (str ref-preamble "\n" text))))
+
 (defn find-skill
   "The full catalog entry for `name` (built-in or user-created), tagged with its
   `:category`, or nil. Backs the Skills-tab detail view. `:enabled` here is the
@@ -480,9 +558,15 @@
    (mapv #(select-keys % [:name :label :category :reactive :blurb]) (enabled-skills state)))
   ([state name]
    (some #(when (= name (:name %))
-            (-> (select-keys % [:name :label :category :reactive :blurb])
-                (assoc :body (or (skill-body state name)
-                                 "No playbook text is bundled for this skill; use the description above."))))
+            (let [refs (skill-references name)]
+              (cond-> (-> (select-keys % [:name :label :category :reactive :blurb])
+                          (assoc :body (or (skill-body state name)
+                                           "No playbook text is bundled for this skill; use the description above.")))
+                (seq refs)
+                (assoc :references (vec (sort (keys refs)))
+                       :referencesNote (str "each is one get_design_skills "
+                                            "{name, reference} fetch — read the "
+                                            "ones the step you are on cites")))))
          (enabled-skills state))))
 
 (defn system-prompt-section

@@ -196,12 +196,12 @@
 (defn- propose-reactive
   "A default reactive behavior guessed from the description (US #14): watch-ish
   phrasing (audit, watch, monitor, keep an eye, flag, remind…) suggests an
-  Observer; everything else is On-call. The user can override."
+  Observer; everything else is On-demand. The user can override."
   [what]
   (let [w (str/lower (or what ""))]
     (if (re-find #"audit|watch|monitor|keep an eye|flag|remind|notice|track|observe" w)
       "observer"
-      "on-call")))
+      "on-demand")))
 
 (defn- skill-create-intent
   "When a chat message asks to create a skill, the described 'what' with the
@@ -1263,12 +1263,12 @@
 
 (mf/defc reactive-badge*
   "The reactive-behavior pill (US #14) shared by the catalog cards and the detail
-  view: On-call (acts only when invoked) vs Observer (keeps ambient awareness)."
+  view: On-demand (acts only when invoked) vs Observer (keeps ambient awareness)."
   {::mf/private true}
   [{:keys [reactive]}]
   (when (seq reactive)
     [:span {:class (stl/css-case :reactive-badge true
-                                 :reactive-oncall   (= reactive "on-call")
+                                 :reactive-ondemand (= reactive "on-demand")
                                  :reactive-observer (= reactive "observer"))}
      (get ask/reactive-label reactive reactive)]))
 
@@ -1281,7 +1281,7 @@
   [{:keys [skill on-saved on-cancel]}]
   (let [label*    (mf/use-state (or (:label skill) ""))
         trigger*  (mf/use-state (or (:example skill) ""))
-        reactive* (mf/use-state (or (:reactive skill) "on-call"))
+        reactive* (mf/use-state (or (:reactive skill) "on-demand"))
         body*     (mf/use-state (or (:body skill) ""))
         label     (deref label*)
         trigger   (deref trigger*)
@@ -1313,7 +1313,7 @@
 
      [:label {:class (stl/css :create-label)} "Behavior"]
      [:div {:class (stl/css :create-modes)}
-      (for [[m lbl] [["on-call" "💬 On-call"] ["observer" "👁 Observer"]]]
+      (for [[m lbl] [["on-demand" "💬 On-demand"] ["observer" "👁 Observer"]]]
         [:button {:key m
                   :type "button"
                   :class (stl/css-case :create-mode true :selected (= m reactive))
@@ -1694,7 +1694,7 @@
        [:label {:class (stl/css :create-label)}
         "Should it only respond when asked, or keep an eye on things and let you know?"]
        [:div {:class (stl/css :create-modes)}
-        (for [[m lbl] [["on-call" "💬 On-call"] ["observer" "👁 Observer"]]]
+        (for [[m lbl] [["on-demand" "💬 On-demand"] ["observer" "👁 Observer"]]]
           [:button {:key m
                     :type "button"
                     :class (stl/css-case :create-mode true :selected (= m reactive))

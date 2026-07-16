@@ -77,13 +77,13 @@
 (def catalog
   [{:category "Setup"
     :skills [{:name "penpot-project-vibes" :label "Set project vibes"
-              :blurb "Interview → a design.md the agent designs against" :reactive "on-call" :enabled true
+              :blurb "Interview → a design.md the agent designs against" :reactive "on-demand" :enabled true
               :example "Set the design vibes for this project."
               :what "Runs a short kickoff interview as an in-chat form (what to design first, platform, vibe words, audience…) and distills the answers into a design.md stored on this file. The agent then honors it in every design task, and collaborators share it."
               :body vibes-body}]}
    {:category "Audits"
     :skills [{:name "penpot-audit-accessibility" :label "Accessibility audit"
-              :blurb "WCAG 2.1/2.2 AA checks" :reactive "on-call" :enabled true
+              :blurb "WCAG 2.1/2.2 AA checks" :reactive "on-demand" :enabled true
               :example "Check this screen for accessibility problems."
               :what "Runs a WCAG 2.1/2.2 AA audit covering contrast, tap-target sizes, heading structure, and focus order. Returns a severity-ranked report without changing the file."}
              {:name "penpot-audit-tokens" :label "Tokens governance audit"
@@ -92,7 +92,7 @@
               :example "Audit this file for design-system issues."
               :what "Flags hardcoded values where a token exists, off-grid spacing, orphan or unused tokens, and detached instances. Suggests semantic-token swaps; reports only, no changes."}
              {:name "penpot-design-to-code-review" :label "Design-to-code review"
-              :blurb "Design vs. built code drift" :reactive "on-call" :enabled true
+              :blurb "Design vs. built code drift" :reactive "on-demand" :enabled true
               :example "Does my code match this design?"
               :what "Diffs a Penpot selection against its implemented component (or Storybook story) and reports drift in tokens, structure and states, with a reconciliation. Read-only."}]}
    {:category "Build"
@@ -103,27 +103,27 @@
     ;; the tick / Fix-it-now runs on, so ambient work never bills like design work.
     ;; Prototype-only: these live in the builtin catalog, not the profile_skill DB.
     :skills [{:name "penpot-foundations" :label "Foundations"
-              :blurb "Design tokens setup" :reactive "on-call" :enabled true
+              :blurb "Design tokens setup" :reactive "on-demand" :enabled true
               :example "Set up design tokens for this file."
               :what "Builds and governs the token + library foundation: primitive/semantic/component token tiers and light/dark themes. Proposes changes for your review before applying."}
              {:name "penpot-component-factory" :label "Component factory"
-              :blurb "Builds full variant matrix" :reactive "on-call" :enabled true
+              :blurb "Builds full variant matrix" :reactive "on-demand" :enabled true
               :example "Turn this into a component with variants."
               :what "Builds a component with a complete variant matrix — sizes, hierarchies and every interactive state — fully tokenized and correctly named. Proposed for review."}
              {:name "penpot-build-screen" :label "Build screen"
-              :blurb "Designs screens from a brief" :reactive "on-call" :enabled true
+              :blurb "Designs screens from a brief" :reactive "on-demand" :enabled true
               :example "Design a dashboard screen from this brief."
               :what "Designs a production-grade screen from a brief, section by section, reusing the existing tokens and components. Proposes the result for review."}
              {:name "penpot-build-from-code" :label "Build from code"
-              :blurb "Recreates a view on your tokens" :reactive "on-call" :enabled true
+              :blurb "Recreates a view on your tokens" :reactive "on-demand" :enabled true
               :example "Recreate this React view in Penpot."
               :what "Translates existing page or component code into a Penpot screen bound to your design system — mapping code styles onto semantic tokens and reusing library components. For review."}
              {:name "penpot-document-handoff" :label "Document handoff"
-              :blurb "Annotates a design for devs" :reactive "on-call" :enabled true
+              :blurb "Annotates a design for devs" :reactive "on-demand" :enabled true
               :example "Annotate this screen for handoff."
               :what "Builds a clean annotation layer beside the design — a context card, numbered pins and matching note cards — wrapped in a hideable group. Proposed for review."}
              {:name "penpot-migrate" :label "Migrate"
-              :blurb "Figma → Penpot migration" :reactive "on-call" :enabled true
+              :blurb "Figma → Penpot migration" :reactive "on-demand" :enabled true
               :example "Import this Figma file into Penpot."
               :what "Migrates a Figma design into Penpot with high fidelity: Auto Layout → flex/grid, Variables → tokens, component sets → variants, preserving hierarchy. For review."}
              {:name "penpot-rename-layers" :label "Rename layers"
@@ -154,9 +154,9 @@
           [(:rule skill) {:name (:name skill) :label (:label skill)}])))
 
 (def reactive-label
-  "The human label for a skill's reactive behavior (US #14): On-call acts only
+  "The human label for a skill's reactive behavior (US #14): On-demand acts only
   when invoked; Observer keeps ambient awareness and notifies in the panel."
-  {"on-call" "On-call" "observer" "Observer"})
+  {"on-demand" "On-demand" "observer" "Observer"})
 
 ;; --- Inner knowledge
 ;;
@@ -379,7 +379,7 @@
 (defn watched-rules
   "The rule names declared (via `:rule`) by the currently-enabled **Observer**
   skills — what the live watcher enforces when nothing else has set the file's
-  rules. Reactive behavior drives the watch: an On-call skill never observes, so
+  rules. Reactive behavior drives the watch: an On-demand skill never observes, so
   only Observer skills contribute rules, and disabling one takes its rule out."
   [state]
   (->> (enabled-skills state)

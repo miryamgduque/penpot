@@ -2168,29 +2168,42 @@ textarea.create-input {
   color: var(--color-foreground-secondary);
 }
 
+// A quiet metadata marker rather than a pill: a small dot + muted label, so the
+// reactive behavior reads at a glance without shouting on the card.
 .reactive-badge {
   @include scaled-body-small;
 
+  display: inline-flex;
+  align-items: center;
+  gap: deprecated.$s-4;
   flex-shrink: 0;
-  padding: 0 deprecated.$s-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
   color: var(--color-foreground-secondary);
   white-space: nowrap;
+
+  &::before {
+    content: "";
+    flex-shrink: 0;
+    inline-size: deprecated.$s-6;
+    block-size: deprecated.$s-6;
+    border-radius: 50%;
+    background-color: currentcolor;
+  }
 }
 
-// On-call recedes — it is the plain request-driven default, so keep it neutral.
-.reactive-oncall {
+// On-demand — a small accent dot marks the request-driven default; the label
+// itself stays muted.
+.reactive-ondemand {
   color: var(--color-foreground-secondary);
-  border-color: var(--color-background-quaternary);
+
+  &::before {
+    background-color: var(--color-accent-primary);
+  }
 }
 
-// Observer is the ambient/watching one — give it the accent so an at-a-glance
-// scan of the catalog surfaces which skills act on their own.
+// Observer — a plain neutral dot (inherits the muted label colour), quieter
+// than the accent it used to carry.
 .reactive-observer {
-  color: var(--color-accent-primary);
-  border-color: color-mix(in srgb, var(--color-accent-primary) 40%, transparent);
-  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+  color: var(--color-foreground-secondary);
 }
 
 // Read-only detail view (shown in place of the list within the Skills tab).

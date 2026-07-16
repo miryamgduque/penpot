@@ -515,7 +515,10 @@
     :fn (mg/resource "app/migrations/sql/0157-profile-skill-reactive.sql")}
 
    {:name "0158-add-profile-agent-chat-table"
-    :fn (mg/resource "app/migrations/sql/0158-add-profile-agent-chat-table.sql")}])
+    :fn (mg/resource "app/migrations/sql/0158-add-profile-agent-chat-table.sql")}
+
+   {:name "0159-profile-skill-on-demand"
+    :fn (mg/resource "app/migrations/sql/0159-profile-skill-on-demand.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]

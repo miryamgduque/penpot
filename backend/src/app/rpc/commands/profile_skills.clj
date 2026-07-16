@@ -54,7 +54,7 @@
    [:name [:string {:min 1 :max 200}]]
    [:label [:string {:min 1 :max 200}]]
    [:category [:string {:min 1 :max 100}]]
-   [:reactive [:enum "on-call" "observer"]]
+   [:reactive [:enum "on-demand" "observer"]]
    [:trigger {:optional true} [:maybe [:string {:max 2000}]]]
    [:description {:optional true} [:maybe [:string {:max 4000}]]]
    [:body [:string {:min 1 :max 100000}]]])
@@ -102,7 +102,7 @@
   [:map {:title "update-skill"}
    [:id ::sm/uuid]
    [:label [:string {:min 1 :max 200}]]
-   [:reactive [:enum "on-call" "observer"]]
+   [:reactive [:enum "on-demand" "observer"]]
    [:trigger {:optional true} [:maybe [:string {:max 2000}]]]
    [:description {:optional true} [:maybe [:string {:max 4000}]]]
    [:body [:string {:min 1 :max 100000}]]])

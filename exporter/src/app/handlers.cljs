@@ -11,6 +11,7 @@
    [app.common.logging :as l]
    [app.common.spec :as us]
    [app.handlers.export :as export]
+   [app.handlers.screenshot-url :as screenshot-url]
    [app.util.transit :as t]
    [clojure.spec.alpha :as s]
    [promesa.core :as p]))
@@ -84,12 +85,8 @@
             (assoc :response/body (t/encode (d/without-nils data)))
             (assoc :response/headers {"content-type" "application/transit+json"}))))))
 
-(defn handler
-  "The original `POST /api/export` entry point, and the one the browser backend
-  still goes through. The export runs as soon as it is asked for, and the
-  contract is unchanged: `:wait` answers with the finished resource, otherwise
-  with the resource handle while the work runs."
-  [{:keys [:request/params :request/auth-token] :as exchange}]
+(defn- handle-export
+  [exchange params auth-token]
   (let [{:keys [cmd wait] :as params} (export/conform-params params)]
     (l/debug :hint "process-request" :cmd cmd)
     (->> (auth/resolve-profile-id auth-token)
@@ -108,3 +105,15 @@
                        (p/merr (constantly nil) pending)
                        (p/resolved
                         (assoc exchange :response/body (dissoc resource :path))))))))))
+
+(defn handler
+  "The original `POST /api/export` entry point, and the one the browser backend
+  still goes through. The export runs as soon as it is asked for, and the
+  contract is unchanged: `:wait` answers with the finished resource, otherwise
+  with the resource handle while the work runs."
+  [{:keys [:request/params :request/auth-token] :as exchange}]
+  (if (= :screenshot-url (:cmd params))
+    ;; Not an export: it renders an EXTERNAL page and answers with the PNG
+    ;; inline, so it never enters the jobs pipeline (no resource, no tracking).
+    (screenshot-url/handler exchange (us/conform ::screenshot-url/params params))
+    (handle-export exchange params auth-token)))

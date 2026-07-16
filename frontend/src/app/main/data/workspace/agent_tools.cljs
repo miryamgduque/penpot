@@ -57,6 +57,9 @@
    [cuerdas.core :as str]))
 
 (declare audit-violations)
+;; lives with the token tools it is built from, but read_design (far above them)
+;; is its only caller
+(declare sets-and-themes)
 
 ;; Composite types carry structured values (typography is a map of font
 ;; attributes, shadow a vector of shadow maps). `:value` is `::sm/any`, so
@@ -439,8 +442,45 @@
                    :properties {:type {:type "string" :enum token-type-names
                                        :description "e.g. color, spacing, borderRadius"}
                                 :name {:type "string" :description "e.g. spacing.md, color.brand.primary"}
-                                :value {:type "string" :description "e.g. 16, #6366f1, {color.blue.500}"}}
+                                :value {:type "string" :description "e.g. 16, #6366f1, {color.blue.500}"}
+                                :set {:type "string"
+                                      :description "target set, e.g. \"modes/dark\"; defaults to the file's existing set"}}
                    :required ["type" "name" "value"]}}
+
+   {:name "create_token_set"
+    :description
+    (str "Creates a token set. Sets are how one token NAME can carry different "
+         "values in different modes: put primitives in one set and duplicate the "
+         "semantic names across \"modes/light\" and \"modes/dark\". \"/\" groups "
+         "sets. A set does nothing on its own — pair it with a theme that enables "
+         "it (create_token_theme), or its tokens never resolve.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string" :description "e.g. modes/dark"}}
+                   :required ["name"]}}
+
+   {:name "create_token_theme"
+    :description
+    (str "Creates a token theme: a named switch that enables a set of token sets. "
+         "This is how dark mode works — a \"Light\" theme enabling modes/light and "
+         "a \"Dark\" theme enabling modes/dark, then activate_theme to flip. "
+         "Shapes bound to a token name follow automatically; nothing needs "
+         "re-applying.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string" :description "e.g. Dark"}
+                                :group {:type "string" :description "optional grouping, e.g. modes"}
+                                :sets {:type "array" :items {:type "string"}
+                                       :description "the set names this theme enables"}}
+                   :required ["name" "sets"]}}
+
+   {:name "activate_theme"
+    :description
+    (str "Toggles a token theme on or off, switching which sets resolve — the "
+         "moment dark mode actually happens. Every shape bound to a token name "
+         "re-resolves; nothing needs re-applying. read_design lists the themes "
+         "and which are active.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string"}}
+                   :required ["name"]}}
 
    {:name "audit_file"
     :description
@@ -814,6 +854,10 @@
              :tokens (tokens-by-type (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals))
              :skills (ask/catalog-manifest state)
              :openViolations (count (audit-violations state))}
+      ;; sets/themes only when the file has any — a single-set file pays nothing
+      (seq (sets-and-themes state))
+      (merge (sets-and-themes state))
+
       ;; only when something was actually held back — an always-present "nothing
       ;; omitted" key is payload for nothing
       (seq omitted) (assoc :omitted omitted))))
@@ -2031,6 +2075,68 @@
 
       :else nil)))
 
+;; --- Token sets and themes
+;;
+;; `penpot-foundations`' whole method: primitives in one set, semantics duplicated
+;; across `modes/light` / `modes/dark`, and a theme per mode toggling the matching
+;; set. "/" is the group separator, which is what makes `modes/*` a group.
+
+(defn normalize-set
+  "A set name as the library stores it — `\"modes / dark\"` → `\"modes/dark\"`."
+  [name]
+  (ctob/normalize-set-name (str name)))
+
+(defn token-set-problem
+  "Why a token cannot target this set, or nil. `nil` means Phase 08's default
+  (the library's existing set), which stays untouched.
+
+  Note the param is `set-name`, not `set`: naming it `set` shadows
+  `clojure.core/set`, and `(set set-names)` then calls a string."
+  [set-names set-name]
+  (when (some? set-name)
+    (let [want (normalize-set set-name)]
+      (cond
+        (empty? set-names)
+        (dm/str "set \"" want "\" does not exist — this file has no token sets yet;"
+                " create one with create_token_set")
+
+        (not (contains? (into #{} set-names) want))
+        (dm/str "set \"" want "\" does not exist — this file has: "
+                (str/join ", " (sort set-names))
+                " (create another with create_token_set)")))))
+
+(defn new-set-problem
+  "Why `create_token_set` cannot make this set, or nil."
+  [set-names name]
+  (let [want (normalize-set name)]
+    (cond
+      (or (not (string? name)) (str/blank? name))
+      "create_token_set: name is required, e.g. \"modes/dark\" (\"/\" groups sets)"
+
+      ;; create-token-set commits over an existing set — which is exactly how the
+      ;; library got wiped in Phase 08. Never silently replace one.
+      (contains? (into #{} set-names) want)
+      (dm/str "create_token_set: a set named \"" want "\" already exists"
+              " — name a token's set with create_token's `set` param instead"))))
+
+(defn theme-problem
+  "Why `create_token_theme` cannot make this theme, or nil."
+  [set-names {:keys [name sets]}]
+  (let [known (into #{} set-names)
+        want  (mapv normalize-set sets)
+        gone  (remove known want)]
+    (cond
+      (or (not (string? name)) (str/blank? name))
+      "create_token_theme: name is required, e.g. \"Dark\""
+
+      (empty? sets)
+      (dm/str "create_token_theme: a theme needs at least one set to enable"
+              " — a theme that enables nothing would activate and change nothing")
+
+      (seq gone)
+      (dm/str "create_token_theme: no set named " (str/join ", " (map #(dm/str "\"" % "\"") gone))
+              " — this file has: " (str/join ", " (sort set-names))))))
+
 (defn existing-token-set-id
   "The id of a set already in the library, or nil when it genuinely has none.
 
@@ -2051,19 +2157,114 @@
           (first)
           (ctob/get-id)))
 
+(defn- tokens-lib
+  [state]
+  (some-> (dsh/lookup-file-data state) :tokens-lib))
+
+(defn- set-names
+  [state]
+  (some->> (tokens-lib state) (ctob/get-sets) (mapv ctob/get-name)))
+
+(defn- set-id-by-name
+  [state name]
+  (let [want (normalize-set name)]
+    (some->> (tokens-lib state)
+             (ctob/get-sets)
+             (filter #(= want (ctob/get-name %)))
+             (first)
+             (ctob/get-id))))
+
 (defn- create-token
-  [{:keys [type name value] :as input}]
-  (if-let [problem (token-problem input)]
-    (rx/throw (ex-info problem {}))
-    (let [state  @st/state
-          set-id (existing-token-set-id state)
-          token  (ctob/make-token {:type (token-type type) :name name :value value})]
-      (st/emit! (if set-id
-                  (dwtl/create-token set-id token)
-                  ;; no sets at all: this is the branch that legitimately makes one
-                  (dwtl/create-token token)))
-      (rx/of {:name name :type type :value value
-              :note "token created — bind it to shapes with apply_tokens"}))))
+  ;; `:set` is destructured as `target-set`: binding it to `set` would shadow
+  ;; clojure.core/set for the whole fn — which is exactly how token-set-problem
+  ;; broke ((set xs) called a string).
+  [{:keys [type name value] target-set :set :as input}]
+  (let [state (deref st/state)]
+    (if-let [problem (or (token-problem input)
+                         (some->> (token-set-problem (set-names state) target-set)
+                                  (dm/str "create_token: ")))]
+      (rx/throw (ex-info problem {}))
+      (let [set-id (if target-set
+                     (set-id-by-name state target-set)
+                     (existing-token-set-id state))
+            token  (ctob/make-token {:type (token-type type) :name name :value value})]
+        (st/emit! (if set-id
+                    (dwtl/create-token set-id token)
+                    ;; no sets at all: this is the branch that legitimately makes one
+                    (dwtl/create-token token)))
+        (rx/of (cond-> {:name name :type type :value value
+                        :note "token created — bind it to shapes with apply_tokens"}
+                 target-set (assoc :set (normalize-set target-set))))))))
+
+(defn- create-token-set
+  [{:keys [name]}]
+  (let [state (deref st/state)]
+    (if-let [problem (new-set-problem (set-names state) name)]
+      (rx/throw (ex-info problem {}))
+      (let [nm (normalize-set name)]
+        (st/emit! (dwtl/create-token-set (ctob/make-token-set {:name nm})))
+        (rx/of {:set nm
+                :note (str "set created — aim tokens at it with create_token's `set` "
+                           "param. A set is only live when an active theme enables "
+                           "it: pair modes/* sets with a theme each.")})))))
+
+(defn- create-token-theme
+  [{:keys [name group sets] :as input}]
+  (let [state (deref st/state)]
+    (if-let [problem (theme-problem (set-names state) input)]
+      (rx/throw (ex-info problem {}))
+      (let [theme (ctob/make-token-theme
+                   (cond-> {:name name :sets (into #{} (map normalize-set) sets)}
+                     group (assoc :group group)))]
+        (st/emit! (dwtl/create-token-theme theme))
+        (rx/of {:theme name
+                :note (str "theme created — it is not active yet; activate_theme "
+                           "switches which of its sets resolve")})))))
+
+(defn- activate-theme
+  [{:keys [name]}]
+  (let [state  (deref st/state)
+        lib    (tokens-lib state)
+        themes (some->> lib (ctob/get-themes) (remove #(= ctob/hidden-theme-name (ctob/get-name %))))
+        match  (first (filter #(= name (ctob/get-name %)) themes))]
+    (cond
+      (nil? match)
+      (rx/throw (ex-info (dm/str "activate_theme: no theme named \"" name "\""
+                                 (when (seq themes)
+                                   (dm/str " — this file has: "
+                                           (str/join ", " (map ctob/get-name themes))))
+                                 " (create one with create_token_theme)")
+                         {}))
+
+      :else
+      (do
+        (st/emit! (dwtl/toggle-token-theme-active (ctob/get-id match)))
+        (rx/of {:theme name
+                :note (str "theme toggled — shapes bound to a token NAME re-resolve "
+                           "automatically, so nothing needs re-applying. Verify with "
+                           "read_design.")})))))
+
+(defn- sets-and-themes
+  "The library's sets (with active flag) and themes — `read_design` flattens
+  tokens into active sets only, so without this the agent cannot see that an
+  inactive `modes/dark` exists at all."
+  [state]
+  (let [lib (tokens-lib state)]
+    (when lib
+      (let [active (ctob/get-active-themes-set-names lib)
+            themes (->> (ctob/get-themes lib)
+                        (remove #(= ctob/hidden-theme-name (ctob/get-name %)))
+                        (mapv (fn [t] (cond-> {:name (ctob/get-name t)
+                                               :sets (vec (:sets t))}
+                                        (ctob/theme-active? lib (ctob/get-id t))
+                                        (assoc :active true)))))
+            sets   (->> (ctob/get-sets lib)
+                        (mapv (fn [s] (cond-> {:name (ctob/get-name s)}
+                                        (contains? active (ctob/get-name s))
+                                        (assoc :active true)))))]
+        (cond-> {}
+          (seq sets)   (assoc :sets sets)
+          (seq themes) (assoc :themes themes))))))
 
 ;; --- Token application
 ;;
@@ -2269,5 +2470,8 @@
     "add_variant"        (add-variant input)
     "set_variant_property" (set-variant-property input)
     "create_token"       (create-token input)
+    "create_token_set"   (create-token-set input)
+    "create_token_theme" (create-token-theme input)
+    "activate_theme"     (activate-theme input)
     "apply_tokens"       (apply-tokens input)
     (rx/throw (ex-info (dm/str "Unknown tool: " name) {}))))

@@ -1357,6 +1357,66 @@
   (t/is (nil? (at/text-problem (objects (text-shape id-a "H")) id-a {:text ""}))))
 
 ;; ---------------------------------------------------------------------------
+;; token sets and themes — Phase 20
+;; ---------------------------------------------------------------------------
+
+(t/deftest naming-a-set-that-exists-is-fine
+  (t/is (nil? (at/token-set-problem ["Global" "modes/dark"] "modes/dark"))))
+
+(t/deftest naming-a-set-that-does-not-exist-is-rejected-with-the-real-ones
+  ;; The message must carry the set names, or the agent is guessing blind.
+  (let [problem (at/token-set-problem ["Global" "modes/light"] "modes/dark")]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "modes/light"))
+    (t/is (str/includes? problem "Global"))))
+
+(t/deftest omitting-the-set-is-fine
+  ;; Default behaviour is Phase 08's: the library's existing set.
+  (t/is (nil? (at/token-set-problem ["Global"] nil))))
+
+(t/deftest naming-a-set-in-an-empty-library-is-rejected
+  (let [problem (at/token-set-problem [] "modes/dark")]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "create_token_set"))))
+
+;; --- theme validation
+
+(t/deftest a-theme-over-real-sets-is-fine
+  (t/is (nil? (at/theme-problem ["Global" "modes/dark"] {:name "Dark" :sets ["modes/dark"]}))))
+
+(t/deftest a-theme-needs-a-name
+  (t/is (some? (at/theme-problem ["Global"] {:sets ["Global"]}))))
+
+(t/deftest a-theme-over-a-missing-set-is-rejected
+  (let [problem (at/theme-problem ["Global"] {:name "Dark" :sets ["modes/dark"]})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "modes/dark"))))
+
+(t/deftest a-theme-needs-at-least-one-set
+  ;; A theme that enables nothing is a switch wired to nothing — it would
+  ;; "activate" and change literally nothing, which reads as a broken tool.
+  (let [problem (at/theme-problem ["Global"] {:name "Dark" :sets []})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "set"))))
+
+;; --- set naming: "/" is the group separator, which is how modes/* works
+
+(t/deftest a-grouped-set-name-is-normalised
+  (t/is (= "modes/dark" (at/normalize-set "modes / dark")))
+  (t/is (= "modes/dark" (at/normalize-set "modes/dark"))))
+
+(t/deftest a-set-name-is-required
+  (let [problem (at/new-set-problem ["Global"] "")]
+    (t/is (some? problem))))
+
+(t/deftest creating-a-set-that-already-exists-is-rejected
+  ;; create-token-set would overwrite it — and overwriting a set is how Phase 08
+  ;; wiped the library.
+  (let [problem (at/new-set-problem ["Global" "modes/dark"] "modes/dark")]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "already"))))
+
+;; ---------------------------------------------------------------------------
 ;; order preservation
 ;; ---------------------------------------------------------------------------
 

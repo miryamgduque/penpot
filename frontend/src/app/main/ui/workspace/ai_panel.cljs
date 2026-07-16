@@ -258,9 +258,10 @@
   {::mf/private true}
   [{:keys [messages]}]
   (let [failed?  (some tool-failed? messages)
-        ;; a blocked or failed write is the thing the user most needs to see —
-        ;; never hide it behind a click
-        open*    (mf/use-state (boolean failed?))
+        ;; failures stay COLLAPSED like everything else (Santi, 2026-07-16 —
+        ;; auto-expanded errors dominated the transcript); the red ✕ chip is
+        ;; the signal, the detail is one click away
+        open*    (mf/use-state false)
         open?    (deref open*)
         detail-id (mf/use-id)
         on-toggle (mf/use-fn #(swap! open* not))
@@ -695,10 +696,11 @@
        (vec)))
 
 (mf/defc observer-card*
-  "One Observer skill's notification (issue #37): a calm neutral card — eye +
-  skill headline + summary + expand chevron, an always-visible Dismiss / Fix all
-  footer, and, when expanded, per-rule groups whose rows jump to the layer on the
-  canvas. `on-fix` takes the violations to fix; `on-dismiss` waves this card off."
+  "One Observer skill's notification (issue #37, slimmed 2026-07-16): collapsed
+  it is ONE line — eye + headline + count — with only an ✕ (dismiss); the row
+  itself toggles. Expanded it adds the per-rule groups (rows jump to the layer
+  on canvas) and the Dismiss / Fix all footer. `on-fix` takes the violations to
+  fix; `on-dismiss` waves this card off."
   {::mf/private true}
   [{:keys [card on-fix on-dismiss on-shape-click]}]
   (let [{:keys [label shapes groups summary]} card
@@ -709,18 +711,21 @@
         open-rules* (mf/use-state #{})
         open-rules  (deref open-rules*)]
     [:div {:class (stl/css :observer-card)}
-     [:button {:type "button"
-               :class (stl/css :observer-header)
-               :aria-expanded expanded?
-               :on-click on-toggle}
-      [:span {:class (stl/css :observer-eye) :aria-hidden true}
-       [:> i/icon* {:icon-id i/shown}]]
-      [:span {:class (stl/css :observer-headline-wrap)}
+     [:div {:class (stl/css :observer-header-row)}
+      [:button {:type "button"
+                :class (stl/css :observer-header)
+                :aria-expanded expanded?
+                :on-click on-toggle}
+       [:span {:class (stl/css :observer-eye) :aria-hidden true}
+        [:> i/icon* {:icon-id i/shown}]]
        [:span {:class (stl/css :observer-headline)} label]
        [:span {:class (stl/css :observer-summary)} summary]]
-      [:span {:class (stl/css-case :observer-chevron true :observer-chevron-open expanded?)
-              :aria-hidden true}
-       [:> i/icon* {:icon-id i/arrow-down}]]]
+      [:button {:type "button"
+                :class (stl/css :observer-close)
+                :aria-label "Dismiss"
+                :title "Dismiss"
+                :on-click on-dismiss}
+       [:> i/icon* {:icon-id i/close}]]]
 
      (when expanded?
        [:div {:class (stl/css :observer-groups)}
@@ -762,16 +767,17 @@
                            :on-click (fn [_] (swap! open-rules* conj rule))}
                   (dm/str "Show " (- n max-row-shapes) " more")]])]]))])
 
-     [:div {:class (stl/css :observer-footer)}
-      [:button {:type "button"
-                :class (stl/css :observer-dismiss)
-                :on-click on-dismiss}
-       "Dismiss"]
-      [:button {:type "button"
-                :class (stl/css :observer-fixall)
-                :title "Ask the agent to fix everything listed, in this conversation"
-                :on-click (fn [_] (on-fix shapes))}
-       "Fix all"]]]))
+     (when expanded?
+       [:div {:class (stl/css :observer-footer)}
+        [:button {:type "button"
+                  :class (stl/css :observer-dismiss)
+                  :on-click on-dismiss}
+         "Dismiss"]
+        [:button {:type "button"
+                  :class (stl/css :observer-fixall)
+                  :title "Ask the agent to fix everything listed, in this conversation"
+                  :on-click (fn [_] (on-fix shapes))}
+         "Fix all"]])]))
 
 (mf/defc observer-notifications*
   "The Observer notification stack (issue #37): one calm card per affected

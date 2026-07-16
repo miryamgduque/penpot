@@ -1577,8 +1577,8 @@
 ;; document glyph. A frontmatter `icon` field could replace this once the
 ;; set grows past a handful.
 (def ^:private foundation-icons
-  {"vibes" i/swatches
-   "tone-of-voice" i/comments})
+  {"vibes" i/sparkles
+   "tone-of-voice" i/heart})
 
 (defn- foundation-summary
   "The card's one-liner: the frontmatter description, else the first body
@@ -1592,25 +1592,33 @@
              (first)))))
 
 (mf/defc foundations-list*
-  "The file's foundations (US #38): an 'Applies to this file' marker, one
-  card per foundation (glyph, name, one-line summary), and the add
-  affordance — creation is agent-guided, so it seeds the chat composer."
+  "The file's foundations (US #38): one card per foundation (glyph, name,
+  one-line summary) and the add affordance — creation is agent-guided, so it
+  seeds the chat composer."
   {::mf/private true}
-  [{:keys [on-select on-interview on-create]}]
+  [{:keys [on-select on-interview on-tone on-create]}]
   (let [foundations (mf/deref dd/foundations-ref)]
     [:div {:class (stl/css :foundations-view)}
-     [:div {:class (stl/css :foundations-scope)}
-      [:> i/icon* {:icon-id i/document}]
-      [:span "Applies to this file"]]
      (if (empty? foundations)
+       ;; Empty state: intro + two suggested starter foundations (agent-guided
+       ;; creation), then the add affordance (not wired yet — no-op for now).
        [:div {:class (stl/css :vibes-empty)}
-        [:div {:class (stl/css :vibes-empty-title)} "No foundations yet"]
         [:p {:class (stl/css :vibes-empty-text)}
-         "Foundations are standing design context for this file — vibes, tone of voice, naming rules. Skills and the agent read them on every task. Start with the vibes interview."]
-        [:button {:type "button"
-                  :class (stl/css :vibes-button-primary)
-                  :on-click on-interview}
-         "Set the vibes"]]
+         "Standing design context for this file: vibes, tone of voice, naming rules, and more. Skills and the agent read them on every task."]
+        [:button {:type "button" :class (stl/css :foundation-card) :on-click on-interview}
+         [:span {:class (stl/css :foundation-card-icon)}
+          [:> i/icon* {:icon-id i/sparkles}]]
+         [:div {:class (stl/css :foundation-card-text)}
+          [:div {:class (stl/css :foundation-card-title)} "Vibes"]
+          [:div {:class (stl/css :foundation-card-summary)} "Playful, bold, high-contrast"]]]
+        [:button {:type "button" :class (stl/css :foundation-card) :on-click on-tone}
+         [:span {:class (stl/css :foundation-card-icon)}
+          [:> i/icon* {:icon-id i/heart}]]
+         [:div {:class (stl/css :foundation-card-text)}
+          [:div {:class (stl/css :foundation-card-title)} "Tone of voice"]
+          [:div {:class (stl/css :foundation-card-summary)} "Friendly, concise, active voice"]]]
+        [:button {:type "button" :class (stl/css :foundation-add)}
+         "+ Add a foundation"]]
        [:*
         (for [{:keys [slug doc]} foundations]
           [:button {:key slug
@@ -2418,6 +2426,12 @@
         (mf/use-fn
          (mf/deps on-seed-chat)
          #(on-seed-chat "Set the design vibes for this project."))
+        ;; Tone of voice starter: land in chat with a prompt inviting the user's
+        ;; tone instructions (no dedicated interview skill yet).
+        on-tone-interview
+        (mf/use-fn
+         (mf/deps on-seed-chat)
+         #(on-seed-chat "Set the tone of voice for this file: "))
         on-add-foundation
         (mf/use-fn
          (mf/deps on-seed-chat)
@@ -2517,19 +2531,11 @@
       (when-not (or skills? foundations?)
         [:div {:class (stl/css :header-actions)}
          ;; Conversation controls (new chat + history) lead the band — they
-         ;; act on the chat itself, where the rest configure the panel. (The
-         ;; A−/A+ stepper moved into the More-actions menu below.)
+         ;; act on the chat itself. Foundations / Skills navigation and the
+         ;; text-size stepper live in the More-actions menu (US #38).
          [:> chat-controls*]
-         [:> icon-button* {:variant "ghost"
-                           :aria-label "Open Foundations"
-                           :on-click open-foundations
-                           :icon i/compass}]
-         [:> icon-button* {:variant "ghost"
-                           :aria-label "Open Skills"
-                           :on-click open-skills
-                           :icon i/list-checks}]
-         ;; More actions — a dropdown of extra controls. For now: the text-size
-         ;; stepper (the header itself never scales, so it stays put).
+         ;; More actions — a dropdown of extra controls: the panel's
+         ;; destinations (Foundations / Skills) and the text-size stepper.
          [:div {:class (stl/css :more-actions)
                 :ref more-ref}
           [:> icon-button* {:variant "ghost"
@@ -2538,6 +2544,16 @@
                             :icon i/menu}]
           [:& dropdown {:show more-open? :on-close close-more :container more-ref}
            [:div {:class (stl/css :more-menu)}
+            [:button {:type "button"
+                      :class (stl/css :more-option)
+                      :on-click #(do (close-more) (open-foundations))}
+             [:> i/icon* {:icon-id i/compass}]
+             [:span "Foundations"]]
+            [:button {:type "button"
+                      :class (stl/css :more-option)
+                      :on-click #(do (close-more) (open-skills))}
+             [:> i/icon* {:icon-id i/list-checks}]
+             [:span "Skills"]]
             [:div {:class (stl/css :more-row)}
              [:span {:class (stl/css :more-row-label)} "Text size"]
              [:div {:class (stl/css :font-stepper)}
@@ -2574,6 +2590,7 @@
                                               :on-deleted on-foundation-deleted}]
                         [:> foundations-list* {:on-select on-open-foundation
                                                :on-interview on-vibes-interview
+                                               :on-tone on-tone-interview
                                                :on-create on-add-foundation}])
         (empty? pool) [:> connect-empty*]
         :else         [:> chat-tab* {:on-create-skill on-create-skill}])]]))

@@ -257,6 +257,28 @@
   box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
 }
 
+// A navigation row in the menu: icon + label, opens a destination (US #38 moved
+// Foundations / Skills here from the header).
+.more-option {
+  @include deprecated.body-small-typography;
+
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+  width: 100%;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background: none;
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+  text-align: start;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
 // One action row: a label on the left, its control on the right.
 .more-row {
   display: flex;
@@ -1564,7 +1586,7 @@
   padding: deprecated.$s-12;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
-  background-color: var(--color-background-secondary);
+  background-color: var(--color-background-primary);
   text-align: start;
   cursor: pointer;
 
@@ -1580,9 +1602,7 @@
   justify-content: center;
   inline-size: deprecated.$s-32;
   block-size: deprecated.$s-32;
-  border-radius: deprecated.$br-8;
-  background-color: var(--color-background-tertiary);
-  color: var(--color-foreground-secondary);
+  color: var(--color-accent-primary);
 }
 
 .foundation-card-text {

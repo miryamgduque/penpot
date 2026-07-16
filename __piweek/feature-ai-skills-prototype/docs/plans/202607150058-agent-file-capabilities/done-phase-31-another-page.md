@@ -1,6 +1,6 @@
 # Phase 31 — Another page
 
-**Status:** todo
+**Status:** done (worktree caps-23-32; option a; suite+live at merge)
 
 The agent lives its whole life on the current page: `read_design` reports one page's shapes
 and never mentions that others exist, and no tool can create, rename or duplicate a page. A

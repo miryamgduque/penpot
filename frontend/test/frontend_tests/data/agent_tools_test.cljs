@@ -1692,3 +1692,77 @@
 (t/deftest icons-payload-points-at-insert-icon-when-results-exist
   (let [out (at/icons-payload "{\"icons\":[\"mdi:home\"],\"total\":1}" 24)]
     (t/is (str/includes? (:note out) "insert_icon"))))
+
+;; ---------------------------------------------------------------------------
+;; search_fonts / set_font — catalog search, attr building, validation
+;; ---------------------------------------------------------------------------
+
+(def ^:private fonts-db
+  {"gfont-inter" {:id "gfont-inter" :family "Inter" :backend :google
+                  :variants [{:id "regular" :weight "400" :style "normal"}
+                             {:id "700" :weight "700" :style "normal"}]}
+   "gfont-lora"  {:id "gfont-lora" :family "Lora" :backend :google
+                  :variants [{:id "regular" :weight "400" :style "normal"}]}
+   "sourcesanspro" {:id "sourcesanspro" :family "Source Sans Pro" :backend :builtin
+                    :variants [{:id "regular" :weight "400" :style "normal"}]}})
+
+(t/deftest search-fonts-needs-a-query
+  (t/is (str/includes? (tool-error "search_fonts" {}) "query")))
+
+(t/deftest font-search-matches-case-insensitively
+  (let [rows (at/font-search-results fonts-db "INTER" 10)]
+    (t/is (= ["Inter"] (mapv :family rows)))))
+
+(t/deftest font-search-matches-substrings
+  (t/is (= ["Source Sans Pro"]
+           (mapv :family (at/font-search-results fonts-db "sans" 10)))))
+
+(t/deftest font-search-caps-at-the-limit
+  (t/is (= 1 (count (at/font-search-results fonts-db "o" 1)))))
+
+(t/deftest font-search-rows-carry-variants-and-backend
+  (let [row (first (at/font-search-results fonts-db "inter" 10))]
+    (t/is (= "google" (:backend row)))
+    (t/is (= ["regular" "700"] (:variants row)))))
+
+(t/deftest font-attrs-builds-the-full-five-key-map
+  (t/testing "a partial attr map leaves stale font-family/weight behind — all five or nothing"
+    (t/is (= {:font-id "gfont-inter" :font-family "Inter"
+              :font-variant-id "700" :font-weight "700" :font-style "normal"}
+             (at/font-attrs (get fonts-db "gfont-inter")
+                            {:id "700" :weight "700" :style "normal"})))))
+
+(t/deftest variant-problem-accepts-a-real-variant
+  (t/is (nil? (at/variant-problem (get fonts-db "gfont-inter") "700")))
+  (t/is (nil? (at/variant-problem (get fonts-db "gfont-inter") nil))))
+
+(t/deftest variant-problem-lists-the-real-variants
+  (let [msg (at/variant-problem (get fonts-db "gfont-inter") "black")]
+    (t/is (str/includes? msg "regular"))
+    (t/is (str/includes? msg "700"))))
+
+(t/deftest non-text-problem-accepts-text-shapes
+  (let [objects (objects {:id id-a :name "Title" :type :text})]
+    (t/is (nil? (at/non-text-problem objects [id-a])))))
+
+(t/deftest non-text-problem-names-the-offending-shape
+  (let [objects (objects {:id id-a :name "Title" :type :text}
+                         {:id id-b :name "Card" :type :frame})
+        msg     (at/non-text-problem objects [id-a id-b])]
+    (t/is (str/includes? msg "Card"))
+    (t/is (str/includes? msg "text"))))
+
+(t/deftest non-text-problem-flags-unknown-ids
+  (let [msg (at/non-text-problem (objects) [id-missing])]
+    (t/is (str/includes? msg "page"))))
+
+(t/deftest set-font-needs-shape-ids
+  (t/is (str/includes? (tool-error "set_font" {:family "Inter"}) "shapeIds")))
+
+(t/deftest set-font-unknown-family-points-at-search
+  (t/is (str/includes? (tool-error "set_font" {:shapeIds [(str id-a)]
+                                               :family "NoSuchFont9000"})
+                       "search_fonts")))
+
+(t/deftest set-font-needs-a-font-param
+  (t/is (some? (tool-error "set_font" {:shapeIds [(str id-a)]}))))

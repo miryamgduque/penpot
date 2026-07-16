@@ -54,6 +54,7 @@
    [app.main.data.workspace.variants :as dwv]
    [app.main.data.workspace.wasm-text :as dwwt]
    [app.main.features :as features]
+   [app.main.fonts :as fonts]
    [app.main.repo :as rp]
    [app.main.store :as st]
    [app.render-wasm.api :as wasm.api]
@@ -286,6 +287,30 @@
                                 :size {:type "number" :description "height in px, default 24"}
                                 :name {:type "string" :description "layer name; defaults to the icon id"}}
                    :required ["icon"]}}
+
+   {:name "search_fonts"
+    :description
+    (str "Searches the fonts available in this Penpot instance (Google Fonts "
+         "plus built-ins) by family name, case-insensitive substring. Returns "
+         "each match's id, family, and variant ids. Apply one with set_font.")
+    :input-schema {:type "object"
+                   :properties {:query {:type "string" :description "e.g. \"inter\" or \"serif family name\""}
+                                :limit {:type "number" :description "max results, default 15"}}
+                   :required ["query"]}}
+
+   {:name "set_font"
+    :description
+    (str "Applies a font family (and optionally a specific variant) to text "
+         "shapes. Give `family` (case-insensitive, from search_fonts) or a "
+         "`fontId`. The font is loaded on demand before applying, and the "
+         "text re-measures asynchronously — re-read to confirm geometry.")
+    :input-schema {:type "object"
+                   :properties {:shapeIds {:type "array" :items {:type "string"}
+                                           :description "text shape ids"}
+                                :family {:type "string" :description "e.g. \"Inter\""}
+                                :fontId {:type "string" :description "font id from search_fonts"}
+                                :variantId {:type "string" :description "e.g. \"700\" or \"italic\"; defaults to regular"}}
+                   :required ["shapeIds"]}}
 
    {:name "modify_shape"
     :description
@@ -1522,6 +1547,123 @@
                  :icon icon
                  :size size
                  :note "icon inserted as vector shapes"})))))))
+
+;; --- search_fonts / set_font
+
+(defn font-search-results
+  "Case-insensitive substring search over the fonts db by family name. Public
+  for tests."
+  [db query limit]
+  (let [q (str/lower query)]
+    (->> (vals db)
+         (filter #(str/includes? (str/lower (:family %)) q))
+         (sort-by :family)
+         (take limit)
+         (mapv (fn [{:keys [id family backend variants]}]
+                 {:id id
+                  :family family
+                  :backend (name (or backend :unknown))
+                  :variants (mapv :id variants)})))))
+
+(defn font-attrs
+  "The full text attr map for a font+variant. All five keys always — a partial
+  map leaves the previous font's family or weight behind on the shape. Public
+  for tests."
+  [font variant]
+  {:font-id (:id font)
+   :font-family (:family font)
+   :font-variant-id (:id variant)
+   :font-weight (:weight variant)
+   :font-style (:style variant)})
+
+(defn variant-problem
+  "Validation message when a requested variant does not exist on the font, nil
+  when acceptable (or when no variant was requested). Public for tests."
+  [font variant-id]
+  (when (and (some? variant-id)
+             (not (some #(= variant-id (:id %)) (:variants font))))
+    (str "set_font: variant \"" variant-id "\" does not exist for "
+         (:family font) " — available: "
+         (str/join ", " (map :id (:variants font))) ".")))
+
+(defn non-text-problem
+  "Validation message when any id is unknown on this page or names a non-text
+  shape, nil when all ids are text shapes. Public for tests."
+  [objects ids]
+  (let [missing  (remove #(contains? objects %) ids)
+        non-text (filter #(some->> (get-in objects [% :type]) (not= :text)) ids)]
+    (cond
+      (seq missing)
+      (str "set_font: shape id(s) "
+           (str/join ", " (map str missing))
+           " do not exist on this page — check with find_shapes.")
+
+      (seq non-text)
+      (let [names (map #(or (get-in objects [% :name]) (str %)) non-text)]
+        (str "set_font: " (str/join ", " names)
+             (if (= 1 (count names)) " is not a text shape" " are not text shapes")
+             " — set_font only applies to text.")))))
+
+(defn- search-fonts
+  [{:keys [query limit]}]
+  (if-not (and (string? query) (not (str/blank? query)))
+    (rx/throw (ex-info "search_fonts: query is required, e.g. {query: \"inter\"}" {}))
+    (let [limit (-> (or limit 15) (max 1) (min 50))
+          db    @fonts/fontsdb
+          rows  (font-search-results db query limit)]
+      (rx/of {:fonts rows
+              :note (cond
+                      (seq rows)
+                      "apply with set_font {shapeIds, family (or fontId), variantId?}"
+
+                      (not (some #(= :google (:backend %)) (vals db)))
+                      (str "no match, and Google Fonts are disabled on this "
+                           "instance — only built-in fonts are available")
+
+                      :else
+                      "no match — try a shorter substring of the family name")}))))
+
+(defn- set-font
+  [{:keys [shapeIds family fontId variantId]}]
+  (let [ids  (mapv #(some-> % parse-uuid) (or shapeIds []))
+        font (cond
+               (some? fontId) (fonts/get-font-data fontId)
+               (some? family) (fonts/find-font-family family))]
+    (cond
+      (or (empty? ids) (some nil? ids))
+      (rx/throw (ex-info "set_font: shapeIds must be a non-empty array of shape ids" {}))
+
+      (and (nil? fontId) (nil? family))
+      (rx/throw (ex-info "set_font: give a font `family` (or a `fontId`) — find one with search_fonts" {}))
+
+      (nil? font)
+      (rx/throw (ex-info (str "set_font: no font matches "
+                              (or fontId (str "family \"" family "\""))
+                              " — find the exact name with search_fonts")
+                         {}))
+
+      :else
+      (let [objects (:objects (dsh/lookup-page @st/state))
+            variant (if (some? variantId)
+                      (fonts/get-variant font variantId)
+                      (fonts/get-default-variant font))]
+        (if-let [problem (or (non-text-problem objects ids)
+                             (variant-problem font variantId))]
+          (rx/throw (ex-info problem {}))
+          (->> (rx/from (fonts/ensure-loaded! (:id font) (:id variant)))
+               (rx/map
+                (fn [_]
+                  (st/emit! (dwt-text/update-all-attrs ids (font-attrs font variant)))
+                  {:family (:family font)
+                   :variant (:id variant)
+                   :shapes (count ids)
+                   :note "font applied — text re-measures asynchronously"}))
+               (rx/catch
+                (fn [_]
+                  (rx/throw (ex-info (str "set_font: " (:family font)
+                                          " could not be loaded from its provider "
+                                          "— try another font")
+                                     {}))))))))))
 
 (defn shadow->shape
   "A shadow as Penpot stores it. `:color` is a *map* (`schema:color`), not a hex
@@ -3144,6 +3286,8 @@
     "insert_image"       (insert-image input)
     "search_icons"       (search-icons input)
     "insert_icon"        (insert-icon input)
+    "search_fonts"       (search-fonts input)
+    "set_font"           (set-font input)
     "modify_shape"       (modify-shape input)
     "nest_shape"         (nest-shape input)
     "create_text"        (create-text input)

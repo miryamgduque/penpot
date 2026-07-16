@@ -1517,41 +1517,193 @@
      [:div {:class (stl/css :catalog-desc)}
       [:span {:class (stl/css :catalog-blurb)} blurb]]]))
 
+(defn- vec-remove
+  [v i]
+  (vec (concat (subvec v 0 i) (subvec v (inc i)))))
+
+(mf/defc vibes-token-form*
+  "The DESIGN.md frontmatter as form fields (US #38): the user edits token
+  names and values through inputs — never raw YAML — and edit-model→serialize
+  guarantees the saved doc stays structurally valid. `state` is the parent's
+  edit-state atom; every input writes an [:model …] path into it."
+  {::mf/private true}
+  [{:keys [state]}]
+  ;; plain deref, NOT mf/deref: `state` is the parent's use-state handle (no
+  ;; IWatchable); the parent re-renders on every swap! and takes us with it
+  (let [edit    (deref state)
+        model   (:model edit)
+        set-in  (fn [path]
+                  (fn [event]
+                    (swap! state assoc-in (cons :model path)
+                           (dom/get-value (dom/get-target event)))))
+        add-row (fn [k row]
+                  (fn [] (swap! state update-in [:model k] (fnil conj []) row)))
+        rm-row  (fn [k i]
+                  (fn [] (swap! state update-in [:model k] vec-remove i)))
+        scale-section
+        (fn [k title add-label]
+          (mf/html
+           [:*
+            [:div {:class (stl/css :vibes-form-section-title)} title]
+            (for [[i {:keys [name value]}] (map-indexed vector (get model k))]
+              [:div {:key (dm/str title i) :class (stl/css :vibes-form-row)}
+               [:input {:class (stl/css :vibes-form-input)
+                        :placeholder "name (sm, md…)"
+                        :value name
+                        :on-change (set-in [k i :name])}]
+               [:input {:class (stl/css :vibes-form-input :vibes-form-input-mono)
+                        :placeholder "value (8px)"
+                        :value value
+                        :on-change (set-in [k i :value])}]
+               [:button {:type "button"
+                         :class (stl/css :vibes-form-remove)
+                         :aria-label (dm/str "Remove " title " token")
+                         :on-click (rm-row k i)}
+                "×"]])
+            [:button {:type "button"
+                      :class (stl/css :vibes-form-add)
+                      :on-click (add-row k {:name "" :value ""})}
+             add-label]]))]
+
+    [:div {:class (stl/css :vibes-form)}
+     [:div {:class (stl/css :vibes-form-field)}
+      [:span {:class (stl/css :vibes-form-label)} "Name"]
+      [:input {:class (stl/css :vibes-form-input)
+               :placeholder "the design system's name"
+               :value (:name model)
+               :on-change (set-in [:name])}]]
+     [:div {:class (stl/css :vibes-form-field)}
+      [:span {:class (stl/css :vibes-form-label)} "Description"]
+      [:input {:class (stl/css :vibes-form-input)
+               :placeholder "identity in one line"
+               :value (:description model)
+               :on-change (set-in [:description])}]]
+
+     [:div {:class (stl/css :vibes-form-section-title)} "Colors"]
+     (for [[i {:keys [name value]}] (map-indexed vector (:colors model))]
+       [:div {:key (dm/str "color" i) :class (stl/css :vibes-form-row)}
+        [:span {:class (stl/css :vibes-form-swatch)
+                :style #js {:backgroundColor value}}]
+        [:input {:class (stl/css :vibes-form-input)
+                 :placeholder "name (primary…)"
+                 :value name
+                 :on-change (set-in [:colors i :name])}]
+        [:input {:class (stl/css :vibes-form-input :vibes-form-input-mono)
+                 :placeholder "#rrggbb or any CSS color"
+                 :value value
+                 :on-change (set-in [:colors i :value])}]
+        [:button {:type "button"
+                  :class (stl/css :vibes-form-remove)
+                  :aria-label "Remove color"
+                  :on-click (rm-row :colors i)}
+         "×"]])
+     [:button {:type "button"
+               :class (stl/css :vibes-form-add)
+               :on-click (add-row :colors {:name "" :value ""})}
+      "+ Add color"]
+
+     [:div {:class (stl/css :vibes-form-section-title)} "Typography"]
+     (for [[i row] (map-indexed vector (:typography model))]
+       [:div {:key (dm/str "type" i) :class (stl/css :vibes-form-type)}
+        [:div {:class (stl/css :vibes-form-row)}
+         [:input {:class (stl/css :vibes-form-input)
+                  :placeholder "role (heading, body…)"
+                  :value (:name row)
+                  :on-change (set-in [:typography i :name])}]
+         [:button {:type "button"
+                   :class (stl/css :vibes-form-remove)
+                   :aria-label "Remove typography role"
+                   :on-click (rm-row :typography i)}
+          "×"]]
+        [:div {:class (stl/css :vibes-form-type-grid)}
+         [:input {:class (stl/css :vibes-form-input)
+                  :placeholder "family (Inter)"
+                  :value (:family row)
+                  :on-change (set-in [:typography i :family])}]
+         [:input {:class (stl/css :vibes-form-input)
+                  :placeholder "size (14px)"
+                  :value (:size row)
+                  :on-change (set-in [:typography i :size])}]
+         [:input {:class (stl/css :vibes-form-input)
+                  :placeholder "weight (600)"
+                  :value (:weight row)
+                  :on-change (set-in [:typography i :weight])}]
+         [:input {:class (stl/css :vibes-form-input)
+                  :placeholder "line height (1.5)"
+                  :value (:line-height row)
+                  :on-change (set-in [:typography i :line-height])}]]])
+     [:button {:type "button"
+               :class (stl/css :vibes-form-add)
+               :on-click (add-row :typography {:name "" :family "" :size ""
+                                               :weight "" :line-height ""
+                                               :extra {}})}
+      "+ Add role"]
+
+     (scale-section :rounded "Rounded" "+ Add radius")
+     (scale-section :spacing "Spacing" "+ Add step")
+
+     (when (contains? (:extra model) "components")
+       [:p {:class (stl/css :vibes-form-note)}
+        "components tokens are kept as-is — edit them through the agent for now"])]))
+
 (mf/defc vibes-view*
   "The project vibes document: rendered markdown with Edit / Re-run interview /
   Delete, an editor with the same size cap the tool enforces, and an empty
-  state that starts the interview. Deleting is a two-click inline confirm —
-  and it goes through the changes pipeline, so it is undoable like any edit.
-  `on-interview` seeds the chat composer with the vibes trigger and switches
-  to the chat view."
+  state that starts the interview. Editing splits by format: a DESIGN.md doc
+  gets the token FORM + a body textarea (raw YAML is never shown), a legacy
+  doc keeps the plain textarea plus an 'Add design tokens' path into the form.
+  Deleting is a two-click inline confirm — and it goes through the changes
+  pipeline, so it is undoable like any edit. `on-interview` seeds the chat
+  composer with the vibes trigger and switches to the chat view."
   {::mf/private true}
   [{:keys [on-interview]}]
   (let [doc       (mf/deref dd/doc-ref)
-        editing?* (mf/use-state false)
-        editing?  (deref editing?*)
-        draft*    (mf/use-state "")
-        draft     (deref draft*)
+        ;; nil = reading; {:mode :raw :text s} = legacy textarea;
+        ;; {:mode :form :model m :body s} = token form + body
+        edit*     (mf/use-state nil)
+        edit      (deref edit*)
+        editing?  (some? edit)
         confirm?* (mf/use-state false)
         confirm?  (deref confirm?*)
 
-        problem   (when editing? (dd/doc-problem draft))
+        ;; what Save would persist — the cap and the validation gate both run
+        ;; against the SERIALIZED doc, exactly like the agent's tool path
+        candidate (when edit
+                    (if (= :raw (:mode edit))
+                      (str/trim (or (:text edit) ""))
+                      (dmd/serialize
+                       {:frontmatter (dmd/edit-model->frontmatter (:model edit))
+                        :body (str/trim (or (:body edit) ""))})))
+        problem   (when edit (dd/doc-problem candidate))
 
         on-edit   (mf/use-fn
                    (mf/deps doc)
                    (fn []
-                     (reset! draft* (or doc ""))
                      (reset! confirm?* false)
-                     (reset! editing?* true)))
-        on-draft  (mf/use-fn
-                   #(reset! draft* (dom/get-value (dom/get-target %))))
-        on-cancel (mf/use-fn #(reset! editing?* false))
+                     (let [{:keys [frontmatter body]} (dmd/parse (or doc ""))]
+                       (reset! edit*
+                               (if frontmatter
+                                 {:mode :form
+                                  :model (dmd/edit-model frontmatter)
+                                  :body body}
+                                 {:mode :raw :text (or doc "")})))))
+        on-raw-change  (mf/use-fn
+                        #(swap! edit* assoc :text (dom/get-value (dom/get-target %))))
+        on-body-change (mf/use-fn
+                        #(swap! edit* assoc :body (dom/get-value (dom/get-target %))))
+        on-add-tokens  (mf/use-fn
+                        #(swap! edit* (fn [{:keys [text]}]
+                                        {:mode :form
+                                         :model (dmd/empty-scaffold)
+                                         :body (or text "")})))
+        on-cancel (mf/use-fn #(reset! edit* nil))
         on-save   (mf/use-fn
-                   (mf/deps draft problem)
+                   (mf/deps candidate problem)
                    (fn []
                      (when-not problem
                        (when-let [file-id (:current-file-id @st/state)]
-                         (st/emit! (dd/set-doc file-id (str/trim draft)))
-                         (reset! editing?* false)))))
+                         (st/emit! (dd/set-doc file-id candidate))
+                         (reset! edit* nil)))))
         on-delete (mf/use-fn
                    (mf/deps confirm?)
                    (fn []
@@ -1564,13 +1716,26 @@
     (cond
       editing?
       [:div {:class (stl/css :vibes-view)}
-       [:textarea {:class (stl/css :vibes-editor)
-                   :value draft
-                   :rows 18
-                   :on-change on-draft}]
+       (if (= :raw (:mode edit))
+         [:*
+          [:textarea {:class (stl/css :vibes-editor)
+                      :value (:text edit)
+                      :rows 18
+                      :on-change on-raw-change}]
+          [:button {:type "button"
+                    :class (stl/css :vibes-form-add)
+                    :on-click on-add-tokens}
+           "+ Add design tokens"]]
+         [:*
+          [:> vibes-token-form* {:state edit*}]
+          [:div {:class (stl/css :vibes-form-section-title)} "Body (markdown)"]
+          [:textarea {:class (stl/css :vibes-editor)
+                      :value (:body edit)
+                      :rows 12
+                      :on-change on-body-change}]])
        [:div {:class (stl/css-case :vibes-counter true
                                    :vibes-counter-over (some? problem))}
-        (dm/str (count draft) " / " dd/max-doc-chars)]
+        (dm/str (count candidate) " / " dd/max-doc-chars)]
        (when problem
          [:p {:class (stl/css :vibes-problem)} problem])
        [:div {:class (stl/css :vibes-actions)}

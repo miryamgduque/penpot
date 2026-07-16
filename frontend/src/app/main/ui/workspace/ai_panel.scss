@@ -1711,6 +1711,121 @@
   }
 }
 
+// The structured frontmatter editor (US #38): token fields, never raw YAML.
+.vibes-form {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+}
+
+.vibes-form-field {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+}
+
+.vibes-form-label {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  min-inline-size: 72px;
+  color: var(--color-foreground-secondary);
+}
+
+.vibes-form-input {
+  @include deprecated.body-small-typography;
+
+  flex: 1;
+  min-inline-size: 0;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.vibes-form-input-mono {
+  font-family: monospace;
+}
+
+.vibes-form-section-title {
+  @include deprecated.body-small-typography;
+
+  margin-block-start: deprecated.$s-8;
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.vibes-form-row {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+}
+
+.vibes-form-swatch {
+  flex: none;
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+}
+
+.vibes-form-remove {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  padding: 0 deprecated.$s-4;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-accent-error, #ff3277);
+  }
+}
+
+.vibes-form-add {
+  @include deprecated.body-small-typography;
+
+  align-self: flex-start;
+  padding: 0 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.vibes-form-type {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.vibes-form-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: deprecated.$s-4;
+}
+
+.vibes-form-note {
+  @include deprecated.body-small-typography;
+
+  margin: 0;
+  color: var(--color-foreground-secondary);
+  font-style: italic;
+}
+
 .vibes-counter {
   @include deprecated.body-small-typography;
 

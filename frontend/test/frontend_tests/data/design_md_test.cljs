@@ -169,6 +169,53 @@
                                   "fontSize" "14px"
                                   "lineHeight" 1.5}))))
 
+;; ---- edit-model (US #38 phase 04) — the structured editor's writable twin
+;; of display-model: frontmatter → form rows → frontmatter, loss-free.
+
+(deftest edit-model-round-trips-loss-free
+  (let [fm (dmd/edit-model->frontmatter (dmd/edit-model valid-frontmatter))]
+    (is (= valid-frontmatter fm))))
+
+(deftest edit-model-round-trip-survives-serialization
+  (let [doc (dmd/serialize {:frontmatter (dmd/edit-model->frontmatter
+                                          (dmd/edit-model valid-frontmatter))
+                            :body valid-body})
+        {:keys [frontmatter body error]} (dmd/parse doc)]
+    (is (nil? error))
+    (is (= valid-frontmatter frontmatter))
+    (is (= valid-body body))))
+
+(deftest edit-model-preserves-unknown-typography-props
+  (let [fm (assoc-in valid-frontmatter ["typography" "heading" "textTransform"]
+                     "uppercase")
+        rt (dmd/edit-model->frontmatter (dmd/edit-model fm))]
+    (is (= "uppercase" (get-in rt ["typography" "heading" "textTransform"])))))
+
+(deftest edit-model-drops-abandoned-rows
+  (let [m  (assoc (dmd/edit-model valid-frontmatter)
+                  :colors [{:name "" :value ""} {:name "x" :value "#fff"}])
+        fm (dmd/edit-model->frontmatter m)]
+    (is (= {"x" "#fff"} (get fm "colors")))))
+
+(deftest edit-model-keeps-a-value-with-a-blank-name-for-problems-to-flag
+  (let [m  (assoc (dmd/edit-model valid-frontmatter)
+                  :colors [{:name "  " :value "#abcdef"}])
+        fm (dmd/edit-model->frontmatter m)]
+    (is (contains? (get fm "colors") ""))
+    (is (some #(str/includes? % "no name")
+              (dmd/problems {:frontmatter fm :body ""})))))
+
+(deftest edit-model-of-everything-empty-is-no-frontmatter
+  (is (nil? (dmd/edit-model->frontmatter
+             {:name "" :description "" :colors [] :typography []
+              :rounded [] :spacing [] :extra {}}))))
+
+(deftest empty-scaffold-needs-a-name-before-it-saves
+  (let [fm (dmd/edit-model->frontmatter (dmd/empty-scaffold))]
+    (is (= "alpha" (get fm "version")))
+    (is (some #(str/includes? % "name")
+              (dmd/problems {:frontmatter fm :body ""})))))
+
 ;; ---- doc-problem (design-doc's save gate, US #38 phase 02) — the tool's
 ;; validation seam: set_design_doc trusts it, so format rejection lives here.
 

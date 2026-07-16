@@ -1,6 +1,9 @@
 # Phase 02 — Skills UI badge
 
-**Status:** todo
+**Status:** done (2026-07-16) — `reactive-badge*` (On-call neutral / Observer
+accent) on the card **and** detail; empty when reactive is blank. Verified live
+in the Mars file: Observer accent on Tokens governance audit + Rename layers,
+On-call on the rest.
 
 ## Goal
 

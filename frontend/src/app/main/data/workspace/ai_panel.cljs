@@ -341,7 +341,8 @@
 (defn- model-detect-skills
   [state]
   (->> (ask/enabled-skills state)
-       (filter #(= "model" (:detect %)))
+       (filter #(and (= "observer" (:reactive %))
+                     (= "model" (:detect %))))
        (vec)))
 
 (defn- state-pool

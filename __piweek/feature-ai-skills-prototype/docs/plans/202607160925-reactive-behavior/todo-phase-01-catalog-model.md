@@ -1,6 +1,9 @@
 # Phase 01 — Catalog model
 
-**Status:** todo
+**Status:** done (2026-07-16) — catalog is 2 categories (Audits/Build), `:mode`
+→ `:reactive`, `reactive-label`, `watched-rules` + `model-detect-skills` scoped
+to Observer, manifest + system-prompt index updated. Verified live: catalog
+renders Audits/Build only with the correct per-skill behavior.
 
 ## Goal
 

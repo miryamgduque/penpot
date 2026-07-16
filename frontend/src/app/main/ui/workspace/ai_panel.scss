@@ -1535,9 +1535,10 @@ textarea.create-input {
   color: var(--color-foreground-secondary);
 }
 
-.mode-badge {
+.reactive-badge {
   @include scaled-body-small;
 
+  flex-shrink: 0;
   padding: 0 deprecated.$s-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
@@ -1545,22 +1546,18 @@ textarea.create-input {
   white-space: nowrap;
 }
 
-.mode-suggest {
-  color: var(--color-accent-info);
-  border-color: color-mix(in srgb, var(--color-accent-info) 40%, transparent);
-  background-color: color-mix(in srgb, var(--color-accent-info) 14%, transparent);
+// On-call recedes — it is the plain request-driven default, so keep it neutral.
+.reactive-oncall {
+  color: var(--color-foreground-secondary);
+  border-color: var(--color-background-quaternary);
 }
 
-.mode-review {
-  color: var(--color-accent-secondary);
-  border-color: color-mix(in srgb, var(--color-accent-secondary) 40%, transparent);
-  background-color: color-mix(in srgb, var(--color-accent-secondary) 14%, transparent);
-}
-
-.mode-autofix {
-  color: var(--color-accent-warning);
-  border-color: color-mix(in srgb, var(--color-accent-warning) 40%, transparent);
-  background-color: color-mix(in srgb, var(--color-accent-warning) 14%, transparent);
+// Observer is the ambient/watching one — give it the accent so an at-a-glance
+// scan of the catalog surfaces which skills act on their own.
+.reactive-observer {
+  color: var(--color-accent-primary);
+  border-color: color-mix(in srgb, var(--color-accent-primary) 40%, transparent);
+  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
 }
 
 // Read-only detail view (shown in place of the list within the Skills tab).

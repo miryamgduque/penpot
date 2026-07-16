@@ -892,15 +892,16 @@
                :href "#/settings/integrations"}
            "Manage your models"]])]]]]))
 
-(mf/defc mode-badge*
-  "The colored mode pill shared by the catalog cards and the detail view."
+(mf/defc reactive-badge*
+  "The reactive-behavior pill (US #14) shared by the catalog cards and the detail
+  view: On-call (acts only when invoked) vs Observer (keeps ambient awareness)."
   {::mf/private true}
-  [{:keys [mode]}]
-  [:span {:class (stl/css-case :mode-badge true
-                               :mode-suggest (= mode "suggest")
-                               :mode-review  (= mode "review")
-                               :mode-autofix (= mode "autofix"))}
-   (get ask/mode-label mode mode)])
+  [{:keys [reactive]}]
+  (when (seq reactive)
+    [:span {:class (stl/css-case :reactive-badge true
+                                 :reactive-oncall   (= reactive "on-call")
+                                 :reactive-observer (= reactive "observer"))}
+     (get ask/reactive-label reactive reactive)]))
 
 (mf/defc skill-detail*
   "Detail for one catalog skill, shown in place of the list within the Skills
@@ -909,7 +910,7 @@
   the resolved state and `on-toggle` receives the new boolean."
   {::mf/private true}
   [{:keys [skill enabled on-toggle]}]
-  (let [{:keys [label category mode example what]} skill]
+  (let [{:keys [label category reactive example what]} skill]
     [:div {:class (stl/css :skill-detail)}
      [:div {:class (stl/css :detail-category)} category]
      [:div {:class (stl/css :detail-head)}
@@ -918,7 +919,7 @@
                    :aria-label (dm/str (if enabled "Disable " "Enable ") label)
                    :on-change on-toggle}]]
      [:div {:class (stl/css :detail-tags)}
-      [:> mode-badge* {:mode mode}]]
+      [:> reactive-badge* {:reactive reactive}]]
      [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
      [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
      [:div {:class (stl/css :detail-section-label)} "What it does"]
@@ -931,7 +932,7 @@
   clicks so it doesn't. Enable/Disable is instant; Fork / Promote to team are
   entry points only (disabled — wired by US #10 / US #12)."
   {::mf/private true}
-  [{:keys [label blurb enabled on-open on-set-enabled]}]
+  [{:keys [label blurb reactive enabled on-open on-set-enabled]}]
   (let [show-menu?  (mf/use-state false)
         toggle-menu (mf/use-fn #(swap! show-menu? not))
         close-menu  (mf/use-fn #(reset! show-menu? false))
@@ -952,6 +953,7 @@
            :on-key-down open-detail}
      [:div {:class (stl/css :catalog-card-head)}
       [:span {:class (stl/css :catalog-name)} label]
+      [:> reactive-badge* {:reactive reactive}]
       (when-not enabled
         [:span {:class (stl/css :catalog-off)} "Off"])
       ;; The menu lives inside the clickable row, so swallow its click/keydown to
@@ -1029,10 +1031,11 @@
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
             [:div {:class (stl/css :catalog-group-label)} category]
-            (for [{:keys [name label blurb]} rows]
+            (for [{:keys [name label blurb reactive]} rows]
               [:> skill-row* {:key name
                               :label label
                               :blurb blurb
+                              :reactive reactive
                               :enabled (get enabled-map name true)
                               :on-open #(on-select name)
                               :on-set-enabled #(toggle name %)}])])

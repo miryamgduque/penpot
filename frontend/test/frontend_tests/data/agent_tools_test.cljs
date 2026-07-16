@@ -419,6 +419,43 @@
   (t/is (= {} (at/layout-changes {}))))
 
 ;; ---------------------------------------------------------------------------
+;; grid — Phase 22: set_layout learns type: grid
+;; ---------------------------------------------------------------------------
+
+(t/deftest grid-is-a-valid-layout-type
+  (t/is (nil? (at/layout-problem (objects (plain-frame id-a "Gallery")) id-a {:type "grid"}))))
+
+(t/deftest a-css-flavoured-layout-type-is-rejected
+  ;; The agent's instinct might be "flexbox" or "css-grid".
+  (let [problem (at/layout-problem (objects (plain-frame id-a "Gallery")) id-a {:type "flexbox"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "grid"))
+    (t/is (str/includes? problem "flex"))))
+
+(t/deftest grid-still-requires-a-board
+  (let [problem (at/layout-problem (objects {:id id-a :name "Box" :type :rect}) id-a {:type "grid"})]
+    (t/is (some? problem))
+    (t/is (str/includes? problem "board"))))
+
+(t/deftest columns-map-to-a-grid-track-vector
+  ;; 3 columns → three tracks, each an :fr track (:flex 1), matching Penpot's
+  ;; default-track-value.
+  (let [tracks (at/grid-tracks 3)]
+    (t/is (= 3 (count tracks)))
+    (t/is (every? #(= :flex (:type %)) tracks))))
+
+(t/deftest zero-or-missing-columns-adds-no-tracks
+  ;; Omitting columns leaves calculate-params to infer them from the children —
+  ;; that is the whole point of the auto-grid. Forcing tracks would fight it.
+  (t/is (empty? (at/grid-tracks nil)))
+  (t/is (empty? (at/grid-tracks 0))))
+
+(t/deftest a-type-change-alone-is-enough-of-a-change
+  ;; "make this a grid" with no other params must NOT trip the "nothing to
+  ;; change" guard — the type IS the change.
+  (t/is (nil? (at/layout-problem (objects (plain-frame id-a "G")) id-a {:type "grid"}))))
+
+;; ---------------------------------------------------------------------------
 ;; layout-problem
 ;; ---------------------------------------------------------------------------
 

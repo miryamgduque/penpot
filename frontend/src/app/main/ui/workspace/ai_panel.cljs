@@ -29,6 +29,7 @@
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.design-doc :as dd]
+   [app.main.data.workspace.design-md :as dmd]
    [app.main.data.workspace.elicitation :as el]
    [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.selection :as dws]
@@ -1584,20 +1585,56 @@
          "Cancel"]]]
 
       (some? doc)
-      [:div {:class (stl/css :vibes-view)}
-       [:div {:class (stl/css :vibes-doc :message-md)}
-        [:> md/markdown* {:text doc}]]
-       [:div {:class (stl/css :vibes-actions)}
-        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
-         "Edit"]
-        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
-         "Re-run interview"]
-        [:button {:type "button"
-                  :class (stl/css-case :vibes-button true
-                                       :vibes-button-danger true
-                                       :vibes-button-confirm confirm?)
-                  :on-click on-delete}
-         (if confirm? "Really delete? (undoable)" "Delete")]]]
+      ;; DESIGN.md rendering (US #38): the YAML frontmatter renders as a token
+      ;; summary — swatches, type lines, scale chips — and only the markdown
+      ;; BODY reaches marked (it would lex the `---` fence as an hr + prose).
+      ;; A legacy doc has no frontmatter and renders exactly as before.
+      (let [{:keys [frontmatter body]} (dmd/parse doc)
+            model (dmd/display-model frontmatter)]
+        [:div {:class (stl/css :vibes-view)}
+         [:div {:class (stl/css :vibes-doc :message-md)}
+          (when model
+            [:div {:class (stl/css :vibes-tokens)}
+             (when-let [name (:name model)]
+               [:div {:class (stl/css :vibes-tokens-name)} name])
+             (when-let [description (:description model)]
+               [:p {:class (stl/css :vibes-tokens-desc)} description])
+             (when-let [colors (seq (:colors model))]
+               [:div {:class (stl/css :vibes-swatch-grid)}
+                (for [{:keys [name value swatch]} colors]
+                  [:div {:key name :class (stl/css :vibes-swatch)}
+                   [:span {:class (stl/css :vibes-swatch-chip)
+                           :style (when (string? swatch)
+                                    #js {:backgroundColor swatch})}]
+                   [:span {:class (stl/css :vibes-swatch-name)} name]
+                   [:span {:class (stl/css :vibes-swatch-value)} value]])])
+             (when-let [typography (seq (:typography model))]
+               [:div {:class (stl/css :vibes-type-rows)}
+                (for [{:keys [name summary]} typography]
+                  [:div {:key name :class (stl/css :vibes-type-row)}
+                   [:span {:class (stl/css :vibes-token-label)} name]
+                   [:span {:class (stl/css :vibes-type-summary)} summary]])])
+             (for [[section rows] [["rounded" (:rounded model)]
+                                   ["spacing" (:spacing model)]]
+                   :when (seq rows)]
+               [:div {:key section :class (stl/css :vibes-scale-row)}
+                [:span {:class (stl/css :vibes-token-label)} section]
+                [:div {:class (stl/css :vibes-scale-chips)}
+                 (for [{:keys [name value]} rows]
+                   [:span {:key name :class (stl/css :vibes-scale-chip)}
+                    (dm/str name " " value)])]])])
+          [:> md/markdown* {:text body}]]
+         [:div {:class (stl/css :vibes-actions)}
+          [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
+           "Edit"]
+          [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
+           "Re-run interview"]
+          [:button {:type "button"
+                    :class (stl/css-case :vibes-button true
+                                         :vibes-button-danger true
+                                         :vibes-button-confirm confirm?)
+                    :on-click on-delete}
+           (if confirm? "Really delete? (undoable)" "Delete")]]])
 
       :else
       [:div {:class (stl/css :vibes-empty)}

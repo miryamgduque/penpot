@@ -91,6 +91,64 @@
          (or body ""))
     (or body "")))
 
+;; ---- token references
+
+(def ^:private token-ref-re #"\{([^{}]+)\}")
+
+(defn- token-ref-target
+  "The value a `{path.to.token}` reference points at, or nil when dangling."
+  [fm path]
+  (get-in fm (str/split path ".")))
+
+;; ---- display model (what the panel's token summary renders)
+
+(def ^:private typography-prop-order
+  ["fontFamily" "fontSize" "fontWeight" "lineHeight"])
+
+(defn typography-summary
+  "One glanceable line for a typography token's props — the spec's known
+  props first, anything else after, alphabetically."
+  [props]
+  (let [known (keep #(get props %) typography-prop-order)
+        extra (->> (sort-by key props)
+                   (keep (fn [[k v]]
+                           (when-not (some #{k} typography-prop-order) v))))]
+    (str/join " · " (map str (concat known extra)))))
+
+(defn- resolve-swatch
+  "The paintable value behind `v`: a `{path.to.token}` alias resolved against
+  `fm`, any direct value as-is."
+  [fm v]
+  (if-let [[_ path] (re-matches token-ref-re v)]
+    (token-ref-target fm path)
+    v))
+
+(defn display-model
+  "Parsed frontmatter → `{:name :description :colors :typography :rounded
+  :spacing}` with ordered row seqs, or nil when there is no frontmatter.
+  Malformed entries are skipped, not rendered broken — `problems` is where
+  they get REPORTED; this is the read path and read paths stay calm."
+  [fm]
+  (when (map? fm)
+    {:name        (get fm "name")
+     :description (get fm "description")
+     :colors      (when (map? (get fm "colors"))
+                    (vec (for [[k v] (get fm "colors")
+                               :when (string? v)]
+                           {:name k :value v :swatch (resolve-swatch fm v)})))
+     :typography  (when (map? (get fm "typography"))
+                    (vec (for [[k v] (get fm "typography")
+                               :when (map? v)]
+                           {:name k :summary (typography-summary v)})))
+     :rounded     (when (map? (get fm "rounded"))
+                    (vec (for [[k v] (get fm "rounded")
+                               :when (or (string? v) (number? v))]
+                           {:name k :value (str v)})))
+     :spacing     (when (map? (get fm "spacing"))
+                    (vec (for [[k v] (get fm "spacing")
+                               :when (or (string? v) (number? v))]
+                           {:name k :value (str v)})))}))
+
 ;; ---- validation
 
 (def ^:private color-value-re
@@ -100,13 +158,6 @@
   #"(?i)^(#[0-9a-f]{3,8}|[a-z][a-z-]*(\([^)]*\))?)$")
 
 (defn- scalar? [v] (or (string? v) (number? v)))
-
-(def ^:private token-ref-re #"\{([^{}]+)\}")
-
-(defn- token-ref-target
-  "The value a `{path.to.token}` reference points at, or nil when dangling."
-  [fm path]
-  (get-in fm (str/split path ".")))
 
 (defn- string-leaves
   "All string values anywhere under `v` (maps of maps, any depth)."

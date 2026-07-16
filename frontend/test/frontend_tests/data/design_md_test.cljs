@@ -126,6 +126,49 @@
   (is (= "Overview" (first dmd/canonical-sections)))
   (is (some #{"Do's and Don'ts"} dmd/canonical-sections)))
 
+;; ---- display-model (US #38 phase 03) — what the panel's token summary renders
+
+(deftest display-model-extracts-ordered-rows
+  (let [m (dmd/display-model valid-frontmatter)]
+    (is (= "CostPulse" (:name m)))
+    (is (= "Friendly expense tracking for freelancers" (:description m)))
+    (is (= ["primary" "accent" "surface"] (map :name (:colors m))))
+    (is (= "#6366f1" (:swatch (first (:colors m)))))
+    (is (= ["heading" "body"] (map :name (:typography m))))
+    (is (= [{:name "sm" :value "4px"} {:name "lg" :value "12px"}] (:rounded m)))
+    (is (= [{:name "xs" :value "4px"} {:name "md" :value "16px"}] (:spacing m)))))
+
+(deftest display-model-resolves-swatch-aliases
+  (let [fm {"name" "X" "colors" {"base" "#112233" "alias" "{colors.base}"}}
+        {:keys [colors]} (dmd/display-model fm)
+        alias-row (some #(when (= "alias" (:name %)) %) colors)]
+    ;; the shown value stays the alias; the swatch paints the resolved color
+    (is (= "{colors.base}" (:value alias-row)))
+    (is (= "#112233" (:swatch alias-row)))))
+
+(deftest display-model-skips-malformed-entries
+  (let [fm {"name" "X"
+            "colors" {"good" "#fff" "bad" ["not" "a" "color"]}
+            "typography" {"ok" {"fontFamily" "Inter"} "broken" "loose string"}}
+        m (dmd/display-model fm)]
+    (is (= ["good"] (map :name (:colors m))))
+    (is (= ["ok"] (map :name (:typography m))))))
+
+(deftest display-model-of-nothing-is-nil
+  (is (nil? (dmd/display-model nil)))
+  (is (nil? (dmd/display-model "not a map"))))
+
+(deftest typography-summary-orders-known-props-first
+  (is (= "Inter · 24px · 600"
+         (dmd/typography-summary {"fontWeight" 600
+                                  "fontFamily" "Inter"
+                                  "fontSize" "24px"})))
+  (is (= "Inter · 14px · 1.5 · uppercase"
+         (dmd/typography-summary {"textTransform" "uppercase"
+                                  "fontFamily" "Inter"
+                                  "fontSize" "14px"
+                                  "lineHeight" 1.5}))))
+
 ;; ---- doc-problem (design-doc's save gate, US #38 phase 02) — the tool's
 ;; validation seam: set_design_doc trusts it, so format rejection lives here.
 

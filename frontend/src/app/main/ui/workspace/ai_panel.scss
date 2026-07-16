@@ -1580,6 +1580,116 @@
   padding: deprecated.$s-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
+  // .message-md inherits its text color; in the transcript the bubble sets
+  // it, but here the workspace default (yellow) would leak through.
+  color: var(--color-foreground-primary);
+}
+
+// The DESIGN.md token summary: frontmatter rendered as swatches, type lines
+// and scale chips above the markdown body (US #38).
+.vibes-tokens {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  margin-block-end: deprecated.$s-12;
+  padding-block-end: deprecated.$s-12;
+  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.vibes-tokens-name {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.vibes-tokens-desc {
+  @include deprecated.body-small-typography;
+
+  margin: 0;
+  color: var(--color-foreground-secondary);
+}
+
+.vibes-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: deprecated.$s-8;
+}
+
+.vibes-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+  min-inline-size: 0;
+}
+
+.vibes-swatch-chip {
+  block-size: deprecated.$s-24;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+}
+
+.vibes-swatch-name {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibes-swatch-value {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibes-type-rows {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.vibes-type-row,
+.vibes-scale-row {
+  display: flex;
+  align-items: baseline;
+  gap: deprecated.$s-8;
+}
+
+.vibes-token-label {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  min-inline-size: 72px;
+  color: var(--color-foreground-secondary);
+}
+
+.vibes-type-summary {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+}
+
+.vibes-scale-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-4;
+}
+
+.vibes-scale-chip {
+  @include deprecated.body-small-typography;
+
+  padding: 0 deprecated.$s-6;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+  color: var(--color-foreground-primary);
+  font-family: monospace;
 }
 
 .vibes-editor {

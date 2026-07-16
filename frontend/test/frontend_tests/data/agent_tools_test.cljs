@@ -1556,6 +1556,16 @@
               (at/execute-tool name input))
     @out))
 
+;; ---------------------------------------------------------------------------
+;; set_foundation — a name that slugifies to nothing must be named as the
+;; problem (US #38); the message says what a usable name looks like
+;; ---------------------------------------------------------------------------
+
+(t/deftest set-foundation-rejects-an-unusable-name
+  (let [msg (tool-error "set_foundation" {:name "™!!" :doc "body"})]
+    (t/is (str/includes? msg "™!!"))
+    (t/is (str/includes? msg "letters or digits"))))
+
 (t/deftest explore-needs-a-question
   (with-stub-runner (fn [_] (rx/of {:text "d" :usage {}}))
     #(t/is (str/includes? (tool-error "explore_design" {}) "question"))))

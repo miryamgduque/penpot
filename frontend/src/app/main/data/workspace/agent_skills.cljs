@@ -43,7 +43,7 @@
              ""
              "## Method"
              ""
-             "1. **Look first.** Call `read_design`. If the file already has content, react to it — name what exists and let it inform the options you offer. If `hasDesignDoc` is true, say you'll be replacing the current vibes (they are in your instructions under 'Project vibes') and keep what still holds unless the new answers contradict it."
+             "1. **Look first.** Call `read_design`. If the file already has content, react to it — name what exists and let it inform the options you offer. If `hasDesignDoc` is true, say you'll be replacing the current vibes (they are in your instructions under 'Foundations') and keep what still holds unless the new answers contradict it."
              "2. **Interview with ONE `ask_user` call** (title it after the project). Adapt the questions to what you saw — drop what's irrelevant, rephrase options into the project's domain, and give every choice question `allow_decide: true`. Cover roughly:"
              "   - What should I design first? Offer the concrete surfaces you'd actually start with, plus an \"Explore a few options\" chip. (single)"
              "   - Primary platform: mobile app / desktop web / both responsive. (single)"

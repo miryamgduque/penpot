@@ -60,6 +60,7 @@
    [app.render-wasm.api :as wasm.api]
    [app.util.code-gen :as cg]
    [app.util.http :as http]
+   [app.util.webapi :as wapi]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
    [potok.v2.core :as ptk]))
@@ -324,6 +325,19 @@
                    :properties {:url {:type "string" :description "absolute http(s) URL"}
                                 :question {:type "string" :description "what you need from the page"}}
                    :required ["url" "question"]}}
+
+   {:name "screenshot_page"
+    :description
+    (str "Screenshots an external web page (rendered server-side in a real "
+         "browser; private hosts are rejected) and attaches the PNG to the "
+         "conversation. The image is visible for THIS round only — call again "
+         "if you need another look. Default is the 1280×800 viewport; "
+         "fullPage captures down the page (capped). Use it for visual "
+         "reference — layout, colors, branding; use fetch_page for text.")
+    :input-schema {:type "object"
+                   :properties {:url {:type "string" :description "absolute http(s) URL"}
+                                :fullPage {:type "boolean" :description "capture beyond the first viewport"}}
+                   :required ["url"]}}
 
    {:name "modify_shape"
     :description
@@ -3386,6 +3400,79 @@
                        :title title
                        :truncated (boolean truncated)})))))))))
 
+;; --- screenshot_page
+;;
+;; Rides the exporter's :screenshot-url cmd (phase 06 — pooled Chromium with
+;; its own private-network guard) through the same `/api/export` door the
+;; export flow uses. The PNG returns as a real image block on the `:images`
+;; key (the render_board path), which agent.cljs drops after one round.
+
+(def ^:private max-screenshot-b64-chars
+  "Budget for one screenshot inside the 4M-char RPC payload cap — leaves room
+  for history alongside (a viewport shot is ~100-500k; a photographic
+  full-page capture is what trips this)."
+  1600000)
+
+(defn data-url->b64
+  "The base64 payload of a data: URL. Public for tests."
+  [durl]
+  (subs durl (inc (str/index-of durl ","))))
+
+(defn screenshot-size-problem
+  "Message when an encoded screenshot exceeds the payload budget, else nil.
+  Public for tests."
+  [b64]
+  (when (> (count b64) max-screenshot-b64-chars)
+    (str "screenshot_page: the capture is too large to attach — retry "
+         "without fullPage: true, or screenshot a more specific url")))
+
+(def ^:private screenshot-error-hints
+  {:blocked-host "the host is private or blocked by this Penpot instance"
+   :unauthorized "your session was not accepted by the screenshot service"
+   :invalid-url "the url must be absolute http(s)"
+   :unable-to-load-page "the page could not be loaded"
+   :timeout "the screenshot service is busy — try again shortly"
+   :browser-not-ready "the screenshot service is busy — try again shortly"})
+
+(defn screenshot-error-message
+  "One-line agent-facing message for a screenshot failure. Public for tests."
+  [code]
+  (str "screenshot_page: "
+       (or (get screenshot-error-hints code)
+           (str "the capture failed" (when code (str " (" (name code) ")"))))
+       "."))
+
+(defn- screenshot-page
+  [{:keys [url] :as input}]
+  (if-not (and (string? url) (re-matches http-url-re url))
+    (rx/throw (ex-info (str "screenshot_page: url must be an absolute http(s) "
+                            "URL, e.g. https://example.com")
+                       {}))
+    (->> (rp/cmd! :export {:cmd :screenshot-url
+                           :url url
+                           :full-page (boolean (:fullPage input))
+                           :wait true
+                           :blob? true})
+         (rx/mapcat wapi/read-file-as-data-url)
+         (rx/map
+          (fn [durl]
+            (let [b64 (data-url->b64 durl)]
+              (when-let [problem (screenshot-size-problem b64)]
+                (throw (ex-info problem {})))
+              {:images [{:mtype "image/png" :data b64}]
+               :url url
+               :fullPage (boolean (:fullPage input))
+               :note (str "screenshot attached — visible this round only; "
+                          "call again to look again")})))
+         (rx/catch
+          (fn [cause]
+            (let [code (:code (ex-data cause))]
+              (rx/throw
+               (if (some? code)
+                 (ex-info (screenshot-error-message code)
+                          {:cause-hint (ex-message cause)})
+                 cause))))))))
+
 ;; --- Dispatch
 
 (defn execute-tool
@@ -3397,6 +3484,7 @@
     "get_design_skills"  (get-design-skills input)
     "explore_design"     (explore-design input)
     "fetch_page"         (fetch-page input)
+    "screenshot_page"    (screenshot-page input)
     "ask_user"           (ask-user input)
     "set_design_doc"     (set-design-doc input)
     "audit_file"         (audit-file)

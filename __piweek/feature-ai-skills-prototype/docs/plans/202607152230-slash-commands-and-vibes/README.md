@@ -1,6 +1,6 @@
 # Slash commands + Project vibes interview
 
-**Status:** todo
+**Status:** done
 **Created:** 2026-07-15
 **Apps:** `frontend`
 **Dependencies:** None (builds on the shipped agent panel + skills catalog)
@@ -36,6 +36,18 @@ Decisions from the discovery interview (2026-07-15):
 - **Scope:** no demo pressure — build the full lifecycle (create, view,
   edit, re-run, delete) properly.
 
+### Revised execution mode (user direction, 2026-07-15)
+
+Executed in worktree `feature/vibes-slash-commands` (branched from
+`feature/ai-skills-prototype`) while other sessions work the main checkout.
+**No unit tests** — test checklist items are dropped. Each phase still gets a
+container compile check (`shadow-cljs compile main` pointed at the worktree)
+and a per-phase commit **without** a human-approval pause. When all phases
+are done: stop, confirm with the user that no other session is mid-flight,
+merge into `feature/ai-skills-prototype`, then live-verify everything in the
+devenv (the deferred "test it" step — includes the Phase 05 end-to-end run
+and the preview reviews skipped per phase).
+
 ### Key architecture facts (from codebase exploration)
 
 - Composer: [`chat-tab*`](../../../../../frontend/src/app/main/ui/workspace/ai_panel.cljs)
@@ -62,12 +74,14 @@ Decisions from the discovery interview (2026-07-15):
 
 ## Phases
 
-1. [Phase 01 — Slash-command menu](./todo-phase-01-slash-menu.md) — `/` autocomplete in the composer: enabled skills + command registry.
-2. [Phase 02 — ask_user tool plumbing](./todo-phase-02-ask-user-tool.md) — the elicitation tool: schema, pending-form state, submit/cancel resolution.
-3. [Phase 03 — Elicitation form UI](./todo-phase-03-elicitation-form-ui.md) — the in-transcript form: chips, multi-select, "Other…", "Decide for me", free text.
-4. [Phase 04 — Vibes doc storage + prompt inlining](./todo-phase-04-vibes-storage.md) — design-doc ns over plugin-data, `set_design_doc` tool, system-prompt section.
-5. [Phase 05 — The vibes skill + /vibes](./todo-phase-05-vibes-skill.md) — built-in skill that drives the interview and writes the doc; wire `/vibes`; live end-to-end verify.
-6. [Phase 06 — Vibes lifecycle UI](./todo-phase-06-vibes-lifecycle.md) — view/edit/re-run/delete the doc from the panel; docs update.
+1. [Phase 01 — Slash-command menu](./done-phase-01-slash-menu.md) — `/` autocomplete in the composer: enabled skills + command registry.
+2. [Phase 02 — ask_user tool plumbing](./done-phase-02-ask-user-tool.md) — the elicitation tool: schema, pending-form state, submit/cancel resolution.
+3. [Phase 03 — Elicitation form UI](./done-phase-03-elicitation-form-ui.md) — the in-transcript form: chips, multi-select, "Other…", "Decide for me", free text.
+4. [Phase 04 — Vibes doc storage + prompt inlining](./done-phase-04-vibes-storage.md) — design-doc ns over plugin-data, `set_design_doc` tool, system-prompt section.
+5. [Phase 05 — The vibes skill + /vibes](./done-phase-05-vibes-skill.md) — built-in skill that drives the interview and writes the doc; wire `/vibes`; live end-to-end verify.
+6. [Phase 06 — Vibes lifecycle UI](./done-phase-06-vibes-lifecycle.md) — view/edit/re-run/delete the doc from the panel; docs update.
+7. [Phase 07 — Interview image attachments](./done-phase-07-interview-attachments.md) — reference images as interview answers, riding the ask_user tool result (added mid-execution on user direction).
+8. [Phase 08 — Edit & delete user-created skills](./done-phase-08-edit-generated-skills.md) — the generated playbooks become editable (label/trigger/mode/body) and deletable from the detail view (added at the merge gate on user direction).
 
 ## Acceptance Criteria
 
@@ -87,3 +101,58 @@ Decisions from the discovery interview (2026-07-15):
   and deleted from the panel.
 - Lint + typecheck green; new pure logic unit-tested; UI verified in the
   devenv preview.
+
+## Completion Summary
+
+**Completed:** 2026-07-15 (code-complete; live verification pending — see below)
+
+### What Shipped
+- Slash-command menu in the agent composer: `/` opens a filterable,
+  keyboard-navigable popover of special commands + enabled skills; picking
+  fills the composer with the trigger phrase (user still sends).
+- `ask_user` agent tool: a generic elicitation widget. The tool observable
+  publishes the form into app state and completes on submit, so the turn
+  loop pauses on it with zero changes; cancel teardown clears the form.
+- In-transcript interview form: single/multi chips, Other… free text,
+  Decide for me (`__decide__` on the wire), textareas, required-gating;
+  collapses to an answers-summary bubble on submit.
+- Project vibes doc (design.md) in file plugin-data (`:penpot-vibes` /
+  `"design-md"`): shared, synced, undoable, 4k-char cap, inlined into every
+  system prompt; `set_design_doc` tool writes/clears it; `read_design`
+  reports `hasDesignDoc`.
+- `penpot-project-vibes` built-in skill (new Setup category, native `:body`
+  served without the aikit preamble) driving read_design → one adaptive
+  ask_user interview → doc synthesis → save; `/vibes` fronts it and obeys
+  its enable toggle.
+- Vibes lifecycle UI: pinned card in Skills, full view with rendered
+  markdown, capped editor, re-run interview (seeds the composer), two-click
+  undoable delete, empty state.
+- Interview image attachments (Phase 07, user-requested mid-execution):
+  `allow_images` text questions accept reference images through the
+  composer's recompression pipeline; they ride the ask_user tool result as
+  image blocks with per-question counts.
+- Edit & delete for user-created skills (Phase 08, user-requested at the
+  merge gate): update-skill/delete-skill RPC (ownership in the WHERE), the
+  detail view shows the generated playbook and edits label/trigger/mode/
+  body (the name slug stays immutable — it keys the enable state).
+
+### What Changed from Original Plan
+- Executed in worktree `feature/vibes-slash-commands`, no unit tests,
+  per-phase container compile checks instead; preview/live verification
+  deferred to post-merge (user direction).
+- Phase 07 added mid-execution on user direction.
+- The reactive design-doc ref lives in `design-doc/doc-ref`, NOT
+  `app.main.refs` — refs requiring it closes a circular dependency
+  (event → refs → design-doc → plugins → changes → event).
+
+### Lessons & Follow-ups
+- LIVE-VERIFY (the deferred "test it"): slash menu behavior; console-driven
+  `ask_user` (every control, cancel mid-form, second-form rejection); /vibes
+  end-to-end on Claude incl. an attached reference image; doc persistence
+  across reload + a collaborator tab; vibes influencing a subsequent design
+  task; SCSS needs `build-app-assets.js` after merge.
+- The interview questions live in the skill body (model-adapted), so other
+  skills get interviews for free by calling ask_user.
+- Vision gating: the form offers attach regardless of the active model;
+  text-only models get the existing "images omitted" note. Consider hiding
+  the attach control when `dai/vision?` is false (small follow-up).

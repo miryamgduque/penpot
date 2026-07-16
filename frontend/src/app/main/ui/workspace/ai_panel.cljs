@@ -26,9 +26,12 @@
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
+   [app.main.data.workspace.design-doc :as dd]
+   [app.main.data.workspace.elicitation :as el]
    [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.skill-state :as skst]
+   [app.main.data.workspace.slash-commands :as slc]
    [app.main.data.workspace.user-skills :as dusk]
    [app.main.data.workspace.zoom :as dwz]
    [app.main.refs :as refs]
@@ -288,6 +291,215 @@
            (when-let [result (:result message)]
              [:pre {:class (stl/css :tool-detail-payload)} result])])])]))
 
+(mf/defc elicitation-question*
+  "One question of the ask_user form: prompt + hint, then its input — option
+  chips (single or multi), an Other… chip that expands an inline text field,
+  a \"Decide for me\" chip, or a free textarea. `qstate` is this question's
+  ui-state map; the handlers close over the question id."
+  {::mf/private true}
+  [{:keys [question qstate room on-toggle on-other-text on-text
+           on-add-images on-remove-image]}]
+  (let [{:keys [id type options hint optional allow-decide allow-other
+                allow-images]} question
+        selected   (or (:selected qstate) #{})
+        other-on?  (contains? selected :other)
+        multi?     (= "multi" type)
+        text-type? (= "text" type)
+        images     (or (:images qstate) [])
+        file-ref   (mf/use-ref nil)
+        on-pick-images
+        (mf/use-fn
+         (mf/deps id on-add-images)
+         (fn [event]
+           (let [target (dom/get-target event)]
+             (on-add-images id (array-seq (.-files ^js target)))
+             ;; re-picking the same file must re-fire `change`
+             (dom/set-value! target ""))))
+        on-attach-click
+        (mf/use-fn #(some-> (mf/ref-val file-ref) (.click)))]
+    [:div {:class (stl/css :eform-question)}
+     [:div {:class (stl/css :eform-prompt)}
+      (:question question)
+      (when optional [:span {:class (stl/css :eform-optional)} " (optional)"])]
+     (when (seq hint)
+       [:div {:class (stl/css :eform-hint)} hint])
+
+     (if text-type?
+       [:textarea {:class (stl/css :eform-textarea)
+                   :rows 3
+                   :placeholder "Your answer…"
+                   :value (or (:text qstate) "")
+                   :on-change #(on-text id (dom/get-value (dom/get-target %)))}]
+
+       [:div {:class (stl/css :eform-chips)}
+        (for [opt options]
+          (let [active? (contains? selected opt)]
+            [:button {:key opt
+                      :type "button"
+                      :class (stl/css-case :eform-chip true
+                                           :eform-chip-active active?)
+                      :aria-pressed active?
+                      :on-click #(on-toggle id type opt)}
+             (when multi?
+               [:span {:class (stl/css :eform-chip-mark) :aria-hidden true}
+                (if active? "☑" "☐")])
+             opt]))
+        (when allow-other
+          [:button {:type "button"
+                    :class (stl/css-case :eform-chip true
+                                         :eform-chip-other true
+                                         :eform-chip-active other-on?)
+                    :aria-pressed other-on?
+                    :on-click #(on-toggle id type :other)}
+           "Other…"])
+        (when allow-decide
+          [:button {:type "button"
+                    :class (stl/css-case :eform-chip true
+                                         :eform-chip-active (contains? selected :decide))
+                    :aria-pressed (contains? selected :decide)
+                    :on-click #(on-toggle id type :decide)}
+           "Decide for me"])])
+
+     (when (and (not text-type?) other-on?)
+       [:input {:class (stl/css :eform-other-input)
+                :type "text"
+                :placeholder "Tell me in your words…"
+                :value (or (:other-text qstate) "")
+                ;; Enter must not bubble into anything submit-like; the form
+                ;; sends only from its own button
+                :on-key-down #(when (kbd/enter? %) (dom/prevent-default %))
+                :on-change #(on-other-text id (dom/get-value (dom/get-target %)))}])
+
+     ;; reference images on a text question (allow_images): thumbnails + an
+     ;; attach control, reusing the composer's recompression pipeline
+     (when (and text-type? allow-images)
+       [:div {:class (stl/css :eform-attach-row)}
+        [:input {:type "file"
+                 :ref file-ref
+                 :class (stl/css :composer-file-input)
+                 :accept dwm/accept-image-types
+                 :multiple true
+                 :on-change on-pick-images}]
+        (for [[i image] (map-indexed vector images)]
+          [:div {:key i :class (stl/css :eform-thumb)}
+           [:img {:class (stl/css :eform-thumb-img)
+                  :src (image-src image)
+                  :alt (dm/str "Reference image " (inc i))}]
+           [:button {:type "button"
+                     :class (stl/css :eform-thumb-remove)
+                     :aria-label (dm/str "Remove reference image " (inc i))
+                     :on-click #(on-remove-image id i)}
+            [:span {:aria-hidden true} "✕"]]])
+        [:button {:type "button"
+                  :class (stl/css :eform-attach-btn)
+                  :disabled (zero? room)
+                  :title (if (pos? room)
+                           "Attach reference images"
+                           "Image limit reached")
+                  :on-click on-attach-click}
+         [:> i/icon* {:icon-id i/img}]
+         "Add reference"]])]))
+
+(mf/defc elicitation-form*
+  "The ask_user interview, rendered at the tail of the transcript while a
+  turn is paused on the user's answers. Submitting collapses it into a plain
+  answers-summary bubble (appended by `dwaip/submit-form`) — the form itself
+  is presentation state and vanishes once resolved.
+
+  Remounted per form via `:key (hash form)` at the call site, so ui state
+  never leaks from one interview into the next."
+  {::mf/private true}
+  [{:keys [form]}]
+  (let [{:keys [title questions]} form
+        ;; normalized once: snake_case JSON keys → the names the question
+        ;; component reads; Other… defaults to on for choice questions
+        questions (mf/with-memo [questions]
+                    (mapv (fn [q]
+                            (assoc q
+                                   :allow-other (and (not= "text" (:type q))
+                                                     (not (false? (:allow_other q))))
+                                   :allow-decide (true? (:allow_decide q))
+                                   :allow-images (and (= "text" (:type q))
+                                                      (true? (:allow_images q)))))
+                          questions))
+        state*    (mf/use-state {})
+        state     (deref state*)
+        ready?    (el/complete? questions state)
+
+        on-toggle     (mf/use-fn
+                       (fn [id type opt]
+                         (swap! state* update-in [id :selected]
+                                #(el/toggle type % opt))))
+        on-other-text (mf/use-fn
+                       (fn [id text]
+                         (swap! state* assoc-in [id :other-text] text)))
+        on-text       (mf/use-fn
+                       (fn [id text]
+                         (swap! state* assoc-in [id :text] text)))
+        on-add-images (mf/use-fn
+                       (fn [id files]
+                         (let [pictures (filterv image-file? (vec files))]
+                           (when (seq pictures)
+                             (->> (read-images pictures)
+                                  (rx/subs!
+                                   (fn [read]
+                                     ;; room is re-measured inside the swap —
+                                     ;; two async reads racing must not
+                                     ;; overshoot the caps
+                                     (swap! state*
+                                            (fn [s]
+                                              (let [room (el/image-room s id)]
+                                                (if (pos? room)
+                                                  (update-in s [id :images]
+                                                             (fnil into [])
+                                                             (take room read))
+                                                  s)))))))))))
+        on-remove-image
+        (mf/use-fn
+         (fn [id i]
+           (swap! state* update-in [id :images]
+                  (fn [v]
+                    (vec (concat (subvec v 0 i) (subvec v (inc i))))))))
+
+        on-submit (mf/use-fn
+                   (mf/deps questions state ready?)
+                   (fn []
+                     (when ready?
+                       (let [{:keys [images counts]} (el/form-images questions state)
+                             payload (cond-> {:answers (el/answers questions state)}
+                                       (seq images)
+                                       (assoc :attachments counts
+                                              :images images
+                                              :note (str "the user attached reference images; they follow "
+                                                         "this result in question order — `attachments` "
+                                                         "holds the per-question counts")))]
+                         (st/emit! (dwaip/submit-form
+                                    payload
+                                    (el/summary questions state)))))))]
+
+    [:div {:class (stl/css :eform)}
+     (when (seq title)
+       [:div {:class (stl/css :eform-title)} title])
+     (for [q questions]
+       [:> elicitation-question* {:key (:id q)
+                                  :question q
+                                  :qstate (get state (:id q))
+                                  :room (el/image-room state (:id q))
+                                  :on-toggle on-toggle
+                                  :on-other-text on-other-text
+                                  :on-text on-text
+                                  :on-add-images on-add-images
+                                  :on-remove-image on-remove-image}])
+     [:div {:class (stl/css :eform-actions)}
+      [:button {:type "button"
+                :class (stl/css :eform-submit)
+                :disabled (not ready?)
+                :on-click on-submit}
+       "Send answers"]
+      (when-not ready?
+        [:span {:class (stl/css :eform-pending-hint)}
+         "Answer the required questions to continue"])]]))
+
 (mf/defc transcript*
   "The message list, split out so it can own its scroll ref.
 
@@ -301,7 +513,7 @@
   never pin to the latest — and once the content outgrows the panel the
   sentinel is never seen, leaving it wrongly detached forever."
   {::mf/private true}
-  [{:keys [messages busy?]}]
+  [{:keys [messages busy? form]}]
   (let [;; consecutive tool calls collapse into one row; `partition-by` on the
         ;; role predicate yields alternating runs of tools / everything else
         runs          (mf/with-memo [messages]
@@ -334,7 +546,8 @@
     (mf/with-layout-effect []
       (scroll-to-end))
 
-    (mf/with-layout-effect [messages busy?]
+    ;; `form` is in the deps: an interview appearing is new content to follow
+    (mf/with-layout-effect [messages busy? form]
       (when ^boolean (mf/ref-val at-bottom-ref)
         (scroll-to-end)))
 
@@ -373,7 +586,11 @@
                (if user?
                  (:content message)
                  [:> md/markdown* {:text (:content message)}])]))))
-      (when busy?
+      ;; while an interview is open the turn is busy *waiting on the user* —
+      ;; a "Thinking…" bubble under the form would be a lie
+      (when (some? form)
+        [:> elicitation-form* {:key (hash form) :form form}])
+      (when (and busy? (nil? form))
         [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
 
      (when-not at-bottom?
@@ -499,6 +716,8 @@
         busy?     (mf/deref refs/ai-panel-busy?)
         usage     (mf/deref refs/ai-panel-usage)
         pending-fix (mf/deref refs/ai-panel-pending-fix)
+        pending-form (mf/deref refs/ai-panel-pending-form)
+        composer-seed (mf/deref refs/ai-panel-composer-seed)
 
         pool      (mf/with-memo [providers] (provider-pool providers))
 
@@ -520,9 +739,34 @@
         input     (deref input*)
         input-ref (mf/use-ref nil)
 
+        ;; --- Slash menu. Open whenever the input *starts* with "/" and
+        ;; something still matches; Esc dismisses it until the input changes.
+        slash-entries    (mf/deref refs/slash-menu-entries)
+        slash-dismissed* (mf/use-state false)
+        slash-hi*        (mf/use-state 0)
+        slash-menu-ref   (mf/use-ref nil)
+        slash-query      (slc/query input)
+        slash-matches    (mf/with-memo [slash-entries slash-query]
+                           (when (some? slash-query)
+                             (slc/filter-entries slash-entries slash-query)))
+        slash-open?      (and (seq slash-matches)
+                              (not (deref slash-dismissed*)))
+        ;; clamped at read time: the match list shrinks as the user types
+        slash-hi         (min (deref slash-hi*)
+                              (dec (count slash-matches)))
+
         on-input  (mf/use-fn
                    (fn [event]
+                     ;; typing reopens a dismissed menu and rests the highlight
+                     (reset! slash-dismissed* false)
+                     (reset! slash-hi* 0)
                      (reset! input* (dom/get-value (dom/get-target event)))))
+
+        pick-entry (mf/use-fn
+                    (fn [entry]
+                      ;; fill the composer — the user still sends it themselves
+                      (reset! input* (:insert entry))
+                      (some-> (mf/ref-val input-ref) dom/focus!)))
 
         ;; attachments live with the composer, not in app state: they belong to
         ;; the message being written and die with it
@@ -666,12 +910,33 @@
         on-cancel-pending (mf/use-fn #(st/emit! (dwaip/clear-pending-fix)))
 
         on-key-down (mf/use-fn
-                     (mf/deps send)
+                     (mf/deps send slash-open? slash-matches slash-hi)
                      (fn [event]
-                       (when (and (= "Enter" (.-key event))
-                                  (not (.-shiftKey event)))
-                         (dom/prevent-default event)
-                         (send))))
+                       (cond
+                         ;; menu first: while it is open, Enter picks — it
+                         ;; must never send half a command to the agent
+                         slash-open?
+                         (cond
+                           (kbd/down-arrow? event)
+                           (do (dom/prevent-default event)
+                               (reset! slash-hi* (mod (inc slash-hi) (count slash-matches))))
+
+                           (kbd/up-arrow? event)
+                           (do (dom/prevent-default event)
+                               (reset! slash-hi* (mod (dec slash-hi) (count slash-matches))))
+
+                           (or (kbd/enter? event) (kbd/tab? event))
+                           (do (dom/prevent-default event)
+                               (pick-entry (nth slash-matches slash-hi)))
+
+                           (kbd/esc? event)
+                           (do (dom/prevent-default event)
+                               (reset! slash-dismissed* true)))
+
+                         (and (= "Enter" (.-key event))
+                              (not (.-shiftKey event)))
+                         (do (dom/prevent-default event)
+                             (send)))))
 
         on-clear    (mf/use-fn
                      (mf/deps busy?)
@@ -691,6 +956,23 @@
           (let [borders (- (.-offsetHeight node) (.-clientHeight node))
                 height  (min 200 (+ (.-scrollHeight node) borders))]
             (set! (.-height style) (dm/str height "px"))))))
+
+    ;; consume a composer seed left by the vibes view: prefill, clear, focus.
+    ;; Prefill-not-send on purpose — the user presses Enter themselves.
+    (mf/with-effect [composer-seed]
+      (when (seq composer-seed)
+        (reset! input* composer-seed)
+        (st/emit! (dwaip/seed-composer nil))
+        (some-> (mf/ref-val input-ref) dom/focus!)))
+
+    ;; keep the keyboard-highlighted slash option in view as the arrows move
+    ;; it (an effect, not part of the key handler: the DOM only has the new
+    ;; aria-selected after the state settles)
+    (mf/with-effect [slash-hi slash-open?]
+      (when slash-open?
+        (some-> (mf/ref-val slash-menu-ref)
+                (.querySelector "[aria-selected=\"true\"]")
+                (.scrollIntoView #js {:block "nearest"}))))
 
     ;; close the model picker on any click outside it, or on Escape — without
     ;; the latter it is a keyboard trap: openable by keyboard, not closable
@@ -731,8 +1013,8 @@
 
      [:> affected-strip* {:on-fix on-fix}]
 
-     (if (seq messages)
-       [:> transcript* {:messages messages :busy? busy?}]
+     (if (or (seq messages) (some? pending-form))
+       [:> transcript* {:messages messages :busy? busy? :form pending-form}]
        [:div {:class (stl/css :transcript-empty)}
         [:> i/icon* {:icon-id i/bot-message-square
                      :size "m"
@@ -808,6 +1090,27 @@
              :on-drag-over on-drag-over
              :on-drag-leave on-drag-leave
              :on-drop on-drop}
+       (when slash-open?
+         [:div {:class (stl/css :slash-menu)
+                :ref slash-menu-ref
+                :role "listbox"
+                :aria-label "Commands and skills"}
+          (for [[i entry] (map-indexed vector slash-matches)]
+            [:button {:key (:command entry)
+                      :type "button"
+                      :role "option"
+                      :aria-selected (= i slash-hi)
+                      :class (stl/css-case :slash-option true
+                                           :slash-option-active (= i slash-hi))
+                      ;; pointerdown would steal focus from the textarea and
+                      ;; blur it before click lands — keep the caret alive
+                      :on-pointer-down dom/prevent-default
+                      :on-pointer-enter #(reset! slash-hi* i)
+                      :on-click #(pick-entry entry)}
+             [:span {:class (stl/css :slash-command)} (dm/str "/" (:command entry))]
+             [:span {:class (stl/css :slash-title)} (:title entry)]
+             (when-let [detail (:detail entry)]
+               [:span {:class (stl/css :slash-detail)} detail])])])
        [:input {:type "file"
                 :ref file-input-ref
                 :class (stl/css :composer-file-input)
@@ -902,27 +1205,125 @@
                                :mode-autofix (= mode "autofix"))}
    (get ask/mode-label mode mode)])
 
+(mf/defc skill-edit*
+  "Inline editor for a USER-CREATED skill: label, trigger phrase, mode and the
+  generated playbook body. The name slug is deliberately absent — it keys the
+  enable state and the router, so it never changes after creation."
+  {::mf/private true}
+  [{:keys [skill on-saved on-cancel]}]
+  (let [label*   (mf/use-state (or (:label skill) ""))
+        trigger* (mf/use-state (or (:example skill) ""))
+        mode*    (mf/use-state (:mode skill))
+        body*    (mf/use-state (or (:body skill) ""))
+        label    (deref label*)
+        trigger  (deref trigger*)
+        mode     (deref mode*)
+        body     (deref body*)
+        ready?   (and (seq (str/trim label)) (seq (str/trim body)))
+        on-save  (mf/use-fn
+                  (mf/deps skill label trigger mode body ready?)
+                  (fn []
+                    (when ready?
+                      (st/emit! (dusk/update-skill
+                                 {:id (:id skill)
+                                  :label (str/trim label)
+                                  :mode mode
+                                  :trigger (str/trim trigger)
+                                  :description (:what skill)
+                                  :body body}))
+                      (on-saved))))]
+    [:div {:class (stl/css :skill-edit)}
+     [:label {:class (stl/css :create-label)} "Name"]
+     [:input {:class (stl/css :create-input)
+              :value label
+              :on-change #(reset! label* (dom/get-value (dom/get-target %)))}]
+
+     [:label {:class (stl/css :create-label)} "Trigger phrase"]
+     [:input {:class (stl/css :create-input)
+              :value trigger
+              :on-change #(reset! trigger* (dom/get-value (dom/get-target %)))}]
+
+     [:label {:class (stl/css :create-label)} "Mode"]
+     [:div {:class (stl/css :create-modes)}
+      (for [[m lbl] [["suggest" "🔍 Suggest"] ["review" "✏️ Review"] ["autofix" "⚡ Auto-fix"]]]
+        [:button {:key m
+                  :type "button"
+                  :class (stl/css-case :create-mode true :selected (= m mode))
+                  :on-click #(reset! mode* m)}
+         lbl])]
+
+     [:label {:class (stl/css :create-label)} "Playbook (what the agent follows)"]
+     [:textarea {:class (stl/css :skill-edit-body)
+                 :value body
+                 :rows 14
+                 :on-change #(reset! body* (dom/get-value (dom/get-target %)))}]
+
+     [:div {:class (stl/css :vibes-actions)}
+      [:button {:type "button"
+                :class (stl/css :vibes-button-primary)
+                :disabled (not ready?)
+                :on-click on-save}
+       "Save"]
+      [:button {:type "button"
+                :class (stl/css :vibes-button)
+                :on-click on-cancel}
+       "Cancel"]]]))
+
 (mf/defc skill-detail*
   "Detail for one catalog skill, shown in place of the list within the Skills
   view. Back navigation lives in the panel header (US #35), so there is no in-body
   back button here. Carries the same on/off toggle as the list card; `enabled` is
-  the resolved state and `on-toggle` receives the new boolean."
+  the resolved state and `on-toggle` receives the new boolean.
+
+  A user-created skill (`:user?`) additionally shows its generated playbook and
+  can be edited (label/trigger/mode/body) or deleted — built-ins are shared and
+  regenerated from the aikit, so they stay read-only. `on-close` returns to the
+  list after a delete."
   {::mf/private true}
-  [{:keys [skill enabled on-toggle]}]
-  (let [{:keys [label category mode example what]} skill]
-    [:div {:class (stl/css :skill-detail)}
-     [:div {:class (stl/css :detail-category)} category]
-     [:div {:class (stl/css :detail-head)}
-      [:div {:class (stl/css :detail-name)} label]
-      [:> switch* {:default-checked enabled
-                   :aria-label (dm/str (if enabled "Disable " "Enable ") label)
-                   :on-change on-toggle}]]
-     [:div {:class (stl/css :detail-tags)}
-      [:> mode-badge* {:mode mode}]]
-     [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
-     [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
-     [:div {:class (stl/css :detail-section-label)} "What it does"]
-     [:div {:class (stl/css :detail-what)} what]]))
+  [{:keys [skill enabled on-toggle on-close]}]
+  (let [{:keys [label category mode example what user? body]} skill
+        editing?* (mf/use-state false)
+        editing?  (deref editing?*)
+        confirm?* (mf/use-state false)
+        confirm?  (deref confirm?*)
+        on-edit   (mf/use-fn (fn [] (reset! confirm?* false) (reset! editing?* true)))
+        on-saved  (mf/use-fn #(reset! editing?* false))
+        on-cancel (mf/use-fn #(reset! editing?* false))
+        on-delete (mf/use-fn
+                   (mf/deps confirm? skill on-close)
+                   (fn []
+                     (if confirm?
+                       (do (st/emit! (dusk/delete-skill (:id skill)))
+                           (on-close))
+                       (reset! confirm?* true))))]
+    (if editing?
+      [:> skill-edit* {:skill skill :on-saved on-saved :on-cancel on-cancel}]
+      [:div {:class (stl/css :skill-detail)}
+       [:div {:class (stl/css :detail-category)} category]
+       [:div {:class (stl/css :detail-head)}
+        [:div {:class (stl/css :detail-name)} label]
+        [:> switch* {:default-checked enabled
+                     :aria-label (dm/str (if enabled "Disable " "Enable ") label)
+                     :on-change on-toggle}]]
+       [:div {:class (stl/css :detail-tags)}
+        [:> mode-badge* {:mode mode}]]
+       [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
+       [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
+       [:div {:class (stl/css :detail-section-label)} "What it does"]
+       [:div {:class (stl/css :detail-what)} what]
+       (when user?
+         [:*
+          [:div {:class (stl/css :detail-section-label)} "Playbook"]
+          [:pre {:class (stl/css :detail-body)} body]
+          [:div {:class (stl/css :vibes-actions)}
+           [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
+            "Edit"]
+           [:button {:type "button"
+                     :class (stl/css-case :vibes-button true
+                                          :vibes-button-danger true
+                                          :vibes-button-confirm confirm?)
+                     :on-click on-delete}
+            (if confirm? "Really delete?" "Delete")]]])])))
 
 (mf/defc skill-row*
   "One catalog row: name + description, a muted \"Off\" pill when disabled, and a
@@ -978,6 +1379,99 @@
      [:div {:class (stl/css :catalog-desc)}
       [:span {:class (stl/css :catalog-blurb)} blurb]]]))
 
+(mf/defc vibes-view*
+  "The project vibes document: rendered markdown with Edit / Re-run interview /
+  Delete, an editor with the same size cap the tool enforces, and an empty
+  state that starts the interview. Deleting is a two-click inline confirm —
+  and it goes through the changes pipeline, so it is undoable like any edit.
+  `on-interview` seeds the chat composer with the vibes trigger and switches
+  to the chat view."
+  {::mf/private true}
+  [{:keys [on-interview]}]
+  (let [doc       (mf/deref dd/doc-ref)
+        editing?* (mf/use-state false)
+        editing?  (deref editing?*)
+        draft*    (mf/use-state "")
+        draft     (deref draft*)
+        confirm?* (mf/use-state false)
+        confirm?  (deref confirm?*)
+
+        problem   (when editing? (dd/doc-problem draft))
+
+        on-edit   (mf/use-fn
+                   (mf/deps doc)
+                   (fn []
+                     (reset! draft* (or doc ""))
+                     (reset! confirm?* false)
+                     (reset! editing?* true)))
+        on-draft  (mf/use-fn
+                   #(reset! draft* (dom/get-value (dom/get-target %))))
+        on-cancel (mf/use-fn #(reset! editing?* false))
+        on-save   (mf/use-fn
+                   (mf/deps draft problem)
+                   (fn []
+                     (when-not problem
+                       (when-let [file-id (:current-file-id @st/state)]
+                         (st/emit! (dd/set-doc file-id (str/trim draft)))
+                         (reset! editing?* false)))))
+        on-delete (mf/use-fn
+                   (mf/deps confirm?)
+                   (fn []
+                     (if confirm?
+                       (do (when-let [file-id (:current-file-id @st/state)]
+                             (st/emit! (dd/clear-doc file-id)))
+                           (reset! confirm?* false))
+                       (reset! confirm?* true))))]
+
+    (cond
+      editing?
+      [:div {:class (stl/css :vibes-view)}
+       [:textarea {:class (stl/css :vibes-editor)
+                   :value draft
+                   :rows 18
+                   :on-change on-draft}]
+       [:div {:class (stl/css-case :vibes-counter true
+                                   :vibes-counter-over (some? problem))}
+        (dm/str (count draft) " / " dd/max-doc-chars)]
+       (when problem
+         [:p {:class (stl/css :vibes-problem)} problem])
+       [:div {:class (stl/css :vibes-actions)}
+        [:button {:type "button"
+                  :class (stl/css :vibes-button-primary)
+                  :disabled (some? problem)
+                  :on-click on-save}
+         "Save"]
+        [:button {:type "button"
+                  :class (stl/css :vibes-button)
+                  :on-click on-cancel}
+         "Cancel"]]]
+
+      (some? doc)
+      [:div {:class (stl/css :vibes-view)}
+       [:div {:class (stl/css :vibes-doc :message-md)}
+        [:> md/markdown* {:text doc}]]
+       [:div {:class (stl/css :vibes-actions)}
+        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
+         "Edit"]
+        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
+         "Re-run interview"]
+        [:button {:type "button"
+                  :class (stl/css-case :vibes-button true
+                                       :vibes-button-danger true
+                                       :vibes-button-confirm confirm?)
+                  :on-click on-delete}
+         (if confirm? "Really delete? (undoable)" "Delete")]]]
+
+      :else
+      [:div {:class (stl/css :vibes-empty)}
+       [:div {:class (stl/css :vibes-empty-title)} "No vibes set yet"]
+       [:p {:class (stl/css :vibes-empty-text)}
+        "A short interview pins down this project's design direction — vibe, audience, platform, do/don't — as a design.md on this file. The agent then designs against it, and collaborators share it."]
+       [:button {:type "button"
+                 :class (stl/css :vibes-button-primary)
+                 :on-click on-interview}
+        "Set the vibes"]])))
+
 (mf/defc skills-tab*
   "The built-in skills catalog: rows grouped by category. Each row opens its
   detail view on click and carries a discreet ⋯ menu (Enable/Disable + Fork /
@@ -989,8 +1483,9 @@
   `on-select` opens one, `on-create` opens the creation flow (US #9). Back
   navigation lives in the panel header (US #35)."
   {::mf/private true}
-  [{:keys [selected on-select on-create]}]
-  (let [catalog     (mf/deref refs/skills-catalog)
+  [{:keys [selected on-select on-create on-open-vibes]}]
+  (let [vibes-set?  (some? (mf/deref dd/doc-ref))
+        catalog     (mf/deref refs/skills-catalog)
         skill       (when selected
                       (some (fn [{:keys [category skills]}]
                               (some #(when (= selected (:name %)) (assoc % :category category)) skills))
@@ -1010,8 +1505,19 @@
       (let [enabled? (get enabled-map (:name skill) true)]
         [:> skill-detail* {:skill skill
                            :enabled enabled?
-                           :on-toggle #(toggle (:name skill) %)}])
+                           :on-toggle #(toggle (:name skill) %)
+                           :on-close #(on-select nil)}])
       [:div {:class (stl/css :skills-tab)}
+       ;; Project vibes: pinned above the catalog — it is file-level state,
+       ;; not a toggleable skill, so it gets a place rather than a row.
+       [:button {:type "button"
+                 :class (stl/css :vibes-card)
+                 :on-click on-open-vibes}
+        [:span {:class (stl/css :vibes-card-title)} "✦ Project vibes"]
+        [:span {:class (stl/css :vibes-card-status)}
+         (if vibes-set?
+           "Set — view or edit the design.md"
+           "Not set — run the kickoff interview")]]
        [:div {:class (stl/css :skills-toolbar)}
         [:div {:class (stl/css :skills-filter)}
          (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
@@ -1233,13 +1739,26 @@
         skill       (deref skill*)
         creating*   (mf/use-state false)
         creating?   (deref creating*)
+        ;; the Project vibes view within Skills (a third leaf next to
+        ;; detail/create — the header back pops it to the list)
+        vibes?*     (mf/use-state false)
+        vibes?      (deref vibes?*)
         ;; description carried over when creation is started from Chat (US #9).
         seed*       (mf/use-state nil)
 
-        open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! view* :skills)))
+        open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! vibes?* false) (reset! view* :skills)))
         on-select   (mf/use-fn #(reset! skill* %))
         open-create (mf/use-fn (fn [] (reset! seed* nil) (reset! creating* true)))
         on-created  (mf/use-fn #(reset! creating* false))
+        open-vibes  (mf/use-fn #(reset! vibes?* true))
+        ;; "Set the vibes" / "Re-run interview": hand the chat a ready-to-send
+        ;; trigger and land there — the user presses Enter themselves.
+        on-vibes-interview
+        (mf/use-fn
+         (fn []
+           (st/emit! (dwaip/seed-composer "Set the design vibes for this project."))
+           (reset! vibes?* false)
+           (reset! view* :chat)))
         ;; Chat "create a skill …" → take the user to the Skills create flow with
         ;; the described "what" prefilled.
         on-create-skill (mf/use-fn
@@ -1252,10 +1771,11 @@
         ;; `skill`/`creating?` (in deps) — reading the atoms from a no-deps
         ;; callback captures their initial nil/false and jumps straight to chat.
         on-back     (mf/use-fn
-                     (mf/deps skill creating?)
+                     (mf/deps skill creating? vibes?)
                      (fn []
                        (cond
                          creating?     (reset! creating* false) ;; create → list
+                         vibes?        (reset! vibes?* false)   ;; vibes → list
                          (some? skill) (reset! skill* nil)      ;; detail → list
                          :else         (reset! view* :chat))))  ;; list → chat
 
@@ -1307,7 +1827,7 @@
                            :on-click on-back
                            :icon i/arrow-left}]
          [:span {:class (stl/css :title)}
-          (cond creating? "New skill" skill "Skill info" :else "Skills")]]
+          (cond creating? "New skill" vibes? "Project vibes" skill "Skill info" :else "Skills")]]
         [:span {:class (stl/css :title)} "Agent"])
       (when-not skills?
         [:div {:class (stl/css :header-actions)}
@@ -1335,8 +1855,12 @@
      [:div {:class (stl/css :body)}
       (cond
         ;; Skills is a static catalog — reachable even before a provider is set up.
-        skills?       (if creating?
-                        [:> skill-create* {:settings settings :seed (deref seed*) :on-created on-created}]
-                        [:> skills-tab* {:selected skill :on-select on-select :on-create open-create}])
+        skills?       (cond
+                        creating? [:> skill-create* {:settings settings :seed (deref seed*) :on-created on-created}]
+                        vibes?    [:> vibes-view* {:on-interview on-vibes-interview}]
+                        :else     [:> skills-tab* {:selected skill
+                                                   :on-select on-select
+                                                   :on-create open-create
+                                                   :on-open-vibes open-vibes}])
         (empty? pool) [:> connect-empty*]
         :else         [:> chat-tab* {:on-create-skill on-create-skill}])]]))

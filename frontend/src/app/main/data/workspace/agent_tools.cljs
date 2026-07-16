@@ -37,6 +37,7 @@
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
+   [app.main.data.workspace.design-doc :as dd]
    [app.main.data.workspace.groups :as dwg]
    [app.main.data.workspace.libraries :as dwl]
    [app.main.data.workspace.selection :as dws]
@@ -54,7 +55,8 @@
    [app.render-wasm.api :as wasm.api]
    [app.util.code-gen :as cg]
    [beicon.v2.core :as rx]
-   [cuerdas.core :as str]))
+   [cuerdas.core :as str]
+   [potok.v2.core :as ptk]))
 
 (declare audit-violations)
 ;; lives with the token tools it is built from, but read_design (far above them)
@@ -123,6 +125,61 @@
          "not guess or reconstruct its content from the blurb.")
     :input-schema {:type "object"
                    :properties {:name {:type "string" :description "return this skill's full playbook"}}}}
+
+   {:name "ask_user"
+    :description
+    (str "Ask the user structured questions, rendered as an interactive form in "
+         "the chat (option chips, multi-select, free text). Use it when a "
+         "playbook calls for an interview or you need several decisions at once; "
+         "for one quick question just ask in prose. ONE call per interview (at "
+         "most 10 questions) — the turn pauses until the user submits. Give every "
+         "question a unique snake_case `id`. The result is {answers: {id: value}}: "
+         "a `single` question yields its chosen option string (the user's own "
+         "words when they picked Other…), `multi` an array of them, `text` a "
+         "string; the literal value \"__decide__\" means the user delegated that "
+         "decision to you — choose well and say what you chose. Skipped optional "
+         "questions are omitted from the answers. A text question with "
+         "allow_images lets the user attach reference images (moodboards, "
+         "competitor screens); they arrive as images ON this tool's result, in "
+         "question order, with {attachments: {id: count}} tying each to its "
+         "question — read them before answering-dependent steps.")
+    :input-schema {:type "object"
+                   :properties
+                   {:title {:type "string"
+                            :description "short heading shown above the form"}
+                    :questions
+                    {:type "array"
+                     :items {:type "object"
+                             :properties
+                             {:id {:type "string" :description "unique snake_case key for this answer"}
+                              :question {:type "string" :description "the question itself"}
+                              :hint {:type "string" :description "one line of context shown under the question"}
+                              :type {:type "string" :enum ["single" "multi" "text"]
+                                     :description "single = pick one chip, multi = pick several, text = free text"}
+                              :options {:type "array" :items {:type "string"}
+                                        :description "the choices, for single/multi"}
+                              :allow_other {:type "boolean" :description "offer an Other… free-text chip (default true)"}
+                              :allow_decide {:type "boolean" :description "offer a \"Decide for me\" chip (default false)"}
+                              :allow_images {:type "boolean" :description "text questions only: let the user attach reference images"}
+                              :optional {:type "boolean" :description "the user may leave this unanswered"}}
+                             :required ["id" "question" "type"]}}}
+                   :required ["questions"]}}
+
+   {:name "set_design_doc"
+    :description
+    (str "Saves (or replaces) this project's vibes document — a design.md "
+         "that is inlined into your instructions on every future turn in this "
+         "file and shared with every collaborator. Write concise markdown: "
+         "identity in a sentence, vibe words, audience, platform, what to "
+         "design first, voice, do / don't. Stay well under 4000 characters — "
+         "it is read on every turn. Call it at the end of a vibes interview "
+         "or when the user asks to change the project's design direction; "
+         "pass an empty `doc` to delete the document. The current doc, if "
+         "any, is already in your instructions under 'Project vibes'.")
+    :input-schema {:type "object"
+                   :properties {:doc {:type "string"
+                                      :description "the full markdown document (empty string deletes)"}}
+                   :required ["doc"]}}
 
    {:name "render_board"
     :description
@@ -866,6 +923,10 @@
              :components comps
              :tokens (tokens-by-type (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals))
              :skills (ask/catalog-manifest state)
+             ;; a boolean, not the text: the doc itself is already inlined in
+             ;; the system prompt, and repeating 4k chars in every read_design
+             ;; result would double-bill it
+             :hasDesignDoc (some? (dd/get-doc state))
              :openViolations (count (audit-violations state))}
       ;; sets/themes only when the file has any — a single-set file pays nothing
       (seq (sets-and-themes state))
@@ -2519,6 +2580,122 @@
                     "fix shape by shape, then run audit_file again to confirm"
                     "no open violations for the active rules")})))
 
+;; --- ask_user (the elicitation tool)
+;;
+;; The turn pauses on an ordinary tool call: the observable stores the
+;; renderable questions where the panel can see them and completes only when
+;; the user submits, so `run-turn` needs no notion of "waiting on a human".
+;; The resolver callback is process state, not data — it lives in a module
+;; atom; app-db holds only what the form renders. A cancelled turn
+;; unsubscribes the tool observable, and the teardown clears the form: the
+;; form must never outlive the call it belongs to.
+
+(defonce ^:private pending-form-resolve* (atom nil))
+
+(defn- set-pending-form
+  "Publishes (or, with nil, clears) the open ask_user form for the current
+  file under [:ai-panel <file-id> :pending-form]. Defined here rather than in
+  data.workspace.ai-panel to keep this ns free of a require cycle (ai-panel →
+  agent → agent-tools)."
+  [form]
+  (ptk/reify ::set-pending-form
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (if (some? form)
+          (assoc-in state [:ai-panel file-id :pending-form] form)
+          (update-in state [:ai-panel file-id] dissoc :pending-form))
+        state))))
+
+(defn submit-pending-form!
+  "Resolves the open ask_user call with `payload` — the full tool result:
+  {:answers {id value}}, plus :attachments/:images/:note when the user
+  attached references (`run-tool` lifts :images into image blocks, exactly
+  as for render_board). Called by the panel's form UI; a no-op when nothing
+  is pending."
+  [payload]
+  (when-let [resolve @pending-form-resolve*]
+    (reset! pending-form-resolve* nil)
+    (resolve payload)))
+
+(def ^:private max-questions 10)
+
+(defn- questions-problem
+  "Why `input` is not a usable ask_user payload, or nil when it is. Validated
+  up front so the model gets an error naming the fix, not a broken form."
+  [{:keys [questions]}]
+  (cond
+    (or (not (vector? questions)) (empty? questions))
+    "ask_user needs a non-empty `questions` array"
+
+    (> (count questions) max-questions)
+    (str "ask_user allows at most " max-questions " questions per call — split the interview")
+
+    :else
+    (let [ids (map :id questions)]
+      (cond
+        (some #(or (not (string? %)) (str/blank? %)) ids)
+        "every question needs a non-empty string `id`"
+
+        (not= (count ids) (count (distinct ids)))
+        "question `id`s must be unique"
+
+        (some #(not (contains? #{"single" "multi" "text"} (:type %))) questions)
+        "every question `type` must be \"single\", \"multi\" or \"text\""
+
+        (some #(and (not= "text" (:type %)) (empty? (:options %))) questions)
+        "single/multi questions need a non-empty `options` array"
+
+        :else nil))))
+
+(defn- ask-user
+  [input]
+  (cond
+    (questions-problem input)
+    (rx/throw (ex-info (questions-problem input) {}))
+
+    ;; one form at a time: a second concurrent call is a model error, and
+    ;; failing it beats silently clobbering the form the user is filling in
+    (some? (deref pending-form-resolve*))
+    (rx/throw (ex-info "an ask_user form is already open — wait for its answers" {}))
+
+    :else
+    (rx/create
+     (fn [subs]
+       (reset! pending-form-resolve*
+               (fn [payload]
+                 (rx/push! subs payload)
+                 (rx/end! subs)))
+       (st/emit! (set-pending-form (select-keys input [:title :questions])))
+       (fn []
+         (reset! pending-form-resolve* nil)
+         (st/emit! (set-pending-form nil)))))))
+
+;; --- set_design_doc (the project vibes document)
+
+(defn- set-design-doc
+  [{:keys [doc]}]
+  (let [file-id (:current-file-id @st/state)
+        doc     (when (string? doc) (str/trim doc))]
+    (cond
+      (nil? file-id)
+      (rx/throw (ex-info "no file is open" {}))
+
+      ;; empty means delete — the schema makes `doc` required, so an empty
+      ;; string is the explicit "remove it" spelling, not an accident
+      (str/blank? doc)
+      (do (st/emit! (dd/clear-doc file-id))
+          (rx/of {:ok true :note "design doc removed"}))
+
+      :else
+      (if-let [problem (dd/doc-problem doc)]
+        (rx/throw (ex-info problem {}))
+        (do (st/emit! (dd/set-doc file-id doc))
+            (rx/of {:ok true
+                    :chars (count doc)
+                    :note (str "saved — it will be part of your instructions "
+                               "from the next turn on")}))))))
+
 ;; --- Dispatch
 
 (defn execute-tool
@@ -2528,6 +2705,8 @@
     "find_shapes"        (find-shapes input)
     "render_board"       (render-board input)
     "get_design_skills"  (get-design-skills input)
+    "ask_user"           (ask-user input)
+    "set_design_doc"     (set-design-doc input)
     "audit_file"         (audit-file)
     "create_shape"       (create-shape input)
     "modify_shape"       (modify-shape input)

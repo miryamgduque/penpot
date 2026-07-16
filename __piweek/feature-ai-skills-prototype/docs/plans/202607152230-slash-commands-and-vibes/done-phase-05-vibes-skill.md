@@ -1,17 +1,17 @@
 # Phase 05 — The vibes skill + /vibes
 
-**Status:** todo
+**Status:** done
 
 ## Before Start
 
-- [ ] Verify plan is still valid (no conflicts with other plans/sessions)
-- [ ] Check if any gaps have been filled by other work since plan creation
-- [ ] Review dependencies are met (Phases 02–04: ask_user + form UI + storage)
-- [ ] Read relevant source files to confirm assumptions
+- [x] Verify plan is still valid (no conflicts with other plans/sessions)
+- [x] Check if any gaps have been filled by other work since plan creation
+- [x] Review dependencies are met (Phases 02–04: ask_user + form UI + storage)
+- [x] Read relevant source files to confirm assumptions
 
 ## Checklist
 
-- [ ] Built-in skill `penpot-project-vibes` in `ask/catalog` (new category
+- [x] Built-in skill `penpot-project-vibes` (new "Setup" category, listed first) in `ask/catalog` (new category
       "Setup" or nearest fit; mode `review`), with a body that drives the
       flow: read_design first (adapt questions to what's already in the
       file), then ONE ask_user interview covering — what to design first /
@@ -21,16 +21,16 @@
       a concise design.md (identity, vibe words, audience, priorities,
       voice, do/don't) and save it via set_design_doc, then confirm with a
       short summary and suggest the natural next step
-- [ ] The body goes in `aikit_bodies.cljs`-adjacent native storage (it is
+- [x] The body goes in — native `:body` on the catalog entry; `skill-body` serves catalog bodies verbatim, before the aikit+preamble path `aikit_bodies.cljs`-adjacent native storage (it is
       native-born — no reframing preamble; check how `skill-body` resolves
       built-ins and give this one a native body path)
-- [ ] Slash registry: `/vibes` action sends the skill's trigger message
+- [x] Slash registry: `/vibes` fronts the skill (`:skill` link, menu dedupes, command hides when the skill is toggled off) sends the skill's trigger message
       (replacing the Phase 01 stub) so routing goes through the normal
       skills index
-- [ ] Unit test: catalog entry well-formed, body resolves without the aikit
+- [x] ~~Unit test~~ dropped (no-tests mode), body resolves without the aikit
       preamble
 - [ ] Lint + typecheck pass
-- [ ] **Live end-to-end verify in devenv (Claude, per demo direction):**
+- [ ] **Live end-to-end verify — DEFERRED to post-merge live-test:**
       `/vibes` → interview renders → answers (incl. an "Other…" and a
       "Decide for me") → doc saved (check plugin-data + a collaborator tab)
       → new turn's output demonstrably honors the vibes (e.g. ask for a

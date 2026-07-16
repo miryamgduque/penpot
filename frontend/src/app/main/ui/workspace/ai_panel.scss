@@ -897,6 +897,450 @@
   outline-offset: deprecated.$s-2;
 }
 
+// The `/` menu, floated above the composer row (same recipe as the
+// model-picker menu: bordered card, opens upward, scrolls when long).
+.slash-menu {
+  position: absolute;
+  inset-block-end: calc(100% + deprecated.$s-4);
+  inset-inline: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  max-block-size: 260px;
+  overflow-y: auto;
+  padding: deprecated.$s-4;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 30%);
+}
+
+.slash-option {
+  @include deprecated.body-small-typography;
+
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: deprecated.$s-8;
+  align-items: baseline;
+  width: 100%;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  text-align: start;
+  cursor: pointer;
+}
+
+// hover moves the highlight (pointer-enter), so active covers both inputs
+.slash-option-active {
+  background-color: var(--color-background-tertiary);
+}
+
+.slash-command {
+  color: var(--color-accent-primary);
+  white-space: nowrap;
+}
+
+.slash-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-detail {
+  grid-column: 2;
+  color: var(--color-foreground-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// The ask_user interview form, living in the transcript flow like a wide
+// assistant bubble: a bordered card of questions with pill-chip answers.
+.eform {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-16;
+  padding: deprecated.$s-12;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-secondary);
+}
+
+.eform-title {
+  @include deprecated.body-medium-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.eform-question {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-6;
+}
+
+.eform-prompt {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.eform-optional {
+  color: var(--color-foreground-secondary);
+  font-weight: 400;
+}
+
+.eform-hint {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+.eform-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-6;
+}
+
+.eform-chip {
+  @include deprecated.body-small-typography;
+
+  display: inline-flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-12;
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-foreground-secondary);
+  }
+}
+
+.eform-chip-active {
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+}
+
+.eform-chip-mark {
+  color: inherit;
+}
+
+.eform-chip-other {
+  color: var(--color-foreground-secondary);
+
+  &.eform-chip-active {
+    color: var(--color-accent-primary);
+  }
+}
+
+.eform-other-input,
+.eform-textarea {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+
+  &::placeholder {
+    color: var(--color-foreground-secondary);
+  }
+}
+
+.eform-textarea {
+  resize: vertical;
+}
+
+.eform-actions {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+}
+
+.eform-submit {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-6 deprecated.$s-16;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.eform-pending-hint {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+// Reference-image attachments on a text question.
+.eform-attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: deprecated.$s-6;
+}
+
+.eform-thumb {
+  position: relative;
+}
+
+.eform-thumb-img {
+  inline-size: 48px;
+  block-size: 48px;
+  object-fit: cover;
+  border-radius: deprecated.$br-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.eform-thumb-remove {
+  position: absolute;
+  inset-block-start: calc(-1 * deprecated.$s-6);
+  inset-inline-end: calc(-1 * deprecated.$s-6);
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
+  border: none;
+  border-radius: 50%;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-primary);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+// User-skill playbook: read view + inline editor.
+.detail-body {
+  @include deprecated.body-small-typography;
+
+  max-block-size: 320px;
+  overflow: auto;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  color: var(--color-foreground-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.skill-edit {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  overflow-y: auto;
+}
+
+.skill-edit-body {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  min-block-size: 220px;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  font-family: monospace;
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.eform-attach-btn {
+  @include deprecated.body-small-typography;
+
+  display: inline-flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-foreground-secondary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+// Project vibes: the pinned card in the Skills list…
+.vibes-card {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+  width: 100%;
+  margin-block-end: deprecated.$s-8;
+  padding: deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-secondary);
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.vibes-card-title {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.vibes-card-status {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+// …and its full-panel view: doc, editor, empty state.
+.vibes-view {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  overflow-y: auto;
+}
+
+.vibes-doc {
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+}
+
+.vibes-editor {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  min-block-size: 260px;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  font-family: monospace;
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.vibes-counter {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+  text-align: end;
+}
+
+.vibes-counter-over {
+  color: var(--color-accent-error, #ff3277);
+}
+
+.vibes-problem {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-accent-error, #ff3277);
+}
+
+.vibes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-8;
+}
+
+.vibes-button,
+.vibes-button-primary {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-6 deprecated.$s-12;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-foreground-secondary);
+  }
+}
+
+.vibes-button-primary {
+  border-color: var(--color-accent-primary);
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  font-weight: 600;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.vibes-button-danger {
+  color: var(--color-accent-error, #ff3277);
+}
+
+.vibes-button-confirm {
+  border-color: var(--color-accent-error, #ff3277);
+}
+
+.vibes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: deprecated.$s-12;
+  padding: deprecated.$s-16;
+}
+
+.vibes-empty-title {
+  @include deprecated.body-medium-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.vibes-empty-text {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
 // The real <input type=file>: kept in the DOM (the attach button clicks it)
 // but never shown.
 .composer-file-input {

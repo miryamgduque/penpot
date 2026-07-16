@@ -564,10 +564,48 @@
         (update-in state [:ai-panel file-id] dissoc :pending-fix)
         state))))
 
+(defn seed-composer
+  "Prefills the chat composer with `text` (nil clears the seed) — how the
+  vibes view's \"set the vibes\" / \"re-run interview\" buttons hand the chat
+  a ready-to-send trigger. The user still sends it themselves; nothing fires
+  behind their back."
+  [text]
+  (ptk/reify ::seed-composer
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (if (some? text)
+          (assoc-in state [:ai-panel file-id :composer-seed] text)
+          (update-in state [:ai-panel file-id] dissoc :composer-seed))
+        state))))
+
 (defn cancel-turn
   "Stops the running turn. `send-message` watches the event stream for this."
   []
   (ptk/reify ::cancel-turn))
+
+(defn submit-form
+  "Resolves the open ask_user form with `payload` — the full tool result the
+  form UI assembled ({:answers …}, plus :attachments/:images/:note when
+  references were attached) — and leaves `summary`, its compact human
+  rendering, in the transcript as the user's bubble (with the attached
+  thumbnails: the transcript must not hide what was sent). The pending turn
+  resumes with the payload as the tool result; the form state itself is
+  cleared by the tool observable's own completion path."
+  [payload summary]
+  (ptk/reify ::submit-form
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :messages]
+                   (fnil conj []) (cond-> {:role "user" :content summary}
+                                    (seq (:images payload))
+                                    (assoc :images (:images payload))))
+        state))
+
+    ptk/EffectEvent
+    (effect [_ _ _]
+      (at/submit-pending-form! payload))))
 
 (defn send-message
   "Runs one user turn: appends the user message, runs the agent turn through

@@ -16,6 +16,7 @@
    [app.config :as cf]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
+   [app.main.data.workspace.slash-commands :as slc]
    [app.main.data.workspace.tokens.selected-set :as dwts]
    [app.main.store :as st]
    [app.main.streams :as ms]
@@ -341,6 +342,27 @@
                (when-let [file-id (:current-file-id state)]
                  (dm/get-in state [:ai-panel file-id :pending-fix])))
              st/state))
+
+(def ai-panel-pending-form
+  "The open ask_user form for the current file — {:title :questions} — or nil.
+  Set while an agent turn is paused waiting on the user's answers."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :pending-form])))
+             st/state))
+
+(def ai-panel-composer-seed
+  "Text waiting to prefill the chat composer (set by the vibes view), or nil.
+  The composer consumes and clears it."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :composer-seed])))
+             st/state))
+
+;; NOTE: the design-doc (project vibes) reactive ref lives in
+;; app.main.data.workspace.design-doc/doc-ref — that ns reaches the changes
+;; pipeline, and requiring it from here closes a circular dependency through
+;; app.main.data.event.
 
 (def workspace-file-typography
   (l/derived :typographies workspace-data))
@@ -726,6 +748,11 @@
   "The full skills catalog — built-in groups with the user's created skills merged
   in (US #9). Backs the Skills-tab list + detail."
   (l/derived ask/full-catalog st/state))
+
+(def slash-menu-entries
+  "Entries for the chat composer's `/` menu: the special commands + every
+  enabled skill, each carrying its insertable trigger phrase."
+  (l/derived slc/menu-model st/state))
 
 (def skills-filter
   "The Skills-tab list filter for this session (`:all` | `:enabled`). Defaults to

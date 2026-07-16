@@ -21,13 +21,16 @@
    [app.common.exceptions :as ex]
    [app.common.math :as mth]
    [app.common.media :as cm]
+   [app.common.uuid :as uuid]
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.media :as dwm]
+   [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.skill-state :as skst]
    [app.main.data.workspace.user-skills :as dusk]
+   [app.main.data.workspace.zoom :as dwz]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
@@ -148,6 +151,16 @@
       (zero? n) "No selection"
       (= 1 n)   (dm/str "1 layer: " (:name (get objects (first selected))))
       :else     (dm/str n " layers selected"))))
+
+(defn- chat-context
+  "The context payload riding a user message: current page + selection. Shared
+  by the composer send, Fix-it-now and the pending-fix drain."
+  [page selected objects]
+  {:file (:name page)
+   :page (:name page)
+   :selection (->> selected
+                   (map #(select-keys (get objects %) [:name :type]))
+                   (vec))})
 
 (defn- provider-pool
   "Flattens the connected providers into `{:provider :model}` entries — one per
@@ -370,6 +383,111 @@
                          :on-click scroll-to-end
                          :icon i/arrow-down}])]))
 
+;; --- Affected strip (auto-fix watcher)
+;;
+;; Surfaces the live violations set kept by the data-layer watcher
+;; (`dwaip/start-watcher`): a one-line summary between the context chip and
+;; the transcript, expandable into a per-rule breakdown. Zero violations
+;; renders nothing at all — the strip is presence, not chrome.
+
+(def ^:private rule-labels
+  {"layer-naming"      "Layer naming"
+   "token-only-colors" "Token-only colors"})
+
+(def ^:private max-strip-shapes 8)
+
+(defn- group-violations
+  "violations → [{:rule :label :n :shapes}] — biggest group first, then by
+  rule name so equal counts render stably."
+  [violations]
+  (->> violations
+       (group-by :rule)
+       (map (fn [[rule vs]]
+              {:rule   rule
+               :label  (get rule-labels rule rule)
+               :n      (count vs)
+               :shapes vs}))
+       (sort-by (juxt (comp - :n) :rule))
+       (vec)))
+
+(defn- strip-summary
+  "\"12 layers need attention · 2 rules\" — layers counted distinct (one shape
+  can violate several rules)."
+  [violations]
+  (let [shapes (count (into #{} (map :shapeId) violations))
+        rules  (count (into #{} (map :rule) violations))]
+    (dm/str shapes (if (= 1 shapes) " layer needs attention · " " layers need attention · ")
+            rules (if (= 1 rules) " rule" " rules"))))
+
+(mf/defc affected-strip*
+  {::mf/private true}
+  [{:keys [on-fix]}]
+  (let [violations (mf/deref refs/ai-panel-violations)
+        expanded*  (mf/use-state false)
+        expanded?  (deref expanded*)
+        on-toggle  (mf/use-fn #(swap! expanded* not))
+
+        on-fix-all (mf/use-fn
+                    (mf/deps on-fix violations)
+                    (fn [] (when on-fix (on-fix violations))))
+
+        ;; click a layer name → select + zoom on canvas, so the strip doubles
+        ;; as navigation to the offending shape
+        on-shape-click
+        (mf/use-fn
+         (fn [event]
+           (when-let [id (-> (dom/get-current-target event)
+                             (dom/get-data "id")
+                             (uuid/parse*))]
+             (st/emit! (dws/select-shape id)
+                       dwz/zoom-to-selected-shape))))]
+    (when (seq violations)
+      [:div {:class (stl/css :affected-strip)}
+       [:div {:class (stl/css :affected-row)}
+        [:button {:type "button"
+                  :class (stl/css :affected-summary)
+                  :aria-expanded expanded?
+                  :on-click on-toggle}
+         [:span {:aria-hidden true :class (stl/css :affected-bolt)} "⚡"]
+         [:span {:class (stl/css :affected-text)} (strip-summary violations)]
+         [:span {:aria-hidden true :class (stl/css :affected-chevron)}
+          (if expanded? "▾" "▸")]]
+        [:button {:type "button"
+                  :class (stl/css :affected-fix)
+                  :title "Ask the agent to fix everything listed, in this conversation"
+                  :on-click on-fix-all}
+         "✦ Fix it now"]]
+       (when expanded?
+         [:div {:class (stl/css :affected-detail)}
+          (for [{:keys [rule label n shapes]} (group-violations violations)]
+            [:div {:key rule :class (stl/css :affected-group)}
+             [:div {:class (stl/css :affected-group-head)}
+              [:span {:class (stl/css :affected-group-label)} label]
+              [:span {:class (stl/css :affected-group-count)} n]
+              (when on-fix
+                [:button {:type "button"
+                          :class (stl/css :affected-group-fix)
+                          :title (dm/str "Fix only the " label " violations")
+                          ;; render-time closure, deliberately: hooks cannot
+                          ;; live inside `for`, and the list is tiny
+                          :on-click (fn [_] (on-fix shapes))}
+                 "Fix"])]
+             [:ul {:class (stl/css :affected-shapes)}
+              (for [v (take max-strip-shapes shapes)]
+                [:li {:key (:shapeId v)}
+                 [:button {:type "button"
+                           :class (stl/css :affected-shape)
+                           :title (:reason v)
+                           :data-id (:shapeId v)
+                           :on-click on-shape-click}
+                  ;; ✦ = flagged by the semantic tick, not the native scan
+                  (when (:semantic v)
+                    [:span {:aria-hidden true :class (stl/css :affected-semantic)} "✦ "])
+                  (:shapeName v)]])
+              (when (> n max-strip-shapes)
+                [:li {:class (stl/css :affected-more)}
+                 (dm/str "+" (- n max-strip-shapes) " more")])]])])])))
+
 (mf/defc chat-tab*
   {::mf/private true}
   [{:keys [on-create-skill]}]
@@ -380,6 +498,7 @@
         providers (mf/deref refs/ai-providers)
         busy?     (mf/deref refs/ai-panel-busy?)
         usage     (mf/deref refs/ai-panel-usage)
+        pending-fix (mf/deref refs/ai-panel-pending-fix)
 
         pool      (mf/with-memo [providers] (provider-pool providers))
 
@@ -526,15 +645,25 @@
                                (reset! images* [])
                                (reset! attach-error* nil))
                            (when settings
-                             (let [context {:file (:name page)
-                                            :page (:name page)
-                                            :selection (->> selected
-                                                            (map #(select-keys (get objects %) [:name :type]))
-                                                            (vec))}]
-                               (st/emit! (dwaip/send-message settings text context images))
-                               (reset! input* "")
-                               (reset! images* [])
-                               (reset! attach-error* nil))))))))
+                             (st/emit! (dwaip/send-message settings text (chat-context page selected objects) images))
+                             (reset! input* "")
+                             (reset! images* [])
+                             (reset! attach-error* nil)))))))
+
+        ;; Fix it now: compose the visible message from the clicked subset and
+        ;; resolve which model runs it (the skill's declared cheap model when
+        ;; the pool has it); if a turn is running, park both in the pending slot
+        on-fix    (mf/use-fn
+                   (mf/deps settings busy? pool page selected objects)
+                   (fn [violations]
+                     (when (and settings (seq violations))
+                       (let [text   (dwaip/compose-fix-message violations)
+                             fix-st (dwaip/fix-settings violations pool settings)]
+                         (if busy?
+                           (st/emit! (dwaip/set-pending-fix text fix-st))
+                           (st/emit! (dwaip/send-message fix-st text (chat-context page selected objects))))))))
+
+        on-cancel-pending (mf/use-fn #(st/emit! (dwaip/clear-pending-fix)))
 
         on-key-down (mf/use-fn
                      (mf/deps send)
@@ -583,12 +712,24 @@
             (.removeEventListener js/document "pointerdown" on-doc)
             (.removeEventListener js/document "keydown" on-key)))))
 
+    ;; drain the pending Fix-it-now once the running turn ends: the queued
+    ;; message becomes a normal visible send, with fresh page/selection context
+    ;; but the settings resolved when it was queued (the skill's model)
+    (mf/with-effect [busy? pending-fix settings page selected objects]
+      (when (and (not busy?) (seq (:text pending-fix)) settings)
+        (st/emit! (dwaip/clear-pending-fix)
+                  (dwaip/send-message (or (:settings pending-fix) settings)
+                                      (:text pending-fix)
+                                      (chat-context page selected objects)))))
+
     [:div {:class (stl/css :chat-tab)}
      ;; Current-file context surfaced to the agent: page + selection.
      [:div {:class (stl/css :context-chip)}
       [:span {:class (stl/css :context-page)} (:name page)]
       [:span {:class (stl/css :context-sep)} "·"]
       [:span {:class (stl/css :context-selection)} (selection-label selected objects)]]
+
+     [:> affected-strip* {:on-fix on-fix}]
 
      (if (seq messages)
        [:> transcript* {:messages messages :busy? busy?}]
@@ -614,6 +755,25 @@
                   :on-click on-clear}
          [:span {:aria-hidden true} "✕"]
          "Clear"]])
+
+     ;; A Fix-it-now queued behind the running turn: visible, cancellable,
+     ;; sends itself when the turn ends (drain effect above).
+     (when (seq (:text pending-fix))
+       [:div {:class (stl/css :pending-fix)}
+        [:div {:class (stl/css :pending-fix-body)}
+         [:span {:class (stl/css :pending-fix-label)}
+          (dm/str "Queued — sends when the current turn ends"
+                  ;; name the model only when it is not the one the user is
+                  ;; chatting with — that divergence is worth a heads-up
+                  (when-let [m (get-in pending-fix [:settings :model])]
+                    (when (not= m (:model settings))
+                      (dm/str " · via " m))))]
+         [:span {:class (stl/css :pending-fix-text)} (:text pending-fix)]]
+        [:button {:type "button"
+                  :class (stl/css :pending-fix-cancel)
+                  :aria-label "Cancel the queued fix"
+                  :on-click on-cancel-pending}
+         [:span {:aria-hidden true} "✕"]]])
 
      [:div {:class (stl/css :composer)}
       (when (seq images)
@@ -855,12 +1015,12 @@
        [:div {:class (stl/css :skills-toolbar)}
         [:div {:class (stl/css :skills-filter)}
          (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
-          [:button {:key (name opt)
-                    :type "button"
-                    :class (stl/css-case :skills-filter-option true
-                                         :selected (= active opt))
-                    :on-click #(st/emit! (dwaip/set-skills-filter opt))}
-           lbl])]
+           [:button {:key (name opt)
+                     :type "button"
+                     :class (stl/css-case :skills-filter-option true
+                                          :selected (= active opt))
+                     :on-click #(st/emit! (dwaip/set-skills-filter opt))}
+            lbl])]
         [:button {:class (stl/css :create-skill-btn)
                   :type "button"
                   :on-click on-create}

@@ -94,6 +94,19 @@
   z-index: deprecated.$z-index-4;
 }
 
+// Left-edge drag handle: an invisible strip straddling the panel border, same
+// hit area and cursor as the sidebars' handles. Above the header/body so the
+// whole edge is grabbable.
+.resize-area {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: deprecated.$s-8;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: deprecated.$z-index-4;
+}
+
 // Title band. Height matches the workspace right-header so the tabs below
 // align with the sidebar's Design/Prototype/Inspect row. Inline padding uses
 // the same panel spacing token as the other panels.
@@ -186,6 +199,207 @@
 .context-selection {
   text-overflow: ellipsis;
   overflow: hidden;
+}
+
+// --- Affected strip (auto-fix watcher)
+// A fixed-height sibling ABOVE .transcript-wrap — never part of the scroll
+// area, so it cannot re-trigger the min-height:0 grid overflow bug. The
+// expanded detail gets its own bounded scroll instead.
+
+.affected-strip {
+  border-block-end: deprecated.$s-1 solid var(--color-background-tertiary);
+  background-color: var(--color-background-secondary);
+}
+
+.affected-row {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-6;
+  padding-inline-end: var(--sp-m);
+}
+
+.affected-fix {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: deprecated.$s-2 deprecated.$s-8;
+  border: none;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-accent-primary-muted);
+    color: var(--color-foreground-primary);
+  }
+}
+
+.affected-group-fix {
+  @include scaled-body-small;
+
+  margin-inline-start: auto;
+  padding: 0 deprecated.$s-6;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-accent-primary);
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.affected-summary {
+  @include scaled-body-small;
+
+  display: flex;
+  gap: deprecated.$s-6;
+  align-items: center;
+  inline-size: 100%;
+  padding: deprecated.$s-8 var(--sp-m);
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+  text-align: start;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+}
+
+.affected-bolt {
+  color: var(--color-accent-warning);
+}
+
+.affected-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.affected-chevron {
+  color: var(--color-foreground-secondary);
+}
+
+.affected-detail {
+  @extend %new-scrollbar;
+
+  max-block-size: deprecated.$s-200;
+  overflow-y: auto;
+  padding: 0 var(--sp-m) deprecated.$s-8;
+}
+
+.affected-group {
+  padding-block-start: deprecated.$s-4;
+}
+
+.affected-group-head {
+  @include scaled-body-small;
+
+  display: flex;
+  gap: deprecated.$s-6;
+  align-items: center;
+  color: var(--color-foreground-primary);
+}
+
+.affected-group-count {
+  @include scaled-body-small;
+
+  padding: 0 deprecated.$s-6;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+}
+
+.affected-shapes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-4;
+  margin: deprecated.$s-4 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.affected-shape {
+  @include scaled-body-small;
+
+  padding: 0 deprecated.$s-6;
+  border: none;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-quaternary);
+    color: var(--color-foreground-primary);
+  }
+}
+
+.affected-more {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+.affected-semantic {
+  color: var(--color-accent-primary);
+}
+
+// A Fix-it-now parked behind the running turn.
+.pending-fix {
+  display: flex;
+  align-items: flex-start;
+  gap: deprecated.$s-6;
+  margin: 0 var(--sp-m);
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+}
+
+.pending-fix-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  overflow: hidden;
+}
+
+.pending-fix-label {
+  @include scaled-body-small;
+
+  color: var(--color-accent-primary);
+}
+
+.pending-fix-text {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+  // the composed message can be long; two lines is enough of a preview
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pending-fix-cancel {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-accent-error);
+  }
 }
 
 // Anchors the jump-to-latest pill against the scrollport. The pill cannot live

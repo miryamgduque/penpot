@@ -458,6 +458,114 @@
       (t/is (= 2 (count blocks)) "5 turns of images encode down to the recent 2"))))
 
 ;; ---------------------------------------------------------------------------
+;; History hygiene: stubbing stale tool results.
+;;
+;; A tool result is the deadest weight a history carries: a read_design dump
+;; from five turns ago is almost never re-read, but — the whole history being
+;; re-encoded every round — it is re-sent forever. Old, large results get their
+;; CONTENT replaced by a stub; the message structure (ids, pairing) stays, so
+;; neither provider's tool_use/tool_result invariant breaks. The thresholds are
+;; the retired TS app's proven values (>400 chars, older than the last 8
+;; messages).
+;; ---------------------------------------------------------------------------
+
+(def ^:private big-result (apply str (repeat 1000 "x")))
+
+(defn- turn-with-result
+  "user → assistant tool call → its result (3 messages)."
+  [n content]
+  [{:role :user :text (str "q" n)}
+   {:role :assistant :text "" :tool-calls [{:id (str "c" n) :name "read_design" :input {}}]}
+   {:role :tool-results :results [{:id (str "c" n) :content content}]}])
+
+(t/deftest stubbing-clears-old-large-results
+  (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
+        out     (agent/stub-stale-tool-results history)
+        oldest  (first (:results (nth out 2)))]
+    (t/testing "an old result's content is replaced, not truncated"
+      (t/is (< (count (:content oldest)) 200))
+      (t/is (str/includes? (:content oldest) "cleared")))
+    (t/testing "its id survives — the pairing must not break"
+      (t/is (= "c0" (:id oldest))))))
+
+(t/deftest stubbing-spares-the-recent-tail
+  (t/testing "the last 8 messages keep their results verbatim — the model may
+              still be reading what it just asked for"
+    (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
+          out     (agent/stub-stale-tool-results history)
+          newest  (first (:results (peek out)))]
+      (t/is (= big-result (:content newest))))))
+
+(t/deftest stubbing-spares-small-results
+  (t/testing "a small result costs nothing and may carry a fact — left alone"
+    (let [history (vec (mapcat #(turn-with-result % "{\"ok\":true}") (range 4)))]
+      (t/is (= history (agent/stub-stale-tool-results history))))))
+
+(t/deftest stubbing-a-short-history-is-a-no-op
+  (let [history (vec (turn-with-result 0 big-result))]
+    (t/is (= history (agent/stub-stale-tool-results history)))))
+
+(t/deftest stubbing-keeps-the-wire-invariant
+  (t/testing "after stubbing, every tool_use still has its tool_result"
+    (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
+          [uses results] (anthropic-pairs (agent/stub-stale-tool-results history))]
+      (t/is (= 4 (count uses)))
+      (t/is (= uses results)))))
+
+(t/deftest stubbing-preserves-the-error-flag
+  (t/testing "an old FAILED result stays marked as an error when stubbed"
+    (let [history (into (vec (mapcat #(turn-with-result % "{}") (range 3)))
+                        [{:role :user :text "old"}
+                         {:role :assistant :text "" :tool-calls [{:id "cE" :name "audit_file" :input {}}]}
+                         {:role :tool-results :results [{:id "cE" :content big-result :error? true}]}
+                         ;; 8 filler messages push the error result out of the tail
+                         {:role :user :text "f1"} {:role :assistant :text "r1" :tool-calls []}
+                         {:role :user :text "f2"} {:role :assistant :text "r2" :tool-calls []}
+                         {:role :user :text "f3"} {:role :assistant :text "r3" :tool-calls []}
+                         {:role :user :text "f4"} {:role :assistant :text "r4" :tool-calls []}])
+          out    (agent/stub-stale-tool-results history)
+          erred  (->> out (filter #(= :tool-results (:role %)))
+                      (mapcat :results)
+                      (filter #(= "cE" (:id %)))
+                      (first))]
+      (t/is (true? (:error? erred)))
+      (t/is (str/includes? (:content erred) "cleared")))))
+
+;; ---------------------------------------------------------------------------
+;; History hygiene: the char budget on trim-history.
+;;
+;; The 40-MESSAGE cap bounded nothing real: a message can be a 20k-char tool
+;; result, so 40 of them is 800k chars. The budget bounds actual size, with the
+;; same never-split-a-turn rule, and the newest turn is kept whole even when it
+;; alone exceeds the budget — a turn the model is mid-way through must never
+;; lose its own context.
+;; ---------------------------------------------------------------------------
+
+(t/deftest trim-cuts-by-size-not-just-count
+  (t/testing "12 messages but ~200k chars — the old cap would keep all of it"
+    (let [history (vec (mapcat #(turn-with-result % (apply str (repeat 50000 "y"))) (range 4)))
+          out     (agent/trim-history history)]
+      (t/is (< (count out) (count history)))
+      (t/is (= :user (:role (first out))) "cut lands on a turn start"))))
+
+(t/deftest trim-keeps-a-small-history-identical
+  (t/testing "under both caps → the very same value, not a rebuilt copy"
+    (let [history (vec (mapcat #(turn-with-result % "{\"ok\":true}") (range 4)))]
+      (t/is (= history (agent/trim-history history))))))
+
+(t/deftest trim-never-splits-the-newest-turn
+  (t/testing "one turn alone over the budget survives whole — never split"
+    (let [history (vec (turn-with-result 0 (apply str (repeat 100000 "z"))))
+          out     (agent/trim-history history)]
+      (t/is (= history out)))))
+
+(t/deftest trim-budget-keeps-the-wire-invariant
+  (let [history (vec (mapcat #(turn-with-result % (apply str (repeat 30000 "w"))) (range 5)))
+        [uses results] (anthropic-pairs (agent/trim-history history))]
+    (t/is (= uses results) "no dangling tool_use after a budget cut")
+    (t/is (pos? (count uses)) "something survived the cut")))
+
+;; ---------------------------------------------------------------------------
 ;; The history cache breakpoint.
 ;;
 ;; The system block's `cache_control` marker caches tools+system only — the

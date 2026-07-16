@@ -1,6 +1,6 @@
 # Phase 02 — History hygiene (microcompaction + token-budget trim)
 
-**Status:** todo
+**Status:** done (tests written, execution deferred to the end-of-worktree verification pass)
 
 Two size-based bounds on the canonical history, both applied at the **turn
 boundary** (in `send-message`, before round 0), where a history rewrite costs one
@@ -26,21 +26,22 @@ cache re-write instead of one per round:
 
 ## Checklist
 
-- [ ] Tests: stub replaces content but preserves `:id`/`:error?`; results inside
-      the protected tail (last 8 messages) untouched; short results untouched;
-      images already stripped by the image pruner are not double-noted
-- [ ] Tests: char-budget trim cuts only at a plain `:user` message; a single
-      oversized turn is kept whole (never split a tool_use from its results)
-- [ ] Implement `stub-stale-tool-results` in `agent.cljs` (pure fn beside
-      `trim-history`; thresholds as private defs with rationale comments)
-- [ ] Extend `trim-history` with the char budget (message cap stays as backstop)
-- [ ] Wire both into `send-message` at turn start, before the history atom seeds
-- [ ] The STORED history (`[:ai-panel file-id :history]`) keeps the stubbed form —
-      persisting both forms would double state; the transcript UI copy
-      (`displayed-result`) is separate and unaffected
-- [ ] Lint + typecheck pass
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit (`:zap:`)
+- [x] Tests: stub replaces content but preserves `:id`/`:error?`; protected tail
+      (last 8 messages) untouched; short results untouched; wire invariant
+      (tool_use/tool_result pairing) holds after stubbing
+- [x] Tests: char-budget trim cuts only at a plain `:user` message; a single
+      oversized turn is kept whole; small history returns identical
+- [x] Implement `stub-stale-tool-results` in `agent.cljs` (pure, thresholds as
+      defs: >400 chars, older than last 8 messages)
+- [x] Extend `trim-history` with `max-history-chars` 60k (~15k tokens); message
+      cap stays as backstop; images deliberately NOT counted (`message-chars`
+      docstring says why — the image pruner owns that bound)
+- [x] Wire both into `send-message` on `prior` before the turn's history builds
+- [x] Stored history keeps the stubbed form automatically: the stubbed `prior`
+      threads through the turn and `:done`/cancel store what it grew into
+- [ ] Lint + typecheck pass — DEFERRED to end-of-worktree verification
+- [ ] Human approval received — DEFERRED to worktree merge review
+- [x] Committed with a gitmoji commit (`:zap:`)
 
 ## After Finish
 

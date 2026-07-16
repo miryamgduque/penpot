@@ -4336,62 +4336,103 @@
                           {:cause-hint (ex-message cause)})
                  cause))))))))
 
+;; --- Playbook nudge
+;;
+;; Chat 2 of the Kahoot session made 223 calls and fetched zero playbooks —
+;; a routing index alone does not create demand. This is the deterministic
+;; backstop: ONE note, on the first structural mutation of a conversation that
+;; loaded no playbook, pointing back at the index. Reading a playbook
+;; (get_design_skills with a name) or starting/loading a conversation resets it.
+
+(defonce ^:private playbook-fetched* (atom false))
+(defonce ^:private playbook-nudged* (atom false))
+
+(defn reset-playbook-nudge!
+  "Called by the panel when a conversation starts or is restored."
+  []
+  (reset! playbook-fetched* false)
+  (reset! playbook-nudged* false))
+
+(def ^:private nudged-tools
+  ;; the structural mutations a build task starts with — enough to catch the
+  ;; session at its first step without nagging every styling call after
+  #{"create_shape" "create_text" "set_layout" "insert_image" "insert_icon"})
+
+(defn- with-playbook-nudge
+  [tool result]
+  (if (and (contains? nudged-tools tool)
+           (not @playbook-fetched*)
+           (not @playbook-nudged*)
+           (map? result))
+    (do (reset! playbook-nudged* true)
+        (update result :note
+                (fn [note]
+                  (str note (when note " ")
+                       "NOTE: no playbook is loaded in this conversation — if "
+                       "this task matches a skill in your index (screens, "
+                       "components, tokens, audits, migrations), call "
+                       "get_design_skills with its name and follow the method."))))
+    result))
+
 ;; --- Dispatch
 
 (defn execute-tool
   [name input]
-  (case name
-    "read_design"        (rx/of (read-design))
-    "find_shapes"        (find-shapes input)
-    "render_board"       (render-board input)
-    "get_design_skills"  (get-design-skills input)
-    "explore_design"     (explore-design input)
-    "fetch_page"         (fetch-page input)
-    "get_page_meta"      (get-page-meta input)
-    "screenshot_page"    (screenshot-page input)
-    "ask_user"           (ask-user input)
-    "set_foundation"     (set-foundation input)
-    "audit_file"         (audit-file)
-    "create_shape"       (create-shape input)
-    "insert_image"       (insert-image input)
-    "search_icons"       (search-icons input)
-    "insert_icon"        (insert-icon input)
-    "search_fonts"       (search-fonts input)
-    "set_font"           (set-font input)
-    "modify_shape"       (modify-shape input)
-    "nest_shape"         (nest-shape input)
-    "create_text"        (create-text input)
-    "set_text"           (set-text input)
-    "create_component"   (create-component input)
-    "delete_shape"       (delete-shape input)
-    "duplicate_shape"    (duplicate-shape input)
-    "group_shapes"       (group-shapes input)
-    "ungroup_shapes"     (ungroup-shapes input)
-    "set_layout"         (set-layout input)
-    "set_layout_child"   (set-layout-child input)
-    "generate_code"      (generate-code input)
-    "create_instance"    (create-instance input)
-    "create_from_svg"    (create-from-svg input)
-    "save_version"       (save-version input)
-    "create_boolean"     (create-boolean input)
-    "create_page"        (create-page input)
-    "switch_page"        (switch-page input)
-    "leave_comment"      (leave-comment input)
-    "list_comments"      (list-comments input)
-    "switch_variant"     (switch-variant input)
-    "reset_overrides"    (reset-overrides input)
-    "swap_component"     (swap-component input)
-    "undo_change"        (undo-change)
-    "redo_change"        (redo-change)
-    "mask_shapes"        (mask-shapes input)
-    "unmask_shapes"      (unmask-shapes input)
-    "detach_instance"    (detach-instance input)
-    "create_variant"     (create-variant input)
-    "add_variant"        (add-variant input)
-    "set_variant_property" (set-variant-property input)
-    "create_token"       (create-token input)
-    "create_token_set"   (create-token-set input)
-    "create_token_theme" (create-token-theme input)
-    "activate_theme"     (activate-theme input)
-    "apply_tokens"       (apply-tokens input)
-    (rx/throw (ex-info (dm/str "Unknown tool: " name) {}))))
+  (when (and (= name "get_design_skills") (:name input))
+    (reset! playbook-fetched* true))
+  (->> (case name
+         "read_design"        (rx/of (read-design))
+         "find_shapes"        (find-shapes input)
+         "render_board"       (render-board input)
+         "get_design_skills"  (get-design-skills input)
+         "explore_design"     (explore-design input)
+         "fetch_page"         (fetch-page input)
+         "get_page_meta"      (get-page-meta input)
+         "screenshot_page"    (screenshot-page input)
+         "ask_user"           (ask-user input)
+         "set_foundation"     (set-foundation input)
+         "audit_file"         (audit-file)
+         "create_shape"       (create-shape input)
+         "insert_image"       (insert-image input)
+         "search_icons"       (search-icons input)
+         "insert_icon"        (insert-icon input)
+         "search_fonts"       (search-fonts input)
+         "set_font"           (set-font input)
+         "modify_shape"       (modify-shape input)
+         "nest_shape"         (nest-shape input)
+         "create_text"        (create-text input)
+         "set_text"           (set-text input)
+         "create_component"   (create-component input)
+         "delete_shape"       (delete-shape input)
+         "duplicate_shape"    (duplicate-shape input)
+         "group_shapes"       (group-shapes input)
+         "ungroup_shapes"     (ungroup-shapes input)
+         "set_layout"         (set-layout input)
+         "set_layout_child"   (set-layout-child input)
+         "generate_code"      (generate-code input)
+         "create_instance"    (create-instance input)
+         "create_from_svg"    (create-from-svg input)
+         "save_version"       (save-version input)
+         "create_boolean"     (create-boolean input)
+         "create_page"        (create-page input)
+         "switch_page"        (switch-page input)
+         "leave_comment"      (leave-comment input)
+         "list_comments"      (list-comments input)
+         "switch_variant"     (switch-variant input)
+         "reset_overrides"    (reset-overrides input)
+         "swap_component"     (swap-component input)
+         "undo_change"        (undo-change)
+         "redo_change"        (redo-change)
+         "mask_shapes"        (mask-shapes input)
+         "unmask_shapes"      (unmask-shapes input)
+         "detach_instance"    (detach-instance input)
+         "create_variant"     (create-variant input)
+         "add_variant"        (add-variant input)
+         "set_variant_property" (set-variant-property input)
+         "create_token"       (create-token input)
+         "create_token_set"   (create-token-set input)
+         "create_token_theme" (create-token-theme input)
+         "activate_theme"     (activate-theme input)
+         "apply_tokens"       (apply-tokens input)
+         (rx/throw (ex-info (dm/str "Unknown tool: " name) {})))
+       (rx/map #(with-playbook-nudge name %))))

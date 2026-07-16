@@ -28,6 +28,7 @@
    [app.common.data.macros :as dm]
    [app.common.uuid :as uuid]
    [app.main.data.workspace.agent :as agent]
+   [app.main.data.workspace.agent-tools :as at]
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
@@ -95,6 +96,13 @@
         (->> (rp/cmd! :get-agent-chat {:id id})
              (rx/map (fn [{:keys [id data]}]
                        (ptk/reify ::chat-loaded
+                         ptk/EffectEvent
+                         (effect [_ _ _]
+                           ;; a restored conversation may have fetched a playbook
+                           ;; long ago (possibly stubbed out of history by now) —
+                           ;; give the continuation one fresh nudge
+                           (at/reset-playbook-nudge!))
+
                          ptk/UpdateEvent
                          (update [_ state]
                            (if (= file-id (:current-file-id state))
@@ -226,7 +234,12 @@
                    ;; handoff-notice dismissal: it is conversation-scoped.
                    (fn [panel] (dissoc panel :messages :history :usage :chat-id
                                        :checkpoint :handoff-dismissed)))
-        state))))
+        state))
+
+    ptk/EffectEvent
+    (effect [_ _ _]
+      ;; the playbook nudge is conversation-scoped
+      (at/reset-playbook-nudge!))))
 
 (defn delete-chat
   "Deletes one saved conversation. Deleting the active one also empties the

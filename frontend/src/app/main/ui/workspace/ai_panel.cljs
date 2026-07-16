@@ -1530,6 +1530,122 @@
      [:div {:class (stl/css :catalog-desc)}
       [:span {:class (stl/css :catalog-blurb)} blurb]]]))
 
+(mf/defc design-doc-view*
+  "A DESIGN.md doc rendered read-only (US #38): the YAML frontmatter as a
+  token summary — swatches, type lines, scale chips — and only the markdown
+  BODY through marked (it would lex the `---` fence as an hr + prose). A
+  legacy doc has no frontmatter and renders as plain markdown."
+  {::mf/private true}
+  [{:keys [doc]}]
+  (let [{:keys [frontmatter body]} (dmd/parse doc)
+        model (dmd/display-model frontmatter)]
+    [:div {:class (stl/css :vibes-doc :message-md)}
+     (when model
+       [:div {:class (stl/css :vibes-tokens)}
+        (when-let [name (:name model)]
+          [:div {:class (stl/css :vibes-tokens-name)} name])
+        (when-let [description (:description model)]
+          [:p {:class (stl/css :vibes-tokens-desc)} description])
+        (when-let [colors (seq (:colors model))]
+          [:div {:class (stl/css :vibes-swatch-grid)}
+           (for [{:keys [name value swatch]} colors]
+             [:div {:key name :class (stl/css :vibes-swatch)}
+              [:span {:class (stl/css :vibes-swatch-chip)
+                      :style (when (string? swatch)
+                               #js {:backgroundColor swatch})}]
+              [:span {:class (stl/css :vibes-swatch-name)} name]
+              [:span {:class (stl/css :vibes-swatch-value)} value]])])
+        (when-let [typography (seq (:typography model))]
+          [:div {:class (stl/css :vibes-type-rows)}
+           (for [{:keys [name summary]} typography]
+             [:div {:key name :class (stl/css :vibes-type-row)}
+              [:span {:class (stl/css :vibes-token-label)} name]
+              [:span {:class (stl/css :vibes-type-summary)} summary]])])
+        (for [[section rows] [["rounded" (:rounded model)]
+                              ["spacing" (:spacing model)]]
+              :when (seq rows)]
+          [:div {:key section :class (stl/css :vibes-scale-row)}
+           [:span {:class (stl/css :vibes-token-label)} section]
+           [:div {:class (stl/css :vibes-scale-chips)}
+            (for [{:keys [name value]} rows]
+              [:span {:key name :class (stl/css :vibes-scale-chip)}
+               (dm/str name " " value)])]])])
+     [:> md/markdown* {:text body}]]))
+
+;; Card glyphs for the known foundations; anything user-invented gets the
+;; document glyph. A frontmatter `icon` field could replace this once the
+;; set grows past a handful.
+(def ^:private foundation-icons
+  {"vibes" i/swatches
+   "tone-of-voice" i/comments})
+
+(defn- foundation-summary
+  "The card's one-liner: the frontmatter description, else the first body
+  line that says something (skipping headings)."
+  [doc]
+  (let [{:keys [frontmatter body]} (dmd/parse doc)]
+    (or (get frontmatter "description")
+        (->> (str/split (or body "") #"\n")
+             (map str/trim)
+             (remove #(or (str/blank? %) (str/starts-with? % "#")))
+             (first)))))
+
+(mf/defc foundations-list*
+  "The file's foundations (US #38): an 'Applies to this file' marker, one
+  card per foundation (glyph, name, one-line summary), and the add
+  affordance. Creation is agent-guided and lands with the detail work — the
+  button says so rather than pretending."
+  {::mf/private true}
+  [{:keys [on-select on-interview]}]
+  (let [foundations (mf/deref dd/foundations-ref)]
+    [:div {:class (stl/css :foundations-view)}
+     [:div {:class (stl/css :foundations-scope)}
+      [:> i/icon* {:icon-id i/document}]
+      [:span "Applies to this file"]]
+     (if (empty? foundations)
+       [:div {:class (stl/css :vibes-empty)}
+        [:div {:class (stl/css :vibes-empty-title)} "No foundations yet"]
+        [:p {:class (stl/css :vibes-empty-text)}
+         "Foundations are standing design context for this file — vibes, tone of voice, naming rules. Skills and the agent read them on every task. Start with the vibes interview."]
+        [:button {:type "button"
+                  :class (stl/css :vibes-button-primary)
+                  :on-click on-interview}
+         "Set the vibes"]]
+       [:*
+        (for [{:keys [slug doc]} foundations]
+          [:button {:key slug
+                    :type "button"
+                    :class (stl/css :foundation-card)
+                    :on-click #(on-select slug)}
+           [:span {:class (stl/css :foundation-card-icon)}
+            [:> i/icon* {:icon-id (get foundation-icons slug i/document)}]]
+           [:div {:class (stl/css :foundation-card-text)}
+            [:div {:class (stl/css :foundation-card-title)}
+             (dd/display-name slug)]
+            (when-let [summary (foundation-summary doc)]
+              [:div {:class (stl/css :foundation-card-summary)} summary])]])
+        [:button {:type "button"
+                  :class (stl/css :foundation-add)
+                  :disabled true
+                  :title "Agent-guided creation lands in the next phase"}
+         "+ Add a foundation"]])]))
+
+(mf/defc foundation-detail*
+  "A non-vibes foundation, read-only for now (US #38 phase 06) — the doc
+  rendered like any DESIGN.md. Editing, removal and the agent input arrive
+  with phase 07; Vibes routes to `vibes-view*` instead, which already has
+  the full edit story."
+  {::mf/private true}
+  [{:keys [slug]}]
+  (let [foundations (mf/deref dd/foundations-ref)
+        doc         (some #(when (= slug (:slug %)) (:doc %)) foundations)]
+    (if (some? doc)
+      [:div {:class (stl/css :vibes-view)}
+       [:> design-doc-view* {:doc doc}]]
+      [:div {:class (stl/css :vibes-empty)}
+       [:p {:class (stl/css :vibes-empty-text)}
+        "This foundation is gone — someone may have removed it just now."]])))
+
 (defn- vec-remove
   [v i]
   (vec (concat (subvec v 0 i) (subvec v (inc i)))))
@@ -1763,56 +1879,19 @@
          "Cancel"]]]
 
       (some? doc)
-      ;; DESIGN.md rendering (US #38): the YAML frontmatter renders as a token
-      ;; summary — swatches, type lines, scale chips — and only the markdown
-      ;; BODY reaches marked (it would lex the `---` fence as an hr + prose).
-      ;; A legacy doc has no frontmatter and renders exactly as before.
-      (let [{:keys [frontmatter body]} (dmd/parse doc)
-            model (dmd/display-model frontmatter)]
-        [:div {:class (stl/css :vibes-view)}
-         [:div {:class (stl/css :vibes-doc :message-md)}
-          (when model
-            [:div {:class (stl/css :vibes-tokens)}
-             (when-let [name (:name model)]
-               [:div {:class (stl/css :vibes-tokens-name)} name])
-             (when-let [description (:description model)]
-               [:p {:class (stl/css :vibes-tokens-desc)} description])
-             (when-let [colors (seq (:colors model))]
-               [:div {:class (stl/css :vibes-swatch-grid)}
-                (for [{:keys [name value swatch]} colors]
-                  [:div {:key name :class (stl/css :vibes-swatch)}
-                   [:span {:class (stl/css :vibes-swatch-chip)
-                           :style (when (string? swatch)
-                                    #js {:backgroundColor swatch})}]
-                   [:span {:class (stl/css :vibes-swatch-name)} name]
-                   [:span {:class (stl/css :vibes-swatch-value)} value]])])
-             (when-let [typography (seq (:typography model))]
-               [:div {:class (stl/css :vibes-type-rows)}
-                (for [{:keys [name summary]} typography]
-                  [:div {:key name :class (stl/css :vibes-type-row)}
-                   [:span {:class (stl/css :vibes-token-label)} name]
-                   [:span {:class (stl/css :vibes-type-summary)} summary]])])
-             (for [[section rows] [["rounded" (:rounded model)]
-                                   ["spacing" (:spacing model)]]
-                   :when (seq rows)]
-               [:div {:key section :class (stl/css :vibes-scale-row)}
-                [:span {:class (stl/css :vibes-token-label)} section]
-                [:div {:class (stl/css :vibes-scale-chips)}
-                 (for [{:keys [name value]} rows]
-                   [:span {:key name :class (stl/css :vibes-scale-chip)}
-                    (dm/str name " " value)])]])])
-          [:> md/markdown* {:text body}]]
-         [:div {:class (stl/css :vibes-actions)}
-          [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
-           "Edit"]
-          [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
-           "Re-run interview"]
-          [:button {:type "button"
-                    :class (stl/css-case :vibes-button true
-                                         :vibes-button-danger true
-                                         :vibes-button-confirm confirm?)
-                    :on-click on-delete}
-           (if confirm? "Really delete? (undoable)" "Delete")]]])
+      [:div {:class (stl/css :vibes-view)}
+       [:> design-doc-view* {:doc doc}]
+       [:div {:class (stl/css :vibes-actions)}
+        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
+         "Edit"]
+        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
+         "Re-run interview"]
+        [:button {:type "button"
+                  :class (stl/css-case :vibes-button true
+                                       :vibes-button-danger true
+                                       :vibes-button-confirm confirm?)
+                  :on-click on-delete}
+         (if confirm? "Really delete? (undoable)" "Delete")]]]
 
       :else
       [:div {:class (stl/css :vibes-empty)}
@@ -1835,9 +1914,8 @@
   `on-select` opens one, `on-create` opens the creation flow (US #9). Back
   navigation lives in the panel header (US #35)."
   {::mf/private true}
-  [{:keys [selected on-select on-create on-open-vibes on-promote]}]
-  (let [vibes-set?  (some? (mf/deref dd/doc-ref))
-        catalog     (mf/deref refs/skills-catalog)
+  [{:keys [selected on-select on-create on-promote]}]
+  (let [catalog     (mf/deref refs/skills-catalog)
         skill       (when selected
                       (some (fn [{:keys [category skills]}]
                               (some #(when (= selected (:name %)) (assoc % :category category)) skills))
@@ -1861,16 +1939,8 @@
                            :on-close #(on-select nil)
                            :on-promote #(on-promote skill)}])
       [:div {:class (stl/css :skills-tab)}
-       ;; Project vibes: pinned above the catalog — it is file-level state,
-       ;; not a toggleable skill, so it gets a place rather than a row.
-       [:button {:type "button"
-                 :class (stl/css :vibes-card)
-                 :on-click on-open-vibes}
-        [:span {:class (stl/css :vibes-card-title)} "✦ Project vibes"]
-        [:span {:class (stl/css :vibes-card-status)}
-         (if vibes-set?
-           "Set — view or edit the design.md"
-           "Not set — run the kickoff interview")]]
+       ;; Project vibes moved to the Foundations view (US #38) — reached from
+       ;; the compass header icon, alongside any other standing context.
        [:div {:class (stl/css :skills-toolbar)}
         [:div {:class (stl/css :skills-filter)}
          (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
@@ -2277,12 +2347,13 @@
   (US #2) — there are no tabs. The panel is closed from the workspace toggle
   (Alt+B), so the header carries no close button.
 
-  Skills navigation is two levels — the list and one skill's detail — both owned
-  here so the header back pops a single level: detail → list → chat."
+  Skills and Foundations are each two levels — a list and one entry's detail —
+  both owned here so the header back pops a single level: detail → list → chat."
   [_props]
   (let [view*       (mf/use-state :chat)
         view        (deref view*)
         skills?     (= view :skills)
+        foundations? (= view :foundations)
 
         ;; The open skill within the Skills view (nil = the list) and whether the
         ;; create flow is open. Both lifted here so the header back pops one level.
@@ -2290,31 +2361,31 @@
         skill       (deref skill*)
         creating*   (mf/use-state false)
         creating?   (deref creating*)
-        ;; the Project vibes view within Skills (a third leaf next to
-        ;; detail/create — the header back pops it to the list)
-        vibes?*     (mf/use-state false)
-        vibes?      (deref vibes?*)
         ;; the skill being promoted to the team (nil = not promoting) — another
         ;; leaf within Skills; the header back pops it to the list (US #12)
         promoting*  (mf/use-state nil)
         promoting   (deref promoting*)
+        ;; the open foundation within the Foundations view (a slug; nil = list)
+        foundation* (mf/use-state nil)
+        foundation  (deref foundation*)
         ;; description carried over when creation is started from Chat (US #9).
         seed*       (mf/use-state nil)
 
-        open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! vibes?* false) (reset! promoting* nil) (reset! view* :skills)))
+        open-skills (mf/use-fn (fn [] (reset! creating* false) (reset! skill* nil) (reset! promoting* nil) (reset! view* :skills)))
         on-select   (mf/use-fn #(reset! skill* %))
         open-create (mf/use-fn (fn [] (reset! seed* nil) (reset! creating* true)))
         open-promote (mf/use-fn (fn [sk] (reset! promoting* sk)))
         close-promote (mf/use-fn (fn [] (reset! promoting* nil)))
         on-created  (mf/use-fn #(reset! creating* false))
-        open-vibes  (mf/use-fn #(reset! vibes?* true))
+        open-foundations   (mf/use-fn (fn [] (reset! foundation* nil) (reset! view* :foundations)))
+        on-open-foundation (mf/use-fn #(reset! foundation* %))
         ;; "Set the vibes" / "Re-run interview": hand the chat a ready-to-send
         ;; trigger and land there — the user presses Enter themselves.
         on-vibes-interview
         (mf/use-fn
          (fn []
            (st/emit! (dwaip/seed-composer "Set the design vibes for this project."))
-           (reset! vibes?* false)
+           (reset! foundation* nil)
            (reset! view* :chat)))
         ;; Chat "create a skill …" → take the user to the Skills create flow with
         ;; the described "what" prefilled.
@@ -2325,17 +2396,18 @@
                            (reset! creating* true)
                            (reset! view* :skills)))
         ;; Pop one level: create/detail → list → chat. Branch on the deref'd
-        ;; `skill`/`creating?` (in deps) — reading the atoms from a no-deps
-        ;; callback captures their initial nil/false and jumps straight to chat.
+        ;; values (in deps) — reading the atoms from a no-deps callback captures
+        ;; their initial nil/false and jumps straight to chat.
         on-back     (mf/use-fn
-                     (mf/deps skill creating? vibes? promoting)
+                     (mf/deps skill creating? promoting foundation view)
                      (fn []
                        (cond
-                         creating?         (reset! creating* false)  ;; create → list
-                         vibes?            (reset! vibes?* false)     ;; vibes → list
-                         (some? promoting) (reset! promoting* nil)    ;; promote → list
-                         (some? skill)     (reset! skill* nil)        ;; detail → list
-                         :else             (reset! view* :chat))))    ;; list → chat
+                         (and (= view :skills) creating?)         (reset! creating* false)   ;; create → list
+                         (and (= view :skills) (some? promoting)) (reset! promoting* nil)    ;; promote → list
+                         (and (= view :skills) (some? skill))     (reset! skill* nil)        ;; detail → list
+                         (and (= view :foundations)
+                              (some? foundation))                 (reset! foundation* nil)   ;; detail → list
+                         :else                                    (reset! view* :chat))))    ;; list → chat
 
         providers   (mf/deref refs/ai-providers)
         pool        (mf/with-memo [providers] (provider-pool providers))
@@ -2390,25 +2462,33 @@
             :on-lost-pointer-capture (:on-lost-pointer-capture resize)}]
 
      ;; Adaptive header (sized to the workspace right-header band): chat shows the
-     ;; "Agent" title + the muted Skills icon; Skills swaps those for a back arrow
-     ;; and a title ("Skills" for the list, "Skill info" for a detail).
+     ;; "Agent" title + the muted Foundations/Skills icons; a visited view swaps
+     ;; those for a back arrow and its own title.
      [:div {:class (stl/css :header)}
-      (if skills?
+      (if (or skills? foundations?)
         [:div {:class (stl/css :header-lead)}
          [:> icon-button* {:variant "ghost"
                            :aria-label "Back"
                            :on-click on-back
                            :icon i/arrow-left}]
          [:span {:class (stl/css :title)}
-          (cond creating? "New skill" vibes? "Project vibes" promoting "Promote to team"
-                skill "Skill info" :else "Skills")]]
+          (cond
+            foundations? (if foundation (dd/display-name foundation) "Foundations")
+            creating?    "New skill"
+            promoting    "Promote to team"
+            skill        "Skill info"
+            :else        "Skills")]]
         [:span {:class (stl/css :title)} "Agent"])
-      (when-not skills?
+      (when-not (or skills? foundations?)
         [:div {:class (stl/css :header-actions)}
          ;; Conversation controls (new chat + history) lead the band — they
          ;; act on the chat itself, where the rest configure the panel. (The
          ;; A−/A+ stepper moved into the More-actions menu below.)
          [:> chat-controls*]
+         [:> icon-button* {:variant "ghost"
+                           :aria-label "Open Foundations"
+                           :on-click open-foundations
+                           :icon i/compass}]
          [:> icon-button* {:variant "ghost"
                            :aria-label "Open Skills"
                            :on-click open-skills
@@ -2446,12 +2526,23 @@
         ;; Skills is a static catalog — reachable even before a provider is set up.
         skills?       (cond
                         creating? [:> skill-create* {:settings settings :seed (deref seed*) :on-created on-created}]
-                        vibes?    [:> vibes-view* {:on-interview on-vibes-interview}]
                         promoting [:> skill-promote* {:skill promoting :on-done close-promote}]
                         :else     [:> skills-tab* {:selected skill
                                                    :on-select on-select
                                                    :on-create open-create
-                                                   :on-open-vibes open-vibes
                                                    :on-promote open-promote}])
+        ;; Foundations: the file's standing design context (US #38). Vibes keeps
+        ;; its full view (edit/interview/delete); other foundations are read-only
+        ;; until the phase-07 detail work.
+        foundations?  (cond
+                        (= foundation dd/vibes-slug)
+                        [:> vibes-view* {:on-interview on-vibes-interview}]
+
+                        (some? foundation)
+                        [:> foundation-detail* {:slug foundation}]
+
+                        :else
+                        [:> foundations-list* {:on-select on-open-foundation
+                                               :on-interview on-vibes-interview}])
         (empty? pool) [:> connect-empty*]
         :else         [:> chat-tab* {:on-create-skill on-create-skill}])]]))

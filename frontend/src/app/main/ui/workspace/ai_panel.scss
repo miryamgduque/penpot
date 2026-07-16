@@ -1535,13 +1535,32 @@
   }
 }
 
-// Project vibes: the pinned card in the Skills list…
-.vibes-card {
+// Foundations (US #38): the list view — scope marker, one card per
+// foundation, the add affordance…
+.foundations-view {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-4;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  overflow-y: auto;
+}
+
+.foundations-scope {
+  @include deprecated.body-small-typography;
+
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+}
+
+.foundation-card {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-12;
   width: 100%;
-  margin-block-end: deprecated.$s-8;
   padding: deprecated.$s-12;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
@@ -1554,20 +1573,64 @@
   }
 }
 
-.vibes-card-title {
+.foundation-card-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: deprecated.$s-32;
+  block-size: deprecated.$s-32;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
+}
+
+.foundation-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  min-inline-size: 0;
+}
+
+.foundation-card-title {
   @include deprecated.body-small-typography;
 
   color: var(--color-foreground-primary);
   font-weight: 600;
 }
 
-.vibes-card-status {
+.foundation-card-summary {
   @include deprecated.body-small-typography;
 
   color: var(--color-foreground-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-// …and its full-panel view: doc, editor, empty state.
+.foundation-add {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-accent-primary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+}
+
+// …the vibes foundation's full view: doc, editor, empty state.
 .vibes-view {
   display: flex;
   flex-direction: column;

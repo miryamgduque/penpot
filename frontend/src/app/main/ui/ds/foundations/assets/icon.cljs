@@ -104,6 +104,7 @@
 (def ^:icon-id column "column")
 (def ^:icon-id column-reverse "column-reverse")
 (def ^:icon-id comments "comments")
+(def ^:icon-id compass "compass")
 (def ^:icon-id component "component")
 (def ^:icon-id component-copy "component-copy")
 (def ^:icon-id constraint-horizontal "constraint-horizontal")

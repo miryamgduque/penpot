@@ -141,11 +141,53 @@
 
 // The text-size stepper buttons. Plain (unscaled) body-small type: they live
 // in the fixed header band and must not move as the body text steps.
+// Anchors the "more actions" dropdown to the ⋯ button in the header.
+.more-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+// The dropdown itself (mirrors .skill-menu), opening below the ⋯ button.
+.more-menu {
+  position: absolute;
+  inset-block-start: calc(100% + #{deprecated.$s-4});
+  inset-inline-end: 0;
+  z-index: 12;
+  min-width: 200px;
+  padding: deprecated.$s-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+}
+
+// One action row: a label on the left, its control on the right.
+.more-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-4 deprecated.$s-8;
+}
+
+.more-row-label {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+}
+
+.font-stepper {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-2;
+}
+
 .font-step-btn {
   @include deprecated.body-small-typography;
 
   padding: deprecated.$s-4 deprecated.$s-6;
-  border: none;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
   background-color: transparent;
   color: var(--color-foreground-secondary);

@@ -1276,7 +1276,16 @@
         on-font-inc (mf/use-fn
                      (mf/deps font-step)
                      #(reset! font-step* (min (dec (count font-scale-steps))
-                                              (inc font-step))))]
+                                              (inc font-step))))
+
+        ;; "More actions" overflow menu next to the Skills icon. `more-ref` is the
+        ;; dropdown's container so clicking a row (e.g. the A−/A+ stepper) keeps
+        ;; the menu open — only a click outside it closes.
+        more-open*  (mf/use-state false)
+        more-open?  (deref more-open*)
+        more-ref    (mf/use-ref nil)
+        toggle-more (mf/use-fn #(swap! more-open* not))
+        close-more  (mf/use-fn #(reset! more-open* false))]
 
     ;; Providers are configured on the settings page; load them so we know
     ;; whether to show the chat or the connect-a-provider prompt. Skill state
@@ -1311,26 +1320,37 @@
         [:span {:class (stl/css :title)} "Agent"])
       (when-not skills?
         [:div {:class (stl/css :header-actions)}
-         ;; A−/A+ text-size stepper. The header itself deliberately doesn't
-         ;; scale, so these stay put while the body text steps.
-         [:button {:type "button"
-                   :class (stl/css :font-step-btn)
-                   :aria-label "Decrease text size"
-                   :title "Decrease text size"
-                   :disabled (zero? font-step)
-                   :on-click on-font-dec}
-          "A−"]
-         [:button {:type "button"
-                   :class (stl/css :font-step-btn)
-                   :aria-label "Increase text size"
-                   :title "Increase text size"
-                   :disabled (= font-step (dec (count font-scale-steps)))
-                   :on-click on-font-inc}
-          "A+"]
          [:> icon-button* {:variant "ghost"
                            :aria-label "Open Skills"
                            :on-click open-skills
-                           :icon i/list-checks}]])]
+                           :icon i/list-checks}]
+         ;; More actions — a dropdown of extra controls. For now: the text-size
+         ;; stepper (the header itself never scales, so it stays put).
+         [:div {:class (stl/css :more-actions)
+                :ref more-ref}
+          [:> icon-button* {:variant "ghost"
+                            :aria-label "More actions"
+                            :on-click toggle-more
+                            :icon i/menu}]
+          [:& dropdown {:show more-open? :on-close close-more :container more-ref}
+           [:div {:class (stl/css :more-menu)}
+            [:div {:class (stl/css :more-row)}
+             [:span {:class (stl/css :more-row-label)} "Text size"]
+             [:div {:class (stl/css :font-stepper)}
+              [:button {:type "button"
+                        :class (stl/css :font-step-btn)
+                        :aria-label "Decrease text size"
+                        :title "Decrease text size"
+                        :disabled (zero? font-step)
+                        :on-click on-font-dec}
+               "A−"]
+              [:button {:type "button"
+                        :class (stl/css :font-step-btn)
+                        :aria-label "Increase text size"
+                        :title "Increase text size"
+                        :disabled (= font-step (dec (count font-scale-steps)))
+                        :on-click on-font-inc}
+               "A+"]]]]]]])]
 
      [:div {:class (stl/css :body)}
       (cond

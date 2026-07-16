@@ -1,6 +1,7 @@
 # Reactive behavior (US #14)
 
-**Status:** in-progress
+**Status:** all 4 phases done + self-verified live (2026-07-16); awaiting the
+user's final holistic review before moving to `completed/`
 **Created:** 2026-07-16
 **Taiga:** [US #14 — Skills declare their reactive behavior](https://tree.taiga.io/project/miryam-all-in-penpot/us/14) (Taiga status: Blocked; user directed to proceed anyway 2026-07-16)
 

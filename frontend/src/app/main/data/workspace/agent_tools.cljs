@@ -87,7 +87,13 @@
          "authoring another.\n"
          "It reports one level deep: a shape's `childCount` tells you it has "
          "children without listing them. To reach inside, or when an `omitted` "
-         "note says a list was capped, use find_shapes.")
+         "note says a list was capped, use find_shapes.\n"
+         "The SELECTION reports each shape's `fills` — solid (with the hex to "
+         "copy), gradient (with its stops), or image (with its id and size). The "
+         "broad shape list does not, to stay cheap: use find_shapes to see any "
+         "other shape's paint. An image fill cannot be reproduced from JSON — "
+         "reuse it by passing its imageId back to create_shape/modify_shape, or "
+         "name it; do not approximate it with a solid.")
     :input-schema {:type "object" :properties {}}}
 
    {:name "find_shapes"
@@ -149,7 +155,11 @@
    {:name "modify_shape"
     :description
     (str "Modifies an existing shape: rename, move (x/y), resize (width/height), "
-         "set a solid fill/stroke color, corner radius, opacity, or a shadow. "
+         "set a fill (solid hex, gradient, or an image reused by id) or stroke "
+         "color, corner radius, opacity, or a shadow. `fill` takes a descriptor "
+         "in exactly the shape read_design reports, so you can read one shape's "
+         "fill and hand it straight back to copy it — including an image, which "
+         "you reuse by its imageId rather than approximating. "
          "Only the given fields change. A shadow is the real answer for depth or "
          "a hover state — reach for it instead of faking elevation with a paler "
          "fill. Radius and opacity can also be bound to tokens with apply_tokens, "
@@ -162,7 +172,18 @@
                                 :y {:type "number"}
                                 :width {:type "number"}
                                 :height {:type "number"}
-                                :fill {:type "string" :description "hex, e.g. #6366f1"}
+                                :fill {:oneOf [{:type "string" :description "hex, e.g. #6366f1"}
+                                               {:type "object"
+                                                :description "a fill descriptor, exactly as read_design reports it"
+                                                :properties {:type {:type "string" :enum ["solid" "gradient" "image"]}
+                                                             :color {:type "string" :description "solid: hex"}
+                                                             :opacity {:type "number"}
+                                                             :gradient {:type "string" :enum ["linear" "radial"]}
+                                                             :stops {:type "array" :items {:type "string"}
+                                                                     :description "gradient: hex stops, in order"}
+                                                             :imageId {:type "string" :description "image: reuse this raster"}
+                                                             :width {:type "number"} :height {:type "number"}
+                                                             :mtype {:type "string"}}}]}
                                 :stroke {:type "string" :description "hex, e.g. #111111"}
                                 :radius {:type "number" :description "corner radius, all four corners"}
                                 :opacity {:type "number" :description "0–1"}
@@ -486,32 +507,83 @@
        (dm/str "showing " limit " of " total " " what
                " — use find_shapes to query the rest by name or type")])))
 
+(defn fill-summary
+  "A shape's paint, as compact descriptors the agent can recognise and copy —
+  not the raw attrs. Exactly one of `:fill-color` / `:fill-color-gradient` /
+  `:fill-image` is set per fill (`cfl/valid-fill-attrs`).
+
+  The image case is the point: a raster cannot be reproduced from JSON, so the
+  useful answer is \"this is an image, here is its id, name and size\" rather
+  than silence — which is what the agent hit when it said it could see the fill
+  but could not inspect it."
+  [fills]
+  (into []
+        (keep (fn [{:keys [fill-color fill-opacity fill-color-ref-id
+                           fill-color-gradient fill-image]}]
+                (cond
+                  (some? fill-image)
+                  (cond-> {:type "image"
+                           :imageId (dm/str (:id fill-image))
+                           :width (:width fill-image)
+                           :height (:height fill-image)}
+                    (:name fill-image)  (assoc :name (:name fill-image))
+                    (:mtype fill-image) (assoc :mtype (:mtype fill-image)))
+
+                  (some? fill-color-gradient)
+                  {:type "gradient"
+                   :gradient (some-> (:type fill-color-gradient) name)
+                   :stops (mapv :color (:stops fill-color-gradient))}
+
+                  (some? fill-color)
+                  (cond-> {:type "solid" :color fill-color}
+                    ;; only when it is not the default — every fill would carry
+                    ;; `opacity: 1` otherwise, for nothing
+                    (and (some? fill-opacity) (not= 1 fill-opacity))
+                    (assoc :opacity fill-opacity)
+                    ;; a token-bound fill is a reference to reuse, not a raw
+                    ;; colour to copy — the distinction audit-tokens looks for
+                    (some? fill-color-ref-id)
+                    (assoc :fromToken true)))))
+        fills))
+
 (defn summarize-shape
   "The shape as the agent sees it. Variant keys are added only when truthy —
   `read_design` is called constantly, so a file without variants should not pay
-  for the feature in every payload."
-  [objects id]
-  (let [shape (get objects id)
-        kids  (count (:shapes shape))]
-    (cond-> {:id (dm/str id)
-             :name (:name shape)
-             :type (some-> (:type shape) name)
-             :x (:x shape)
-             :y (:y shape)
-             :width (:width shape)
-             :height (:height shape)}
-      ;; so the agent can tell an empty board from one it cannot see into
-      (pos? kids)
-      (assoc :childCount kids)
-      (ctc/is-variant-container? shape)
-      (assoc :isVariantContainer true)
+  for the feature in every payload.
 
-      (ctc/is-variant? shape)
-      (assoc :variantId (dm/str (:variant-id shape))
-             :variantName (:variant-name shape))
+  `:fills?` is off by default and on for the two places paint is actually wanted:
+  the **selection** (\"replicate this\") and **find_shapes** hits (drill-in).
+  Fills on every shape of the broad list cost ~11% of the 20k budget for a
+  59-shape file and would crowd out Phase 18's effects — the constant-cost
+  orientation call stays about *what is here*, not *what it looks like*."
+  ([objects id] (summarize-shape objects id nil))
+  ([objects id {:keys [fills?]}]
+   (let [shape (get objects id)
+         kids  (count (:shapes shape))
+         fills (when fills? (fill-summary (:fills shape)))]
+     (cond-> {:id (dm/str id)
+              :name (:name shape)
+              :type (some-> (:type shape) name)
+              :x (:x shape)
+              :y (:y shape)
+              :width (:width shape)
+              :height (:height shape)}
+       ;; so the agent can tell an empty board from one it cannot see into
+       (pos? kids)
+       (assoc :childCount kids)
 
-      (:variant-error shape)
-      (assoc :variantError (:variant-error shape)))))
+       (seq fills)
+       (assoc :fills fills)
+
+       (ctc/is-variant-container? shape)
+       (assoc :isVariantContainer true)
+
+       (ctc/is-variant? shape)
+       (assoc :variantId (dm/str (:variant-id shape))
+              :variantName (:variant-name shape))
+
+       (:variant-error shape)
+       (assoc :variantError (:variant-error shape))))))
 
 (defn- token-summary
   [t]
@@ -569,7 +641,7 @@
                        (filter #(shape-matches? % query))
                        (sort-by :name))
           [items omitted] (bounded hits max-listed "matches")]
-      (rx/of (cond-> {:matches (mapv #(summarize-shape objects (:id %)) items)
+      (rx/of (cond-> {:matches (mapv #(summarize-shape objects (:id %) {:fills? true}) items)
                       :found (count hits)}
                omitted (assoc :omitted omitted))))))
 
@@ -638,7 +710,7 @@
                   comps-omitted    (assoc :components comps-omitted))]
     (cond-> {:file (get-in state [:files file-id :name])
              :page (:name page)
-             :selection (mapv #(summarize-shape objects %) selected)
+             :selection (mapv #(summarize-shape objects % {:fills? true}) selected)
              :shapes (mapv #(summarize-shape objects %) shapes)
              :variants variants
              :components comps
@@ -818,6 +890,79 @@
   (when-let [file-id (:current-file-id state)]
     (contains? (dm/get-in state [:ai-panel file-id :enforced-rules]) rule)))
 
+;; --- Fills, written
+;;
+;; The write shape mirrors `fill-summary`'s read shape, so a descriptor read out
+;; of `read_design` can be handed straight back: read → copy → write round-trips,
+;; which is exactly what "replicate this element" needs. A bare hex string still
+;; works — it was the shipped param.
+
+(def ^:private fill-types #{"solid" "gradient" "image"})
+
+(defn fill-colors
+  "Every raw color a fill param carries. A gradient is several colors in a trench
+  coat: if the guard only ever saw `fill` as a string, every stop would walk past
+  `token-only-colors` untouched."
+  [fill]
+  (cond
+    (string? fill) [fill]
+    (map? fill) (case (:type fill)
+                  "gradient" (into [] (keep identity) (:stops fill))
+                  "image" []
+                  (into [] (keep identity) [(:color fill)]))
+    :else []))
+
+(defn fill-problem
+  "Why this fill cannot be written, or nil. Pure."
+  [fill]
+  (when (map? fill)
+    (let [{:keys [type color stops imageId]} fill]
+      (cond
+        (not (contains? fill-types type))
+        (dm/str "fill: \"" type "\" is not a fill type — use one of: "
+                (str/join ", " (sort fill-types)))
+
+        (and (= "solid" type) (not (string? color)))
+        "fill: a solid fill needs a color, e.g. {type: \"solid\", color: \"#6366f1\"}"
+
+        (and (= "gradient" type) (< (count stops) 2))
+        "fill: a gradient needs at least 2 stops, e.g. {type: \"gradient\", stops: [\"#000000\", \"#ffffff\"]}"
+
+        (and (= "image" type) (not (string? imageId)))
+        (str "fill: an image fill needs an imageId — read one off an existing "
+             "image fill with read_design or find_shapes; this reuses that raster "
+             "rather than approximating it")
+
+        (and (= "image" type) (nil? (parse-uuid imageId)))
+        (dm/str "fill: \"" imageId "\" is not a valid imageId")))))
+
+(defn fill->shape
+  "Penpot's `:fills` vector for a fill param — a hex string or a descriptor."
+  [fill]
+  (cond
+    (string? fill)
+    [{:fill-color fill :fill-opacity 1}]
+
+    (map? fill)
+    (case (:type fill)
+      "gradient"
+      (let [stops (vec (:stops fill))
+            n     (max 1 (dec (count stops)))]
+        [{:fill-color-gradient
+          {:type (keyword (or (:gradient fill) "linear"))
+           :start-x 0 :start-y 0 :end-x 0 :end-y 1 :width 1
+           ;; spread across the axis — every stop at offset 0 is not a gradient
+           :stops (into [] (map-indexed (fn [i c] {:color c :offset (/ i n)})) stops)}}])
+
+      "image"
+      [{:fill-image (cond-> {:id (parse-uuid (:imageId fill))
+                             :width (or (:width fill) 0)
+                             :height (or (:height fill) 0)
+                             :mtype (or (:mtype fill) "image/png")}
+                      (:name fill) (assoc :name (:name fill)))}]
+
+      [{:fill-color (:color fill) :fill-opacity (or (:opacity fill) 1)}])))
+
 (defn input-colors
   "Every raw color a `create_shape` / `modify_shape` call would put on a shape.
 
@@ -825,9 +970,12 @@
   `stroke`, so widening `modify_shape` to shadows would have opened a second,
   unwatched path for raw hex — and the most-used one, since a shadow is exactly
   where a designer reaches for a one-off color. One collector, so both tools are
-  guarded by construction and a param added later cannot slip past."
+  guarded by construction and a param added later cannot slip past — which is
+  what let gradient stops join without touching either tool's guard."
   [{:keys [fill stroke shadow]}]
-  (into [] (keep identity) [fill stroke (:color shadow)]))
+  (into (fill-colors fill)
+        (keep identity)
+        [stroke (:color shadow)]))
 
 (defn- color-violation
   "Returns a token-only-colors ex-info when `hex` is a raw color that the rule
@@ -850,8 +998,9 @@
   [{:keys [type x y width height fill parentId] :as input}]
   ;; via input-colors, not `fill` directly: both colour-setting tools share one
   ;; collector, so a param added later cannot quietly bypass the guard
-  (if-let [violation (some #(color-violation @st/state %) (input-colors input))]
-    (rx/throw violation)
+  (if-let [problem (or (some-> (fill-problem fill) (->> (dm/str "create_shape: ")) (ex-info {}))
+                       (some #(color-violation @st/state %) (input-colors input)))]
+    (rx/throw problem)
     (let [nm      (:name input)
           state   @st/state
           page    (dsh/lookup-page state)
@@ -863,7 +1012,7 @@
                                     :x (or x 0) :y (or y 0)
                                     :width (or width 100) :height (or height 100)}
                              nm (assoc :name nm)))
-                    fill    (assoc :fills [{:fill-color fill :fill-opacity 1}])
+                    fill    (assoc :fills (fill->shape fill))
                     parent? (assoc :parent-id pid :frame-id pid))
           changes (-> (cb/empty-changes)
                       (cb/with-page page)
@@ -903,38 +1052,47 @@
   (let [nm    (:name input)
         id    (some-> shapeId parse-uuid)
         state @st/state]
-    (if-let [violation (some #(color-violation state %) (input-colors input))]
-      (rx/throw violation)
-      (if (nil? id)
-        (rx/throw (ex-info "modify_shape: missing or invalid shapeId" {}))
-        (let [tx     (random-uuid)
-              styles (style-attrs input)]
-          (interrupt!)
-          (st/emit! (dwu/start-undo-transaction tx))
-          (when nm
-            (st/emit! (dwsh/update-shapes [id] #(assoc % :name nm))))
-          (when (seq styles)
-            (st/emit! (dwsh/update-shapes [id] #(merge % styles))))
-          (when shadow
-            (st/emit! (dwsh/update-shapes [id] #(assoc % :shadow [(shadow->shape shadow)]))))
-          (when (or (some? x) (some? y))
-            (st/emit! (dwt/update-position id (cond-> {}
-                                                (some? x) (assoc :x x)
-                                                (some? y) (assoc :y y)))))
-          (when (some? width)
-            (st/emit! (dwt/update-dimensions [id] :width width)))
-          (when (some? height)
-            (st/emit! (dwt/update-dimensions [id] :height height)))
-          (when fill
-            (st/emit! (dwsh/update-shapes [id] #(assoc % :fills [{:fill-color fill :fill-opacity 1}]))))
-          (when stroke
-            (st/emit! (dwsh/update-shapes [id] #(assoc % :strokes [{:stroke-color stroke
-                                                                    :stroke-opacity 1
-                                                                    :stroke-width 1
-                                                                    :stroke-style :solid
-                                                                    :stroke-alignment :center}]))))
-          (st/emit! (dwu/commit-undo-transaction tx))
-          (rx/of {:id shapeId :note "modified — verify with read_design"}))))))
+    (cond
+      (nil? id)
+      (rx/throw (ex-info "modify_shape: missing or invalid shapeId" {}))
+
+      (some? (fill-problem fill))
+      (rx/throw (ex-info (dm/str "modify_shape: " (fill-problem fill)) {}))
+
+      ;; the guard runs last of the three: a rejection naming the rule is the
+      ;; most useful message, so it should not mask a plain input error
+      (some #(color-violation state %) (input-colors input))
+      (rx/throw (some #(color-violation state %) (input-colors input)))
+
+      :else
+      (let [tx     (random-uuid)
+            styles (style-attrs input)]
+        (interrupt!)
+        (st/emit! (dwu/start-undo-transaction tx))
+        (when nm
+          (st/emit! (dwsh/update-shapes [id] #(assoc % :name nm))))
+        (when (seq styles)
+          (st/emit! (dwsh/update-shapes [id] #(merge % styles))))
+        (when shadow
+          (st/emit! (dwsh/update-shapes [id] #(assoc % :shadow [(shadow->shape shadow)]))))
+        (when (or (some? x) (some? y))
+          (st/emit! (dwt/update-position id (cond-> {}
+                                              (some? x) (assoc :x x)
+                                              (some? y) (assoc :y y)))))
+        (when (some? width)
+          (st/emit! (dwt/update-dimensions [id] :width width)))
+        (when (some? height)
+          (st/emit! (dwt/update-dimensions [id] :height height)))
+        (when fill
+          (st/emit! (dwsh/update-shapes [id] #(assoc % :fills (fill->shape fill)))))
+        (when stroke
+          (st/emit! (dwsh/update-shapes [id] #(assoc % :strokes [{:stroke-color stroke
+                                                                  :stroke-opacity 1
+                                                                  :stroke-width 1
+                                                                  :stroke-style :solid
+                                                                  :stroke-alignment :center}]))))
+        (st/emit! (dwu/commit-undo-transaction tx))
+        (rx/of {:id shapeId :note "modified — verify with read_design"})))))
 
 (defn- nest-shape
   [{:keys [shapeId parentId index]}]

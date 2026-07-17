@@ -664,16 +664,23 @@
 }
 
 // Fresh-chat suggestion: the conversation outgrew the handoff threshold.
+// Stacked: text (with the ✕) on top, the action full-width at the bottom —
+// side by side the text wrapped into a skinny column in the narrow panel.
 .handoff-notice {
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: deprecated.$s-6;
+  flex-direction: column;
+  gap: deprecated.$s-8;
   margin: 0 var(--sp-m);
-  padding: deprecated.$s-6 deprecated.$s-8;
+  padding: deprecated.$s-8;
   border: deprecated.$s-1 dashed var(--color-background-quaternary);
   border-radius: deprecated.$br-4;
   background-color: var(--color-background-secondary);
+}
+
+.handoff-header {
+  display: flex;
+  align-items: flex-start;
+  gap: deprecated.$s-6;
 }
 
 .handoff-text {
@@ -687,7 +694,8 @@
 .handoff-action {
   @include scaled-body-small;
 
-  padding: deprecated.$s-2 deprecated.$s-8;
+  align-self: stretch;
+  padding: deprecated.$s-4 deprecated.$s-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-4;
   background: none;

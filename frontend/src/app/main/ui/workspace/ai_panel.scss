@@ -1038,6 +1038,30 @@
   color: var(--color-accent-error);
 }
 
+// One round's thinking, collapsed behind a summary row (shares the tool-group
+// shell). Quiet by design: secondary italic summary, plain-text detail.
+.thinking-summary {
+  font-style: italic;
+}
+
+.thinking-glyph,
+.thinking-label {
+  color: var(--color-foreground-secondary);
+}
+
+.thinking-detail {
+  @extend %new-scrollbar;
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+  // thinking is prose with paragraph breaks, not markdown — keep the breaks,
+  // wrap the lines, and never let a long round widen the panel
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: deprecated.$s-160;
+  overflow-y: auto;
+}
+
 .transcript-empty {
   @include scaled-body-small;
 

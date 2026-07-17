@@ -130,6 +130,25 @@
                          (conj messages {:role "assistant" :content text})))))
         state))))
 
+(defn append-thinking-delta
+  "Appends streamed thinking to the open `thinking` row, opening one first if
+  this round hasn't thought yet — the same tail-update dance as `append-delta`.
+  A `thinking` row renders collapsed behind a summary (like a tool group), so
+  the process is readable without dominating the transcript."
+  [text]
+  (ptk/reify ::append-thinking-delta
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :messages]
+                   (fn [messages]
+                     (let [messages (vec messages)
+                           idx      (dec (count messages))]
+                       (if (and (>= idx 0) (= "thinking" (:role (nth messages idx))))
+                         (update messages idx update :content str text)
+                         (conj messages {:role "thinking" :content text})))))
+        state))))
+
 (defn append-tool
   "Appends a tool-call marker to the rendered transcript (a chip).
 
@@ -651,6 +670,7 @@
                        (case (:kind ev)
                          :assistant       (rx/of (append-message "assistant" (:text ev)))
                          :assistant-delta (rx/of (append-delta (:text ev)))
+                         :thinking-delta  (rx/of (append-thinking-delta (:text ev)))
                          :tool         (rx/of (append-tool (dissoc ev :kind)))
                          :usage        (rx/of (accumulate-usage (:usage ev)))
                          :turn-history (do (reset! latest* (:history ev))

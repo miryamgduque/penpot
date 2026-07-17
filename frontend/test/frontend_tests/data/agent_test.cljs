@@ -194,6 +194,42 @@
       (t/is (= [{:id "c1" :name "audit_file" :input {}}]
                (:tool-calls (agent/accumulator->outcome acc true)))))))
 
+(defn- fold-thinking
+  "Like the folds above but collects the third (thinking) slot too."
+  [accumulate frames]
+  (reduce (fn [[acc texts thinks] frame]
+            (let [[acc' text think] (accumulate acc frame)]
+              [acc'
+               (cond-> texts text (conj text))
+               (cond-> thinks think (conj think))]))
+          [agent/empty-accumulator [] []]
+          frames))
+
+(t/deftest anthropic-accumulator-surfaces-thinking-deltas
+  (let [frames [{:type "content_block_start" :index 0 :content_block {:type "thinking"}}
+                {:type "content_block_delta" :index 0
+                 :delta {:type "thinking_delta" :thinking "Let me "}}
+                {:type "content_block_delta" :index 0
+                 :delta {:type "thinking_delta" :thinking "look."}}
+                {:type "content_block_delta" :index 0
+                 :delta {:type "signature_delta" :signature "sig=="}}
+                {:type "content_block_stop" :index 0}]
+        [acc texts thinks] (fold-thinking agent/accumulate-anthropic frames)]
+    (t/testing "thinking deltas surface for live rendering, apart from text"
+      (t/is (= ["Let me " "look."] thinks))
+      (t/is (empty? texts)))
+    (t/testing "thinking never leaks into the outcome sent back next round"
+      (t/is (= "" (:text (agent/accumulator->outcome acc true)))))))
+
+(t/deftest openai-accumulator-surfaces-reasoning-content
+  (let [frames [{:choices [{:delta {:reasoning_content "hmm "}}]}
+                {:choices [{:delta {:reasoning_content "ok."}}]}
+                {:choices [{:delta {:content "Hi"} :finish_reason "stop"}]}]
+        [acc texts thinks] (fold-thinking agent/accumulate-openai frames)]
+    (t/is (= ["hmm " "ok."] thinks))
+    (t/is (= ["Hi"] texts))
+    (t/is (= "Hi" (:text (agent/accumulator->outcome acc false))))))
+
 (defn- fold-openai
   [frames]
   (reduce (fn [[acc texts] frame]

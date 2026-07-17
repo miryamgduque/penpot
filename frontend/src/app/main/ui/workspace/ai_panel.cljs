@@ -297,6 +297,32 @@
            (when-let [result (:result message)]
              [:pre {:class (stl/css :tool-detail-payload)} result])])])]))
 
+(mf/defc thinking-block*
+  "One round's thinking, collapsed behind a summary row like a tool group
+  (Santi, 2026-07-17 — the process should be readable, but out of the way).
+  `live` marks the row still receiving deltas, so the summary doubles as the
+  turn's activity indicator while the model reasons."
+  {::mf/private true}
+  [{:keys [text live]}]
+  (let [open*     (mf/use-state false)
+        open?     (deref open*)
+        detail-id (mf/use-id)
+        on-toggle (mf/use-fn #(swap! open* not))]
+    [:div {:class (stl/css :tool-group)}
+     [:button {:type "button"
+               :class (stl/css :tool-group-summary :thinking-summary)
+               :aria-expanded open?
+               :aria-controls detail-id
+               :on-click on-toggle}
+      [:span {:class (stl/css :thinking-glyph)} "✦"]
+      [:span {:class (stl/css :thinking-label)}
+       (if live "Thinking…" "Thought process")]
+      [:> i/icon* {:icon-id (if open? i/arrow-down i/arrow-right)
+                   :class (stl/css :tool-group-caret)}]]
+     (when open?
+       [:div {:id detail-id :class (stl/css :tool-group-detail :thinking-detail)}
+        text])]))
+
 (mf/defc elicitation-question*
   "One question of the ask_user form: prompt + hint, then its input — option
   chips (single or multi), an Other… chip that expands an inline text field,
@@ -521,10 +547,16 @@
   {::mf/private true}
   [{:keys [messages busy? form checkpoint]}]
   (let [;; consecutive tool calls collapse into one row; `partition-by` on the
-        ;; role predicate yields alternating runs of tools / everything else
+        ;; role category yields alternating runs of tools / thinking rows /
+        ;; everything else
         runs          (mf/with-memo [messages]
                         (->> (map-indexed vector messages)
-                             (partition-by (fn [[_ m]] (= "tool" (:role m))))))
+                             (partition-by (fn [[_ m]]
+                                             (case (:role m)
+                                               "tool"     :tool
+                                               "thinking" :thinking
+                                               :other)))))
+        last-idx      (dec (count messages))
 
         on-continue   (mf/use-fn #(st/emit! (dwaip/continue-turn)))
         on-stop-here  (mf/use-fn #(st/emit! (dwaip/dismiss-checkpoint)))
@@ -576,8 +608,19 @@
       ;; `map-indexed` before the partition keeps `:key` on the stable
       ;; transcript index — appends are tail-only, so it never shifts
       (for [run runs]
-        (if (= "tool" (:role (second (first run))))
+        (case (:role (second (first run)))
+          "tool"
           [:> tool-group* {:key (ffirst run) :messages (mapv second run)}]
+
+          "thinking"
+          (for [[idx message] run]
+            [:> thinking-block* {:key idx
+                                 :text (:content message)
+                                 ;; still streaming into this row: the summary
+                                 ;; reads "Thinking…" and stands in for the
+                                 ;; busy placeholder below
+                                 :live (and busy? (= idx last-idx))}])
+
           (for [[idx message] run]
             (let [user?  (= "user" (:role message))
                   ;; harness notes (e.g. "conversation compacted") — not a
@@ -624,7 +667,10 @@
                       :class (stl/css :checkpoint-stop)
                       :on-click on-stop-here}
              "Stop here"]]]))
-      (when (and busy? (nil? form))
+      ;; …and no placeholder under a thinking row that is itself still
+      ;; streaming — its own summary already reads "Thinking…"
+      (when (and busy? (nil? form)
+                 (not= "thinking" (:role (nth messages last-idx nil))))
         [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
 
      (when-not at-bottom?

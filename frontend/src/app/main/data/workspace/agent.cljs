@@ -418,7 +418,13 @@
       (catch :default _ {}))))
 
 (defn accumulate-anthropic
-  "Folds one Anthropic stream frame into `acc`. Returns `[acc text-delta]`."
+  "Folds one Anthropic stream frame into `acc`. Returns
+  `[acc text-delta thinking-delta]` (2-tuples where no thinking arrived —
+  destructuring pads with nil).
+
+  Thinking is surfaced for live rendering but never accumulated: it does not
+  belong to the outcome (the API doesn't want it back on the next round) and
+  the transcript keeps its own copy."
   [acc frame]
   (case (:type frame)
     "message_start"
@@ -448,6 +454,10 @@
         "input_json_delta"
         [(update-in acc [:tools (:index frame) :json] str (or (:partial_json delta) "")) nil]
 
+        "thinking_delta"
+        [acc nil (or (:thinking delta) "")]
+
+        ;; signature_delta and future block kinds
         [acc nil]))
 
     ;; the only frame carrying the real output count — usage spans two events
@@ -460,7 +470,9 @@
     [acc nil]))
 
 (defn accumulate-openai
-  "Folds one OpenAI-dialect stream chunk into `acc`. Returns `[acc text-delta]`."
+  "Folds one OpenAI-dialect stream chunk into `acc`. Returns
+  `[acc text-delta thinking-delta]` — reasoning models (deepseek dialect,
+  zhipu/moonshot) stream thinking as `reasoning_content` beside `content`."
   [acc frame]
   (let [choice (get-in frame [:choices 0])
         delta  (:delta choice)
@@ -488,10 +500,12 @@
                                         (or (get-in call [:function :arguments]) "")))))
                        acc
                        (:tool_calls delta))
-        text   (:content delta)]
-    (if (and (string? text) (seq text))
-      [(update acc :text str text) text]
-      [acc nil])))
+        text   (:content delta)
+        think  (:reasoning_content delta)
+        text?  (and (string? text) (seq text))]
+    [(cond-> acc text? (update :text str text))
+     (when text? text)
+     (when (and (string? think) (seq think)) think)]))
 
 (defn accumulator->outcome
   "The same shape the buffered decoders return, so the turn loop is unchanged."
@@ -774,8 +788,8 @@
 
 (defn- stream-round
   "One provider round over SSE. Emits `{:kind :assistant-delta}` as text
-  arrives, then exactly one `{:kind :outcome}` carrying the same map the
-  buffered decoders return.
+  arrives (`{:kind :thinking-delta}` for thinking), then exactly one
+  `{:kind :outcome}` carrying the same map the buffered decoders return.
 
   The accumulator is a local atom rather than an `rx/scan`: the fold has to
   emit text deltas *and* survive to the end of the stream, and this keeps the
@@ -800,13 +814,14 @@
               ;; before it reaches us
               "delta"
               (if-let [frame (parse-json-frame (sse/get-payload event))]
-                (let [[acc text] (if anthropic?*
-                                   (accumulate-anthropic @acc* frame)
-                                   (accumulate-openai @acc* frame))]
+                (let [[acc text thinking] (if anthropic?*
+                                            (accumulate-anthropic @acc* frame)
+                                            (accumulate-openai @acc* frame))]
                   (reset! acc* acc)
-                  (if (seq text)
-                    (rx/of {:kind :assistant-delta :text text})
-                    (rx/empty)))
+                  (cond
+                    (seq text)     (rx/of {:kind :assistant-delta :text text})
+                    (seq thinking) (rx/of {:kind :thinking-delta :text thinking})
+                    :else          (rx/empty)))
                 (rx/empty))
 
               "end"

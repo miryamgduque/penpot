@@ -94,7 +94,6 @@
                   :dashboard-invitations
                   :dashboard-legacy-team-webhooks
                   :dashboard-webhooks
-                  :dashboard-agent-skills
                   :dashboard-legacy-team-settings
                   :dashboard-settings)]
 

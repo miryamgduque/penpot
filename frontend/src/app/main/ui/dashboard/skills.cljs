@@ -202,7 +202,7 @@
 
 (mf/defc skill-item*
   {::mf/private true}
-  [{:keys [skill scope can-edit enabled on-toggle]}]
+  [{:keys [skill scope can-edit can-toggle enabled on-toggle]}]
   (let [on-edit
         (mf/use-fn
          (mf/deps skill scope)
@@ -232,7 +232,7 @@
                        (tr "dashboard.skills.toggle-hint"))}
       [:input {:type "checkbox"
                :checked (boolean enabled)
-               :disabled (or (:is-mandatory skill) (not can-edit))
+               :disabled (or (:is-mandatory skill) (not can-toggle))
                :on-change #(on-toggle skill (not enabled))}]]
      [:div {:class (stl/css :skill-main)}
       [:div {:class (stl/css :skill-name)} (:name skill)]
@@ -250,7 +250,7 @@
 
 (mf/defc skills-section*
   {::mf/private true}
-  [{:keys [title description scope skills can-edit enabled-fn on-toggle]}]
+  [{:keys [title description scope skills can-edit can-toggle enabled-fn on-toggle]}]
   [:div {:class (stl/css :skills-section)}
    [:div {:class (stl/css :section-head)}
     [:div
@@ -270,6 +270,7 @@
           :skill skill
           :scope scope
           :can-edit can-edit
+          :can-toggle can-toggle
           :enabled (enabled-fn skill)
           :on-toggle on-toggle}])])])
 
@@ -318,14 +319,18 @@
         :scope :team
         :skills (:team data)
         :can-edit can-edit
+        :can-toggle can-edit
         :enabled-fn (fn [skill] (:is-enabled skill))
         :on-toggle on-toggle-team}]
 
+      ;; App-level skills are seed-only (see design-skills backend ns): teams
+      ;; can switch inheritance on/off but cannot create, edit or delete them.
       [:> skills-section*
        {:title (tr "dashboard.skills.app-section")
         :description (tr "dashboard.skills.app-section-desc")
         :scope :app
         :skills (:app data)
-        :can-edit true
+        :can-edit false
+        :can-toggle can-edit
         :enabled-fn (fn [skill] (not (contains? overrides (:name skill))))
         :on-toggle on-toggle-app}]]]))

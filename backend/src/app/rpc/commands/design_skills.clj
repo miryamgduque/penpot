@@ -14,9 +14,12 @@
   managed per team. File-scope skills live inside the design files themselves
   (shared pluginData), not here.
 
-  NOTE: the app-level set is editable by any authenticated user in this
-  prototype; instance-admin gating is future work."
+  The app-level (team_id NULL) set is not writable through these RPCs: it is
+  seed-only, so a team member cannot rewrite the instance-wide context every
+  other team inherits. Only team-scoped rows can be created, edited or deleted,
+  and only by a team editor."
   (:require
+   [app.common.exceptions :as ex]
    [app.common.schema :as sm]
    [app.common.time :as ct]
    [app.db :as db]
@@ -30,6 +33,16 @@
 
 (def ^:private valid-enforcements
   #{"advisory" "triggered" "enforced"})
+
+(defn- check-team-scope!
+  "The app-level (team_id NULL) set is seed-only over RPC; only team-scoped
+  rows may be mutated, and only by a team editor."
+  [conn profile-id team-id]
+  (when (nil? team-id)
+    (ex/raise :type :validation
+              :code :not-allowed
+              :hint "app-level design skills are read-only"))
+  (check-edition-permissions! conn profile-id team-id))
 
 ;; --- Query: get design skills (app + team + team overrides)
 
@@ -74,9 +87,7 @@
    ::sm/params schema:create-design-skill}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id team-id name kind enforcement
                                is-mandatory trigger-on description body]}]
-  ;; app scope (team-id nil) is open to any authenticated user in this prototype
-  (when team-id
-    (check-edition-permissions! pool profile-id team-id))
+  (check-team-scope! pool profile-id team-id)
   (db/insert! pool :design-skill
               {:team-id team-id
                :name name
@@ -106,8 +117,7 @@
    ::sm/params schema:update-design-skill}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id id] :as params}]
   (let [skill (db/get pool :design-skill {:id id})]
-    (when-let [team-id (:team-id skill)]
-      (check-edition-permissions! pool profile-id team-id))
+    (check-team-scope! pool profile-id (:team-id skill))
     (let [patch (-> (select-keys params [:name :kind :enforcement :is-mandatory
                                          :trigger-on :description :body :is-enabled])
                     (assoc :updated-at (ct/now)))]
@@ -125,8 +135,7 @@
    ::db/transaction true}
   [{:keys [::db/conn]} {:keys [::rpc/profile-id id]}]
   (let [skill (db/get conn :design-skill {:id id})]
-    (when-let [team-id (:team-id skill)]
-      (check-edition-permissions! conn profile-id team-id))
+    (check-team-scope! conn profile-id (:team-id skill))
     (db/delete! conn :design-skill {:id id})
     nil))
 

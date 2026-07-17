@@ -284,7 +284,17 @@
                     [{:role "user" :content (user-content-openai message)}]
 
                     :assistant
-                    [(cond-> {:role "assistant" :content (when (seq text) text)}
+                    ;; content may be null ONLY when tool_calls are present;
+                    ;; an empty assistant turn (no text, no calls) would
+                    ;; otherwise serialize as {content:null} with no tool_calls,
+                    ;; which OpenAI-dialect providers reject (400) — poisoning
+                    ;; every later turn. Substitute a placeholder like the
+                    ;; anthropic encoder does.
+                    [(cond-> {:role "assistant"
+                              :content (cond
+                                         (seq text)       text
+                                         (seq tool-calls) nil
+                                         :else            "…")}
                        (seq tool-calls)
                        (assoc :tool_calls
                               (mapv (fn [c]
@@ -865,12 +875,22 @@
                    (rx/reduce conj [])
                    (rx/mapcat
                     (fn [outcomes]
-                      (rx/concat
-                       (rx/from (mapv tool-outcome->event outcomes))
-                       (step (conj messages' {:role :tool-results
-                                              :results (mapv tool-outcome->result outcomes)})
-                             (inc round)
-                             spent)))))))
+                      (let [messages'' (conj messages' {:role :tool-results
+                                                        :results (mapv tool-outcome->result outcomes)})]
+                        (rx/concat
+                         (rx/from (mapv tool-outcome->event outcomes))
+                         ;; Republish the history WITH the executed tool-results
+                         ;; before the next round streams. :turn-history was last
+                         ;; published (in step) carrying the assistant message
+                         ;; with tool-calls but NO results, and the next publish
+                         ;; is a whole round away — so a cancel during that round
+                         ;; would leave cancel-history synthesizing "cancelled
+                         ;; before this tool ran" for tools that already ran and
+                         ;; mutated the document. Publishing here closes that
+                         ;; window (the residual is a cancel mid-execution, when
+                         ;; outcomes have not resolved yet).
+                         (rx/of {:kind :turn-history :history messages''})
+                         (step messages'' (inc round) spent))))))))
 
            (step [messages round spent]
              (cond

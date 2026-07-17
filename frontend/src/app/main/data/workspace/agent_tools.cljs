@@ -65,6 +65,7 @@
    [app.main.store :as st]
    [app.render-wasm.api :as wasm.api]
    [app.util.code-gen :as cg]
+   [app.util.color :as uc]
    [app.util.http :as http]
    [app.util.webapi :as wapi]
    [beicon.v2.core :as rx]
@@ -75,6 +76,9 @@
 ;; grid-cell reflow lives with the layout tools; nest_shape (earlier) reseats
 ;; grid cells after a reorder
 (declare reflow-grid-cells)
+;; shared id-validation helper defined with the batch tools below, used earlier
+;; by mask_shapes / unmask_shapes
+(declare unparsable-problem)
 ;; defined beside render-board's wasm plumbing, used by encode-render above it
 (declare uint8->base64)
 ;; shared problem-checker helper, defined with the delete/duplicate tools but used
@@ -1593,15 +1597,23 @@
 ;; the backend skills resolution — phase 07).
 
 (defn- normalize-hex
-  "Lowercase, `#`-prefixed 6-digit hex, or nil for a non-hex value."
+  "Canonical `#rrggbb` form of a CSS color, or nil.
+
+  Delegates to `uc/parse-css-color` (the codebase's #hex/#rgb/rgb()
+  normalizer) rather than only matching bare hex, so a color token stored as
+  `rgb(99,102,241)` and the equivalent `#6366f1` compare equal — both sides of
+  the token-only-colors check pass through here. A bare hex without `#` (which
+  a shape or an agent may hand us) is prefixed first, preserving the previous
+  behavior. Named/hsl() forms `parse-css-color` cannot resolve still yield nil."
   [s]
   (when (string? s)
-    (let [h (cond-> (str/lower (str/trim s))
-              (str/starts-with? (str/lower (str/trim s)) "#") (subs 1))]
-      (cond
-        (= 3 (count h)) (dm/str "#" (apply str (mapcat #(list % %) h)))
-        (= 6 (count h)) (dm/str "#" h)
-        :else nil))))
+    (let [s (str/trim s)
+          s (cond->> s
+              (re-matches #"(?i)[0-9a-f]{3}|[0-9a-f]{6}" s) (dm/str "#"))]
+      ;; lowercase the result: parse-css-color keeps a 6-digit hex's original
+      ;; case (expand-hex only folds shorthand) but emits lowercase for rgb(),
+      ;; so #6366F1 and rgb(99,102,241) would otherwise not compare equal.
+      (some-> (uc/parse-css-color s) str/lower))))
 
 (defn- allowed-colors
   "Set of normalized hexes allowed under token-only-colors: color-token values
@@ -1791,32 +1803,48 @@
   (if-let [problem (or (some-> (fill-problem fill) (->> (dm/str "create_shape: ")) (ex-info {}))
                        (some #(color-violation @st/state %) (input-colors input)))]
     (rx/throw problem)
-    (let [nm      (:name input)
-          state   @st/state
-          page    (dsh/lookup-page state)
-          objects (:objects page)
-          pid     (some-> parentId parse-uuid)
-          parent? (boolean (and pid (contains? objects pid)))
-          shape   (cond-> (cts/setup-shape
-                           (cond-> {:type (shape-type type)
-                                    :x (or x 0) :y (or y 0)
-                                    :width (or width 100) :height (or height 100)}
-                             nm (assoc :name nm)))
-                    fill    (assoc :fills (fill->shape fill))
-                    parent? (assoc :parent-id pid :frame-id pid))
-          changes (-> (cb/empty-changes)
-                      (cb/with-page page)
-                      (cb/with-objects objects)
-                      ;; into a laid-out board, land at the END of the flow so
-                      ;; creation order = reading order (see Flow order above)
-                      (cb/add-object shape
-                                     (when-let [idx (some-> (and parent? (get objects pid))
-                                                            flow-append-index)]
-                                       {:index idx})))]
+    (let [nm       (:name input)
+          state    @st/state
+          page     (dsh/lookup-page state)
+          objects  (:objects page)
+          req-pid  (some-> parentId parse-uuid)
+          ;; Hop out of any component copy: its structure is owned by the main
+          ;; component, so adding a child directly would corrupt the copy.
+          ;; create-and-add-shape guards the same way (shapes.cljs).
+          pid      (when (and req-pid (contains? objects req-pid))
+                     (:id (ctn/get-first-valid-parent objects req-pid)))
+          parent   (get objects pid)
+          parent?  (some? parent)
+          ;; :frame-id must reference a FRAME. When the parent is a board it is
+          ;; itself the frame; when it is a group (or anything else) inherit the
+          ;; parent's own frame-id. Setting it to a group id — the old bug —
+          ;; violates the data-model invariant and misleads render/selection.
+          frame-id (when parent?
+                     (if (cfh/frame-shape? parent) pid (:frame-id parent)))
+          shape    (cond-> (cts/setup-shape
+                            (cond-> {:type (shape-type type)
+                                     :x (or x 0) :y (or y 0)
+                                     :width (or width 100) :height (or height 100)}
+                              nm (assoc :name nm)))
+                     fill    (assoc :fills (fill->shape fill))
+                     parent? (assoc :parent-id pid :frame-id frame-id))
+          changes  (-> (cb/empty-changes)
+                       (cb/with-page page)
+                       (cb/with-objects objects)
+                       ;; into a laid-out board, land at the END of the flow so
+                       ;; creation order = reading order (see Flow order above)
+                       (cb/add-object shape
+                                      (when-let [idx (some-> parent flow-append-index)]
+                                        {:index idx})))
+          undo-id  (js/Symbol)]
       (interrupt!)
+      ;; One undo step for the add AND its grid/flex reflow: without the
+      ;; transaction ⌘Z reverts only the reflow and leaves the orphaned shape.
+      (st/emit! (dwu/start-undo-transaction undo-id))
       (st/emit! (dch/commit-changes changes))
       (when parent?
         (reflow-parent! objects pid))
+      (st/emit! (dwu/commit-undo-transaction undo-id))
       (rx/of {:id (dm/str (:id shape))
               :type type
               :parentId (when parent? (dm/str pid))
@@ -1882,34 +1910,43 @@
                     {:name nm :file-id file-id :url url :is-local true})
            (rx/map
             (fn [media]
-              (let [state   @st/state
-                    page    (dsh/lookup-page state)
-                    objects (:objects page)
-                    pid     (some-> parentId parse-uuid)
-                    parent? (boolean (and pid (contains? objects pid)))
-                    geom    (image-geometry input media)
-                    fills   (types.fills/create
-                             {:fill-opacity 1
-                              :fill-image {:width (:width media)
-                                           :height (:height media)
-                                           :mtype (:mtype media)
-                                           :id (:id media)
-                                           :keep-aspect-ratio true}})
-                    shape   (cond-> (-> (cts/setup-shape
-                                         (assoc geom :type :rect :name nm))
-                                        (assoc :fills fills))
-                              parent? (assoc :parent-id pid :frame-id pid))
-                    changes (-> (cb/empty-changes)
-                                (cb/with-page page)
-                                (cb/with-objects objects)
-                                (cb/add-object shape
-                                               (when-let [idx (some-> (and parent? (get objects pid))
-                                                                      flow-append-index)]
-                                                 {:index idx})))]
+              (let [state    @st/state
+                    page     (dsh/lookup-page state)
+                    objects  (:objects page)
+                    req-pid  (some-> parentId parse-uuid)
+                    ;; same guards as create-shape: never inject into a
+                    ;; component copy, and resolve a valid frame-id
+                    pid      (when (and req-pid (contains? objects req-pid))
+                               (:id (ctn/get-first-valid-parent objects req-pid)))
+                    parent   (get objects pid)
+                    parent?  (some? parent)
+                    frame-id (when parent?
+                               (if (cfh/frame-shape? parent) pid (:frame-id parent)))
+                    geom     (image-geometry input media)
+                    fills    (types.fills/create
+                              {:fill-opacity 1
+                               :fill-image {:width (:width media)
+                                            :height (:height media)
+                                            :mtype (:mtype media)
+                                            :id (:id media)
+                                            :keep-aspect-ratio true}})
+                    shape    (cond-> (-> (cts/setup-shape
+                                          (assoc geom :type :rect :name nm))
+                                         (assoc :fills fills))
+                               parent? (assoc :parent-id pid :frame-id frame-id))
+                    changes  (-> (cb/empty-changes)
+                                 (cb/with-page page)
+                                 (cb/with-objects objects)
+                                 (cb/add-object shape
+                                                (when-let [idx (some-> parent flow-append-index)]
+                                                  {:index idx})))
+                    undo-id  (js/Symbol)]
                 (interrupt!)
+                (st/emit! (dwu/start-undo-transaction undo-id))
                 (st/emit! (dch/commit-changes changes))
                 (when parent?
                   (reflow-parent! objects pid))
+                (st/emit! (dwu/commit-undo-transaction undo-id))
                 {:id (dm/str (:id shape))
                  :mediaId (dm/str (:id media))
                  :width (:width geom)
@@ -2172,7 +2209,8 @@
   (let [state   @st/state
         objects (dsh/lookup-page-objects state)
         ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
-    (if-let [problem (mask-problem objects ids)]
+    (if-let [problem (or (unparsable-problem "mask_shapes" shapeIds)
+                         (mask-problem objects ids))]
       (rx/throw (ex-info problem {}))
       (let [before (dsh/get-selected-ids state)]
         (interrupt!)
@@ -2188,7 +2226,8 @@
   (let [state   @st/state
         objects (dsh/lookup-page-objects state)
         ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
-    (if-let [problem (unmask-problem objects ids)]
+    (if-let [problem (or (unparsable-problem "unmask_shapes" shapeIds)
+                         (unmask-problem objects ids))]
       (rx/throw (ex-info problem {}))
       (do
         (interrupt!)
@@ -2340,13 +2379,38 @@
   [{:keys [x y width height fill stroke shadow strokeWidth strokeStyle
            hidden locked rotation flipH flipV] :as input} id]
   (let [nm     (:name input)
-        styles (style-attrs input)]
-    (when nm
-      (st/emit! (dwsh/update-shapes [id] #(assoc % :name nm))))
-    (when (seq styles)
-      (st/emit! (dwsh/update-shapes [id] #(merge % styles))))
-    (when shadow
-      (st/emit! (dwsh/update-shapes [id] #(assoc % :shadow [(shadow->shape shadow)]))))
+        styles (style-attrs input)
+        ;; Every plain attribute write (name, styles, shadow, fill, stroke) is a
+        ;; pure `(assoc/merge shape …)` on a distinct key, so compose them into
+        ;; ONE update-shapes pass instead of one full changes-build+commit per
+        ;; attribute. The batch tool runs this per shape, so a 50-shape batch
+        ;; used to fire hundreds of commit passes. The specialized transform
+        ;; events (flags, rotation, flips, position, dimensions) stay separate —
+        ;; they are not plain assocs and each computes its own modifiers.
+        attr-fns
+        (cond-> []
+          nm           (conj #(assoc % :name nm))
+          (seq styles) (conj #(merge % styles))
+          shadow       (conj #(assoc % :shadow [(shadow->shape shadow)]))
+          fill         (conj #(assoc % :fills (fill->shape fill)))
+          stroke       (conj #(assoc % :strokes [{:stroke-color stroke
+                                                  :stroke-opacity 1
+                                                  :stroke-width (or strokeWidth 1)
+                                                  :stroke-style (keyword (or strokeStyle "solid"))
+                                                  :stroke-alignment :center}]))
+          ;; stroke width/style change with no new color: patch existing stroke
+          (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)))
+          (conj (fn [s]
+                  (update s :strokes
+                          (fn [strokes]
+                            (let [st0 (or (first strokes)
+                                          {:stroke-color "#000000" :stroke-opacity 1
+                                           :stroke-alignment :center})]
+                              [(cond-> st0
+                                 (some? strokeWidth) (assoc :stroke-width strokeWidth)
+                                 (some? strokeStyle) (assoc :stroke-style (keyword strokeStyle)))]))))))]
+    (when (seq attr-fns)
+      (st/emit! (dwsh/update-shapes [id] (apply comp attr-fns))))
     ;; hide/lock — some? so `false` genuinely unhides/unlocks
     (when (or (some? hidden) (some? locked))
       (st/emit! (dwsh/update-shape-flags [id]
@@ -2365,27 +2429,22 @@
     (when (some? width)
       (st/emit! (dwt/update-dimensions [id] :width width)))
     (when (some? height)
-      (st/emit! (dwt/update-dimensions [id] :height height)))
-    (when fill
-      (st/emit! (dwsh/update-shapes [id] #(assoc % :fills (fill->shape fill)))))
-    (when stroke
-      (st/emit! (dwsh/update-shapes [id] #(assoc % :strokes [{:stroke-color stroke
-                                                              :stroke-opacity 1
-                                                              :stroke-width (or strokeWidth 1)
-                                                              :stroke-style (keyword (or strokeStyle "solid"))
-                                                              :stroke-alignment :center}]))))
-    ;; stroke width/style change with no new color: patch the existing stroke
-    (when (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)))
-      (st/emit! (dwsh/update-shapes [id]
-                                    (fn [s]
-                                      (update s :strokes
-                                              (fn [strokes]
-                                                (let [st0 (or (first strokes)
-                                                              {:stroke-color "#000000" :stroke-opacity 1
-                                                               :stroke-alignment :center})]
-                                                  [(cond-> st0
-                                                     (some? strokeWidth) (assoc :stroke-width strokeWidth)
-                                                     (some? strokeStyle) (assoc :stroke-style (keyword strokeStyle)))])))))))))
+      (st/emit! (dwt/update-dimensions [id] :height height)))))
+
+(def ^:private geometry-settle-ms
+  "How long modify_shape waits before reading geometry back.
+
+  A geometry write on a laid-out child is repositioned by the parent layout,
+  which runs through a 100ms-buffered reflow (initialize-shape-layout buffers
+  :layout/update by 100ms in shape-layout.cljs) — plus the transform-modifier /
+  WASM tick on top. The old 80ms wait fired BEFORE that buffer even elapsed, so
+  it read the pre-reflow numbers and reported them as 'settled' (the confirmed
+  race, since 80 < 100). This clears the buffer window with margin.
+
+  There is no reflow-completion event to await, so the wait stays time-based; a
+  pathologically slow reflow can still exceed it, and the note already tells the
+  agent to confirm with read_design."
+  220)
 
 (defn- modify-shape
   [{:keys [shapeId x y width height] :as input}]
@@ -2404,8 +2463,10 @@
           ;; geometry writes can be constrained — a parent layout owns the
           ;; position, an instance or auto-sized text normalizes itself — so
           ;; report where the shape actually SETTLED instead of claiming the
-          ;; numbers took (the Kahoot session re-sent the same y five times)
-          (->> (rx/timer 80)
+          ;; numbers took (the Kahoot session re-sent the same y five times).
+          ;; Wait past the layout reflow buffer (see geometry-settle-ms) so the
+          ;; readback sees the post-reflow geometry, not the value mid-flight.
+          (->> (rx/timer geometry-settle-ms)
                (rx/map
                 (fn [_]
                   (let [s       (get (dsh/lookup-page-objects @st/state) id)
@@ -2503,39 +2564,56 @@
         pid     (some-> parentId parse-uuid)]
     (if-let [problem (nest-problem objects id pid)]
       (rx/throw (ex-info problem {}))
-      (let [parent (get objects pid)
+      (let [parent  (get objects pid)
             ;; default (nil flow-index): end of the flow in a laid-out board,
             ;; top of the z-stack in a plain one — visible either way
-            to-idx (nest-vector-index parent id (some-> index js/Math.round))]
+            to-idx  (nest-vector-index parent id (some-> index js/Math.round))
+            undo-id (js/Symbol)]
         (interrupt!)
+        ;; One undo step for the relocate AND its grid reflow: the reflow used
+        ;; to be a separate emission, so a single ⌘Z reverted only it and left
+        ;; the reparent in place (a half-undone move).
+        (st/emit! (dwu/start-undo-transaction undo-id))
         (st/emit! (dwsh/relocate-shapes #{id} pid to-idx))
         ;; relocate-shapes filters its input silently (loops, structure
-        ;; ownership) — read the move back rather than report success on faith
-        (->> (rx/timer 80)
-             (rx/map (fn [_]
-                       (let [shape' (get (dsh/lookup-page-objects @st/state) id)]
-                         (if (= pid (:parent-id shape'))
-                           (do
-                             ;; grid CELLS pin children regardless of vector
-                             ;; order — reseat them all in flow order so the
-                             ;; requested position actually lands (the NYT
-                             ;; session re-nested four times to no effect)
-                             (when (ctl/grid-layout? parent)
-                               (st/emit! (dwsh/update-shapes [pid] reflow-grid-cells
-                                                             {:with-objects? true}))
-                               (st/emit! (ptk/data-event :layout/update {:ids [pid]})))
-                             {:id shapeId :parentId parentId
-                              :note (str "reparented"
-                                         (when (ctl/any-layout? parent)
-                                           (str " — the parent lays out its children,"
-                                                " so it now controls this shape's position"))
-                                         ". Verify with read_design.")})
-                           (throw (ex-info
-                                   (str "nest_shape: the move did not take — Penpot "
-                                        "refused it (typically component or variant "
-                                        "structure ownership). The shape is still under "
-                                        "its previous parent; check read_design.")
-                                   {})))))))))))
+        ;; ownership) and applies SYNCHRONOUSLY (ptk processes the update before
+        ;; emit! returns), so read the move back now rather than on a timer —
+        ;; the old rx/timer 80 raced nothing here (unlike modify_shape, whose
+        ;; geometry settles through a buffered layout pass) and only delayed the
+        ;; result. Read it back rather than report success on faith.
+        (let [shape' (get (dsh/lookup-page-objects @st/state) id)]
+          (if (= pid (:parent-id shape'))
+            (do
+              ;; Seat the newly-moved child WITHOUT rebuilding the grid:
+              ;; assign-cells adds a cell (and a track if needed) for the orphan
+              ;; and leaves every existing track, span and manual placement
+              ;; intact. reflow-grid-cells would reset all of that — harmless
+              ;; for an auto-flowed grid but destructive to a user-authored one
+              ;; (the confirmed bug) — and grid position is by cell, not vector
+              ;; index, so honoring `index` is not worth wiping the layout.
+              (when (ctl/grid-layout? parent)
+                (st/emit! (dwsh/update-shapes [pid]
+                                              (fn [p objs] (-> (ctl/assign-cells p objs)
+                                                               (ctl/reorder-grid-children)))
+                                              {:with-objects? true}))
+                (st/emit! (ptk/data-event :layout/update {:ids [pid]})))
+              (st/emit! (dwu/commit-undo-transaction undo-id))
+              (rx/of {:id shapeId :parentId parentId
+                      :note (str "reparented"
+                                 (when (ctl/any-layout? parent)
+                                   (str " — the parent lays out its children,"
+                                        " so it now controls this shape's position"))
+                                 (when (ctl/grid-layout? parent)
+                                   " (a grid seats it in the next free cell)")
+                                 ". Verify with read_design.")}))
+            (do
+              (st/emit! (dwu/commit-undo-transaction undo-id))
+              (rx/throw (ex-info
+                         (str "nest_shape: the move did not take — Penpot "
+                              "refused it (typically component or variant "
+                              "structure ownership). The shape is still under "
+                              "its previous parent; check read_design.")
+                         {})))))))))
 
 ;; --- Text & component tools
 
@@ -2547,11 +2625,18 @@
     (rx/throw (ex-info problem {}))
     (let [nm      (:name input)
           color   (or fill "#000000")
-          state   @st/state
-          page    (dsh/lookup-page state)
-          objects (:objects page)
-          pid     (some-> parentId parse-uuid)
-          parent? (boolean (and pid (contains? objects pid)))
+          state    @st/state
+          page     (dsh/lookup-page state)
+          objects  (:objects page)
+          req-pid  (some-> parentId parse-uuid)
+          ;; same guards as create-shape: never inject into a component copy,
+          ;; and resolve a frame-id that actually points at a frame
+          pid      (when (and req-pid (contains? objects req-pid))
+                     (:id (ctn/get-first-valid-parent objects req-pid)))
+          parent   (get objects pid)
+          parent?  (some? parent)
+          frame-id (when parent?
+                     (if (cfh/frame-shape? parent) pid (:frame-id parent)))
           shape   (-> (cts/setup-shape
                        (cond-> {:type :text
                                 :x (or x 0) :y (or y 0)
@@ -2563,13 +2648,12 @@
                                 ;; creating right beats creating then fixing
                                 align (assoc :text-align align)))
                       (dissoc :position-data)
-                      (cond-> parent? (assoc :parent-id pid :frame-id pid)))
+                      (cond-> parent? (assoc :parent-id pid :frame-id frame-id)))
           changes (-> (cb/empty-changes)
                       (cb/with-page page)
                       (cb/with-objects objects)
                       (cb/add-object shape
-                                     (when-let [idx (some-> (and parent? (get objects pid))
-                                                            flow-append-index)]
+                                     (when-let [idx (some-> parent flow-append-index)]
                                        {:index idx})))]
       (interrupt!)
       (st/emit! (dch/commit-changes changes))
@@ -2668,6 +2752,20 @@
 ;; set, and `duplicate-shapes` drops anything `allow-duplicate?` refuses and then
 ;; no-ops on the empty set, which reads as success.
 
+(defn- unparsable-problem
+  "Why a call must be rejected because some `shapeIds` entry is not a valid
+  shape id, or nil. The handlers parse ids with `(keep parse-uuid)`, which
+  drops malformed entries silently — so without this a request like
+  [\"<valid>\" \"b7f3-truncated\"] would act on the valid subset and read as
+  success, leaving the model believing a shape it named was handled. Reject the
+  whole call and name the offenders; nothing is mutated. Pure."
+  [tool shapeIds]
+  (let [bad (into [] (remove #(and (string? %) (some? (parse-uuid %)))) shapeIds)]
+    (when (seq bad)
+      (dm/str tool ": not valid shape ids: "
+              (str/join ", " (map pr-str bad))
+              " — pass the exact ids from read_design; nothing was changed"))))
+
 (defn- ids-problem
   [tool objects ids]
   (let [missing (remove #(contains? objects %) ids)]
@@ -2702,7 +2800,8 @@
   (let [state   @st/state
         objects (dsh/lookup-page-objects state)
         ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
-    (if-let [problem (delete-problem objects ids)]
+    (if-let [problem (or (unparsable-problem "delete_shape" shapeIds)
+                         (delete-problem objects ids))]
       (rx/throw (ex-info problem {}))
       ;; disclose the cascade: deleting a container takes every descendant
       ;; with it, and "deleted 1" hid exactly that (the Kahoot session lost a
@@ -2731,7 +2830,8 @@
   (let [state   @st/state
         objects (dsh/lookup-page-objects state)
         ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
-    (if-let [problem (duplicate-problem objects ids)]
+    (if-let [problem (or (unparsable-problem "duplicate_shape" shapeIds)
+                         (duplicate-problem objects ids))]
       (rx/throw (ex-info problem {}))
       (let [id-ref (atom nil)]
         (interrupt!)
@@ -2828,7 +2928,8 @@
   (let [state   @st/state
         objects (dsh/lookup-page-objects state)
         ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
-    (if-let [problem (group-problem objects ids)]
+    (if-let [problem (or (unparsable-problem "group_shapes" shapeIds)
+                         (group-problem objects ids))]
       (rx/throw (ex-info problem {}))
       ;; group-shapes takes the new group's id, so it is knowable up front
       (let [group-id (uuid/next)]
@@ -2844,7 +2945,8 @@
   (let [state   @st/state
         objects (dsh/lookup-page-objects state)
         ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
-    (if-let [problem (ungroup-problem objects ids)]
+    (if-let [problem (or (unparsable-problem "ungroup_shapes" shapeIds)
+                         (ungroup-problem objects ids))]
       (rx/throw (ex-info problem {}))
       (do
         (interrupt!)
@@ -2911,20 +3013,30 @@
   cells (like `calculate-params`' empty-children branch, but for a populated
   board) and re-assigns."
   [shape objects n]
-  (let [n    (max 1 (int n))
-        kids (count (:shapes shape))
-        rows (max 1 (js/Math.ceil (/ kids n)))]
+  (let [n     (max 1 (int n))
+        ;; Canonicalize :shapes from the CURRENT cells before touching them.
+        ;; The flip below only yields reading order when :shapes is in the
+        ;; reversed-reading canonical order reorder-grid-children produces — but
+        ;; Penpot's z-order commands (Send to back / Bring to front) reorder a
+        ;; grid's children WITHOUT re-canonicalizing (cells pin the visuals, so
+        ;; nothing moves on screen), leaving :shapes out of sync. Rebuilding it
+        ;; from the existing cells restores the invariant, so re-asserting
+        ;; columns no longer seats children reversed.
+        shape (cond-> shape
+                (seq (:layout-grid-cells shape))
+                (ctl/reorder-grid-children))
+        kids  (count (:shapes shape))
+        rows  (max 1 (js/Math.ceil (/ kids n)))]
     (-> shape
         (assoc :layout-grid-columns (vec (repeat n ctl/default-track-value))
                :layout-grid-rows    (vec (repeat rows ctl/default-track-value))
                :layout-grid-cells   {})
         (ctl/create-cells [1 1 n rows])
         ;; assign-cells consumes :shapes in VECTOR order, but the canonical
-        ;; vector is REVERSED reading order (reorder-grid-children rebuilds it
-        ;; that way) — flip so the first flow item lands in the first cell;
-        ;; the reorder below restores the canonical vector from the cells.
-        ;; Without this, re-asserting columns seats the LAST child in cell 1
-        ;; (the NYT session's scrambled 2×2).
+        ;; vector is REVERSED reading order — flip so the first flow item lands
+        ;; in the first cell; the reorder below restores the canonical vector
+        ;; from the cells. Without this, re-asserting columns seats the LAST
+        ;; child in cell 1 (the NYT session's scrambled 2×2).
         (update :shapes (comp vec rseq))
         (ctl/assign-cells objects)
         (ctl/reorder-grid-children))))
@@ -3418,7 +3530,8 @@
   (let [state   @st/state
         objects (dsh/lookup-page-objects state)
         ids     (into [] (comp (keep parse-uuid) (distinct)) shapeIds)]
-    (if-let [problem (boolean-problem objects operation ids)]
+    (if-let [problem (or (unparsable-problem "create_boolean" shapeIds)
+                         (boolean-problem objects operation ids))]
       (rx/throw (ex-info problem {}))
       (let [before  (dsh/get-selected-ids state)
             bool-id (uuid/next)]
@@ -4137,10 +4250,19 @@
                           token   (get all-tokens tokenName)
                           problem (when token (application-problem token properties))]
                       (if (and id token (nil? problem))
-                        (do (st/emit! (dwta/toggle-token {:token token
-                                                          :attrs (attr-set token properties)
-                                                          :shape-ids [id]
-                                                          :expand-with-children false}))
+                        ;; apply-token-from-input, not toggle-token: this tool
+                        ;; means "bind", and it must be idempotent. toggle-token
+                        ;; UNBINDS a token already applied to the shape (its UI
+                        ;; role), so a retry or a batch that re-asserts an
+                        ;; existing binding would silently remove it while still
+                        ;; reporting ok. apply-token-from-input shares the same
+                        ;; spacing/on-update-shape resolution but only ever
+                        ;; applies.
+                        (do (st/emit! (dwta/apply-token-from-input
+                                       {:token token
+                                        :attrs (attr-set token properties)
+                                        :shape-ids [id]
+                                        :expand-with-children false}))
                             {:shapeId shapeId :token tokenName :ok true})
                         {:shapeId shapeId :token tokenName :ok false
                          :error (cond
@@ -4793,8 +4915,14 @@
                 {:shapeId (dm/str new-root)
                  :name (or (:name clone) (:name shape))}))
             clones))]
+      ;; Seat the appended clones without rebuilding the grid — assign-cells
+      ;; preserves the parent's tracks, spans and manual placements (see
+      ;; nest_shape); reflow-grid-cells would wipe a user-authored grid.
       (when (and pid (ctl/grid-layout? parent))
-        (st/emit! (dwsh/update-shapes [pid] reflow-grid-cells {:with-objects? true}))
+        (st/emit! (dwsh/update-shapes [pid]
+                                      (fn [p objs] (-> (ctl/assign-cells p objs)
+                                                       (ctl/reorder-grid-children)))
+                                      {:with-objects? true}))
         (st/emit! (ptk/data-event :layout/update {:ids [pid]})))
       {:clones results
        :note (str "cloned — overrides matched by layer name"

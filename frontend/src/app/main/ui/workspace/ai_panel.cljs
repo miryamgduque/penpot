@@ -1212,19 +1212,22 @@
      ;; stays whole in History.
      (when handoff?
        [:div {:class (stl/css :handoff-notice)}
-        [:span {:class (stl/css :handoff-text)}
-         "This conversation is getting long — replies re-read all of it."]
+        ;; text + ✕ on top, the action full-width at the bottom — side by side
+        ;; the text wrapped into a skinny column in the narrow panel
+        [:div {:class (stl/css :handoff-header)}
+         [:span {:class (stl/css :handoff-text)}
+          "This conversation is getting long — replies re-read all of it."]
+         [:button {:type "button"
+                   :class (stl/css :handoff-dismiss)
+                   :aria-label "Dismiss this suggestion"
+                   :on-click on-handoff-dismiss}
+          [:span {:aria-hidden true} "✕"]]]
         [:button {:type "button"
                   :class (stl/css :handoff-action)
                   :title "Summarize this conversation and continue in a fresh chat — this one is kept in History"
                   :on-click on-handoff}
          [:span {:aria-hidden true} "✦ "]
-         "Summarize into a new chat"]
-        [:button {:type "button"
-                  :class (stl/css :handoff-dismiss)
-                  :aria-label "Dismiss this suggestion"
-                  :on-click on-handoff-dismiss}
-         [:span {:aria-hidden true} "✕"]]])
+         "Summarize into a new chat"]])
 
      ;; A Fix-it-now queued behind the running turn: visible, cancellable,
      ;; sends itself when the turn ends (drain effect above).

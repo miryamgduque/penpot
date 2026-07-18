@@ -1,6 +1,6 @@
 # Phase 02 — Inner-knowledge doctrine (foundations sync, minimalism, concurrent-work hygiene)
 
-**Status:** todo
+**Status:** done
 
 Three always-on doctrine additions, all prompt-layer, all targeting logged
 incidents:
@@ -27,24 +27,24 @@ incidents:
 
 ## Checklist
 
-- [ ] Write/update tests: `inner-knowledge` string contains the three new
+- [x] Write/update tests: `inner-knowledge` string contains the three new
       doctrine markers (cheap pin, same style as existing prompt pins — the
       retired `set_design_doc` was "pinned by test", follow that precedent)
-- [ ] Foundations-sync lines → most natural home is a short new block or an
+- [x] Foundations-sync lines → most natural home is a short new block or an
       extension of `governance`: "Foundations describe intent. When a change you
       apply contradicts one, update that foundation (set_foundation) in the same
       breath, or tell the user about the conflict — a stale DESIGN.md is worse
       than none."
-- [ ] Scope-minimalism line → `governance`: "Make the smallest change that
+- [x] Scope-minimalism line → `governance`: "Make the smallest change that
       satisfies the ask. Never build what wasn't requested — an unrequested
       screen is not initiative, it is scope the user now has to review and pay
       for."
-- [ ] Concurrent-work lines → `governance` (beside the never-without-approval
+- [x] Concurrent-work lines → `governance` (beside the never-without-approval
       list): "Existing content you did not create is someone's work in progress.
       Never delete, restyle or 'clean up' shapes outside the task's scope."
-- [ ] Budget check: three additions ≤ ~12 lines total; re-measure prefix tokens
+- [x] Budget check: three additions ≤ ~12 lines total; re-measure prefix tokens
       if it feels bloated (was ~11k)
-- [ ] Lint + typecheck pass (kondo; `compile test` + run; `compile main`)
+- [x] Lint + typecheck pass (kondo; `compile test` + run; `compile main`)
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit (e.g. `:memo: Inner-knowledge: foundations
       sync, scope minimalism, concurrent-work hygiene`)

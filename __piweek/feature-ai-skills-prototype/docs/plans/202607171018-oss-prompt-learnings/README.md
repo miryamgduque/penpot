@@ -80,7 +80,7 @@ bolt.diy, Dyad).
 ## Phases
 
 1. [Phase 01 — Compaction upgrades](./done-phase-01-compaction-upgrades.md) — `## Learned` section + anchored re-compaction in `compact-system` (learnings 1+2)
-2. [Phase 02 — Inner-knowledge doctrine](./todo-phase-02-inner-knowledge-doctrine.md) — self-maintaining foundations, scope minimalism, concurrent-work hygiene (learnings 3+4+6)
+2. [Phase 02 — Inner-knowledge doctrine](./done-phase-02-inner-knowledge-doctrine.md) — self-maintaining foundations, scope minimalism, concurrent-work hygiene (learnings 3+4+6)
 3. [Phase 03 — ask_user question policy](./todo-phase-03-ask-user-policy.md) — usage doctrine for the elicitation tool (learning 5)
 4. [Phase 04 — Anti-generic design nudge](./todo-phase-04-anti-generic-nudge.md) — no-DESIGN.md build requests get a visual-direction nudge via the volatile slot (learning 7)
 5. [Phase 05 — Clickable shape refs](./todo-phase-05-clickable-shape-refs.md) — transcript shape references become ⌖-select links (learning 8)

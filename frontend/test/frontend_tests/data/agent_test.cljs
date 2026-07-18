@@ -15,6 +15,7 @@
   nothing pointing back at the cancel."
   (:require
    [app.main.data.workspace.agent :as agent]
+   [app.main.data.workspace.agent-skills :as ask]
    [cljs.test :as t :include-macros true]
    [cuerdas.core :as str]))
 
@@ -698,6 +699,13 @@
 ;; Phase 01 of the OSS-prompt-learnings plan: the summarizer keeps lessons
 ;; (Kimi's compaction priorities) and treats a prior summary as an anchor to
 ;; update, not conversation to narrate (opencode's <previous-summary>).
+
+(t/deftest inner-knowledge-carries-the-scope-doctrine
+  (t/testing "phase 02 of the OSS-prompt-learnings plan: minimal change,
+              hands off other people's work, foundations kept in sync"
+    (t/is (str/includes? ask/inner-knowledge "smallest change that satisfies the ask"))
+    (t/is (str/includes? ask/inner-knowledge "someone's work in progress"))
+    (t/is (str/includes? ask/inner-knowledge "update that foundation"))))
 
 (t/deftest compact-system-keeps-lessons-and-anchors
   (t/testing "the summarizer prompt carries the Learned section and the

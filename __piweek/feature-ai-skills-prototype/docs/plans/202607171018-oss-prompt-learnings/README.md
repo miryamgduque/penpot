@@ -1,6 +1,6 @@
 # OSS Prompt Learnings — adopt agent-prompt patterns from Kimi CLI / opencode
 
-**Status:** todo
+**Status:** doing
 **Created:** 2026-07-17
 **Apps:** `frontend`
 **Dependencies:** None (phase 08 is gated on phase 06's measurement)
@@ -79,7 +79,7 @@ bolt.diy, Dyad).
 
 ## Phases
 
-1. [Phase 01 — Compaction upgrades](./todo-phase-01-compaction-upgrades.md) — `## Learned` section + anchored re-compaction in `compact-system` (learnings 1+2)
+1. [Phase 01 — Compaction upgrades](./done-phase-01-compaction-upgrades.md) — `## Learned` section + anchored re-compaction in `compact-system` (learnings 1+2)
 2. [Phase 02 — Inner-knowledge doctrine](./todo-phase-02-inner-knowledge-doctrine.md) — self-maintaining foundations, scope minimalism, concurrent-work hygiene (learnings 3+4+6)
 3. [Phase 03 — ask_user question policy](./todo-phase-03-ask-user-policy.md) — usage doctrine for the elicitation tool (learning 5)
 4. [Phase 04 — Anti-generic design nudge](./todo-phase-04-anti-generic-nudge.md) — no-DESIGN.md build requests get a visual-direction nudge via the volatile slot (learning 7)

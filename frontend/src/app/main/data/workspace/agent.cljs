@@ -1238,7 +1238,11 @@
 ;; the uncompacted history (the trim backstop still bounds it).
 (def ^:private compact-model "claude-haiku-4-5-20251001")
 
-(def ^:private compact-system
+;; Public because the section contract is pinned by tests: Learned exists so a
+;; compacted agent does not re-hit walls it already climbed (a rejected raw
+;; hex, an ordering rule discovered the hard way), and the anchor instruction
+;; makes a SECOND compaction update the first summary instead of narrating it.
+(def compact-system
   (str/join "\n"
             ["You compress an AI design-agent's conversation history into the agent's own working memory."
              "Write a structured summary the agent will rely on INSTEAD of the original messages:"
@@ -1246,8 +1250,10 @@
              "## Task — what the user is trying to get done, in their words."
              "## Done so far — what was built or changed. Name every shape, board, component, token and page by its EXACT name (and id when shown); the agent must be able to act on them without re-reading the file."
              "## Decisions — choices made and why, including corrections the user gave. These are standing instructions."
+             "## Learned — tool calls that errored or were rejected and what fixed them; constraints discovered about this file or the tools (ordering rules, settle behavior, enforced rules). Drop the failed attempts themselves — keep the lesson."
              "## Open — what is in flight, promised or explicitly deferred."
              ""
+             "A transcript that opens with a bracketed [Conversation compacted…] message is carrying the previous compaction's summary. Treat it as your anchor: keep its still-true facts, drop what is stale, merge in the new — never describe it as something the user said."
              "Be terse and specific. Never invent names. Keep the whole summary under 3000 characters. Output only the summary."]))
 
 (defn compact-history

@@ -1,6 +1,6 @@
 # Phase 03 — ask_user question policy
 
-**Status:** todo
+**Status:** done
 
 Adopts the codex prompt's question rules for our existing elicitation tool: do
 all non-blocked work first; ask exactly ONE targeted question; include your
@@ -21,23 +21,23 @@ interruption vs. when to pick a reasonable default and note it.
 
 ## Checklist
 
-- [ ] Write/update tests: pin the new description/doctrine text (same
+- [x] Write/update tests: pin the new description/doctrine text (same
       prompt-pin style as phase 02)
-- [ ] Decide placement with a bias to the TOOL DESCRIPTION, not
+- [x] Decide placement with a bias to the TOOL DESCRIPTION, not
       inner-knowledge: the policy only matters when the tool is in hand, and
       tool descriptions ride the cached prefix anyway. Only a single
       inner-knowledge line if the description alone proves too weak.
-- [ ] Draft policy into the `ask_user` description: "Ask only when blocked on
+- [x] Draft policy into the `ask_user` description: "Ask only when blocked on
       something you cannot resolve from the file, the foundations or a
       reasonable default. First finish all work that doesn't depend on the
       answer. Ask ONE question, offer your recommended option first, and say
       what changes based on the choice. Never ask permission-style questions
       ('should I proceed?') — governance already defines when to pause."
-- [ ] Carve-out for interviews: skills that run a structured interview (vibes)
+- [x] Carve-out for interviews: skills that run a structured interview (vibes)
       legitimately ask several questions — phrase the policy per-question
       ("one question per call, each self-sufficient") so it composes with the
       interview flow instead of fighting it
-- [ ] Lint + typecheck pass (kondo; `compile test` + run; `compile main`)
+- [x] Lint + typecheck pass (kondo; `compile test` + run; `compile main`)
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit (e.g. `:memo: ask_user gets a question
       policy: non-blocked work first, one question, recommended default`)

@@ -814,6 +814,16 @@
     (t/is (str/includes? (:description spec) "BOARD"))
     (t/is (str/includes? (:description spec) "ON TOP"))))
 
+(t/deftest the-ask-user-tool-carries-the-question-policy
+  ;; Phase 03 of the OSS-prompt-learnings plan (codex prompt's question rules):
+  ;; only blocked questions, non-blocked work first, recommended default first,
+  ;; and no permission-style questions — governance owns the pauses.
+  (let [spec (first (filter #(= "ask_user" (:name %)) at/tool-specs))]
+    (t/is (str/includes? (:description spec) "cannot resolve from the file"))
+    (t/is (str/includes? (:description spec) "does not depend on the answer"))
+    (t/is (str/includes? (:description spec) "recommended choice"))
+    (t/is (str/includes? (:description spec) "should I proceed"))))
+
 ;; ---------------------------------------------------------------------------
 ;; group-problem / ungroup-problem
 ;;

@@ -66,6 +66,7 @@
    [frontend-tests.ui.comments-position-modifier-test]
    [frontend-tests.ui.ds-controls-numeric-input-test]
    [frontend-tests.ui.layout-container-multiple-test]
+   [frontend-tests.ui.markdown-test]
    [frontend-tests.ui.measures-menu-props-test]
    [frontend-tests.util-object-test]
    [frontend-tests.util-range-tree-test]
@@ -148,6 +149,7 @@
    'frontend-tests.ui.comments-position-modifier-test
    'frontend-tests.ui.ds-controls-numeric-input-test
    'frontend-tests.ui.layout-container-multiple-test
+   'frontend-tests.ui.markdown-test
    'frontend-tests.ui.measures-menu-props-test
    'frontend-tests.util-object-test
    'frontend-tests.util-range-tree-test

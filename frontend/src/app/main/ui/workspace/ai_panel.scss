@@ -917,6 +917,29 @@
     font-family: monospace;
   }
 
+  // the markdown renderer's shape refs (button.shape-ref + data-shape-id):
+  // a chip that selects the shape on canvas through the transcript's one
+  // delegated click handler. :global — the class is emitted by markdown.cljs,
+  // not scoped by this module.
+  :global(.shape-ref) {
+    display: inline;
+    padding: 0 deprecated.$s-4;
+    border: none;
+    border-radius: deprecated.$br-4;
+    background-color: var(--color-background-quaternary);
+    color: var(--color-accent-primary);
+    font: inherit;
+    cursor: pointer;
+
+    &::before {
+      content: "⌖ ";
+    }
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
   pre {
     @extend %new-scrollbar;
 

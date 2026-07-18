@@ -581,7 +581,20 @@
                                           bottom-threshold)]
                            ;; only on a real edge crossing — this fires per frame
                            (when (not= bottom? (mf/ref-val at-bottom-ref))
-                             (reset! at-bottom* bottom?)))))]
+                             (reset! at-bottom* bottom?)))))
+
+        ;; one delegated handler serves every `shape:` ref the markdown
+        ;; renderer emits (button.shape-ref carrying data-shape-id) — same
+        ;; select+zoom as the observer cards' layer rows. A stale id is a
+        ;; quiet no-op, matching the ⌖ behavior on pruned shapes.
+        on-ref-click  (mf/use-fn
+                       (fn [event]
+                         (when-let [el (.closest ^js (dom/get-target event)
+                                                 "[data-shape-id]")]
+                           (when-let [id (-> (.getAttribute el "data-shape-id")
+                                             (uuid/parse*))]
+                             (st/emit! (dws/select-shape id)
+                                       dwz/zoom-to-selected-shape)))))]
 
     ;; land on the newest message when the transcript first appears
     (mf/with-layout-effect []
@@ -599,6 +612,7 @@
      [:div {:class (stl/css :transcript)
             :ref scroll-ref
             :on-scroll on-scroll
+            :on-click on-ref-click
             :role "log"
             :aria-live "polite"
             ;; while a turn streams, every token would otherwise re-announce the

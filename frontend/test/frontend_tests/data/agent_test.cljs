@@ -695,6 +695,43 @@
       (t/is (str/includes? text "look"))
       (t/is (str/includes? text "ok")))))
 
+;; Phase 01 of the OSS-prompt-learnings plan: the summarizer keeps lessons
+;; (Kimi's compaction priorities) and treats a prior summary as an anchor to
+;; update, not conversation to narrate (opencode's <previous-summary>).
+
+(t/deftest compact-system-keeps-lessons-and-anchors
+  (t/testing "the summarizer prompt carries the Learned section and the
+              update-the-prior-anchor instruction"
+    (t/is (str/includes? agent/compact-system "## Learned"))
+    (t/is (str/includes? agent/compact-system "previous compaction"))))
+
+(t/deftest recompaction-transcript-carries-the-prior-summary
+  (t/testing "a once-compacted history feeds its own summary back to the
+              summarizer — the anchor instruction has its anchor"
+    (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
+          once    (agent/compacted-history history "alpha: the standing facts")
+          grown   (conj once
+                        {:role :user :text "next ask"}
+                        {:role :assistant :text "done" :tool-calls []})
+          text    (agent/compaction-transcript grown)]
+      (t/is (str/includes? text "alpha: the standing facts"))
+      (t/is (str/includes? (str/lower text) "compacted")
+            "the bracketed frame rides along — it is what the prompt keys on"))))
+
+(t/deftest recompaction-yields-a-single-summary-head
+  (t/testing "compacting again UPDATES the head — one summary message, never
+              a nested chain of summaries-of-summaries"
+    (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
+          once    (agent/compacted-history history "alpha")
+          grown   (conj once
+                        {:role :user :text "next ask"}
+                        {:role :assistant :text "done" :tool-calls []})
+          out     (agent/compacted-history grown "beta")]
+      (t/is (= 1 (count (filter :compacted? out))))
+      (t/is (str/includes? (:text (first out)) "beta"))
+      (t/is (not (str/includes? (agent/conversation-transcript out) "alpha"))
+            "the old summary text is gone — its surviving facts live inside beta"))))
+
 ;; ---------------------------------------------------------------------------
 ;; Fresh-chat handoff (the pure halves).
 ;;

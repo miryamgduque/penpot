@@ -1,6 +1,6 @@
 # Phase 01 — Compaction upgrades (Learned section + anchored re-compaction)
 
-**Status:** todo
+**Status:** done
 
 Adopts Kimi CLI's compaction priority 2 ("Errors & Solutions — all encountered
 errors and their resolutions; remove failed attempts, keep lessons learned") and
@@ -19,26 +19,26 @@ don't re-describe it).
 
 ## Checklist
 
-- [ ] Write/update tests: a transcript whose head starts with a
+- [x] Write/update tests: a transcript whose head starts with a
       `[Conversation compacted…]` message still round-trips through
       `compaction-transcript`/`compacted-history` (behavioral guard for the
       anchor path; prompt WORDING itself is not unit-testable — note the live
       check below)
-- [ ] Add `## Learned` section to `compact-system`: "tool calls that errored or
+- [x] Add `## Learned` section to `compact-system`: "tool calls that errored or
       were rejected and what resolved them; constraints discovered about this
       file or the tools (ordering rules, settle behavior, rule enforcement).
       Drop the failed attempts themselves — keep only the lesson."
-- [ ] Add anchor instruction to `compact-system`: "if the transcript opens with
+- [x] Add anchor instruction to `compact-system`: "if the transcript opens with
       a bracketed summary of earlier messages, that is the previous compaction —
       UPDATE it (preserve still-true facts, drop stale ones, merge new ones)
       rather than describing it as part of the conversation."
-- [ ] Keep the whole prompt within its existing budget discipline (summary cap
+- [x] Keep the whole prompt within its existing budget discipline (summary cap
       stays 3000 chars; raise ONLY if the Learned section demonstrably starves —
       decide with Santi, not unilaterally)
-- [ ] `summarize-history` shares `compact-system` — confirm the new sections
+- [x] `summarize-history` shares `compact-system` — confirm the new sections
       read correctly for the fresh-chat handoff seed too (they should: handoff
       wants lessons even more)
-- [ ] Lint + typecheck pass (kondo via devenv container; `compile test` + run;
+- [x] Lint + typecheck pass (kondo via devenv container; `compile test` + run;
       also `compile main`)
 - [ ] Live sanity (optional, needs user key): force a compaction
       (`store_history` console injection per memory recipe), read the summary,

@@ -58,15 +58,15 @@ cite only prompts from the projects' own repos.
 
 ## Checklist
 
-- [ ] For each target: pull the ACTUAL prompt/config files from the repo (not
+- [x] For each target: pull the ACTUAL prompt/config files from the repo (not
       blog posts), note license + commit/date pulled
-- [ ] Per project, extract: (a) anything that maps to a logged Penpot-agent
+- [x] Per project, extract: (a) anything that maps to a logged Penpot-agent
       incident, (b) anything structural we lack (à la microagents/repo-map),
       (c) explicit non-adoptions with reasons
-- [ ] Special attention: Onlook's canvas-element referencing & design prompts;
+- [x] Special attention: Onlook's canvas-element referencing & design prompts;
       Aider's repo-map budgeting vs our context/explore_design; OpenHands
       condenser vs our compaction ladder; Cline plan/act vs our governance
-- [ ] Write `__piweek/feature-ai-skills-prototype/docs/oss-agent-survey.md`:
+- [x] Write `__piweek/feature-ai-skills-prototype/docs/oss-agent-survey.md`:
       per-project sections + a single ranked adopt-list (leverage × cost, the
       postmortem format)
 - [ ] Review findings with Santi; promote accepted items to a new plan (do NOT
@@ -90,3 +90,5 @@ cite only prompts from the projects' own repos.
   background task while waiting on devenv/key availability for 04–06.
 - Timebox: this can absorb infinite hours; aim for ~half a day of reading,
   breadth over depth, and let the ranked list decide where to go deep later.
+
+- Executed 2026-07-19 as three parallel research subagents (coding agents / platform CLIs / design-adjacent); all 11 targets fetched from real repo files, caveats recorded (Cline monorepo rewrite, OpenHands microagents moved to agent-sdk). Findings doc committed; review-with-Santi pending — the ranked list ends in a plan-tool GO recommendation for phase 08.

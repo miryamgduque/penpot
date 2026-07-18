@@ -35,6 +35,22 @@
              (some? (re-matches schema-allowlist-re href)))
     href))
 
+;; `shape:<uuid>` is our own scheme: the agent links shapes it mentions and a
+;; click selects them on canvas. It never becomes an `<a href>` — the ref
+;; renders as a button carrying `data-shape-id`, and the consumer (the chat
+;; transcript) opts in with one delegated click handler. Other consumers get
+;; an inert button; the allowlist above stays untouched.
+(def ^:private shape-ref-re
+  #"(?i)^shape:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
+
+(defn shape-ref-id
+  "The uuid string of a `shape:<uuid>` href, or nil. Public for tests: this
+  is the whole contract — a malformed id renders as plain text, exactly like
+  an unsafe scheme."
+  [href]
+  (when (string? href)
+    (second (re-matches shape-ref-re href))))
+
 (declare render-inline)
 
 (defn- inline-children
@@ -47,16 +63,23 @@
 
 (defn- render-link
   [i ^js token]
-  (if-let [href (safe-href (.-href token))]
-    (mf/html [:a {:key i
-                  :href href
-                  :target "_blank"
-                  ;; the panel lives in the workspace — never hand a
-                  ;; model-supplied link our `window.opener`
-                  :rel "noopener noreferrer"}
+  (if-let [shape-id (shape-ref-id (.-href token))]
+    (mf/html [:button {:key i
+                       :type "button"
+                       :class "shape-ref"
+                       :title "Select on canvas"
+                       :data-shape-id shape-id}
               (render-inline (.-tokens token))])
-    ;; unsafe scheme: keep the words, drop the link
-    (mf/html [:span {:key i} (.-text token)])))
+    (if-let [href (safe-href (.-href token))]
+      (mf/html [:a {:key i
+                    :href href
+                    :target "_blank"
+                    ;; the panel lives in the workspace — never hand a
+                    ;; model-supplied link our `window.opener`
+                    :rel "noopener noreferrer"}
+                (render-inline (.-tokens token))])
+      ;; unsafe scheme: keep the words, drop the link
+      (mf/html [:span {:key i} (.-text token)]))))
 
 (defn- render-inline
   [tokens]

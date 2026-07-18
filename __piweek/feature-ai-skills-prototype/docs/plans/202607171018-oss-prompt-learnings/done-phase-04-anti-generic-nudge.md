@@ -1,6 +1,6 @@
 # Phase 04 — Anti-generic design nudge (no-DESIGN.md build requests)
 
-**Status:** todo
+**Status:** done
 
 Adopts the codex prompt's frontend-design section (purposeful typography, no
 default stacks, a committed color direction, meaningful motion — *exception:
@@ -21,29 +21,29 @@ the volatile user-message slot, not the system prompt.
 
 ## Checklist
 
-- [ ] Write/update tests: `user-content` renders the nudge block when given one
+- [x] Write/update tests: `user-content` renders the nudge block when given one
       (pure function test); the trigger predicate (build-matched + no doc +
       not-yet-nudged) in isolation
-- [ ] Trigger: piggyback on `match-playbook`'s existing first-message round —
+- [x] Trigger: piggyback on `match-playbook`'s existing first-message round —
       when the matched skill is a build playbook AND the file has no design doc,
       attach a `:direction-nudge` alongside `:playbook`. No new model round, no
       new atom lifecycle beyond the existing playbook-loaded one.
-- [ ] Nudge copy (distilled codex, reworded for Penpot, ≤8 lines): "This file
+- [x] Nudge copy (distilled codex, reworded for Penpot, ≤8 lines): "This file
       has no DESIGN.md. Before building, commit to a visual direction — a
       purposeful type pairing (not a default stack), a named color direction
       with tokens, one or two deliberate signature details. State the direction
       in one sentence, then build to it. If the user seems to want more than a
       quick sketch, offer the vibes interview (`penpot-project-vibes`) instead
       of guessing."
-- [ ] Existing-system exception is structural (nudge only fires with no doc) —
+- [x] Existing-system exception is structural (nudge only fires with no doc) —
       but ALSO skip when the file already has token sets/components (a design
       system without a doc); check is one read of the file summary already in
       the turn's context
-- [ ] Once per conversation: reuse/extend the playbook-nudge atom pattern;
+- [x] Once per conversation: reuse/extend the playbook-nudge atom pattern;
       reset on new-chat/load-chat
-- [ ] "✦ Direction nudge" transcript note (mirror "✦ Playbook loaded") so the
+- [x] "✦ Direction nudge" transcript note (mirror "✦ Playbook loaded") so the
       behavior is observable
-- [ ] Lint + typecheck pass (kondo; `compile test` + run; `compile main` —
+- [x] Lint + typecheck pass (kondo; `compile test` + run; `compile main` —
       ai_panel not covered by test build)
 - [ ] Live sanity (needs user key): build ask on a fresh no-doc file → nudge
       fires once; same ask on a file WITH DESIGN.md → silent
@@ -73,3 +73,6 @@ the volatile user-message slot, not the system prompt.
 - Which catalog names count as "build playbooks": derive from the skill
   category/name prefix (`penpot-build-*`, component-factory, foundations…) —
   decide the exact predicate at Before Start against the current catalog.
+
+- Once-per-conversation came FREE: match-playbook only runs when `prior` is empty, so no atom/reset wiring was needed (the plan's atom item is moot).
+- Live sanity (nudge fires on bare file, silent with DESIGN.md) DEFERRED to the next live build session — the trigger predicate is fully unit-tested (4 tests).

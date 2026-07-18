@@ -757,13 +757,21 @@
           (->> (if (seq prior) (rx/of {}) (agent/match-playbook state text))
                (rx/mapcat
                 (fn [{:keys [skill body usage]}]
-                  (let [user-msg (cond-> user-msg
-                                   skill (assoc :playbook {:skill skill :body body}))]
+                  ;; a matched BUILD playbook on a file with no standing
+                  ;; direction also gets the anti-generic nudge — same
+                  ;; volatile slot, zero extra rounds
+                  (let [nudge    (when skill (agent/direction-nudge state skill))
+                        user-msg (cond-> user-msg
+                                   skill (assoc :playbook {:skill skill :body body})
+                                   nudge (assoc :direction-nudge nudge))]
                     (when skill (at/note-playbook-loaded!))
                     (rx/concat
                      (if usage (rx/of (accumulate-usage usage)) (rx/empty))
                      (if skill
                        (rx/of (append-message "note" (dm/str "✦ Playbook loaded: " skill)))
+                       (rx/empty))
+                     (if nudge
+                       (rx/of (append-message "note" "✦ Direction nudge: this file has no foundations yet"))
                        (rx/empty))
                      (if-not (agent/compact-due? prior)
                        (turn-stream settings (conj prior user-msg) system stream nil)

@@ -18,6 +18,7 @@
   mid-conversation and carry the whole history."
   (:require
    [app.main.data.ai-providers :as dai]
+   [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.data.workspace.design-doc :as dd]
@@ -50,8 +51,8 @@
   The playbook rides HERE — the volatile slot — because the system prompt is
   the cached prefix and must stay task-independent; on the first message it is
   paid once and cached with the rest of the history thereafter."
-  [{:keys [text context playbook]}]
-  (if (or (seq context) playbook)
+  [{:keys [text context playbook direction-nudge]}]
+  (if (or (seq context) playbook direction-nudge)
     (str/join "\n"
               (concat
                (when (seq context)
@@ -64,6 +65,10 @@
                  [(str "## Playbook: " (:skill playbook)
                        " (auto-loaded for this task — follow its method)")
                   (:body playbook)
+                  ""])
+               (when direction-nudge
+                 ["## Visual direction (this file has none yet)"
+                  direction-nudge
                   ""])
                [text]))
     text))
@@ -1229,6 +1234,40 @@
                        (cond-> {:usage usage}
                          body (assoc :skill nm :body body)))))
            (rx/catch (fn [_] (rx/of {})))))))
+
+;; --- Direction nudge (rides the same first-message injection)
+;;
+;; A build task in a file with NO standing direction is exactly when output
+;; collapses into template defaults (adapted from opencode's frontend-design
+;; doctrine). Structurally once-per-conversation: the caller only matches
+;; playbooks on a conversation's first message. Volatile-slot only — the
+;; nudge is per-file state and must never touch the cached prefix.
+
+(def ^:private direction-skills
+  "The build playbooks whose output is a visual artifact — the ones a
+  missing visual direction turns into template output."
+  #{"penpot-build-screen" "penpot-build-from-code" "penpot-component-factory"})
+
+(def direction-nudge-text
+  (str "Before building, commit to a visual direction: a purposeful type "
+       "pairing (never a default stack), a named colour direction bound to "
+       "tokens, and one or two deliberate signature details. State the "
+       "direction in one sentence, then build to it. If the user seems to "
+       "want more than a quick sketch, offer the penpot-project-vibes "
+       "interview instead of guessing."))
+
+(defn direction-nudge
+  "The anti-generic nudge for a first-message build task: nil unless `skill`
+  is a visual build playbook AND the file has neither foundations nor the
+  beginnings of a design system (components, a tokens lib) to infer a
+  direction from."
+  [state skill]
+  (when (and (contains? direction-skills skill)
+             (empty? (dd/list-foundations state))
+             (let [data (dsh/lookup-file-data state)]
+               (and (empty? (:components data))
+                    (nil? (:tokens-lib data)))))
+    direction-nudge-text))
 
 ;; --- Auto-compaction: the summarizer round
 

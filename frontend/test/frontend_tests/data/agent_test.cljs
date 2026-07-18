@@ -700,6 +700,43 @@
 ;; (Kimi's compaction priorities) and treats a prior summary as an anchor to
 ;; update, not conversation to narrate (opencode's <previous-summary>).
 
+;; --- Direction nudge (phase 04 of the OSS-prompt-learnings plan)
+;;
+;; A first-message BUILD task in a file with no standing direction (no
+;; foundations, no components, no tokens lib) gets the anti-generic nudge
+;; injected into the user message — the volatile slot, never the prefix.
+
+(defn- nudge-state
+  [data]
+  {:current-file-id "f1" :files {"f1" {:data data}}})
+
+(t/deftest direction-nudge-fires-on-a-bare-file
+  (t/is (some? (agent/direction-nudge (nudge-state {}) "penpot-build-screen"))))
+
+(t/deftest direction-nudge-needs-a-build-playbook
+  (t/is (nil? (agent/direction-nudge (nudge-state {}) "penpot-audit-accessibility")))
+  (t/is (nil? (agent/direction-nudge (nudge-state {}) nil))))
+
+(t/deftest direction-nudge-respects-existing-direction
+  (t/testing "foundations, components or a tokens lib each silence it"
+    (t/is (nil? (agent/direction-nudge
+                 (nudge-state {:plugin-data {:penpot-vibes {"design-md" "# vibes"}}})
+                 "penpot-build-screen")))
+    (t/is (nil? (agent/direction-nudge
+                 (nudge-state {:components {"c1" {:id "c1"}}})
+                 "penpot-build-screen")))
+    (t/is (nil? (agent/direction-nudge
+                 (nudge-state {:tokens-lib :lib})
+                 "penpot-build-screen")))))
+
+(t/deftest direction-nudge-rides-the-user-message
+  (let [msgs [{:role :user :text "build a pricing page"
+               :direction-nudge "COMMIT TO A DIRECTION"}]
+        body (get-in (agent/encode-anthropic msgs) [0 :content])]
+    (t/is (str/includes? body "Visual direction"))
+    (t/is (str/includes? body "COMMIT TO A DIRECTION"))
+    (t/is (str/includes? body "build a pricing page"))))
+
 (t/deftest inner-knowledge-carries-the-scope-doctrine
   (t/testing "phase 02 of the OSS-prompt-learnings plan: minimal change,
               hands off other people's work, foundations kept in sync"

@@ -82,7 +82,7 @@ bolt.diy, Dyad).
 1. [Phase 01 — Compaction upgrades](./done-phase-01-compaction-upgrades.md) — `## Learned` section + anchored re-compaction in `compact-system` (learnings 1+2)
 2. [Phase 02 — Inner-knowledge doctrine](./done-phase-02-inner-knowledge-doctrine.md) — self-maintaining foundations, scope minimalism, concurrent-work hygiene (learnings 3+4+6)
 3. [Phase 03 — ask_user question policy](./done-phase-03-ask-user-policy.md) — usage doctrine for the elicitation tool (learning 5)
-4. [Phase 04 — Anti-generic design nudge](./todo-phase-04-anti-generic-nudge.md) — no-DESIGN.md build requests get a visual-direction nudge via the volatile slot (learning 7)
+4. [Phase 04 — Anti-generic design nudge](./done-phase-04-anti-generic-nudge.md) — no-DESIGN.md build requests get a visual-direction nudge via the volatile slot (learning 7)
 5. [Phase 05 — Clickable shape refs](./todo-phase-05-clickable-shape-refs.md) — transcript shape references become ⌖-select links (learning 8)
 6. [Phase 06 — Parallel phrasing A/B + measurement](./todo-phase-06-parallel-ab-measurement.md) — stronger batching language + calls/round measurement recipe (learning 9a)
 7. [Phase 07 — OSS agent survey](./todo-phase-07-oss-agent-survey.md) — mine Cline/Aider/OpenHands/Gemini CLI/Codex CLI/Onlook/bolt.diy etc.; findings doc + ranked follow-up backlog

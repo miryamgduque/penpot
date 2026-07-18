@@ -85,7 +85,7 @@ bolt.diy, Dyad).
 4. [Phase 04 — Anti-generic design nudge](./done-phase-04-anti-generic-nudge.md) — no-DESIGN.md build requests get a visual-direction nudge via the volatile slot (learning 7)
 5. [Phase 05 — Clickable shape refs](./done-phase-05-clickable-shape-refs.md) — transcript shape references become ⌖-select links (learning 8)
 6. [Phase 06 — Parallel phrasing A/B + measurement](./todo-phase-06-parallel-ab-measurement.md) — stronger batching language + calls/round measurement recipe (learning 9a)
-7. [Phase 07 — OSS agent survey](./todo-phase-07-oss-agent-survey.md) — mine Cline/Aider/OpenHands/Gemini CLI/Codex CLI/Onlook/bolt.diy etc.; findings doc + ranked follow-up backlog
+7. [Phase 07 — OSS agent survey](./doing-phase-07-oss-agent-survey.md) — mine Cline/Aider/OpenHands/Gemini CLI/Codex CLI/Onlook/bolt.diy etc.; findings doc + ranked follow-up backlog
 8. [Phase 08 — Todo tool decision](./todo-phase-08-todo-tool-decision.md) — **gated on phase 06 data**: spec + go/no-go for an opencode-style plan/todo tool (learning 9b)
 
 Phases 01–03 are independent prompt edits (any order). Phase 04 depends on nothing

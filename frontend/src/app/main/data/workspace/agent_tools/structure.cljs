@@ -154,6 +154,24 @@
 
 (def ^:private stroke-styles #{"solid" "dotted" "dashed" "mixed"})
 
+;; Line/path end caps (`:stroke-cap-start` / `:stroke-cap-end` on the stroke).
+;; The exact Penpot tokens the model should use, plus "none" to clear a cap and
+;; a couple of forgiving aliases ("circle" → the circle-marker dot).
+(def ^:private stroke-cap-values
+  #{"round" "square" "line-arrow" "triangle-arrow" "square-marker"
+    "circle-marker" "diamond-marker" "none"})
+
+(def ^:private stroke-cap-aliases
+  {"circle" "circle-marker" "diamond" "diamond-marker" "arrow" "triangle-arrow"})
+
+(def ^:private stroke-cap-inputs (into stroke-cap-values (keys stroke-cap-aliases)))
+
+(defn- ->stroke-cap
+  "A validated cap string → the stored keyword, or nil for \"none\" (clears it)."
+  [v]
+  (let [v (get stroke-cap-aliases v v)]
+    (when-not (= v "none") (keyword v))))
+
 (defn locked-problem
   "Refuses mutating a locked (`:blocked`) shape, unless the call is unlocking it.
   A user locks a layer to mean hands-off; the agent should respect that and say
@@ -168,7 +186,7 @@
   "The rejection (an ex-info, carrying :rule for guard hits) for ONE
   modify_shape-style update, or nil. Shared by modify_shape and the
   update_shapes batch; `tool` names whichever surfaced it."
-  [tool state objects {:keys [shapeId fill strokeStyle] :as input}]
+  [tool state objects {:keys [shapeId fill strokeStyle strokeCapStart strokeCapEnd] :as input}]
   (let [id    (some-> shapeId parse-uuid)
         shape (when id (get objects id))]
     (cond
@@ -187,6 +205,12 @@
       (some? (atc/enum-problem tool "strokeStyle" strokeStyle stroke-styles))
       (ex-info (atc/enum-problem tool "strokeStyle" strokeStyle stroke-styles) {})
 
+      (some? (atc/enum-problem tool "strokeCapStart" strokeCapStart stroke-cap-inputs))
+      (ex-info (atc/enum-problem tool "strokeCapStart" strokeCapStart stroke-cap-inputs) {})
+
+      (some? (atc/enum-problem tool "strokeCapEnd" strokeCapEnd stroke-cap-inputs))
+      (ex-info (atc/enum-problem tool "strokeCapEnd" strokeCapEnd stroke-cap-inputs) {})
+
       ;; the guard runs last: a rejection naming the rule is the most useful
       ;; message, so it should not mask a plain input error
       :else
@@ -197,7 +221,7 @@
   transaction of its own — the caller brackets one around the whole call (or
   the whole batch)."
   [{:keys [x y width height fill stroke shadow strokeWidth strokeStyle
-           hidden locked rotation flipH flipV] :as input} id]
+           strokeCapStart strokeCapEnd hidden locked rotation flipH flipV] :as input} id]
   (let [nm     (:name input)
         styles (style-attrs input)
         ;; Every plain attribute write (name, styles, shadow, fill, stroke) is a
@@ -213,13 +237,16 @@
           (seq styles) (conj #(merge % styles))
           shadow       (conj #(assoc % :shadow [(shadow->shape shadow)]))
           fill         (conj #(assoc % :fills (atc/fill->shape fill)))
-          stroke       (conj #(assoc % :strokes [{:stroke-color stroke
-                                                  :stroke-opacity 1
-                                                  :stroke-width (or strokeWidth 1)
-                                                  :stroke-style (keyword (or strokeStyle "solid"))
-                                                  :stroke-alignment :center}]))
-          ;; stroke width/style change with no new color: patch existing stroke
-          (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)))
+          stroke       (conj #(assoc % :strokes [(cond-> {:stroke-color stroke
+                                                          :stroke-opacity 1
+                                                          :stroke-width (or strokeWidth 1)
+                                                          :stroke-style (keyword (or strokeStyle "solid"))
+                                                          :stroke-alignment :center}
+                                                   (some? strokeCapStart) (assoc :stroke-cap-start (->stroke-cap strokeCapStart))
+                                                   (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd)))]))
+          ;; stroke width/style/caps change with no new color: patch existing stroke
+          (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)
+                                 (some? strokeCapStart) (some? strokeCapEnd)))
           (conj (fn [s]
                   (update s :strokes
                           (fn [strokes]
@@ -227,8 +254,10 @@
                                           {:stroke-color "#000000" :stroke-opacity 1
                                            :stroke-alignment :center})]
                               [(cond-> st0
-                                 (some? strokeWidth) (assoc :stroke-width strokeWidth)
-                                 (some? strokeStyle) (assoc :stroke-style (keyword strokeStyle)))]))))))]
+                                 (some? strokeWidth)    (assoc :stroke-width strokeWidth)
+                                 (some? strokeStyle)    (assoc :stroke-style (keyword strokeStyle))
+                                 (some? strokeCapStart) (assoc :stroke-cap-start (->stroke-cap strokeCapStart))
+                                 (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd)))]))))))]
     (when (seq attr-fns)
       (st/emit! (dwsh/update-shapes [id] (apply comp attr-fns))))
     ;; hide/lock — some? so `false` genuinely unhides/unlocks

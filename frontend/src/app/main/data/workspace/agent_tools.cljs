@@ -343,7 +343,9 @@
          "writes return the SETTLED geometry — if it differs from what you "
          "sent, something (a parent layout, a component) owns it; do not "
          "re-send the same numbers. A layout child set absolute takes x/y "
-         "relative to its PARENT board, not the page. For several shapes use "
+         "relative to its PARENT board, not the page. Stroke width/style and "
+         "end-caps (strokeCapStart/strokeCapEnd — e.g. circle-marker for a dot "
+         "on a line end) are settable too. For several shapes use "
          "update_shapes — one call, one undo step.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
@@ -378,6 +380,12 @@
                                                       :opacity {:type "number" :description "0–1"}}}
                                 :strokeWidth {:type "number" :description "px"}
                                 :strokeStyle {:type "string" :enum ["solid" "dotted" "dashed" "mixed"]}
+                                :strokeCapStart {:type "string"
+                                                 :enum ["round" "square" "line-arrow" "triangle-arrow" "square-marker" "circle-marker" "diamond-marker" "none"]
+                                                 :description "end cap at the line/path START; circle-marker draws a filled dot. none clears it. Only shows on open paths/lines."}
+                                :strokeCapEnd {:type "string"
+                                               :enum ["round" "square" "line-arrow" "triangle-arrow" "square-marker" "circle-marker" "diamond-marker" "none"]
+                                               :description "end cap at the line/path END; e.g. circle-marker for a dot, triangle-arrow for an arrowhead."}
                                 :rotation {:type "number" :description "absolute degrees"}
                                 :flipH {:type "boolean" :description "flip horizontally (a toggle)"}
                                 :flipV {:type "boolean" :description "flip vertically (a toggle)"}

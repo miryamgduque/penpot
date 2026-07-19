@@ -343,9 +343,10 @@
          "writes return the SETTLED geometry — if it differs from what you "
          "sent, something (a parent layout, a component) owns it; do not "
          "re-send the same numbers. A layout child set absolute takes x/y "
-         "relative to its PARENT board, not the page. Stroke width/style and "
-         "end-caps (strokeCapStart/strokeCapEnd — e.g. circle-marker for a dot "
-         "on a line end) are settable too. For several shapes use "
+         "relative to its PARENT board, not the page. Stroke width/style, its "
+         "dash pattern (strokeDash/strokeGap, in px, with strokeStyle dashed) "
+         "and end-caps (strokeCapStart/strokeCapEnd — e.g. circle-marker for a "
+         "dot on a line end) are settable too. For several shapes use "
          "update_shapes — one call, one undo step.")
     :input-schema {:type "object"
                    :properties {:shapeId {:type "string"}
@@ -380,6 +381,8 @@
                                                       :opacity {:type "number" :description "0–1"}}}
                                 :strokeWidth {:type "number" :description "px"}
                                 :strokeStyle {:type "string" :enum ["solid" "dotted" "dashed" "mixed"]}
+                                :strokeDash {:type "number" :description "dash length in px (needs strokeStyle dashed); pair with strokeGap"}
+                                :strokeGap {:type "number" :description "gap between dashes in px (needs strokeStyle dashed)"}
                                 :strokeCapStart {:type "string"
                                                  :enum ["round" "square" "line-arrow" "triangle-arrow" "square-marker" "circle-marker" "diamond-marker" "none"]
                                                  :description "end cap at the line/path START; circle-marker draws a filled dot. none clears it. Only shows on open paths/lines."}

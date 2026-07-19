@@ -221,7 +221,7 @@
   transaction of its own — the caller brackets one around the whole call (or
   the whole batch)."
   [{:keys [x y width height fill stroke shadow strokeWidth strokeStyle
-           strokeCapStart strokeCapEnd hidden locked rotation flipH flipV] :as input} id]
+           strokeCapStart strokeCapEnd strokeDash strokeGap hidden locked rotation flipH flipV] :as input} id]
   (let [nm     (:name input)
         styles (style-attrs input)
         ;; Every plain attribute write (name, styles, shadow, fill, stroke) is a
@@ -243,10 +243,13 @@
                                                           :stroke-style (keyword (or strokeStyle "solid"))
                                                           :stroke-alignment :center}
                                                    (some? strokeCapStart) (assoc :stroke-cap-start (->stroke-cap strokeCapStart))
-                                                   (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd)))]))
-          ;; stroke width/style/caps change with no new color: patch existing stroke
+                                                   (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd))
+                                                   (some? strokeDash)     (assoc :stroke-dash strokeDash)
+                                                   (some? strokeGap)      (assoc :stroke-gap strokeGap))]))
+          ;; stroke width/style/caps/dash change with no new color: patch existing stroke
           (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)
-                                 (some? strokeCapStart) (some? strokeCapEnd)))
+                                 (some? strokeCapStart) (some? strokeCapEnd)
+                                 (some? strokeDash) (some? strokeGap)))
           (conj (fn [s]
                   (update s :strokes
                           (fn [strokes]
@@ -257,7 +260,9 @@
                                  (some? strokeWidth)    (assoc :stroke-width strokeWidth)
                                  (some? strokeStyle)    (assoc :stroke-style (keyword strokeStyle))
                                  (some? strokeCapStart) (assoc :stroke-cap-start (->stroke-cap strokeCapStart))
-                                 (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd)))]))))))]
+                                 (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd))
+                                 (some? strokeDash)     (assoc :stroke-dash strokeDash)
+                                 (some? strokeGap)      (assoc :stroke-gap strokeGap))]))))))]
     (when (seq attr-fns)
       (st/emit! (dwsh/update-shapes [id] (apply comp attr-fns))))
     ;; hide/lock — some? so `false` genuinely unhides/unlocks

@@ -210,6 +210,34 @@
                                 :parentId {:type "string" :description "board/group id to nest into"}}
                    :required ["type" "x" "y" "width" "height"]}}
 
+   {:name "create_line"
+    :description
+    (str "Draws a straight line as a single vector PATH from (x1,y1) to (x2,y2) "
+         "— the direct way to make a connector or rule, no hand-written SVG and "
+         "never a board (create_shape can't make lines). Optional stroke color, "
+         "width, style, dash pattern (strokeDash/strokeGap, px) and end caps "
+         "(strokeCapStart/strokeCapEnd — circle-marker draws a dot, "
+         "triangle-arrow an arrowhead) all apply in this one call. Pass parentId "
+         "to drop it into a board/layout. A raw stroke color is allowed (like "
+         "create_from_svg); audit_file still flags it. Returns the new path id.")
+    :input-schema {:type "object"
+                   :properties {:x1 {:type "number"} :y1 {:type "number"}
+                                :x2 {:type "number"} :y2 {:type "number"}
+                                :stroke {:type "string" :description "hex, e.g. #111111"}
+                                :strokeWidth {:type "number" :description "px (default 1)"}
+                                :strokeStyle {:type "string" :enum ["solid" "dotted" "dashed" "mixed"]}
+                                :strokeDash {:type "number" :description "dash length px (needs strokeStyle dashed)"}
+                                :strokeGap {:type "number" :description "gap px between dashes"}
+                                :strokeCapStart {:type "string"
+                                                 :enum ["round" "square" "line-arrow" "triangle-arrow" "square-marker" "circle-marker" "diamond-marker" "none"]
+                                                 :description "end cap at the start; circle-marker = a dot"}
+                                :strokeCapEnd {:type "string"
+                                               :enum ["round" "square" "line-arrow" "triangle-arrow" "square-marker" "circle-marker" "diamond-marker" "none"]
+                                               :description "end cap at the end; circle-marker = a dot"}
+                                :name {:type "string"}
+                                :parentId {:type "string" :description "board/group id to nest into"}}
+                   :required ["x1" "y1" "x2" "y2"]}}
+
    {:name "insert_image"
     :description
     (str "Fetches an image from an http(s) URL (downloaded server-side) and "
@@ -1027,6 +1055,7 @@
          "set_foundation"     (atg/set-foundation input)
          "audit_file"         (atg/audit-file)
          "create_shape"       (atc/create-shape input)
+         "create_line"        (ats/create-line input)
          "insert_image"       (atm/insert-image input)
          "search_icons"       (atm/search-icons input)
          "insert_icon"        (atm/insert-icon input)

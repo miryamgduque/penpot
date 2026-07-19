@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Penpot AI Agent — approaches, product binding, and infra options</title>
+<style>
+  :root {
+    --bg: #0d1220; --panel: #141b2e; --ink: #e8ecf5; --dim: #93a0b8;
+    --accent: #7c5cff; --coral: #ff6b6b; --mint: #31d0aa; --amber: #ffb454;
+    --mono: "SF Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
+    --sans: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); }
+  .slide { display: none; min-height: 100vh; padding: 5vh 8vw; flex-direction: column;
+    justify-content: center; }
+  .slide.active { display: flex; }
+  .kicker { font-family: var(--mono); font-size: .85rem; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 1rem; }
+  h1 { font-size: 3.2rem; line-height: 1.1; font-weight: 700; max-width: 22ch; }
+  h2 { font-size: 2.1rem; line-height: 1.15; margin-bottom: 1.6rem; max-width: 28ch; }
+  h3 { font-size: 1.05rem; margin-bottom: .5rem; }
+  p, li { font-size: 1.08rem; line-height: 1.55; color: var(--dim); max-width: 70ch; }
+  li strong, p strong { color: var(--ink); font-weight: 600; }
+  ul { padding-left: 1.2rem; display: grid; gap: .55rem; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2.2rem; align-items: start; }
+  .card { background: var(--panel); border: 1px solid #232d47; border-radius: 12px;
+    padding: 1.2rem 1.4rem; }
+  .card h3 { font-family: var(--mono); font-size: .8rem; letter-spacing: .12em;
+    text-transform: uppercase; }
+  .good h3 { color: var(--mint); } .bad h3 { color: var(--coral); }
+  .note h3 { color: var(--amber); }
+  .tag { display: inline-block; font-family: var(--mono); font-size: .72rem;
+    border: 1px solid #2b3757; border-radius: 999px; padding: .15rem .6rem;
+    margin: 0 .35rem .45rem 0; color: var(--dim); }
+  .num { position: fixed; bottom: 2vh; right: 3vw; font-family: var(--mono);
+    font-size: .75rem; color: #3d4a6b; }
+  .foot { position: fixed; bottom: 2vh; left: 3vw; font-family: var(--mono);
+    font-size: .75rem; color: #3d4a6b; }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { text-align: left; padding: .5rem .8rem; border-bottom: 1px solid #232d47;
+    color: var(--dim); vertical-align: top; }
+  th { color: var(--ink); font-family: var(--mono); font-size: .75rem;
+    letter-spacing: .1em; text-transform: uppercase; }
+  td:first-child { color: var(--ink); white-space: nowrap; }
+  .big { font-size: 1.5rem; color: var(--ink); max-width: 30ch; line-height: 1.4; }
+  .metric { font-family: var(--mono); color: var(--mint); }
+  code { font-family: var(--mono); font-size: .92em; color: var(--amber); }
+  @media print {
+    .slide { display: flex !important; page-break-after: always; min-height: 100vh; }
+    .num, .foot { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<section class="slide active">
+  <div class="kicker">feature/ai-skills-prototype · 2026-07-19</div>
+  <h1>An AI design agent, native to Penpot</h1>
+  <p class="big" style="margin-top:1.4rem">The approaches we took, why they bind to the product —
+  and how it deploys: our infra, or the client's, including self-hosted OSS models.</p>
+  <p style="margin-top:2.4rem"><span class="tag">282 commits</span><span class="tag">~24k lines</span><span class="tag">57 native tools</span><span class="tag">925 tests</span><span class="tag">synced upstream develop</span></p>
+</section>
+
+<section class="slide">
+  <div class="kicker">What shipped</div>
+  <h2>The product surface, not a demo</h2>
+  <div class="cols">
+    <ul>
+      <li><strong>Agent panel</strong> — native workspace dock: streaming chat, stop, model picker, image attachments, slash commands, live spend meter.</li>
+      <li><strong>Skills &amp; rules</strong> — design intent as organizational objects: app → team → file cascade, dashboard CRUD, per-scope enable/disable, promote-to-team.</li>
+      <li><strong>Foundations / DESIGN.md</strong> — standing design intent per file, authored by an interview skill, inlined into every conversation.</li>
+    </ul>
+    <ul>
+      <li><strong>Enforcement</strong> — rules checked at the write path: a raw hex on a token-only file is <em>rejected by the tool</em>, not discouraged by the prompt.</li>
+      <li><strong>Observers &amp; audit</strong> — ambient watchers flag violations as you work; "Fix via chat" hands them to the agent.</li>
+      <li><strong>Durable chats</strong> — per-file conversations in Postgres, restored with their spend meters.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The journey</div>
+  <h2>Three architectures, one survivor</h2>
+  <table>
+    <tr><th>Stage</th><th>Shape</th><th>What it taught us</th></tr>
+    <tr><td>1 · Plugin app</td><td>React app in a plugin iframe driving the public <code>penpot.*</code> API via <code>execute_code</code></td><td>Fast to prototype; but capability = whatever generated code does — no validation, no enforcement, bridge tax everywhere.</td></tr>
+    <tr><td>2 · + MCP door</td><td>MCP server exposing the same skills/guard to external agents (Claude Code, Cursor)</td><td>Protocol clients can't host reactive skills, organizational cascades, or write-path enforcement. Kept as a door, then deliberately retired.</td></tr>
+    <tr><td>3 · Native agent</td><td>The loop, tools, and governance in Penpot's own frontend + a backend streaming proxy</td><td>Typed tools at the mutation boundary; enforcement, caching, metering, persistence — all first-class product.</td></tr>
+  </table>
+</section>
+
+<section class="slide">
+  <div class="kicker">Approach 1</div>
+  <h2>Enforcement is structural, not prompt-based</h2>
+  <ul>
+    <li>Every write rides Penpot's normal <strong>changes pipeline</strong> — undoable, synced to collaborators, exportable. The agent uses Penpot like a user.</li>
+    <li>Rules that matter are checked <strong>at the tool boundary</strong>: token-only-colors rejects the call and names the fix. The model cannot route around it.</li>
+    <li>Tools are <strong>semantic and honest</strong>: reading-order translation, settled-geometry returns, read-back verification — and "I can't" instead of emulation.</li>
+    <li>The eleven-agent OSS survey confirmed: <strong>nobody else does this.</strong> It is the branch's clearest differentiator.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Approach 2</div>
+  <h2>Design intent lives with the file</h2>
+  <ul>
+    <li><strong>Skills cascade</strong> app → team → file, with mandatory no-loosening — a convention set once governs every agent conversation in its scope.</li>
+    <li><strong>Foundations</strong> travel with the file (plugin-data): duplicate a file, the design brief comes along. No per-machine config, no prompt folders on laptops.</li>
+    <li>Playbooks load <strong>on demand</strong>: a routing index rides the prompt; a cheap classifier round injects the matched playbook with the task itself.</li>
+    <li>A build request on a file with <strong>no direction</strong> triggers an anti-generic nudge: commit to type, colour, and signature details before building.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Approach 3</div>
+  <h2>Measure, then fix — the postmortem loop</h2>
+  <div class="cols">
+    <div class="card">
+      <h3>Kahoot session</h3>
+      <p>232 calls, $8.84, wrong flow order baked into the file → tools now speak reading order, validate ids, disclose cascades, return settled geometry.</p>
+    </div>
+    <div class="card">
+      <h3>NYT session</h3>
+      <p>133 rounds for one screen at <span class="metric">1.24 calls/round</span> → composition tools (build_tree, clone_shape, batches), image budgets, playbook injection. Fleet now at <span class="metric">~1.68 calls/round</span>.</p>
+    </div>
+  </div>
+  <p style="margin-top:1.4rem">Every experiment ran against the <strong>live spend meter</strong>; more than once the right outcome was refuting our own plan.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Context economy</div>
+  <h2>Costs are engineered, not hoped for</h2>
+  <ul>
+    <li><strong>Prompt caching</strong> — stable cached prefix (system + tools), volatile context on the user message; cache hits &gt;90% by round 3.</li>
+    <li><strong>Compaction ladder</strong> — stale-result stubbing → structured summary (Task / Done / Decisions / <em>Learned</em> / Open, anchored re-compaction) → hard trim.</li>
+    <li><strong>Side contexts</strong> — broad reading delegated to a cheap-model scout; playbook matching, watcher ticks and compaction never bill like design work.</li>
+    <li>Typical screen build today: <span class="metric">$1–4</span> on frontier models; a one-line rename: <span class="metric">cents</span>.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">The scorecard · 1/2</div>
+  <h2>Native vs MCP vs Plugin — where native wins</h2>
+  <ul>
+    <li><strong>No drift</strong> — agent, tools and skills ship with every Penpot release; a refactor breaks at build time, not at a user's desk.</li>
+    <li><strong>Skills are organizational</strong> — multi-level, inherited, toggleable per scope. An MCP client's skills are files on one laptop.</li>
+    <li><strong>Reactive skills exist at all</strong> — observers need standing presence in the workspace; a protocol client only acts when called.</li>
+    <li><strong>A better API than the API</strong> — typed, validated, semantic tools with write-path enforcement beat <code>execute_code</code> over a plugin surface.</li>
+    <li><strong>Product integration</strong> — caching, spend metering, durable chats, in-canvas forms, wasm renders: none reachable from outside.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">The scorecard · 2/2</div>
+  <h2>Where native costs — and the honest answer</h2>
+  <div class="cols">
+    <div class="card bad">
+      <h3>Costs</h3>
+      <ul>
+        <li>Context management is ours to build (compaction, caching, budgets) — Claude Code/Cursor bring their own.</li>
+        <li>Provider dialects, streaming codecs, model catalogs: maintained in-tree.</li>
+        <li>External agents (Claude Code, Cursor, CI) lost their door when MCP retired.</li>
+      </ul>
+    </div>
+    <div class="card note">
+      <h3>The future door</h3>
+      <p>If external agents matter later: a <strong>thin MCP facade over the same native tool registry</strong> — same skills, same enforcement, one implementation. Not a second stack.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Standing on shoulders</div>
+  <h2>What the OSS field taught us — and what it validated</h2>
+  <div class="cols">
+    <div class="card good">
+      <h3>Adopted / adopting</h3>
+      <ul>
+        <li>Compaction that keeps lessons; anchored re-summaries (Kimi, opencode)</li>
+        <li>Scope minimalism &amp; question policy (Kimi, Codex-style prompts)</li>
+        <li>Ban-list anti-generic language (bolt.diy); parallelism doctrine (Cline, Zed, Gemini)</li>
+        <li>Plan tool: GO — passive progress visibility (Codex's one-in-progress invariant)</li>
+      </ul>
+    </div>
+    <div class="card good">
+      <h3>Ours alone (11 projects checked)</h3>
+      <ul>
+        <li>Write-path rule enforcement</li>
+        <li>Visual self-review loop (render → look → fix)</li>
+        <li>Graduated governance (suggest / apply-with-review / auto-fix)</li>
+        <li>Organizational skills cascade with reactive observers</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Infra · today</div>
+  <h2>BYOK through a dumb-pipe proxy</h2>
+  <ul>
+    <li>User pastes their provider key in <strong>Settings → Integrations</strong>; keys live server-side only, never reach the browser.</li>
+    <li>The backend proxy (<code>ai_providers.clj</code>) re-emits provider SSE verbatim — no request inspection, no lock-in, provider switching mid-conversation.</li>
+    <li>Speaks <strong>two dialects</strong>: Anthropic native, and OpenAI-compatible (OpenAI, Zhipu, Moonshot today) — one canonical message model re-encoded per round.</li>
+    <li>No subscription through Penpot; spend is the user's own, metered live in the panel.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Infra · option A</div>
+  <h2>Penpot-managed inference</h2>
+  <div class="cols">
+    <div class="card good">
+      <h3>Pros</h3>
+      <ul>
+        <li>Zero-setup UX: AI works out of the box; billing bundled with the product.</li>
+        <li>Central model curation, prompt-cache tuning, migration on our schedule.</li>
+        <li>Fleet-level telemetry → evals and regression detection.</li>
+      </ul>
+    </div>
+    <div class="card bad">
+      <h3>Cons</h3>
+      <ul>
+        <li>We own margins, abuse, quotas and rate limits.</li>
+        <li>Data-processing role changes: design content transits our inference path.</li>
+        <li>GPU capacity or reseller contracts; on-call for a new class of outage.</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:1.2rem">Fits Penpot SaaS tiers; BYOK stays as the escape hatch it already is.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Infra · option B</div>
+  <h2>Client infra — including self-hosted OSS models</h2>
+  <ul>
+    <li>Penpot is <strong>self-hostable</strong>; the agent should be too. Any endpoint speaking the OpenAI dialect plugs into the existing proxy: <strong>vLLM, TGI, Ollama, llama.cpp servers</strong> — pointing at Qwen, Llama, DeepSeek, GLM…</li>
+    <li>The architecture is ready: BYOK = bring your own <em>endpoint</em> is one base-URL field away; the canonical message model already re-encodes per dialect.</li>
+    <li><strong>On-prem privacy</strong>: designs never leave the client's network — the strongest enterprise story we can offer.</li>
+  </ul>
+  <div class="cols" style="margin-top:1.2rem">
+    <div class="card note">
+      <h3>Honest caveats</h3>
+      <ul>
+        <li>Most OSS servers lack <strong>prompt caching</strong> — our cost model leans on it; expect different economics per round.</li>
+        <li>Tool-calling and vision quality vary sharply by model; the 57-tool surface needs an <strong>eval gate</strong> per model.</li>
+        <li>Our OpenAI-dialect image path is still live-unverified — verify before offering vision on OSS models.</li>
+      </ul>
+    </div>
+    <div class="card good">
+      <h3>Why it's still right</h3>
+      <ul>
+        <li>Matches Penpot's open-source identity and enterprise deployments.</li>
+        <li>Skills, enforcement, foundations are model-agnostic — the moat is the product layer, not the model.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Recommendation</div>
+  <h2>Ship the ladder, keep the moat</h2>
+  <ul>
+    <li><strong>Default:</strong> BYOK (today, done) → <strong>custom endpoint field</strong> for OSS/self-hosted (small, high enterprise value) → <strong>managed tier</strong> when demand proves out.</li>
+    <li><strong>Before any OSS-model offer:</strong> the eval harness + live verification of the OpenAI-dialect path; per-model capability gating (vision, tool-calling).</li>
+    <li><strong>Keep investing where we're alone:</strong> write-path enforcement, organizational skills, self-review — the model market commoditizes; the product binding doesn't.</li>
+    <li><strong>External agents later:</strong> thin MCP facade over the native registry, if and when a customer asks.</li>
+  </ul>
+</section>
+
+<div class="num"><span id="cur">1</span>/<span id="tot">13</span></div>
+<div class="foot">penpot · feature/ai-skills-prototype · ←/→ to navigate · print for PDF</div>
+
+<script>
+  const slides = [...document.querySelectorAll(".slide")];
+  document.getElementById("tot").textContent = slides.length;
+  let i = 0;
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, j) => s.classList.toggle("active", j === i));
+    document.getElementById("cur").textContent = i + 1;
+  }
+  addEventListener("keydown", (e) => {
+    if (["ArrowRight", "PageDown", " "].includes(e.key)) show(i + 1);
+    if (["ArrowLeft", "PageUp"].includes(e.key)) show(i - 1);
+    if (e.key === "Home") show(0);
+    if (e.key === "End") show(slides.length - 1);
+  });
+  addEventListener("click", (e) => {
+    if (e.clientX > innerWidth / 2) show(i + 1); else show(i - 1);
+  });
+</script>
+</body>
+</html>

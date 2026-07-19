@@ -12,8 +12,10 @@
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
+   [app.common.geom.rect :as grc]
    [app.common.types.component :as ctc]
    [app.common.types.container :as ctn]
+   [app.common.types.path :as path]
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
    [app.common.types.text :as txt]
@@ -470,6 +472,66 @@
                          {})))))))))
 
 ;; --- Text & component tools
+
+(defn create-line
+  "Draws a straight two-node vector PATH from (x1,y1) to (x2,y2) — the direct way
+  to make a line/connector, no hand-written SVG and never a board. Stroke color,
+  width, style, dash/gap and end caps all land in this one call. The geometry
+  (content/selrect/points) mirrors the native Line tool. Like create_from_svg, a
+  raw stroke color is allowed here (audit_file still flags it)."
+  [{:keys [x1 y1 x2 y2 stroke strokeWidth strokeStyle strokeDash strokeGap
+           strokeCapStart strokeCapEnd parentId] :as input}]
+  (if-let [problem (or (when-not (every? number? [x1 y1 x2 y2])
+                         "create_line: x1, y1, x2 and y2 are all required numbers")
+                       (when (and (= x1 x2) (= y1 y2))
+                         "create_line: start and end are the same point — a line needs length")
+                       (atc/enum-problem "create_line" "strokeStyle" strokeStyle stroke-styles)
+                       (atc/enum-problem "create_line" "strokeCapStart" strokeCapStart stroke-cap-inputs)
+                       (atc/enum-problem "create_line" "strokeCapEnd" strokeCapEnd stroke-cap-inputs))]
+    (rx/throw (ex-info problem {}))
+    (let [nm       (:name input)
+          state    @st/state
+          page     (dsh/lookup-page state)
+          objects  (:objects page)
+          req-pid  (some-> parentId parse-uuid)
+          ;; same guards as create-shape: never inject into a component copy,
+          ;; and resolve a frame-id that actually points at a frame
+          pid      (when (and req-pid (contains? objects req-pid))
+                     (:id (ctn/get-first-valid-parent objects req-pid)))
+          parent   (get objects pid)
+          parent?  (some? parent)
+          frame-id (when parent?
+                     (if (cfh/frame-shape? parent) pid (:frame-id parent)))
+          content  (path/points->content [(gpt/point x1 y1) (gpt/point x2 y2)])
+          selrect  (path/calc-selrect content)
+          pts      (grc/rect->points selrect)
+          stroke*  (cond-> {:stroke-color (or stroke "#000000")
+                            :stroke-opacity 1
+                            :stroke-width (or strokeWidth 1)
+                            :stroke-style (keyword (or strokeStyle "solid"))
+                            :stroke-alignment :center}
+                     (some? strokeDash)     (assoc :stroke-dash strokeDash)
+                     (some? strokeGap)      (assoc :stroke-gap strokeGap)
+                     (some? strokeCapStart) (assoc :stroke-cap-start (->stroke-cap strokeCapStart))
+                     (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd)))
+          shape    (-> (cts/setup-shape
+                        (cond-> {:type :path
+                                 :strokes [stroke*]
+                                 :fills []
+                                 :content content}
+                          nm (assoc :name nm)))
+                       (assoc :selrect selrect :points pts)
+                       (cond-> parent? (assoc :parent-id pid :frame-id frame-id)))
+          changes  (-> (cb/empty-changes)
+                       (cb/with-page page)
+                       (cb/with-objects objects)
+                       (cb/add-object shape
+                                      (when-let [idx (some-> parent atc/flow-append-index)]
+                                        {:index idx})))]
+      (atc/interrupt!)
+      (st/emit! (dch/commit-changes changes))
+      (rx/of {:id (dm/str (:id shape))
+              :note "line created as a single vector path — verify with read_design"}))))
 
 (defn create-text
   [{:keys [text x y parentId fill align] :as input}]

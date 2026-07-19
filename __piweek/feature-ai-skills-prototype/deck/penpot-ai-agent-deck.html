@@ -296,6 +296,34 @@
   </ul>
 </section>
 
+<section class="slide">
+  <div class="kicker">Roadmap</div>
+  <h2>A realistic path to publishing</h2>
+  <table style="margin-bottom:1.2rem">
+    <tr><th>When</th><th>Milestone</th><th>Depends on</th></tr>
+    <tr><td>Aug '26</td><td><strong>Harden</strong> — survey tier-1/2 adoptions, parallelism A/B + plan tool, OpenAI-dialect + vision verification, key encryption, quotas, seed evals harness</td><td>—</td></tr>
+    <tr><td>Sep–Oct '26</td><td><strong>Designer pilot</strong> — structured user testing on real work; record sessions (chats + post-agent edit deltas); nightly insight loop feeding tools &amp; doctrine</td><td>dedicated server · model budget</td></tr>
+    <tr><td>Oct–Nov '26</td><td><strong>OSS-model track</strong> (parallel) — custom-endpoint field, per-model eval gates, capability matrix</td><td>GPU server (vLLM)</td></tr>
+    <tr><td>Nov–Dec '26</td><td><strong>Private beta</strong> — selected external teams; managed-tier decision on real economics</td><td>pilot learnings</td></tr>
+    <tr><td>Q1 '27</td><td><strong>Publish</strong> — GA behind a flag; enterprise self-hosted endpoint documented</td><td>beta exit criteria</td></tr>
+  </table>
+  <div class="cols">
+    <div class="card note">
+      <h3>What we're asking for</h3>
+      <ul>
+        <li><strong>Designers' time</strong> — scheduled user-testing sessions; their real work is the training signal.</li>
+        <li><strong>A dedicated server</strong> — staging instance with session recording + the nightly agentic analysis loop.</li>
+        <li><strong>Model budget</strong> — a broad set for the pilot and evals (~$2–4k/mo while piloting).</li>
+        <li><strong>Ideally: a GPU server with OSS models</strong> — vLLM-class serving to prove the self-hosted story we want to sell.</li>
+      </ul>
+    </div>
+    <div class="card good">
+      <h3>Why these dates hold</h3>
+      <p>The critical path is the <strong>flywheel, not the code</strong>: every milestone after August consumes pilot data. Fund the server + budget first and the rest is sequencing; without them the dates slip one-for-one.</p>
+    </div>
+  </div>
+</section>
+
 <div class="num"><span id="cur">1</span>/<span id="tot">13</span></div>
 <div class="foot">penpot · feature/ai-skills-prototype · ←/→ to navigate · print for PDF</div>
 

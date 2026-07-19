@@ -460,6 +460,16 @@ its numbers.
 - **Plan generation** — a visible plan artifact, one step in progress at a time: passive
   progress for the user, resumability for the agent (the survey's clearest GO signal).
 
+**Roadmap to publish** (deck's closing slide; dates are targets, dependencies explicit):
+Aug '26 harden (tier-1/2 adoptions, plan tool, dialect/vision verification, key encryption,
+evals seed) → Sep–Oct designer pilot (structured user testing; session recording = chats +
+post-agent edit deltas; nightly insight loop) → Oct–Nov OSS-model track in parallel
+(custom-endpoint field, per-model eval gates, GPU server with vLLM) → Nov–Dec private beta →
+Q1 '27 publish (GA behind a flag; enterprise self-hosted endpoint documented). Asks: designers'
+time, a dedicated server for the recording/analysis loop, ~$2–4k/mo model budget while piloting,
+and ideally a GPU server serving OSS models. The critical path is the flywheel, not the code —
+without the server + budget the dates slip one-for-one.
+
 ---
 
 ## Testing

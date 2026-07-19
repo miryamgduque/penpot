@@ -460,6 +460,16 @@ its numbers.
 - **Plan generation** — a visible plan artifact, one step in progress at a time: passive
   progress for the user, resumability for the agent (the survey's clearest GO signal).
 
+**Even further out** (deck slide): a **detached, Claude-Code-style agent** — headless sessions
+against design files, unlocking standing audit loops (nightly governance/a11y/token sweeps filing
+findings as comments/reports), long builds that outlive a browser tab, and CI-for-design; the
+honest caveat is that co-creation wants the canvas, so detached fits the audit/review/batch half
+(renders already give a headless agent eyes). And **agents as the audience**: developers write and
+review less code every year — assume an agent (Claude Code, Cursor, Codex) on the receiving end
+of the handoff and deliver machine-consumable artifacts (structured specs, tokens, component
+contracts, `generate_code` output) through the thin MCP facade over the same native registry.
+Design-to-agent, not just design-to-developer.
+
 **Roadmap to publish** (deck's closing slide; dates are targets, dependencies explicit):
 Aug '26 harden (tier-1/2 adoptions, plan tool, dialect/vision verification, key encryption,
 evals seed) → Sep–Oct designer pilot (structured user testing; session recording = chats +

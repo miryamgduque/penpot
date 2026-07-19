@@ -4,8 +4,9 @@
 
 **What this branch is:** a native AI design agent built into the Penpot workspace, governed by a
 **skills & rules** system — design intent that lives with the file/team/instance, is inherited by
-the agent, and whose enforced rules are checked at the write path. ~240 commits, ~20k lines added
-across the frontend (ClojureScript), the backend (RPC + 8 migrations), and the plugins-runtime.
+the agent, and whose enforced rules are checked at the write path. 282 commits, ~23.7k insertions
+across 98 files in the frontend (ClojureScript), the backend (RPC + 8 migrations), and the
+plugins-runtime. Synced with upstream `penpot/penpot` develop @ `33d478b532` (2026-07-19).
 
 This doc summarizes every functionality area: what it does, the design motivation behind it, and
 how it was implemented. Deeper per-stream detail lives in the phased plans under
@@ -67,7 +68,7 @@ boundary instead of inside arbitrary generated code.
 - Streaming UX (US #27): token streaming, a working stop button, collapsible tool-call groups,
   markdown rendered via `marked.lexer` → rumext elements (never `innerHTML`).
 
-## 3. The agent's design capabilities — 45 native tools
+## 3. The agent's design capabilities — 57 native tools
 
 **What it does.** The agent can read a design as structured data or as code, and write nearly the
 whole design surface: shapes, text, flex/grid layout, components/instances/variants, tokens and
@@ -83,8 +84,13 @@ under a standing rule: **never ship a tool that emulates** — if something can'
 the agent saying "I can't" is the correct behavior.
 
 **Implementation.**
-- [`agent_tools.cljs`](../../frontend/src/app/main/data/workspace/agent_tools.cljs) (~3.6k lines):
-  45 tools declared in `tool-specs`, dispatched in `execute-tool`, each returning an rx observable.
+- [`agent_tools.cljs`](../../frontend/src/app/main/data/workspace/agent_tools.cljs): 57 tools
+  declared in `tool-specs`, dispatched in `execute-tool`, each returning an rx observable. Since
+  2026-07-19 the implementations live in ten family namespaces under
+  [`agent_tools/`](../../frontend/src/app/main/data/workspace/agent_tools/) (common / read /
+  structure / layout / components / document / tokens / media / agentic / compose; strictly
+  downward require graph, script-generated split, zero behavior change) — the root file keeps the
+  specs, the dispatch, and the playbook nudge.
 - Writes go through Penpot's normal changes pipeline, so every agent action is **undoable** and
   syncs to collaborators like any human edit.
 - Validation happens before emitting, and error messages name the fix ("validate before emitting,
@@ -395,6 +401,48 @@ follows is the honest scorecard, informed by shipping both.
 
 ---
 
+## 16. Learning from other agents — the OSS adoption program
+
+**What it is.** A deliberate loop: study how other agent products prompt and structure their
+loops, rank what transfers, ship the winners as small phases. Two rounds so far.
+
+**Round 1 — Kimi CLI + opencode** (their published system + compaction prompts) produced the
+[oss-prompt-learnings plan](docs/plans/202607171018-oss-prompt-learnings/README.md); phases 01–05
+shipped 2026-07-18/19:
+- **Compaction keeps lessons** — `compact-system` gained a `## Learned` section (tool errors +
+  fixes, discovered constraints survive compaction) and an *anchored re-compaction* instruction
+  (a second compaction updates the prior summary instead of narrating it).
+- **Governance: scope & other people's work** — smallest change that satisfies the ask; never
+  touch shapes you didn't create outside task scope; update a contradicted foundation in the same
+  turn (`set_foundation`).
+- **`ask_user` question policy** — only questions the file/foundations/defaults can't answer,
+  non-blocked work first, recommended option leads, no permission-style questions.
+- **Visual-direction nudge** — a matched build playbook on a file with no foundations, no
+  components and no tokens lib injects an anti-generic direction block into the user message
+  (volatile slot; structurally once per conversation).
+- **Clickable shape refs** — `[Layer name](shape:<uuid>)` in the transcript renders as a
+  ⌖ chip; one delegated click handler selects + zooms the shape (live-verified). Malformed ids
+  fall back to plain text; the markdown href allowlist is untouched.
+
+**Round 2 — the eleven-project survey** ([docs/oss-agent-survey.md](docs/oss-agent-survey.md),
+2026-07-19): Cline, Roo Code, Aider, OpenHands, Gemini CLI, Codex CLI, Goose, Zed, Onlook,
+bolt.diy, Dyad — read from their actual repo sources and mapped onto our measured weaknesses.
+Headlines: the **plan tool is a GO** (all four platform CLIs ship one; Codex's
+one-item-in-progress invariant is passive progress visibility — the thing the disabled spend
+checkpoint failed to be); parallelism doctrine and bolt.diy's ban-list anti-generic language feed
+existing phases; OpenHands-style deterministic triggers can extend playbook injection past
+message 1. It also confirmed what is **ours alone**: tool-boundary enforcement, the visual
+self-review loop, graduated governance, anchored re-compaction.
+
+**Measurement.** [docs/measuring-agent-efficiency.md](docs/measuring-agent-efficiency.md) +
+[docs/scripts/measure-agent-efficiency.mjs](docs/scripts/measure-agent-efficiency.mjs) extract
+calls/round and cost per conversation from `profile_agent_chat`. Historical baseline across all
+stored chats: **~1.68 calls/round** weighted (NYT session was 1.24 pre-composition-tools) — below
+the ≥2 bar, so the phrasing A/B (plan phase 06) proceeds; phase 08 (plan-tool go/no-go) waits on
+its numbers.
+
+---
+
 ## Testing
 
 - **CLJS:** `agent_test` (880 lines), `agent_tools_test` (1678), plus tests for providers,
@@ -419,11 +467,14 @@ follows is the honest scorecard, informed by shipping both.
 
 ## Known gaps / deferred (tracked in the plans)
 
-- Semantic watcher tick over-flags valid names (fix wanted before the Friday demo).
+- Semantic watcher tick over-flags valid names.
 - Both spend/round brakes disabled by direction — a pathological tool loop now runs until the user
-  stops it; revisit before any multi-user rollout.
+  stops it; revisit before any multi-user rollout (the survey's plan-tool verdict is the intended
+  replacement: passive visibility instead of interruption).
 - Playbook injection and all side-work (scout, compaction, watcher tick) are Anthropic-only.
-- Token-efficiency Phase 07: scripted live before/after measurement.
-- Provider API keys stored plaintext; no per-file conversation quota; app-scope skill CRUD lacks
-  real access control; evals harness.
-- OpenAI vision codec written but unverified (demo was Anthropic-only).
+- OSS plan phase 06 (parallel-phrasing A/B, live runs on the user's key) in flight; phase 08
+  (plan-tool go/no-go) gated on its numbers; the survey's tier-2/3 adoptions await review.
+- Direction nudge live-fire and OpenAI vision codec unverified on a real model turn.
+- Provider API keys stored plaintext; no per-file conversation quota; evals harness.
+- Survey tier-1 prompt upgrades (parallelism language, ban-list nudge additions,
+  directive-vs-inquiry) drafted in the survey doc, not yet applied.

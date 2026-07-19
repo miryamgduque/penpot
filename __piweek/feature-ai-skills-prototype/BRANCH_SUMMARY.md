@@ -441,6 +441,25 @@ stored chats: **~1.68 calls/round** weighted (NYT session was 1.24 pre-compositi
 the ≥2 bar, so the phrasing A/B (plan phase 06) proceeds; phase 08 (plan-tool go/no-go) waits on
 its numbers.
 
+**Future steps** (also the closing slides of the [deck](../deck/penpot-ai-agent-deck.html)):
+
+- **Standing survey loop** — keep learning + adopting from other providers and OSS projects on a
+  cadence; two rounds shipped adoptions within days of reading.
+- **The designer-session flywheel** — sessions are data: we already store every agent
+  conversation per file; add the designer's own post-agent edits (a manual fix of a misaligned or
+  mis-nested shape is ground-truth feedback). A daily agentic loop mines transcripts + edit
+  deltas for insights — postmortems on autopilot — feeding tools, doctrine and playbooks, and
+  surfacing feedback to the user ("a skill/foundation would fix this recurring miss").
+- **Vision economy** — we rely heavily on renders, but structure/nesting checks don't need
+  full-res colour: grayscale/downscaled renders where they suffice. Every KB matters.
+- **Multi-model routing** — cheap models already run the scout/compaction/matching side-work;
+  extend to an architect/executor split (frontier model writes the dense spec, cheap model
+  executes the tool calls), aligned with subtask delegation.
+- **Artifacts generation** — deliverables beyond canvas edits: style guides, handoff specs,
+  component docs, review reports from the same file intelligence.
+- **Plan generation** — a visible plan artifact, one step in progress at a time: passive
+  progress for the user, resumability for the agent (the survey's clearest GO signal).
+
 ---
 
 ## Testing

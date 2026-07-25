@@ -11,6 +11,7 @@
    [frontend-tests.data.agent-test]
    [frontend-tests.data.agent-tools-test]
    [frontend-tests.data.ai-providers-test]
+   [frontend-tests.data.changes-provenance-test]
    [frontend-tests.data.comments-filters-test]
    [frontend-tests.data.dashboard-test]
    [frontend-tests.data.design-doc-test]
@@ -136,6 +137,7 @@
    'frontend-tests.data.agent-test
    'frontend-tests.data.agent-tools-test
    'frontend-tests.data.ai-providers-test
+   'frontend-tests.data.changes-provenance-test
    'frontend-tests.data.comments-filters-test
    'frontend-tests.data.dashboard-test
    'frontend-tests.data.design-doc-test

@@ -30,6 +30,13 @@ from the browser console.
 - [ ] Full suite green
 - [ ] Lint + format
 - [ ] Console-drive a real recording in devenv: start, edit shapes by hand, run an agent turn, stop, read the timeline
+- [ ] **INHERITED FROM PHASE 02 — two-session attribution check.** Phase 02
+      shipped remote attribution but could not live-verify it (Chrome extension
+      unreachable); it is code-traced and unit-tested only. Open the file in two
+      sessions, edit from each, and assert each side records the OTHER's
+      profile-id on its incoming events. This is the check that proves "record
+      every person working on the file" actually works — do not close Phase 04
+      without it
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit
 

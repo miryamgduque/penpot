@@ -82,14 +82,20 @@ Verified by exploration on 2026-07-21, not from memory:
   yields user-meaningful units without inventing a coalescing heuristic.
   Recording at *undo-entry* granularity instead would be strictly worse — undo
   entries drop `:origin` (`workspace.cljs:514-518`).
-- **Remote changes are anonymous today.** The websocket schema requires
-  `profile-id` and `session-id` (`notifications.cljs:234-243`) but
-  `handle-file-change` destructures neither (`:249`), so attribution is
-  discarded before it reaches the stream. This is small to fix and
-  **load-bearing for the entire premise** — without it every teammate's event
-  is unattributable.
-- **Local commits are anonymous too.** Neither the commit map nor individual
-  changes carry `profile-id`/`session-id`; the recorder must stamp them.
+- ~~**Remote changes are anonymous today.**~~ **FIXED in Phase 02.** The
+  websocket schema required `profile-id`/`session-id`
+  (`notifications.cljs:234-243`) but `handle-file-change` destructured neither
+  (`:249`). It now forwards both into the commit.
+- ~~**Local commits are anonymous too.**~~ **FIXED in Phase 02** —
+  `commit-changes` stamps `(:profile-id state)` / `(:session-id state)`.
+- **A client never sees its own echo** (found in Phase 02, correcting an earlier
+  assumption in this plan): the `:subscribe-file` websocket handler filters
+  messages from the subscriber's own session
+  (`backend/src/app/http/websocket.clj:153-155`). So no dedup is needed. But
+  **`session-id` is per browser TAB** (`config.cljs:116`), so one person with the
+  file open twice is two sessions — attribution is the
+  `(profile-id, session-id)` pair, and nothing may assume one session per
+  person.
 - **The agent has no mutation funnel.** ~22 mutation call sites spread across
   the `agent_tools/*` families, using at least nine different write paths. The
   only viable tagging point is one level up: `execute-tool`
@@ -115,7 +121,7 @@ Verified by exploration on 2026-07-21, not from memory:
 ## Phases
 
 1. [Phase 01 — Event model](./done-phase-01-event-model.md) — pure schema + coalescing + noise filter, no infra ✅
-2. [Phase 02 — Human attribution](./todo-phase-02-human-attribution.md) — carry profile/session id on local and remote commits
+2. [Phase 02 — Human attribution](./done-phase-02-human-attribution.md) — carry profile/session id on local and remote commits ✅ *(live two-session check deferred to Phase 04)*
 3. [Phase 03 — Agent attribution](./todo-phase-03-agent-attribution.md) — ambient marker around `execute-tool`, thread provider/model
 4. [Phase 04 — Client recorder](./todo-phase-04-client-recorder.md) — start/stop lifecycle, in-memory buffers, caps
 5. [Phase 05 — Separate database](./todo-phase-05-separate-database.md) — second Postgres DB, derived pool, its own migrations
@@ -148,8 +154,10 @@ durable. 08–09 make it usable and close the loop.
 
 - **Attribution correctness is the whole feature.** If remote events are
   mislabelled the critique is worse than useless — it would blame the wrong
-  person. Phase 02 carries the risk and must be verified with two real browser
-  sessions, not unit tests alone.
+  person. Phase 02 shipped the code and traced every link of the chain in
+  source, but the **two-session live check is still outstanding** (Chrome
+  extension was unreachable) and is carried on Phase 04's checklist. Until then,
+  remote attribution is code-traced and unit-tested, *not* live-proven.
 - **Volume.** A drag emits dozens of commits. Caps and the noise filter are not
   polish; without them the first real session will be unusable and may blow the
   4M payload cap that already aborted two agent turns (NYT postmortem).

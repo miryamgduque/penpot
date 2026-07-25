@@ -246,7 +246,14 @@
   (sm/check-fn schema:handle-file-change))
 
 (defn handle-file-change
-  [{:keys [file-id changes revn vern] :as msg}]
+  ;; `profile-id`/`session-id` name the collaborator whose edit this is. The
+  ;; schema above has always required them; they used to be dropped here, which
+  ;; left every remote change anonymous by the time it reached the commit
+  ;; stream. Note the backend never sends us our own session's changes
+  ;; (`:subscribe-file` filters them, backend/src/app/http/websocket.clj:153-155),
+  ;; so this is always somebody else — though possibly the same person in
+  ;; another tab, since session-id is per tab.
+  [{:keys [file-id changes revn vern profile-id session-id] :as msg}]
 
   (dm/assert!
    "expected valid parameters"
@@ -267,6 +274,8 @@
                           :file-vern vern
                           :save-undo? false
                           :source :remote
+                          :profile-id profile-id
+                          :session-id session-id
                           :redo-changes (vec changes)
                           :undo-changes []})))))
 

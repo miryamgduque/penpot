@@ -541,3 +541,36 @@
   (when-not (db/read-only? pool)
     (l/info :hint "running migrations" :module module)
     (some->> (seq migrations) (apply-migrations! pool "main"))))
+
+;; --- Design session recordings
+;;
+;; These live in a SEPARATE database (see `::main/sessions-pool`), so they get
+;; their own migration set with its own module name. The existing machinery
+;; already supports this without change: `mg/setup!` creates a `migrations`
+;; bookkeeping table in whichever database the pool points at, and its
+;; `unique(module, step)` means the module name is all that keeps the two sets
+;; apart. Numbering here is therefore independent of Penpot's main sequence,
+;; which also sidesteps the recurring hazard of two branches claiming the same
+;; migration number.
+
+(def session-migrations
+  [{:name "0001-add-design-session-tables"
+    :fn (mg/resource "app/migrations/sessions/0001-add-design-session-tables.sql")}])
+
+(defmethod ig/assert-key ::session-migrations
+  [_ {:keys [::db/pool]}]
+  (assert (or (nil? pool) (db/pool? pool))
+          "expected valid pool or nil"))
+
+(defmethod ig/init-key ::session-migrations
+  [module {:keys [::db/pool]}]
+  ;; A nil pool is the normal, supported state: the sessions database is
+  ;; optional, and Penpot must boot without it. Recording is the only thing
+  ;; that degrades.
+  (if (nil? pool)
+    (l/info :hint "sessions database not configured, skipping migrations"
+            :module module)
+    (when-not (db/read-only? pool)
+      (l/info :hint "running migrations" :module module)
+      (some->> (seq session-migrations)
+               (apply-migrations! pool "sessions")))))

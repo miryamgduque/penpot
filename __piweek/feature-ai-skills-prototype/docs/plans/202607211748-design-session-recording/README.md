@@ -114,9 +114,19 @@ Verified by exploration on 2026-07-21, not from memory:
 - **Plugin-data is the wrong home** (considered, rejected): writes there are
   themselves commits, so recording would feed back through the very chokepoint
   it observes, and pollute undo.
-- **A second pool is a known pattern.** `::db/pool` is an integrant component
-  parameterized by uri/username/password (`backend/src/app/main.clj:151`), so a
-  derived key for a second database is configuration, not surgery.
+- **A second pool is configuration, not surgery** — but **NOT via `ig/derive`**
+  (found in Phase 05): integrant resolves `ig/ref` by `isa?`, so deriving from
+  `::db/pool` makes every pre-existing `(ig/ref ::db/pool)` ambiguous and Penpot
+  refuses to boot. Use a distinct key that delegates to `::db/pool`'s
+  multimethods. Optionality is free either way: `init-key` is wrapped in
+  `(when uri ...)` (`db.clj:87`), so no config means no pool.
+- **The migration machinery is already module-scoped** (Phase 05):
+  `apply-migrations!` takes a module name and `mg/setup!` creates a `migrations`
+  table in whichever database the pool points at, with `unique(module, step)`. A
+  second database needed **no changes** to it.
+- **`ig/assert-key` validates nothing in this build** (Phase 05): `*assert*` is
+  false, so every assert-key body in the backend is compiled out. Do not rely on
+  it for input validation anywhere.
 
 ## Phases
 
@@ -124,7 +134,7 @@ Verified by exploration on 2026-07-21, not from memory:
 2. [Phase 02 — Human attribution](./done-phase-02-human-attribution.md) — carry profile/session id on local and remote commits ✅ *(live two-session check deferred to Phase 04)*
 3. [Phase 03 — Agent attribution](./done-phase-03-agent-attribution.md) — ambient marker around the turn loop's `run-tool`, carrying provider/model ✅ *(live agent-turn check deferred to Phase 04)*
 4. [Phase 04 — Client recorder](./done-phase-04-client-recorder.md) — start/stop lifecycle, in-memory buffers, caps ✅ *(logic only; not reachable in the app until Phase 08)*
-5. [Phase 05 — Separate database](./todo-phase-05-separate-database.md) — second Postgres DB, derived pool, its own migrations
+5. [Phase 05 — Separate database](./done-phase-05-separate-database.md) — second Postgres DB, its own pool and migrations ✅ **live-verified**
 6. [Phase 06 — Session RPC](./todo-phase-06-session-rpc.md) — create/append/finish/list/get commands
 7. [Phase 07 — Persistence wiring](./todo-phase-07-persistence-wiring.md) — debounced flush, lifecycle, reload resume
 8. [Phase 08 — Recording UI](./todo-phase-08-recording-ui.md) — record control + session browser
@@ -163,8 +173,11 @@ durable. 08–09 make it usable and close the loop.
 - **Volume.** A drag emits dozens of commits. Caps and the noise filter are not
   polish; without them the first real session will be unusable and may blow the
   4M payload cap that already aborted two agent turns (NYT postmortem).
-- **A second database is new operational surface.** It must be optional — a
-  Penpot that cannot reach it should log and continue, never fail to boot.
+- ~~**A second database is new operational surface.**~~ **Resolved and
+  live-verified in Phase 05**: with the URI unset the backend logs
+  `"sessions database not configured, skipping migrations"` and boots healthy;
+  with it set, both pools init and the migration applies under its own module.
+  Isolation confirmed — `design_session` exists only in `penpot_sessions`.
 - ~~**`:origin` is an implementation detail.**~~ **Superseded** by the Phase 01
   correction above — events are classified from change types, not `:origin`.
   The residual risk is smaller: a *new* change type appearing upstream falls

@@ -301,32 +301,50 @@
              :types types
              :label (describe kind (count shape-ids) types)
              :raw-count (reduce + (map :raw-count events))
-             :commits (count events)))))
+             ;; SUM, not count: an incremental absorb merges an already-merged
+             ;; event with a new one, so counting would reset the tally
+             :commits (reduce + (map :commits events))))))
+
+(defn- mergeable?
+  "Can `event` be folded into the immediately-preceding `prev`?
+
+  Three constraints, each keeping the timeline truthful:
+
+  - a nil `:undo-group` never merges with anything, including another nil — the
+    group is what says \"one gesture\";
+  - the groups must match, and since only `prev` is considered, only ADJACENT
+    commits can merge: a group interrupted by other work does not swallow the
+    interruption;
+  - the actors must match. Attribution is the point of a recording; merging
+    across people would falsify it."
+  [prev event]
+  (and (some? prev)
+       (some? (:undo-group event))
+       (= (:undo-group prev) (:undo-group event))
+       (= (actor-key prev) (actor-key event))))
+
+(defn absorb
+  "Fold one commit into a timeline, coalescing it into the last event when they
+  are the same actor's same undo-group. Non-recordable commits leave the
+  timeline untouched, so a caller can feed it every commit off the stream.
+
+  This is the single definition of coalescing, used both incrementally by the
+  live recorder and in bulk by `coalesce`."
+  [events commit]
+  (if-not (recordable? commit)
+    events
+    (let [events (vec events)
+          event  (commit->event commit)
+          prev   (peek events)]
+      (if (mergeable? prev event)
+        (conj (pop events) (merge-events [prev event]))
+        (conj events event)))))
 
 (defn coalesce
-  "Fold a commit sequence into a semantic timeline.
-
-  One human gesture emits many commits — a drag is dozens — so adjacent commits
-  that share an `:undo-group` become one event. Three constraints keep the
-  result truthful:
-
-  - only ADJACENT commits merge, so a group interrupted by other work does not
-    swallow the interruption;
-  - a nil `:undo-group` never merges with anything, including another nil;
-  - commits from different actors never merge, even inside one group.
-    Attribution is the point of a recording; merging across people would
-    falsify it."
+  "Fold a commit sequence into a semantic timeline. See `absorb` for the
+  coalescing rules."
   [commits]
-  (->> commits
-       (filter recordable?)
-       (map-indexed
-        (fn [idx commit]
-          ;; a nil undo-group gets a per-index discriminator so it can never
-          ;; collide with a neighbour
-          [(actor-key commit) (or (:undo-group commit) [::ungrouped idx])
-           (commit->event commit)]))
-       (partition-by (fn [[actor group _]] [actor group]))
-       (mapv (fn [run] (merge-events (mapv peek run))))))
+  (reduce absorb [] commits))
 
 ;; --- rendering for the reviewer
 

@@ -23,6 +23,7 @@
    [frontend-tests.data.repo-test]
    [frontend-tests.data.session-actor-test]
    [frontend-tests.data.session-events-test]
+   [frontend-tests.data.session-recorder-test]
    [frontend-tests.data.store-test]
    [frontend-tests.data.uploads-test]
    [frontend-tests.data.viewer-test]
@@ -150,6 +151,7 @@
    'frontend-tests.data.exports-assets-test
    'frontend-tests.data.session-actor-test
    'frontend-tests.data.session-events-test
+   'frontend-tests.data.session-recorder-test
    'frontend-tests.data.store-test
    'frontend-tests.data.uploads-test
    'frontend-tests.data.viewer-test

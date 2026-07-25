@@ -13,8 +13,36 @@ state, and a list of past sessions on the file.
 - [ ] Check the Penpot DS for available icons — note from past sessions: there is **no `stop` glyph** and no pencil/edit glyph (`pentool` was used as a stand-in)
 - [ ] Confirm whether this belongs in the agent panel or the workspace header
 
+## Live verification debt inherited from phases 02, 03 and 04
+
+**This phase owns every outstanding live check for the feature.** Phases 02–04
+are code-traced and unit-tested but have never run in a browser: the
+Claude-in-Chrome extension was unreachable throughout, and — the harder blocker —
+`session-recorder` is not in the `:main` build at all until something requires
+it. **This phase creates that first caller**, so it is where all of it finally
+becomes observable. Do not close Phase 08 without these:
+
+- [ ] **Console-drive a real recording** (from Phase 04): start, edit shapes by
+      hand, run an agent turn, stop, read the timeline.
+- [ ] **Two-session attribution** (from Phase 02): open the file in two sessions,
+      edit from each, assert each side records the OTHER's profile-id on its
+      incoming events. This is the check that proves "record every person working
+      on the file" actually works.
+- [ ] **Agent-vs-human attribution** (from Phase 03): one real agent turn plus one
+      manual edit in the same recording, separated correctly with the right model
+      named. Specifically watch a `create_shape` into a **laid-out board**: its
+      reflow commits land ~100ms AFTER the tool returns and must read `:agent`,
+      not `:user`. That is exactly what `session-actor`'s 400ms grace window
+      exists for and it has never been checked against real reflow timing.
+- [ ] **Noise-filter reality check** (from Phase 01): confirm `:fix-obj`,
+      `:reg-objects` and `:assign`-only `:mod-obj` commits either do not appear in
+      practice or get added to the noise filter. They currently classify as
+      `:other` and are deliberately left visible rather than silently dropped.
+
 ## Checklist
 
+- [ ] Require `session-recorder` from the UI — this is what puts it in the
+      `:main` build and makes everything above testable
 - [ ] Record control: start/stop with unambiguous active state (recording must never be ambiguous — see Notes)
 - [ ] Live counter while recording (events captured, elapsed)
 - [ ] Session list: past sessions on this file, newest first, with participant count and duration

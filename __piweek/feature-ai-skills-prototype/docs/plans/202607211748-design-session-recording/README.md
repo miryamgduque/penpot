@@ -123,7 +123,7 @@ Verified by exploration on 2026-07-21, not from memory:
 1. [Phase 01 — Event model](./done-phase-01-event-model.md) — pure schema + coalescing + noise filter, no infra ✅
 2. [Phase 02 — Human attribution](./done-phase-02-human-attribution.md) — carry profile/session id on local and remote commits ✅ *(live two-session check deferred to Phase 04)*
 3. [Phase 03 — Agent attribution](./done-phase-03-agent-attribution.md) — ambient marker around the turn loop's `run-tool`, carrying provider/model ✅ *(live agent-turn check deferred to Phase 04)*
-4. [Phase 04 — Client recorder](./todo-phase-04-client-recorder.md) — start/stop lifecycle, in-memory buffers, caps
+4. [Phase 04 — Client recorder](./done-phase-04-client-recorder.md) — start/stop lifecycle, in-memory buffers, caps ✅ *(logic only; not reachable in the app until Phase 08)*
 5. [Phase 05 — Separate database](./todo-phase-05-separate-database.md) — second Postgres DB, derived pool, its own migrations
 6. [Phase 06 — Session RPC](./todo-phase-06-session-rpc.md) — create/append/finish/list/get commands
 7. [Phase 07 — Persistence wiring](./todo-phase-07-persistence-wiring.md) — debounced flush, lifecycle, reload resume
@@ -154,10 +154,12 @@ durable. 08–09 make it usable and close the loop.
 
 - **Attribution correctness is the whole feature.** If remote events are
   mislabelled the critique is worse than useless — it would blame the wrong
-  person. Phase 02 shipped the code and traced every link of the chain in
-  source, but the **two-session live check is still outstanding** (Chrome
-  extension was unreachable) and is carried on Phase 04's checklist. Until then,
-  remote attribution is code-traced and unit-tested, *not* live-proven.
+  person. Phases 02 and 03 shipped the code and traced every link in source, but
+  **nothing has run in a browser yet**: Chrome was unreachable all session, and
+  `session-recorder` is not even in the `:main` build until something requires
+  it. **Phase 08 creates the first caller and owns every outstanding live check**
+  (see its "Live verification debt" section). Until then treat all attribution as
+  code-traced and unit-tested, *not* live-proven.
 - **Volume.** A drag emits dozens of commits. Caps and the noise filter are not
   polish; without them the first real session will be unusable and may blow the
   4M payload cap that already aborted two agent turns (NYT postmortem).

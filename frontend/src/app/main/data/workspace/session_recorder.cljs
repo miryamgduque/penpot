@@ -93,13 +93,18 @@
 
 (defn- stop-session
   "Mark a session stopped, keeping the FIRST reason: a cap that ended the
-  recording should not be relabelled by the teardown stop that follows it."
+  recording should not be relabelled by the teardown stop that follows it.
+
+  Leaves the session `:dirty?` so the closing flush is sent even when no new
+  events arrived since the last one — otherwise the row would never be marked
+  finished (see `session-persist`)."
   [s reason]
   (if (:active? s)
     (assoc s
            :active? false
            :stopped-at (now-ms)
            :stop-reason reason
+           :dirty? true
            ;; raw is ephemeral by decision — it existed to back the recording
            :raw [])
     s))
@@ -141,7 +146,10 @@
         s'      (assoc s
                        :events events'
                        :raw raw
-                       :raw-dropped (+ (:raw-dropped s 0) dropped))]
+                       :raw-dropped (+ (:raw-dropped s 0) dropped)
+                       ;; there is something new to persist; `session-persist`
+                       ;; clears this on a successful flush
+                       :dirty? true)]
     (if (>= (count events') max-events)
       (stop-session s' :event-cap)
       s')))
@@ -168,8 +176,12 @@
           :else
           (assoc-in state [:session-recorder file-id] (absorb-into s commit)))))))
 
-(defn- watch-commits
+(defn watch-commits
   "Subscribe to the commit stream until the recording ends or the file closes.
+
+  Public because a resumed recording (`session-persist/resume-recording`) has to
+  restart capture without going through `start-recording`, which would reset the
+  session it just restored.
 
   Stops on `::stop-recording` and on `::dw/finalize-workspace`; the latter also
   emits an explicit stop so a recording can never outlive its file, nor be
@@ -203,13 +215,19 @@
         (assoc-in state [:session-recorder file-id]
                   {:id (uuid/next)
                    :file-id file-id
+                   :session-id (:session-id state)
                    :started-at (now-ms)
                    :stopped-at nil
                    :stop-reason nil
                    :active? true
                    :events []
                    :raw []
-                   :raw-dropped 0})
+                   :raw-dropped 0
+                   ;; dirty from the start so the row is created before any
+                   ;; events are flushed (phase 06 folded create into upsert)
+                   :dirty? true
+                   :flush-failures 0
+                   :local-only? false})
         state))
 
     ptk/WatchEvent

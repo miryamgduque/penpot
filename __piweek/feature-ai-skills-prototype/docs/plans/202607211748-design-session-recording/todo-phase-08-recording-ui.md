@@ -34,6 +34,9 @@ becomes observable. Do not close Phase 08 without these:
       reflow commits land ~100ms AFTER the tool returns and must read `:agent`,
       not `:user`. That is exactly what `session-actor`'s 400ms grace window
       exists for and it has never been checked against real reflow timing.
+- [ ] **Reload mid-recording** (from Phase 07): start a recording, refresh the
+      page, confirm it resumes with its timeline and that the row eventually
+      closes with a real stop reason rather than staying open forever.
 - [ ] **Noise-filter reality check** (from Phase 01): confirm `:fix-obj`,
       `:reg-objects` and `:assign`-only `:mod-obj` commits either do not appear in
       practice or get added to the noise filter. They currently classify as
@@ -41,8 +44,15 @@ becomes observable. Do not close Phase 08 without these:
 
 ## Checklist
 
-- [ ] Require `session-recorder` from the UI — this is what puts it in the
-      `:main` build and makes everything above testable
+- [ ] Require `session-recorder` AND `session-persist` from the UI — this is what
+      puts them in the `:main` build and makes everything above testable
+- [ ] Emit `session-persist/start-persisting` alongside `start-recording` (two
+      separate subscriptions on purpose — see Phase 07's notes)
+- [ ] Call `session-persist/resume-recording` on mount, so a reload mid-recording
+      picks up where it left off
+- [ ] **Surface `:local-only?`** — a recording whose flushes kept failing keeps
+      recording but is no longer persisting; hiding that would make a
+      half-persisted session look complete
 - [ ] Record control: start/stop with unambiguous active state (recording must never be ambiguous — see Notes)
 - [ ] Live counter while recording (events captured, elapsed)
 - [ ] Session list: past sessions on this file, newest first, with participant count and duration

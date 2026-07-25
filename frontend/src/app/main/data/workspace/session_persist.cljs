@@ -154,6 +154,56 @@
                             (rx/of (flushed file-id))))
                (rx/catch (fn [_] (rx/of (flush-failed file-id))))))))))
 
+;; --- the file's session list
+
+(defn- sessions-fetched
+  [file-id rows]
+  (ptk/reify ::sessions-fetched
+    ptk/UpdateEvent
+    (update [_ state]
+      (assoc-in state [:design-sessions file-id] (vec rows)))))
+
+(defn fetch-sessions
+  "Load this file's recorded sessions (metadata only).
+
+  The backend returns every session for an admin and only your own otherwise, so
+  the client does no filtering — it renders what it is given."
+  []
+  (ptk/reify ::fetch-sessions
+    ptk/WatchEvent
+    (watch [_ state _]
+      (when-let [file-id (:current-file-id state)]
+        (->> (rp/cmd! :get-design-sessions {:file-id file-id})
+             (rx/map (fn [rows] (sessions-fetched file-id rows)))
+             ;; a missing sessions database is not an error worth toasting: the
+             ;; list is simply empty
+             (rx/catch (fn [_] (rx/of (sessions-fetched file-id [])))))))))
+
+;; --- export, the bot-facing path
+;;
+;; Admins only, enforced by the backend. The bundle is structured events rather
+;; than prose so it can be fed straight to an agent.
+
+(defn export-sessions
+  "Fetch the export bundle for this file and hand it to `on-ready` as pretty JSON.
+  `ids` narrows it; omit for everything."
+  ([on-ready] (export-sessions on-ready nil))
+  ([on-ready ids]
+   (ptk/reify ::export-sessions
+     ptk/WatchEvent
+     (watch [_ state _]
+       (when-let [file-id (:current-file-id state)]
+         (->> (rp/cmd! :export-design-sessions
+                       (cond-> {:file-id file-id}
+                         (seq ids) (assoc :ids (vec ids))))
+              (rx/map (fn [bundle]
+                        (on-ready (js/JSON.stringify (clj->js bundle) nil 2))
+                        nil))
+              (rx/filter some?)
+              (rx/catch (fn [cause]
+                          (on-ready nil (or (:code (ex-data cause)) :export-failed))
+                          (rx/empty)))))))))
+
 ;; --- resume after a reload
 
 (defn- at-ms

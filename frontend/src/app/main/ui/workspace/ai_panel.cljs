@@ -47,6 +47,7 @@
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
    [app.main.ui.hooks :as hooks]
+   [app.main.ui.workspace.session-recorder :as session-recorder]
    [app.util.dom :as dom]
    [app.util.keyboard :as kbd]
    [app.util.object :as obj]
@@ -2602,6 +2603,11 @@
          ;; act on the chat itself. Foundations / Skills navigation and the
          ;; text-size stepper live in the More-actions menu (US #38).
          [:> chat-controls*]
+         ;; Design session recording. Sits beside the conversation controls
+         ;; because it is the other thing you start and stop on a file — but it
+         ;; records EVERYONE's edits, not just the agent's (see
+         ;; app.main.ui.workspace.session-recorder).
+         [:> session-recorder/record-controls*]
          ;; More actions — a dropdown of extra controls: the panel's
          ;; destinations (Foundations / Skills) and the text-size stepper.
          [:div {:class (stl/css :more-actions)

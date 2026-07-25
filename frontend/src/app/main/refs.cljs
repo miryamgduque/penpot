@@ -314,6 +314,25 @@
                  (dm/get-in state [:ai-panel file-id :busy?])))
              st/state))
 
+;; --- Design session recording
+
+(def session-recorder
+  "The live recording for the current file, or nil. See
+  `app.main.data.workspace.session-recorder`."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:session-recorder file-id])))
+             st/state))
+
+(def design-sessions
+  "This file's recorded sessions, metadata only, newest first. The backend
+  decides what is visible (every session for an admin, your own otherwise), so
+  this is rendered as given."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:design-sessions file-id])))
+             st/state))
+
 (def ai-panel-usage
   "Running token-usage totals for the current file's chat (spend meter)."
   (l/derived (fn [state]

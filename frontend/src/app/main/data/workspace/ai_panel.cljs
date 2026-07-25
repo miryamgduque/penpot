@@ -23,6 +23,7 @@
    [app.main.data.workspace.agent-chats :as agent-chats]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
+   [app.main.data.workspace.session-events :as se]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
    [potok.v2.core :as ptk]))
@@ -254,17 +255,6 @@
 (def ^:private tick-idle-ms 4000)
 (def ^:private max-tick-shapes 50)
 
-(defn- touched-shape-ids
-  "Shape ids named by a commit's redo-changes (`:id` on add/mod/del forms,
-  `:shapes` on mov/reg forms)."
-  [redo-changes]
-  (into #{}
-        (mapcat (fn [{:keys [id shapes]}]
-                  (cond-> []
-                    (some? id)   (conj id)
-                    (seq shapes) (into shapes))))
-        redo-changes))
-
 (defn refresh-violations
   "Recompute the deterministic violations for the current file. Prunes ids
   from `:dirty-ids` that no longer exist (deleted shapes must not ride into
@@ -338,7 +328,7 @@
               (rx/of (seed-enforced-rules) (refresh-violations))
               (->> commits
                    (rx/map (fn [{:keys [redo-changes]}]
-                             (track-dirty (touched-shape-ids redo-changes)))))
+                             (track-dirty (se/touched-shape-ids redo-changes)))))
               (->> (rx/merge commits
                              (rx/filter (ptk/type? ::set-enforced-rules) stream))
                    (rx/debounce watcher-debounce-ms)

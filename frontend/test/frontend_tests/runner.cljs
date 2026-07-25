@@ -15,6 +15,7 @@
    [frontend-tests.data.design-md-test]
    [frontend-tests.data.nitrate-test]
    [frontend-tests.data.repo-test]
+   [frontend-tests.data.session-events-test]
    [frontend-tests.data.uploads-test]
    [frontend-tests.data.viewer-test]
    [frontend-tests.data.workspace-colors-test]
@@ -98,6 +99,7 @@
    'frontend-tests.data.design-md-test
    'frontend-tests.data.nitrate-test
    'frontend-tests.data.repo-test
+   'frontend-tests.data.session-events-test
    'frontend-tests.data.uploads-test
    'frontend-tests.data.viewer-test
    'frontend-tests.data.workspace-colors-test

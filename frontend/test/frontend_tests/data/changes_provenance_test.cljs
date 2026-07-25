@@ -5,8 +5,9 @@
 ;; Copyright (c) KALEIDOS INC Sucursal en España SL
 
 (ns frontend-tests.data.changes-provenance-test
-  "Pins commit provenance (phase 02 of the design-session-recording plan): a
-  commit must say WHO made it, for local and remote changes alike.
+  "Pins commit provenance (phases 02 and 03 of the design-session-recording
+  plan): a commit must say WHO made it — which person, and whether a human or the
+  agent on a named model — for local and remote changes alike.
 
   This is the phase the whole recording feature rests on. If attribution is
   wrong, a session critique blames the wrong person — worse than having no
@@ -25,10 +26,15 @@
   pair, never profile alone."
   (:require
    [app.main.data.changes :as dch]
+   [app.main.data.session-actor :as sa]
    [app.main.data.workspace.notifications :as dwn]
    [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
    [potok.v2.core :as ptk]))
+
+(t/use-fixtures :each
+  {:before (fn [] (sa/reset-actor!))
+   :after  (fn [] (sa/reset-actor!))})
 
 (def ^:private file-id (uuid "00000000-0000-0000-0000-0000000000f1"))
 (def ^:private page-id (uuid "00000000-0000-0000-0000-0000000000aa"))
@@ -171,3 +177,100 @@
                 (js/console.error err)
                 (t/do-report {:type :error :message "Stream error" :actual err}))
               (fn [_] (done))))))))
+
+;; --- agent attribution (phase 03)
+;;
+;; An agent-driven commit must say :agent AND name the model, while KEEPING the
+;; operating user's profile-id: the action is the agent's, but it is attributable
+;; to whoever asked for it. Getting that wrong in either direction breaks the
+;; critique — an unattributed agent action, or a human blamed for the agent.
+
+(t/deftest a-local-commit-is-a-user-action-by-default
+  (t/async
+    done
+    (let [result (ptk/watch (dch/commit-changes {:redo-changes [a-change] :undo-changes []})
+                            state (rx/empty))]
+      (->> result
+           (rx/subs!
+            (fn [evt]
+              (let [commit (deref evt)]
+                (t/is (= :user (:who commit)))
+                (t/is (nil? (:model commit)))))
+            (fn [err]
+              (done)
+              (js/console.error err)
+              (t/do-report {:type :error :message "Stream error" :actual err}))
+            (fn [_] (done)))))))
+
+(t/deftest a-commit-during-an-agent-action-names-the-agent-and-its-model
+  (t/async
+    done
+    (do
+      (sa/begin-agent-action! {:provider "anthropic" :model "claude-opus-4-8"})
+      (let [result (ptk/watch (dch/commit-changes {:redo-changes [a-change] :undo-changes []})
+                              state (rx/empty))]
+        (->> result
+             (rx/subs!
+              (fn [evt]
+                (let [commit (deref evt)]
+                  (t/is (= :agent (:who commit)))
+                  (t/is (= "anthropic" (:provider commit)))
+                  (t/is (= "claude-opus-4-8" (:model commit))
+                        "the acting model, so a critique can tell models apart")))
+              (fn [err]
+                (done)
+                (js/console.error err)
+                (t/do-report {:type :error :message "Stream error" :actual err}))
+              (fn [_] (done))))))))
+
+(t/deftest an-agent-commit-still-carries-the-operating-user
+  (t/testing "the agent acts on someone's behalf — stamping the agent must not
+              erase who asked for it"
+    (t/async
+      done
+      (do
+        (sa/begin-agent-action! {:provider "anthropic" :model "claude-opus-4-8"})
+        (let [result (ptk/watch (dch/commit-changes {:redo-changes [a-change] :undo-changes []})
+                                state (rx/empty))]
+          (->> result
+               (rx/subs!
+                (fn [evt]
+                  (let [commit (deref evt)]
+                    (t/is (= :agent (:who commit)))
+                    (t/is (= local-profile-id (:profile-id commit))
+                          "profile-id survives the agent stamp")
+                    (t/is (= local-session-id (:session-id commit)))))
+                (fn [err]
+                  (done)
+                  (js/console.error err)
+                  (t/do-report {:type :error :message "Stream error" :actual err}))
+                (fn [_] (done)))))))))
+
+(t/deftest a-remote-commit-is-never-marked-as-our-agent
+  (t/testing "a collaborator's change arriving while OUR agent is mid-tool is
+              theirs — only the local path is stamped"
+    (t/async
+      done
+      (do
+        (sa/begin-agent-action! {:provider "anthropic" :model "claude-opus-4-8"})
+        (let [msg    {:type :file-change
+                      :profile-id other-profile-id
+                      :session-id other-session-id
+                      :file-id file-id
+                      :revn 4
+                      :vern 0
+                      :changes [a-change]}
+              result (ptk/watch (dwn/handle-file-change msg) state (rx/empty))]
+          (->> result
+               (rx/subs!
+                (fn [evt]
+                  (let [commit (deref evt)]
+                    (t/is (not= :agent (:who commit))
+                          "our agent marker must not leak onto someone else's edit")
+                    (t/is (nil? (:model commit)))
+                    (t/is (= other-profile-id (:profile-id commit)))))
+                (fn [err]
+                  (done)
+                  (js/console.error err)
+                  (t/do-report {:type :error :message "Stream error" :actual err}))
+                (fn [_] (done)))))))))

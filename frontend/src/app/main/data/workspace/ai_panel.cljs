@@ -19,6 +19,7 @@
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
+   [app.main.data.session-actor :as sa]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-chats :as agent-chats]
    [app.main.data.workspace.agent-skills :as ask]
@@ -692,6 +693,12 @@
      ;; conversation too.
      (->> (rx/of ::end)
           (rx/mapcat (fn [_]
+                       ;; the turn is over on every path (done / checkpoint /
+                       ;; cancel / error): release the acting-agent marker so a
+                       ;; human edit right after the turn is recorded as theirs.
+                       ;; Belt to session-actor's own expiry braces — a cancel
+                       ;; mid-tool never reaches `end-agent-action!`.
+                       (sa/reset-actor!)
                        (if @ended?*
                          (rx/of (set-busy false)
                                 (agent-chats/persist-chat))

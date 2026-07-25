@@ -37,6 +37,14 @@ from the browser console.
       profile-id on its incoming events. This is the check that proves "record
       every person working on the file" actually works — do not close Phase 04
       without it
+- [ ] **INHERITED FROM PHASE 03 — agent-vs-human attribution live.** Also
+      code-traced and unit-tested only. Run one real agent turn and one manual
+      edit in the same recording and confirm the timeline separates them with the
+      right model named. Specifically worth watching: a `create_shape` into a
+      laid-out board, whose reflow commits land ~100ms AFTER the tool returns —
+      they must read `:agent`, not `:user` (that is what `session-actor`'s
+      400ms grace window exists for, and it has never been observed against real
+      reflow timing)
 - [ ] Human approval received
 - [ ] Committed with a gitmoji commit
 

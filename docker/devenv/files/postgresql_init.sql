@@ -6,3 +6,7 @@ CREATE DATABASE penpot_telemetry;
 -- and Penpot boots normally when it is absent (recording simply degrades).
 -- See PENPOT_SESSIONS_DATABASE_URI and app.migrations/session-migrations.
 CREATE DATABASE penpot_sessions;
+
+-- ...and its test counterpart, so the backend suite never writes into the
+-- database a running devenv is recording into.
+CREATE DATABASE penpot_sessions_test;

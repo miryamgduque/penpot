@@ -97,16 +97,16 @@ Verified by exploration on 2026-07-21, not from memory:
   `(profile-id, session-id)` pair, and nothing may assume one session per
   person.
 - **The agent has no mutation funnel.** ~22 mutation call sites spread across
-  the `agent_tools/*` families, using at least nine different write paths. The
-  only viable tagging point is one level up: `execute-tool`
-  (`agent_tools.cljs:1041`) or `run-tool` (`agent.cljs:854`), via an ambient
-  marker read at commit time.
-- **The model name is not reachable.** `settings {:provider :model}` is a
-  closure-local in `run-turn` (`agent.cljs:847`), never in app-db except
-  mid-checkpoint (`ai_panel.cljs:684`). It must be threaded down. Side turns
-  (`run-side-turn` `agent.cljs:1130`, `tick-settings` `ai_panel.cljs:382`,
-  `fix-settings` `:558`) run on *different* models — so "the agent" is not one
-  model and the recording must not pretend otherwise.
+  the `agent_tools/*` families, using at least nine different write paths.
+  **FIXED in Phase 03** with an ambient marker (`app.main.data.session-actor`)
+  set around the turn loop's `run-tool` and read in `commit-changes`.
+- ~~**The model name is not reachable.**~~ Resolved in Phase 03: `run-tool`
+  already closes over `settings`, so no threading was needed. **And the side-turn
+  worry was unfounded** — `run-side-turn` validates against
+  `side-readonly-tools` and *throws at construction* for anything else
+  (`agent.cljs:1140-1145`), so side turns cannot mutate the file at all. With
+  `run-turn` having exactly one call site (`ai_panel.cljs:658`), every agent
+  mutation flows through the single hook.
 - **Not every commit is a human interaction.** WASM text-layout writebacks are
   tagged `:position-data` and already filtered at `workspace.cljs:459`; WASM
   sync commits exist at `changes.cljs:136`. Without a filter the recording will
@@ -122,7 +122,7 @@ Verified by exploration on 2026-07-21, not from memory:
 
 1. [Phase 01 — Event model](./done-phase-01-event-model.md) — pure schema + coalescing + noise filter, no infra ✅
 2. [Phase 02 — Human attribution](./done-phase-02-human-attribution.md) — carry profile/session id on local and remote commits ✅ *(live two-session check deferred to Phase 04)*
-3. [Phase 03 — Agent attribution](./todo-phase-03-agent-attribution.md) — ambient marker around `execute-tool`, thread provider/model
+3. [Phase 03 — Agent attribution](./done-phase-03-agent-attribution.md) — ambient marker around the turn loop's `run-tool`, carrying provider/model ✅ *(live agent-turn check deferred to Phase 04)*
 4. [Phase 04 — Client recorder](./todo-phase-04-client-recorder.md) — start/stop lifecycle, in-memory buffers, caps
 5. [Phase 05 — Separate database](./todo-phase-05-separate-database.md) — second Postgres DB, derived pool, its own migrations
 6. [Phase 06 — Session RPC](./todo-phase-06-session-rpc.md) — create/append/finish/list/get commands

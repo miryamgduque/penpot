@@ -16,6 +16,7 @@
    [app.common.uuid :as uuid]
    [app.main.data.event :as ev]
    [app.main.data.helpers :as dsh]
+   [app.main.data.session-actor :as sa]
    [app.main.features :as features]
    [app.main.worker :as mw]
    [app.render-wasm.api :as wasm.api]
@@ -166,10 +167,15 @@
   them from app state; for remote commits `handle-file-change` forwards the
   originating values off the websocket message. They are nil only when a caller
   builds a commit directly without supplying them — the keys are always present
-  so consumers can distinguish \"unattributed\" from \"key absent\"."
+  so consumers can distinguish \"unattributed\" from \"key absent\".
+
+  `who` (`:user`/`:agent`) plus `provider`/`model` say whether a person or the
+  agent produced this change, and on which model. `commit-changes` reads them
+  from `session-actor`. An agent commit keeps the operating user's `profile-id`:
+  the action is the agent's, but it is attributable to whoever asked for it."
   [{:keys [commit-id redo-changes undo-changes origin save-undo? features
            file-id file-revn file-vern undo-group tags stack-undo? source ignore-wasm?
-           selected-before translation? profile-id session-id]}]
+           selected-before translation? profile-id session-id who provider model]}]
 
   (assert (cpc/check-changes redo-changes)
           "expect valid vector of changes for redo-changes")
@@ -199,7 +205,10 @@
                    :selected-before selected-before
                    :translation? translation?
                    :profile-id profile-id
-                   :session-id session-id}]
+                   :session-id session-id
+                   :who who
+                   :provider provider
+                   :model model}]
 
     (ptk/reify ::commit
       cljs.core/IDeref
@@ -275,4 +284,8 @@
                        ;; provenance: who is at this keyboard, in this tab
                        (assoc :profile-id (:profile-id state))
                        (assoc :session-id (:session-id state))
+                       ;; ...and whether the agent is the one acting. Only the
+                       ;; local path is stamped: a remote commit belongs to
+                       ;; another session's actor, never to our agent.
+                       (sa/stamp)
                        (commit)))))))))

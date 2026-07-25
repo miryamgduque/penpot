@@ -19,6 +19,7 @@
   (:require
    [app.main.data.ai-providers :as dai]
    [app.main.data.helpers :as dsh]
+   [app.main.data.session-actor :as sa]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.data.workspace.design-doc :as dd]
@@ -852,24 +853,34 @@
   ([settings history system seed]
    (letfn [(run-tool [call]
              ;; → observable of one {:call :status :content :images :error? :rule :detail}
-             (->> (at/execute-tool (:name call) (:input call))
-                  (rx/map (fn [result]
-                            ;; images ride beside the content, never through it:
-                            ;; `result->content` stringifies and then truncates at
-                            ;; 20k chars, which would shred a 200kB render into a
-                            ;; meaningless base64 prefix
-                            {:call call
-                             :status :ok
-                             :images (:images result)
-                             :content (result->content (dissoc result :images))}))
-                  (rx/catch (fn [cause]
-                              (let [rule (:rule (ex-data cause))]
-                                (rx/of {:call call
-                                        :status (if rule :rejected :error)
-                                        :rule rule
-                                        :detail (ex-message cause)
-                                        :content (or (ex-message cause) "tool error")
-                                        :error? true}))))))
+             ;;
+             ;; Mark the agent as the actor for the duration of the tool, so the
+             ;; commits it produces are attributable (session-actor). The marker
+             ;; is released on BOTH terminal paths and keeps a short grace window
+             ;; for writes that settle after the tool returns; it also expires on
+             ;; its own, so a cancel that unsubscribes without reaching either
+             ;; path cannot strand it.
+             (let [action (sa/begin-agent-action! settings)]
+               (->> (at/execute-tool (:name call) (:input call))
+                    (rx/map (fn [result]
+                              (sa/end-agent-action! action)
+                              ;; images ride beside the content, never through it:
+                              ;; `result->content` stringifies and then truncates at
+                              ;; 20k chars, which would shred a 200kB render into a
+                              ;; meaningless base64 prefix
+                              {:call call
+                               :status :ok
+                               :images (:images result)
+                               :content (result->content (dissoc result :images))}))
+                    (rx/catch (fn [cause]
+                                (sa/end-agent-action! action)
+                                (let [rule (:rule (ex-data cause))]
+                                  (rx/of {:call call
+                                          :status (if rule :rejected :error)
+                                          :rule rule
+                                          :detail (ex-message cause)
+                                          :content (or (ex-message cause) "tool error")
+                                          :error? true})))))))
 
            (tool-round [messages' round spent _text calls]
              ;; no text emission: this round's text already reached the panel as

@@ -359,6 +359,9 @@
    :app.rpc/methods
    {::http.client/client (ig/ref ::http.client/client)
     ::db/pool            (ig/ref ::db/pool)
+    ;; the design-sessions database; nil when unconfigured, and those commands
+    ;; fail cleanly rather than the system refusing to start
+    ::sessions-pool      (ig/ref ::sessions-pool)
     ::rds/pool           (ig/ref ::rds/pool)
     :app.nitrate/client  (ig/ref :app.nitrate/client)
     ::wrk/executor       (ig/ref ::wrk/executor)

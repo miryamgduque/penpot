@@ -36,6 +36,7 @@ playbooks that steer it.
 | Storage | **Separate Postgres database on the existing server** — isolated from product tables, no new engine (Mongo considered and declined: a new service, driver, config, backup and deploy story for a branch that may head toward a Penpot PR) |
 | Raw retention | **Raw is ephemeral, summary persists** — raw lives for the recording, the semantic timeline is what survives |
 | Feedback surface | **In-panel review turn** — reuses the existing side-turn machinery and spend meter |
+| Audience & access (added 2026-07-25) | **A bot reads it; admins export it.** Write = the recorder (needs file edit); read = team admins plus the recorder's own; bulk export = admins only. Santi: "The session is intended to be read by a bot. Something admins can export to feed agent sessions." |
 
 ### Grounding — what the codebase actually offers
 
@@ -135,7 +136,7 @@ Verified by exploration on 2026-07-21, not from memory:
 3. [Phase 03 — Agent attribution](./done-phase-03-agent-attribution.md) — ambient marker around the turn loop's `run-tool`, carrying provider/model ✅ *(live agent-turn check deferred to Phase 04)*
 4. [Phase 04 — Client recorder](./done-phase-04-client-recorder.md) — start/stop lifecycle, in-memory buffers, caps ✅ *(logic only; not reachable in the app until Phase 08)*
 5. [Phase 05 — Separate database](./done-phase-05-separate-database.md) — second Postgres DB, its own pool and migrations ✅ **live-verified**
-6. [Phase 06 — Session RPC](./todo-phase-06-session-rpc.md) — create/append/finish/list/get commands
+6. [Phase 06 — Session RPC](./done-phase-06-session-rpc.md) — idempotent upsert + list/get + **admin export for a bot** ✅
 7. [Phase 07 — Persistence wiring](./todo-phase-07-persistence-wiring.md) — debounced flush, lifecycle, reload resume
 8. [Phase 08 — Recording UI](./todo-phase-08-recording-ui.md) — record control + session browser
 9. [Phase 09 — Review turn](./todo-phase-09-review-turn.md) — the feedback loop itself

@@ -1,0 +1,201 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) KALEIDOS INC Sucursal en España SL
+
+@use "refactor/common-refactor.scss" as deprecated;
+
+// Design session recording controls, in the agent panel header.
+//
+// Colours come from the DS custom properties throughout, so both themes follow
+// without a second set of rules. The one hard-coded hue is the recording dot:
+// "we are recording" is a state that must not blend into the surrounding chrome
+// in either theme, and no DS token carries that meaning.
+
+.record-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+}
+
+// --- live status
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+  padding-inline: deprecated.$s-6;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-tertiary);
+}
+
+.rec-dot {
+  inline-size: deprecated.$s-8;
+  block-size: deprecated.$s-8;
+  border-radius: 50%;
+  // deliberate hard-coded hue: see the note at the top
+  background-color: #e11d48;
+  animation: rec-pulse 1.6s ease-in-out infinite;
+}
+
+// A recording that looks frozen is indistinguishable from one that has died,
+// hence the pulse. Respect a reduced-motion preference: the dot stays, it just
+// stops moving.
+@keyframes rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rec-dot {
+    animation: none;
+  }
+}
+
+.status-text {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.status-warning {
+  @include deprecated.body-small-typography;
+
+  padding-inline: deprecated.$s-4;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-error);
+  color: var(--color-accent-error);
+  white-space: nowrap;
+}
+
+// --- sessions popover
+
+.popover {
+  position: absolute;
+  inset-block-start: calc(100% + #{deprecated.$s-4});
+  inset-inline-end: 0;
+  z-index: 1;
+  inline-size: deprecated.$s-320;
+  max-block-size: deprecated.$s-320;
+  overflow-y: auto;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 25%);
+}
+
+.popover-head {
+  @include deprecated.small-title-typography;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-4 deprecated.$s-4 deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+}
+
+.export-all {
+  @include deprecated.body-small-typography;
+
+  border: none;
+  background: none;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.empty {
+  @include deprecated.body-small-typography;
+
+  margin: 0;
+  padding: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-6;
+  padding: deprecated.$s-6;
+  border-radius: deprecated.$br-4;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+.session-main {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-inline-size: 0;
+}
+
+.session-when {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+}
+
+.session-meta {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-live {
+  @include deprecated.body-small-typography;
+
+  padding-inline: deprecated.$s-4;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-accent-primary);
+  white-space: nowrap;
+}
+
+// A cap-stopped or partially-saved session must not read as a clean one.
+.session-reason {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-accent-error);
+  white-space: nowrap;
+}
+
+.note {
+  @include deprecated.body-small-typography;
+
+  position: absolute;
+  inset-block-start: calc(100% + #{deprecated.$s-4});
+  inset-inline-end: 0;
+  z-index: 2;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-primary);
+  white-space: nowrap;
+}

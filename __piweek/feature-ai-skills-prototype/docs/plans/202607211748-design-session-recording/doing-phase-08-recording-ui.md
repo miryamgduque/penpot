@@ -21,10 +21,11 @@ state, and a list of past sessions on the file.
 > which I will not do. The devenv's passwordless demo login is disabled and
 > enabling it needs a flag restart.
 >
-> **Second, independent blocker found in this phase:** devenv's frontend never
-> receives `PENPOT_FLAGS` at all, so the flag-gated control cannot render there
-> even with a working browser. See "Devenv cannot show the UI" below — it affects
-> every frontend flag in Penpot, not just this one.
+> A second, independent blocker was found in this phase and has since been
+> **fixed**: devenv's frontend never received `PENPOT_FLAGS`, so the flag-gated
+> control could not render there even with a working browser. See "FIXED: the
+> frontend now receives PENPOT_FLAGS" below. The only remaining blocker is the
+> browser tooling itself.
 >
 > **What this means honestly:** phases 01–04 and 07–08 are unit-tested,
 > code-traced, and compile clean, but have **never run**. Only phases 05 and 06
@@ -180,9 +181,9 @@ plus that the shipped default set does not contain it.
 Enable with `PENPOT_FLAGS=enable-design-session-recording`. It is on in devenv
 (`docker/devenv/defaults.env`) and in the backend test harness.
 
-### ⚠ Devenv cannot show the UI — the frontend never receives PENPOT_FLAGS
+### FIXED: the frontend now receives PENPOT_FLAGS (was a Penpot-wide gap)
 
-Found while wiring this up, and **it is not specific to this feature**.
+Found while wiring this up, and **it was not specific to this feature**.
 
 Frontend `cf/flags` is parsed from `globalThis.penpotFlags`, defaulting to `""`
 (`frontend/src/app/config.cljs:76-80`). Nothing in this branch ever sets that
@@ -196,12 +197,24 @@ flag gate is dead there — including the pre-existing `(contains? cf/flags :mcp
 at `main_menu.cljs:113`. The backend *does* get the flag correctly (verified:
 `{:flag true, :flags-count 47}` in the running system).
 
-Consequence: the record control will not appear in devenv until
-`globalThis.penpotFlags` is set before the app boots. To try it, set that global
-(what production's `sed` does in spirit) or temporarily drop the `cf/flags` guard
-in `ai_panel.cljs`. Deliberately not "fixed" here — adding a flag-injection step
-to the devenv build changes behaviour for every flag in Penpot, which is well
-outside this feature's remit and should be its own change.
+**Fix applied** (2026-07-26), because otherwise the flag-gated control could
+never be seen in a dev build: `renderTemplate` (`frontend/scripts/_helpers.js`)
+now passes `process.env.PENPOT_FLAGS` into the template context, and
+`index.mustache` emits `globalThis.penpotFlags` from it.
+
+Verified both ways:
+
+- with `PENPOT_FLAGS=enable-design-session-recording` (devenv default), the served
+  HTML contains `penpotFlags = "enable-design-session-recording"`;
+- with `PENPOT_FLAGS` empty, **nothing is emitted at all** (grep count 0) — so a
+  packaged build, where the variable is usually absent at asset-build time, is
+  untouched and its own `js/config.js` injection stays authoritative. That
+  mustache section guard (`{{#flags}}`) is what makes the change safe rather than
+  a regression.
+
+Side effect worth knowing: this also revives every *other* frontend flag in a dev
+build, `:mcp` included. That is a fix, not a surprise, but it means dev builds now
+honour `PENPOT_FLAGS` where they previously ignored it.
 
 ### Still open: who may START a recording
 

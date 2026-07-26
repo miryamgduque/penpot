@@ -30,6 +30,7 @@
       globalThis.penpotVersion = "{{& version}}";
       globalThis.penpotVersionTag = "{{& version_tag}}";
       globalThis.penpotBuildDate = "{{& build_date}}";
+      {{#flags}}globalThis.penpotFlags = "{{& flags}}";{{/flags}}
     </script>
 
     {{# manifest}}

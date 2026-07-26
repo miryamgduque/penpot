@@ -340,14 +340,15 @@
   A recording captures identifiable activity by people who did not start it, so
   the answer has to be available outside the AI panel: someone with the panel
   closed is exactly the person who would otherwise never know.
-  `workspace-presence` is cleared on disconnect / leave-file, so a collaborator
+  `:workspace-recording` holds the session ids that have announced a recording;
+  it is cleared alongside presence on disconnect / leave-file, so a collaborator
   who closes the tab mid-recording cannot leave this stuck on.
 
   Pure so the disclosure rule is testable without standing up the store."
   [state]
   (let [file-id (:current-file-id state)
         mine?   (dm/get-in state [:session-recorder file-id :active?])
-        theirs? (some :recording? (vals (:workspace-presence state)))]
+        theirs? (seq (:workspace-recording state))]
     (boolean (or mine? theirs?))))
 
 (def file-recording?

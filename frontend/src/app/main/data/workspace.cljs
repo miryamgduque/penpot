@@ -345,7 +345,10 @@
           (assoc :recent-colors (:recent-colors storage/user))
           (assoc :recent-fonts (:recent-fonts storage/user))
           (assoc :current-file-id file-id)
-          (assoc :workspace-presence {})))
+          (assoc :workspace-presence {})
+          ;; who is recording is per-file too: carrying it across a file switch
+          ;; would claim the new file is being recorded when it is not
+          (assoc :workspace-recording #{})))
 
     ptk/WatchEvent
     (watch [_ state stream]

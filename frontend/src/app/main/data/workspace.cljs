@@ -404,7 +404,10 @@
           (assoc :current-file-id file-id)
           (assoc :workspace-presence {})
           (update :workspace-global dissoc :default-font)
-          (update :comments-local dcmt/merge-persisted-filters)))
+          (update :comments-local dcmt/merge-persisted-filters)
+          ;; who is recording is per-file too: carrying it across a file switch
+          ;; would claim the new file is being recorded when it is not
+          (assoc :workspace-recording #{})))
 
     ptk/WatchEvent
     (watch [_ state stream]

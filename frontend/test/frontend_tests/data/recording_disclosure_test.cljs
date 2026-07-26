@@ -27,7 +27,7 @@
   (t/is (false? (refs/recording-in-progress? (state))))
   (t/is (false? (refs/recording-in-progress?
                  (state :session-recorder {file-id {:active? false}}
-                        :workspace-presence {"s1" {:recording? false}})))))
+                        :workspace-recording #{})))))
 
 (t/deftest our-own-recording-is-disclosed
   (t/is (true? (refs/recording-in-progress?
@@ -37,15 +37,14 @@
   (t/testing "the case the indicator exists for: someone else pressed record,
               we are being recorded, and we may never open the panel"
     (t/is (true? (refs/recording-in-progress?
-                  (state :workspace-presence {"s1" {:recording? false}
-                                              "s2" {:recording? true}}))))))
+                  (state :workspace-recording #{"s2"}))))))
 
 (t/deftest leaving-clears-the-disclosure
-  (t/testing "workspace-presence is dropped on disconnect / leave-file, so a
+  (t/testing ":workspace-recording is cleared on disconnect / leave-file, so a
               collaborator closing the tab mid-recording must not leave the
               indicator stuck on — a permanent false REC is its own harm"
     (t/is (false? (refs/recording-in-progress?
-                   (state :workspace-presence {}))))))
+                   (state :workspace-recording #{}))))))
 
 (t/deftest a-recording-on-another-file-is-not-ours
   (t/testing "the local recorder is keyed by file, so a session running in

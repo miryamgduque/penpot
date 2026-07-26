@@ -362,6 +362,13 @@
     ;; the design-sessions database; nil when unconfigured, and those commands
     ;; fail cleanly rather than the system refusing to start
     ::sessions-pool      (ig/ref ::sessions-pool)
+
+    ;; NOTE: this dependency is only necessary for proper initialization ordering
+    ;; (same reasoning as ::setup/props below). Without it nothing refs the
+    ;; session migrations, so Integrant is free to start serving RPC before the
+    ;; sessions database has its tables and the first design-session call fails
+    ;; with a raw "relation design_session does not exist".
+    ::session-migrations (ig/ref :app.migrations/session-migrations)
     ::rds/pool           (ig/ref ::rds/pool)
     :app.nitrate/client  (ig/ref :app.nitrate/client)
     ::wrk/executor       (ig/ref ::wrk/executor)

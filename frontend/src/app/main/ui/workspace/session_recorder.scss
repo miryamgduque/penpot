@@ -41,15 +41,30 @@
 // is recording that is the most important state in the panel, and stopping must
 // not mean hunting through the header.
 
+// Shaped exactly like `.observer-list` / `.observer-card` in ai_panel.scss so the
+// timer and the notification cards read as one stack: same chat-side padding on
+// the wrapper, same neutral card. That file's own note is explicit that these
+// cards stay calm and untinted and that "accent lands only on actions" — so the
+// red lives on the dot and the Stop button, not on a coloured border.
+
+.timer-list {
+  display: flex;
+  flex-direction: column;
+  padding: deprecated.$s-8 var(--sp-m);
+}
+
 .timer-card {
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  overflow: hidden;
+}
+
+.timer-body {
   display: flex;
   align-items: center;
   gap: deprecated.$s-8;
-  margin-block-end: deprecated.$s-4;
   padding: deprecated.$s-8;
-  border: deprecated.$s-1 solid var(--color-accent-error);
-  border-radius: deprecated.$br-8;
-  background-color: var(--color-background-tertiary);
 }
 
 .timer-main {

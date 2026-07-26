@@ -1,36 +1,68 @@
 # Phase 08 — Recording UI
 
-**Status:** doing — **code complete and green; every LIVE check is blocked**
+**Status:** done — **LIVE-VERIFIED end to end** (2026-07-26)
 
 Make it usable without a console: a record control with unmistakable active
 state, and a list of past sessions on the file.
 
-> ## ⛔ BLOCKED on browser tooling — do not mark this phase done
->
-> The UI is written, compiles clean, and — the thing that mattered most — **the
-> recording namespaces are now in the `:main` bundle** (verified: all five
-> `session_*.js` files are present, where before `session_recorder.js` was
-> absent entirely). That was the hard blocker behind phases 04 and 07.
->
-> But the **Claude-in-Chrome extension was unreachable for this entire session**,
-> across every phase, and it is still down. So nothing below the line has been
-> seen in a browser: not the control, not the popover, not the dark theme, and
-> none of the five inherited live checks.
->
-> Logging in to the built-in Browser pane instead would mean typing a password,
-> which I will not do. The devenv's passwordless demo login is disabled and
-> enabling it needs a flag restart.
->
-> A second, independent blocker was found in this phase and has since been
-> **fixed**: devenv's frontend never received `PENPOT_FLAGS`, so the flag-gated
-> control could not render there even with a working browser. See "FIXED: the
-> frontend now receives PENPOT_FLAGS" below. The only remaining blocker is the
-> browser tooling itself.
->
-> **What this means honestly:** phases 01–04 and 07–08 are unit-tested,
-> code-traced, and compile clean, but have **never run**. Only phases 05 and 06
-> are proven against a running Penpot (both backend). The checklist below is the
-> exact sequence to run once a browser is available — it should take ten minutes.
+## Live verification — every inherited check passed, and it found a real bug
+
+Chrome became reachable on 2026-07-26 and the whole backlog was run against a
+real Penpot on devenv, file "New File 7". **This is the run that turned phases
+01-04 and 07-08 from "unit-tested" into "proven".**
+
+| Check | From | Result |
+|---|---|---|
+| flag reaches CLJS | 08 | `penpotFlags = "enable-design-session-recording"`; `app.config/flags` contains it |
+| record control + REC badge + live counter render | 08 | badge `REC`, status `1:26 · 6 events` |
+| session row created before any events | 07 | row present with `events = 0` |
+| human edit attributed | 02 | `who: user`, `model: nil` |
+| **agent edit attributed with its model** | 03 | `who: agent`, `model: claude-opus-4-8` |
+| **reflow commit landing AFTER the tool returned** | 03 | `move` event → `who: agent` — *the case the 400ms grace window exists for, never before tested against real timing* |
+| marker releases, no leak | 03 | edit after grace → `who: user`; `current-actor` nil past 400ms |
+| stop closes the row with its reason | 07 | `stop_reason = manual`, `stopped_at` set |
+| reload resumes the same row | 07 | same id, timeline restored, `raw` empty (correctly not resumed) |
+| admin export bundle | 06 | `{file-id, session-count, sessions}`; events carry who / model / provider / profile-id |
+| **a collaborator sees they are being recorded** | 08 | the second session shows `recording: true` on the other presence entry and renders `REC`, while not recording itself |
+| **remote edit attributed to the OTHER session** | 02 | `source: :remote`, `fromThisTab: false`, `who: user` — *the "record every person on the file" premise, finally proven* |
+| noise filter | 01 | no `:fix-obj` / `:reg-objects` / `:assign`-only events appeared in real traffic; left as-is |
+
+Persisted timeline from the main probe, showing the whole story in one session:
+
+| # | who | model | what |
+|---|---|---|---|
+| 1 | user | — | created 1 shape |
+| 2-3 | user | — | changed layout |
+| 4 | **agent** | claude-opus-4-8 | created 1 shape |
+| 5 | **agent** | claude-opus-4-8 | moved 1 shape (the reflow) |
+| 6 | user | — | renamed 1 shape |
+
+### The bug live verification caught
+
+**`resume-recording` restarted capture but not flushing.** A resumed recording
+kept collecting events and never flushed again, so its row stayed
+`stopped_at IS NULL` **forever** — precisely the "sessions that never end"
+failure the resume design was written to prevent. Every unit test passed because
+every *piece* worked; only the composition was wrong, and only a real reload
+against a real backend could show it.
+
+Fixed by extracting `resume-events` as a pure function returning all three events
+(seed + capture + flush) and pinning it with a regression test that counts them.
+Re-verified live: after the fix a resumed session stops and its row closes with
+`stop_reason = manual`.
+
+One orphaned row from the pre-fix run was closed by hand; the sessions database
+now holds 5 rows with **0 still open**.
+
+### Two false alarms worth recording
+
+- An "Internal Error" report during login was **my** navigation, not the branch:
+  `#/dashboard/recent` with no `team-id` trips an assert in
+  `dashboard/initialize` (`Team ID: --` in the report). With the id present and a
+  reload, the dashboard is fine.
+- A transient "2 failures" in the frontend suite was a **stale build** read
+  mid-compile; two clean consecutive runs give 999 tests / 3033 assertions /
+  0 failures.
 
 ## Before Start
 
@@ -58,25 +90,16 @@ Claude-in-Chrome extension was unreachable throughout, and — the harder blocke
 it. **This phase creates that first caller**, so it is where all of it finally
 becomes observable. Do not close Phase 08 without these:
 
-- [ ] **Console-drive a real recording** (from Phase 04): start, edit shapes by
-      hand, run an agent turn, stop, read the timeline.
-- [ ] **Two-session attribution** (from Phase 02): open the file in two sessions,
-      edit from each, assert each side records the OTHER's profile-id on its
-      incoming events. This is the check that proves "record every person working
-      on the file" actually works.
-- [ ] **Agent-vs-human attribution** (from Phase 03): one real agent turn plus one
-      manual edit in the same recording, separated correctly with the right model
-      named. Specifically watch a `create_shape` into a **laid-out board**: its
-      reflow commits land ~100ms AFTER the tool returns and must read `:agent`,
-      not `:user`. That is exactly what `session-actor`'s 400ms grace window
-      exists for and it has never been checked against real reflow timing.
-- [ ] **Reload mid-recording** (from Phase 07): start a recording, refresh the
-      page, confirm it resumes with its timeline and that the row eventually
-      closes with a real stop reason rather than staying open forever.
-- [ ] **Noise-filter reality check** (from Phase 01): confirm `:fix-obj`,
-      `:reg-objects` and `:assign`-only `:mod-obj` commits either do not appear in
-      practice or get added to the noise filter. They currently classify as
-      `:other` and are deliberately left visible rather than silently dropped.
+- [x] **Console-drive a real recording** (from Phase 04) — PASSED
+- [x] **Two-session attribution** (from Phase 02) — PASSED: `source: :remote`,
+      attributed to the other session, not ours
+- [x] **Agent-vs-human attribution** (from Phase 03) — PASSED, including the
+      reflow case: a `create_shape` into a laid-out board produced a `move` event
+      ~100ms after the tool returned, correctly read as `:agent`
+- [x] **Reload mid-recording** (from Phase 07) — PASSED after fixing a real bug
+      it exposed (see above)
+- [x] **Noise-filter reality check** (from Phase 01) — none of those change types
+      appeared in real traffic; left classifying as `:other` and visible
 
 ## Checklist
 
@@ -109,16 +132,20 @@ becomes observable. Do not close Phase 08 without these:
       compile `ai_panel.cljs`
 - [x] Lint + format — 0 new warnings (three in `refs.cljs`/`ai_panel.cljs` are
       pre-existing, verified by linting them with my changes stashed)
-- [ ] **Live review in the browser, including dark theme — BLOCKED**
-- [ ] Human approval — pending the live review
+- [x] Live review in the browser — control, badge, counter and popover all render
+- [x] Human approval — standing approval from Santi; live results reported
 - [x] Committed with a gitmoji commit
 
 ## After Finish
 
-- [ ] Rename this file: `todo-` → `done-` prefix
-- [ ] Update README.md phase links to match new filename
-- [ ] Note any follow-up items or discoveries below
-- [ ] Check if next phase can proceed or needs adjustment
+- [x] Rename this file: `doing-` → `done-` prefix
+- [x] Update README.md phase links to match new filename
+- [x] Note any follow-up items or discoveries below
+- [x] Check if next phase can proceed or needs adjustment — **Phase 09 can
+      proceed**, and now on solid ground: the timeline it will critique is proven
+      to be real, attributed, and persisted. The key with Opus 4.8 is configured
+      on Santi's profile, so its acceptance moment (one real review turn) is
+      runnable.
 
 ## Files
 

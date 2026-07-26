@@ -165,6 +165,33 @@
       (t/is (empty? (:raw s))
             "raw is NOT resumed — it is ephemeral and the browser that held it is gone"))))
 
+(t/deftest resuming-restarts-both-capture-and-flushing
+  (t/testing "REGRESSION found in live verification (phase 08): resume restarted
+              capture ONLY, so a resumed recording went on collecting events but
+              never flushed again and its row stayed `stopped_at IS NULL` forever
+              — the exact 'sessions that never end' failure the resume design
+              exists to prevent. Unit tests missed it because each piece worked;
+              only the composition was wrong."
+    (let [row    {:id (uuid "00000000-0000-0000-0000-0000000000e1")
+                  :file-id file-id
+                  :session-id (uuid "00000000-0000-0000-0000-0000000000e2")
+                  :events []
+                  :stop-reason nil}
+          types  (mapv ptk/type (sp/resume-events row))]
+      (t/is (= 3 (count types))
+            "seed + capture + flush; two of the three is the bug")
+      (t/is (contains? (set types) :app.main.data.workspace.session-persist/seed-resumed-session))
+      (t/is (contains? (set types) :app.main.data.workspace.session-recorder/watch-commits)
+            "capture, or the resumed recording records nothing")
+      (t/is (contains? (set types) :app.main.data.workspace.session-persist/start-persisting)
+            "flushing, or the row never closes"))))
+
+(t/deftest a-finished-or-missing-row-yields-no-resume-events
+  (t/is (nil? (sp/resume-events nil)))
+  (t/is (nil? (sp/resume-events {:id (uuid "00000000-0000-0000-0000-0000000000e1")
+                                 :file-id file-id
+                                 :stop-reason "manual"}))))
+
 (t/deftest a-finished-session-is-never-resumed
   (t/testing "resuming a closed recording would reopen an immutable row, which
               the backend rejects anyway"

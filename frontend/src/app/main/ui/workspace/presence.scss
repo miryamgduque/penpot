@@ -74,3 +74,49 @@
   --user-list-gap: var(--sp-xs);
   --user-list-inline-margin: 0;
 }
+
+// Design session recording indicator.
+//
+// Sits with the collaborator avatars on purpose: a recording captures
+// identifiable activity by people who did not start it, so everyone on the file
+// sees it — not only whoever pressed record.
+.recording-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-xxs);
+  padding: 0 var(--sp-xs);
+  margin-inline-end: var(--sp-xs);
+  border-radius: var(--sp-xs);
+  background-color: var(--color-background-error);
+  color: var(--color-accent-error);
+  font-size: var(--font-size-s);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.recording-dot {
+  inline-size: var(--sp-xs);
+  block-size: var(--sp-xs);
+  border-radius: 50%;
+  background-color: currentcolor;
+  animation: presence-rec-pulse 1.6s ease-in-out infinite;
+}
+
+// A frozen indicator is indistinguishable from a dead one; motion says "live".
+@keyframes presence-rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recording-dot {
+    animation: none;
+  }
+}

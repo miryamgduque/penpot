@@ -43,6 +43,7 @@
 (declare handle-file-restored)
 (declare handle-library-change)
 (declare handle-pointer-send)
+(declare handle-recording-update)
 (declare handle-export-update)
 
 (defn initialize
@@ -130,6 +131,7 @@
     :presence               (handle-presence msg)
     :disconnect             (handle-presence msg)
     :pointer-update         (handle-pointer-update msg)
+    :recording-update       (handle-recording-update msg)
     :file-change            (handle-file-change msg)
     :file-deleted           (handle-file-deleted msg)
     :file-restored          (handle-file-restored msg)
@@ -156,6 +158,35 @@
                      :vport (:vport local)
                      :position point}]
         (rx/of (dws/send message))))))
+
+;; --- Design session recording presence
+;;
+;; Recording state rides the presence entry rather than a map of its own, which
+;; gets its cleanup for free: `handle-presence` drops the whole entry on
+;; disconnect / leave-file, so a collaborator who closes the tab mid-recording
+;; cannot leave a stale "recording" badge behind.
+
+(defn handle-recording-update
+  "A collaborator started or stopped recording this file."
+  [{:keys [session-id recording?] :as _msg}]
+  (ptk/reify ::handle-recording-update
+    ptk/UpdateEvent
+    (update [_ state]
+      ;; only annotate a session we already know about: an update arriving
+      ;; before its join would otherwise create a presence entry with no profile
+      (if (contains? (:workspace-presence state) session-id)
+        (assoc-in state [:workspace-presence session-id :recording?] (boolean recording?))
+        state))))
+
+(defn broadcast-recording
+  "Tell everyone on the file that this session started or stopped recording."
+  [file-id recording?]
+  (ptk/reify ::broadcast-recording
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (rx/of (dws/send {:type :recording-update
+                        :file-id file-id
+                        :recording? (boolean recording?)})))))
 
 ;; --- Finalize Websocket
 

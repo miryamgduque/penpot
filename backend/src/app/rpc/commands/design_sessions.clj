@@ -41,6 +41,7 @@
   (:require
    [app.common.exceptions :as ex]
    [app.common.schema :as sm]
+   [app.config :as cf]
    [app.db :as db]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.files :as files]
@@ -53,8 +54,19 @@
 ;; `app.main` pulls in the whole rpc tree, so requiring it here would cycle.
 (def ^:private pool-key :app.main/sessions-pool)
 
+(defn- check-enabled!
+  "Recording is off unless a deployment turns it on. Enforced here and not only
+  in the UI: a hidden button is not an access boundary, and this feature records
+  identifiable people."
+  []
+  (when-not (contains? cf/flags :design-session-recording)
+    (ex/raise :type :restriction
+              :code :feature-disabled
+              :hint "design session recording is not enabled on this instance")))
+
 (defn- get-sessions-pool
   [cfg]
+  (check-enabled!)
   (or (get cfg pool-key)
       (ex/raise :type :precondition
                 :code :sessions-database-unavailable

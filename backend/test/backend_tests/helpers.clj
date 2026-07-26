@@ -82,6 +82,10 @@
    :enable-quotes
    :enable-rpc-climit
    :enable-auto-file-snapshot
+   ;; off by default in the shipped flag set; the suite turns it on so the
+   ;; feature can be exercised, and one test disables it again to prove the
+   ;; gate refuses at the RPC
+   :enable-design-session-recording
    :disable-file-validation])
 
 (defn state-init

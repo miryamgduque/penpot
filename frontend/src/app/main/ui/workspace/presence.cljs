@@ -34,8 +34,22 @@
   []
   (let [profiles     (mf/deref refs/profiles)
         presence     (mf/deref refs/workspace-presence)
+        recorder     (mf/deref refs/session-recorder)
 
         sessions     (vals presence)
+
+        ;; Who is recording this file: any collaborator that has broadcast it,
+        ;; plus ourselves. A recording captures identifiable activity by people
+        ;; who did not start it, so this badge sits with the collaborator
+        ;; avatars — visible to everyone on the file, not only to whoever
+        ;; pressed record.
+        recorders    (into #{}
+                           (comp (filter :recording?) (map :profile-id))
+                           sessions)
+        recorders    (cond-> recorders
+                       (:active? recorder) (conj :me))
+        recording?   (and (contains? cfg/flags :design-session-recording)
+                          (seq recorders))
         num-sessions (count sessions)
         max-avatar-count 3
         avatar-count (if (= num-sessions max-avatar-count) max-avatar-count (- max-avatar-count 1))
@@ -53,6 +67,14 @@
         (mf/use-fn #(reset! open* false))]
 
     [:*
+     (when ^boolean recording?
+       [:span {:class (stl/css :recording-badge)
+               :title (if (contains? recorders :me)
+                        "You are recording this design session"
+                        "A design session is being recorded on this file")}
+        [:span {:class (stl/css :recording-dot)}]
+        "REC"])
+
      (when ^boolean open?
        [:button {:id "users-close"
                  :class (stl/css :active-users-opened)

@@ -24,6 +24,7 @@
    [app.common.media :as cm]
    [app.common.time :as ct]
    [app.common.uuid :as uuid]
+   [app.config :as cf]
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-chats :as dwach]
@@ -2607,7 +2608,12 @@
          ;; because it is the other thing you start and stop on a file — but it
          ;; records EVERYONE's edits, not just the agent's (see
          ;; app.main.ui.workspace.session-recorder).
-         [:> session-recorder/record-controls*]
+         ;;
+         ;; Behind a flag and OFF by default: a recording captures identifiable
+         ;; activity by people who did not press the button, so enabling it is a
+         ;; decision a deployment makes explicitly.
+         (when (contains? cf/flags :design-session-recording)
+           [:> session-recorder/record-controls*])
          ;; More actions — a dropdown of extra controls: the panel's
          ;; destinations (Foundations / Skills) and the text-size stepper.
          [:div {:class (stl/css :more-actions)

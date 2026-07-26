@@ -112,20 +112,28 @@
 
 (defn stop-recording
   "End the current recording. `reason` distinguishes a person pressing stop from
-  a ceiling or the file closing — the critique should be able to tell."
-  ([] (stop-recording :manual))
-  ([reason]
+  a ceiling or the file closing — the critique should be able to tell.
+
+  `file-id` may be given explicitly, and MUST be on the file-closing path.
+  `finalize-workspace` dissociates `:current-file-id` in its own update, which
+  runs before this event reaches the stream — reading it from state there finds
+  nil, and both halves below silently no-op. That left the session never marked
+  stopped and its row open forever, which is exactly what `:file-closed` exists
+  to prevent."
+  ([] (stop-recording :manual nil))
+  ([reason] (stop-recording reason nil))
+  ([reason file-id*]
    (ptk/reify ::stop-recording
      ptk/UpdateEvent
      (update [_ state]
-       (if-let [file-id (:current-file-id state)]
+       (if-let [file-id (or file-id* (:current-file-id state))]
          (update-in state [:session-recorder file-id]
                     (fn [s] (when s (stop-session s reason))))
          state))
 
      ptk/WatchEvent
      (watch [_ state _]
-       (when-let [file-id (:current-file-id state)]
+       (when-let [file-id (or file-id* (:current-file-id state))]
          (rx/of (dwn/broadcast-recording file-id false)))))))
 
 (defn trim-raw
@@ -195,8 +203,11 @@
   []
   (ptk/reify ::watch-commits
     ptk/WatchEvent
-    (watch [_ _ stream]
-      (let [closed  (rx/filter (ptk/type? ::dw/finalize-workspace) stream)
+    (watch [_ state stream]
+      ;; captured now, while it is still in state: by the time `closed` fires,
+      ;; `finalize-workspace` has already dissociated `:current-file-id`
+      (let [file-id (:current-file-id state)
+            closed  (rx/filter (ptk/type? ::dw/finalize-workspace) stream)
             stopper (rx/merge
                      (rx/filter (ptk/type? ::stop-recording) stream)
                      closed)]
@@ -208,7 +219,7 @@
               (rx/take-until stopper))
          (->> closed
               (rx/take 1)
-              (rx/map (fn [_] (stop-recording :file-closed)))))))))
+              (rx/map (fn [_] (stop-recording :file-closed file-id)))))))))
 
 (defn start-recording
   "Begin recording the current file. A no-op with no file open — a recording is

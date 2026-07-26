@@ -155,19 +155,24 @@
   Deliberately does not retry inside one attempt: the recorder flushes on a
   debounce while recording, and the closing flush is driven by `stop-recording`,
   so the next scheduled attempt IS the retry. That keeps a failing backend from
-  turning one flush into a burst."
-  []
-  (ptk/reify ::flush-session
-    ptk/WatchEvent
-    (watch [_ state _]
-      (let [file-id (:current-file-id state)
+  turning one flush into a burst.
+
+  `file-id` may be given explicitly, and must be on the closing path: by then
+  `finalize-workspace` has dropped `:current-file-id` from state, so reading it
+  here would find nil and the closing flush would quietly send nothing."
+  ([] (flush-session nil))
+  ([file-id*]
+   (ptk/reify ::flush-session
+     ptk/WatchEvent
+     (watch [_ state _]
+      (let [file-id (or file-id* (:current-file-id state))
             s       (sr/session state file-id)]
         (when (should-flush? s)
           (->> (rp/cmd! :upsert-design-session (flush-payload s))
                (rx/mapcat (fn [_]
                             (when-not (:active? s) (forget-active!))
                             (rx/of (flushed file-id))))
-               (rx/catch (fn [_] (rx/of (flush-failed file-id))))))))))
+               (rx/catch (fn [_] (rx/of (flush-failed file-id)))))))))))
 
 ;; --- the file's session list
 
@@ -351,7 +356,8 @@
   (ptk/reify ::start-persisting
     ptk/WatchEvent
     (watch [_ state stream]
-      (let [closed  (rx/filter (ptk/type? ::dw/finalize-workspace) stream)
+      (let [file-id (:current-file-id state)
+            closed  (rx/filter (ptk/type? ::dw/finalize-workspace) stream)
             stops   (rx/filter (ptk/type? ::sr/stop-recording) stream)
             commits (rx/filter dch/commit? stream)]
         ;; remember the row id so a reload can find this recording again
@@ -359,12 +365,17 @@
           (remember-active! (:file-id s) (:id s)))
         (rx/merge
          ;; create the row immediately, so a recording is visible from the start
-         (rx/of (flush-session))
+         (rx/of (flush-session file-id))
          (->> commits
               (rx/debounce flush-debounce-ms)
-              (rx/map (fn [_] (flush-session)))
+              (rx/map (fn [_] (flush-session file-id)))
               (rx/take-until (rx/merge stops closed)))
-         ;; the closing flush: this is the call that finishes the row
-         (->> (rx/merge stops closed)
+         ;; The closing flush: the call that finishes the row. Keyed on `stops`
+         ;; ALONE, not on `closed` too. `watch-commits` turns a file close into a
+         ;; `stop-recording`, so a stop always follows; waiting for it means the
+         ;; session is already marked stopped when we read it. Firing on `closed`
+         ;; as well would race its own stop and could send — and mark clean — a
+         ;; session with no stop-reason, consuming the one closing attempt.
+         (->> stops
               (rx/take 1)
-              (rx/map (fn [_] (flush-session)))))))))
+              (rx/map (fn [_] (flush-session file-id)))))))))

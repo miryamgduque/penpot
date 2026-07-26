@@ -21,6 +21,8 @@
   writable by any authenticated user), so the negative cases matter more than the
   happy path."
   (:require
+   [app.common.flags :as flags]
+   [app.config :as cf]
    [app.db :as db]
    [app.rpc :as-alias rpc]
    [backend-tests.helpers :as th]
@@ -211,3 +213,36 @@
                               ::rpc/profile-id (:id owner)
                               :file-id (:id file)})]
         (t/is (= 2 (get-in out [:result :session-count])))))))
+
+;; --- the feature flag is an access boundary, not just a hidden button
+
+(t/deftest design-sessions-are-rejected-when-the-feature-is-disabled
+  (t/testing "recording captures identifiable people, so an instance that has
+              not opted in must refuse at the RPC — hiding the UI is not enough"
+    (let [owner (th/create-profile* 1 {:is-active true})
+          file  (th/create-file* 1 {:profile-id (:id owner)
+                                    :project-id (:default-project-id owner)})]
+      (with-redefs [cf/flags (disj cf/flags :design-session-recording)]
+        (t/testing "writes are refused"
+          (let [out (th/command! {::th/type :upsert-design-session
+                                  ::rpc/profile-id (:id owner)
+                                  :id (UUID/randomUUID)
+                                  :file-id (:id file)
+                                  :session-id (UUID/randomUUID)
+                                  :events events})]
+            (t/is (= :restriction (th/ex-type (:error out))))
+            (t/is (= :feature-disabled (th/ex-code (:error out))))))
+
+        (t/testing "and so are reads and exports"
+          (t/is (= :restriction
+                   (th/ex-type (:error (th/command! {::th/type :get-design-sessions
+                                                     ::rpc/profile-id (:id owner)
+                                                     :file-id (:id file)})))))
+          (t/is (= :restriction
+                   (th/ex-type (:error (th/command! {::th/type :export-design-sessions
+                                                     ::rpc/profile-id (:id owner)
+                                                     :file-id (:id file)}))))))))
+
+    (t/testing "and the flag is OFF in the shipped default set, so this is the
+                out-of-the-box behaviour"
+      (t/is (not (contains? (flags/parse flags/default) :design-session-recording))))))

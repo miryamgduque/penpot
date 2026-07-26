@@ -21,6 +21,11 @@ state, and a list of past sessions on the file.
 > which I will not do. The devenv's passwordless demo login is disabled and
 > enabling it needs a flag restart.
 >
+> **Second, independent blocker found in this phase:** devenv's frontend never
+> receives `PENPOT_FLAGS` at all, so the flag-gated control cannot render there
+> even with a working browser. See "Devenv cannot show the UI" below — it affects
+> every frontend flag in Penpot, not just this one.
+>
 > **What this means honestly:** phases 01–04 and 07–08 are unit-tested,
 > code-traced, and compile clean, but have **never run**. Only phases 05 and 06
 > are proven against a running Penpot (both backend). The checklist below is the
@@ -39,9 +44,9 @@ state, and a list of past sessions on the file.
       (`app.main.ui.ds.foundations.assets.icon`), not `app.main.ui.icons` — both
       exist and only the DS one works with `icon-button*`
 - [x] Confirm whether this belongs in the agent panel or the workspace header —
-      **agent panel**, beside the conversation controls. See the visibility gap
-      in Notes: this is the decision that leaves collaborators unable to see they
-      are being recorded
+      **both**, after Santi's 2026-07-26 direction: the *control* sits in the agent
+      panel beside the conversation controls, and the *REC indicator* is in the
+      workspace header on the presence widget so everyone being recorded sees it
 
 ## Live verification debt inherited from phases 02, 03 and 04
 
@@ -89,6 +94,10 @@ becomes observable. Do not close Phase 08 without these:
       second, because a frozen readout is indistinguishable from a dead recording
 - [x] Session list: past sessions on this file, newest first, with duration —
       **participant count NOT shown**, see Notes
+- [x] **Visible to everyone being recorded** (Santi 2026-07-26) — `:recording-update`
+      broadcast + REC badge on the presence widget
+- [x] **Behind a feature flag, off by default** (Santi 2026-07-26) — enforced in
+      the UI *and* at every RPC
 - [ ] ~~Session detail: the timeline, grouped by actor~~ **descoped**, see Notes
 - [x] Surface the stop reason when a session ended on a cap
 - [x] Surface local-only degradation if flushes failed
@@ -134,25 +143,73 @@ Postgres. It wants a denormalized column on `design_session`. Left out rather
 than faked — a wrong participant count on a record of who did what would be
 worse than none.
 
-### The visibility gap — a decision for Santi
+### RESOLVED by Santi (2026-07-26): visible, admin export, behind a flag
 
-The control lives in the agent panel, so **the recording indicator is visible
-only to the profile whose panel is open**. A collaborator whose edits are being
-captured sees nothing.
+> "make it visibile, only admins can export it, available as a flag"
 
-The phase said to resolve the privacy question here. The technical half is clear
-— broadcasting recording state to everyone on the file needs presence work
-(a websocket message alongside `:pointer-update`), which is beyond this phase.
-The other half is a product call and is **still open**:
+All three are now in place, and together they answer the privacy question the
+phase left open — a recording is announced to everyone on the file, only admins
+can take it away, and an instance has to opt in before any of it exists.
 
-- Are participants told a session is being recorded?
-- Is starting a recording something any editor may do, or admins only? (Today
-  any editor may record; only admins may export. That asymmetry is deliberate but
-  worth confirming.)
+**1. Visible to everyone being recorded.** A `:recording-update` websocket
+message (modelled exactly on `:pointer-update`, `websocket.clj`) broadcasts
+start/stop to the file topic, and the receiving client stores it **on the
+presence entry** rather than in a map of its own. That choice pays for itself:
+`handle-presence` already drops the whole entry on disconnect / leave-file, so a
+collaborator who closes their tab mid-recording **cannot leave a stale REC badge
+behind** — the cleanup is free and cannot be forgotten.
 
-**This is a blocker for shipping beyond the branch, not a nicety.** For a
-prototype where the team knows the feature exists it is defensible; for anything
-wider it is not.
+The badge lives in `active-sessions*` beside the collaborator avatars, which is
+where "who else is here" already is. It is in the workspace header, so it does
+not depend on anyone having the agent panel open. The server stamps the real
+profile/session on the message rather than trusting the client's.
+
+**2. Only admins can export.** Already the case from Phase 06 and unchanged;
+now pinned by a test at both ends (admin succeeds, outsider refused).
+
+**3. Behind a flag, off by default.** `:design-session-recording` added to
+`flags/varia` and deliberately **not** to `flags/default`. Enforced in two
+places, because a hidden button is not an access boundary:
+
+- the UI does not render the control (`cf/flags`, the same idiom `:mcp` uses);
+- **every RPC command refuses** with `:restriction` / `:feature-disabled`.
+
+A test disables the flag and asserts writes, reads and exports are all rejected,
+plus that the shipped default set does not contain it.
+
+Enable with `PENPOT_FLAGS=enable-design-session-recording`. It is on in devenv
+(`docker/devenv/defaults.env`) and in the backend test harness.
+
+### ⚠ Devenv cannot show the UI — the frontend never receives PENPOT_FLAGS
+
+Found while wiring this up, and **it is not specific to this feature**.
+
+Frontend `cf/flags` is parsed from `globalThis.penpotFlags`, defaulting to `""`
+(`frontend/src/app/config.cljs:76-80`). Nothing in this branch ever sets that
+global: production injects it by `sed`-ing a commented placeholder in
+`js/config.js` from the nginx entrypoint
+(`docker/images/files/nginx-entrypoint.sh:27-32,47`), a file that **does not
+exist in devenv**, and `index.mustache` carries no placeholder either.
+
+So in devenv the frontend only ever has `flags/default`, and **any** frontend
+flag gate is dead there — including the pre-existing `(contains? cf/flags :mcp)`
+at `main_menu.cljs:113`. The backend *does* get the flag correctly (verified:
+`{:flag true, :flags-count 47}` in the running system).
+
+Consequence: the record control will not appear in devenv until
+`globalThis.penpotFlags` is set before the app boots. To try it, set that global
+(what production's `sed` does in spirit) or temporarily drop the `cf/flags` guard
+in `ai_panel.cljs`. Deliberately not "fixed" here — adding a flag-injection step
+to the devenv build changes behaviour for every flag in Penpot, which is well
+outside this feature's remit and should be its own change.
+
+### Still open: who may START a recording
+
+Today **any editor** may record; only admins may export. That asymmetry follows
+from Santi's direction and is deliberate, but it means one collaborator can
+record another's work. The badge now makes that visible, which is the important
+half. Restricting *starting* to admins would be a one-line change to
+`check-can-read!`'s sibling if that turns out to be wanted.
 
 ### DS gaps hit
 

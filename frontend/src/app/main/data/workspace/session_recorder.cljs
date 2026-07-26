@@ -46,6 +46,7 @@
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
    [app.main.data.workspace :as dw]
+   [app.main.data.workspace.notifications :as dwn]
    [app.main.data.workspace.session-events :as se]
    [beicon.v2.core :as rx]
    [potok.v2.core :as ptk]))
@@ -120,7 +121,12 @@
        (if-let [file-id (:current-file-id state)]
          (update-in state [:session-recorder file-id]
                     (fn [s] (when s (stop-session s reason))))
-         state)))))
+         state))
+
+     ptk/WatchEvent
+     (watch [_ state _]
+       (when-let [file-id (:current-file-id state)]
+         (rx/of (dwn/broadcast-recording file-id false)))))))
 
 (defn trim-raw
   "Bound the raw buffer, oldest out. Returns `[raw dropped]` — the count is what
@@ -235,7 +241,10 @@
       ;; `update` runs before `watch` on the same event, so a missing file has
       ;; already been declined above and there is nothing to subscribe to
       (when (recording? state)
-        (rx/of (watch-commits))))))
+        (rx/of (watch-commits)
+               ;; everyone on the file gets to know a recording is running —
+               ;; they are the ones being recorded
+               (dwn/broadcast-recording (:current-file-id state) true))))))
 
 (defn toggle-recording
   []

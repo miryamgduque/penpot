@@ -80,32 +80,51 @@
 
 ;; --- the live control
 
-(mf/defc record-status*
-  "The active-recording readout: elapsed time, event count, and any warning that
-  the recording is no longer being saved."
-  {::mf/private true}
-  [{:keys [session]}]
-  (let [;; a ticking clock rather than a static number: a recording that looks
+(mf/defc recording-timer*
+  "The active-recording card, rendered at the TOP of the panel body — above the
+  observer alerts.
+
+  While a session is being recorded this is the most important state in the
+  panel, so it gets a full card rather than a cramped header readout, and it
+  carries the stop action so stopping never means hunting through the header.
+  Renders nothing when no recording is running."
+  []
+  (let [session    (mf/deref refs/session-recorder)
+        recording? (true? (:active? session))
+
+        ;; a ticking clock rather than a static number: a recording that looks
         ;; frozen is indistinguishable from one that has died
         now*  (mf/use-state #(inst-ms (js/Date.)))
-        now   (deref now*)]
-    (mf/with-effect []
-      (let [id (js/setInterval #(reset! now* (inst-ms (js/Date.))) 1000)]
-        #(js/clearInterval id)))
+        now   (deref now*)
 
-    [:div {:class (stl/css :status)}
-     [:span {:class (stl/css :rec-dot)}]
-     [:span {:class (stl/css :status-text)}
-      (str (duration-label (- now (:started-at session 0)))
-           " · "
-           (count (:events session []))
-           " events")]
-     (when (:local-only? session)
-       [:span {:class (stl/css :status-warning)
-               :title (str "The last " spersist/max-flush-failures
-                           " saves failed. Recording continues in this browser "
-                           "but is no longer being stored.")}
-        "not saving"])]))
+        on-stop (mf/use-fn #(st/emit! (srec/stop-recording)))]
+
+    (mf/with-effect [recording?]
+      (when recording?
+        (let [id (js/setInterval #(reset! now* (inst-ms (js/Date.))) 1000)]
+          #(js/clearInterval id))))
+
+    (when recording?
+      [:div {:class (stl/css :timer-card)}
+       [:span {:class (stl/css :rec-dot)}]
+       [:div {:class (stl/css :timer-main)}
+        [:span {:class (stl/css :timer-elapsed)}
+         (duration-label (- now (:started-at session 0)))]
+        [:span {:class (stl/css :timer-meta)}
+         (let [n (count (:events session []))]
+           (str "Recording this session · " n (if (= 1 n) " event" " events")))]]
+
+       (when (:local-only? session)
+         [:span {:class (stl/css :status-warning)
+                 :title (str "The last " spersist/max-flush-failures
+                             " saves failed. Recording continues in this browser "
+                             "but is no longer being stored.")}
+          "not saving"])
+
+       [:button {:type "button"
+                 :class (stl/css :timer-stop)
+                 :on-click on-stop}
+        "Stop"]])))
 
 (mf/defc session-row*
   {::mf/private true}
@@ -282,22 +301,26 @@
                (.removeEventListener js/document "keydown" on-key true)))))
 
     [:div {:class (stl/css :record-controls) :ref root-ref}
-     (when recording?
-       [:> record-status* {:session session}])
-
-     [:> icon-button* {:variant (if recording? "primary" "ghost")
-                       :aria-label (if recording? "Stop recording" "Record session")
+     ;; No glyph in the DS reads as "record", and `play` reads as "run", so the
+     ;; record affordance is a circle styled as a red dot — the universal one.
+     ;; While recording the elapsed time and stop live in `recording-timer*` at
+     ;; the top of the panel body, not here.
+     [:> icon-button* {:variant "ghost"
+                       :class (stl/css-case :rec-button true :rec-button-live recording?)
+                       :aria-label (if recording? "Stop recording" "Record this design session")
                        :title (if recording?
                                 "Stop recording this design session"
                                 "Record this design session")
                        :on-click on-toggle-rec
-                       :icon (if recording? i/stroke-circle i/play)}]
+                       :icon i/stroke-circle}]
 
+     ;; `clock` rather than `history`: the chat's own History button sits right
+     ;; beside this one and two identical glyphs are indistinguishable.
      [:> icon-button* {:variant "ghost"
                        :aria-label "Recorded sessions"
                        :title "Recorded sessions"
                        :on-click on-toggle-list
-                       :icon i/history}]
+                       :icon i/clock}]
 
      (when open?
        [:*

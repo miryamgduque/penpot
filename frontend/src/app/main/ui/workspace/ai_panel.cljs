@@ -1194,6 +1194,13 @@
       [:span {:class (stl/css :context-sep)} "·"]
       [:span {:class (stl/css :context-selection)} (selection-label selected objects)]]
 
+     ;; The recording timer sits ABOVE the observer alerts on purpose: while a
+     ;; session is being recorded that is the most important state in the panel,
+     ;; and it is where the stop action has to be reachable without hunting
+     ;; through the header.
+     (when (contains? cf/flags :design-session-recording)
+       [:> session-recorder/recording-timer*])
+
      [:> observer-notifications* {:on-fix on-fix}]
 
      (if (or (seq messages) (some? pending-form))

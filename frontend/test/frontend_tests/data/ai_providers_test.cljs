@@ -8,7 +8,8 @@
   "Locks in the curated model catalog against provider reality.
 
   These assertions are not really testing our code — they pin down external
-  facts verified against provider documentation on 2026-07-15. The catalog is
+  facts verified against provider documentation on 2026-07-15, with the
+  Moonshot rows re-verified on 2026-07-21 for the K3 launch. The catalog is
   hand-maintained, and the failure mode of getting a row wrong is a provider
   error the user sees as a generic red bubble.
 
@@ -46,14 +47,26 @@
 
 (t/deftest moonshot-current-models-are-natively-multimodal
   (t/testing "the base/-vision-preview split died with the moonshot-v1 line"
+    (t/is (true? (dai/vision? "moonshot" "kimi-k3")))
     (t/is (true? (dai/vision? "moonshot" "kimi-k2.6")))
-    (t/is (true? (dai/vision? "moonshot" "kimi-k2.5")))
-    (t/is (true? (dai/vision? "moonshot" "kimi-k2.7-code")))))
+    (t/is (true? (dai/vision? "moonshot" "kimi-k2.7-code")))
+    (t/is (true? (dai/vision? "moonshot" "kimi-k2.7-code-highspeed")))))
+
+(t/deftest kimi-k3-is-the-only-million-token-moonshot-model
+  (t/testing "the rest of the Kimi line is 256K — a wrong context here shows up
+              as history trimmed far too early or a provider-side overflow"
+    (let [by-id (into {} (map (juxt :id :context))
+                      (get dai/ai-provider-models "moonshot"))]
+      (t/is (= 1000000 (get by-id "kimi-k3")))
+      (t/is (= 262144 (get by-id "kimi-k2.6")))
+      (t/is (= 262144 (get by-id "kimi-k2.7-code"))))))
 
 (t/deftest retired-models-are-not-offered
   (t/testing "an id that fails at the provider must not be in the picker"
     (doseq [[provider id reason]
             [["moonshot" "kimi-k2-0905-preview" "discontinued 2026-05-25"]
+             ["moonshot" "kimi-k2.5" "closed to new accounts, sunset 2026-08-31"]
+             ["moonshot" "moonshot-v1-128k" "sunset 2026-08-31"]
              ["openai" "gpt-5" "deprecated 2026-06-11, shutdown 2026-12-11"]
              ["openai" "gpt-5-mini" "deprecated 2026-06-11, shutdown 2026-12-11"]]]
       (t/is (not (contains? (set (map :id (get dai/ai-provider-models provider))) id))

@@ -23,7 +23,10 @@
 ;; Hand-maintained: there is no cross-provider capability API, and the one
 ;; provider that does expose one (Anthropic's /v1/models) only covers its own
 ;; models. Every id, context size, and `:vision` value below was verified
-;; against provider documentation on 2026-07-15. Nothing here is inferred.
+;; against provider documentation on 2026-07-15; the Moonshot rows were
+;; re-verified on 2026-07-21 for the K3 launch. Nothing here is inferred.
+;; Moonshot's docs moved host in that window (platform.moonshot.ai →
+;; platform.kimi.ai); the API base URI in the backend is unchanged.
 ;;
 ;; `:vision` is the load-bearing field and the easy one to get wrong, because
 ;; the answer does not follow from the model's name or reputation — and the
@@ -31,9 +34,10 @@
 ;;
 ;;   Anthropic, OpenAI — every current model reads images. No vision SKU to
 ;;     hunt for; looking for one wastes time.
-;;   Moonshot          — the CURRENT models (Kimi K2.x) are natively
-;;     multimodal. The base/`-vision-preview` split only ever applied to the
-;;     retired moonshot-v1 line.
+;;   Moonshot          — the CURRENT models (Kimi K2.5+ and K3) are natively
+;;     multimodal, and K3/K2.6/K2.7-code read video too. The
+;;     base/`-vision-preview` split only ever applied to the sunsetting
+;;     moonshot-v1 line.
 ;;   Zhipu             — vision still ships as SEPARATE ids. `glm-5.2` is
 ;;     text-only and there is no `glm-5.2v`; `glm-5v-turbo` is the vision model.
 ;;
@@ -73,14 +77,17 @@
     {:id "glm-4.7"      :label "GLM-4.7"      :context 200000  :vision false}
     {:id "glm-5v-turbo" :label "GLM-5V Turbo" :context 200000  :vision true}]
    "moonshot"
-   ;; K2.6 is the general-purpose flagship. There is no plain `kimi-k2.7` —
-   ;; K2.7 shipped only as coding variants, and Moonshot routes general work
-   ;; back to K2.6. Note the ids use a DOT (`kimi-k2.6`, not `kimi-k2-6`).
-   [{:id "kimi-k2.6"      :label "Kimi K2.6"      :context 262144 :vision true}
-    {:id "kimi-k2.5"      :label "Kimi K2.5"      :context 262144 :vision true}
-    ;; vision confirmed via the pricing page, kimi.com, and Cloudflare Workers
-    ;; AI; the model-list entry omits it, but is terse rather than contradictory
-    {:id "kimi-k2.7-code" :label "Kimi K2.7 Code" :context 262144 :vision true}]})
+   ;; K3 is the flagship and the only Kimi with a 1M window — the rest of the
+   ;; line is 256K. There is still no plain `kimi-k2.7`: K2.7 shipped only as
+   ;; coding variants, so K2.6 stays the cheap general-purpose row.
+   ;; Note the ids use a DOT (`kimi-k2.6`, not `kimi-k2-6`).
+   ;; ⚠ `kimi-k2.5` and the whole `moonshot-v1` line sunset 2026-08-31 and are
+   ;; already closed to new accounts, so they are deliberately not offered.
+   [{:id "kimi-k3"                   :label "Kimi K3"             :context 1000000 :vision true}
+    {:id "kimi-k2.6"                 :label "Kimi K2.6"           :context 262144  :vision true}
+    {:id "kimi-k2.7-code"            :label "Kimi K2.7 Code"      :context 262144  :vision true}
+    ;; same model as k2.7-code on a faster decode path (~180 tok/s)
+    {:id "kimi-k2.7-code-highspeed"  :label "Kimi K2.7 Code Fast" :context 262144  :vision true}]})
 
 (defn vision?
   "Whether `model` accepts image input.

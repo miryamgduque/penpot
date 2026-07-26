@@ -49,6 +49,7 @@
   (:require
    [app.main.data.changes :as dch]
    [app.main.data.workspace :as dw]
+   [app.main.data.workspace.notifications :as dwn]
    [app.main.data.workspace.session-recorder :as sr]
    [app.main.repo :as rp]
    [app.util.storage :as storage]
@@ -279,15 +280,20 @@
   "What to emit for a fetched row, or nil when it must not be resumed.
 
   Pure, so the composition is testable — and it needs to be, because getting it
-  wrong is invisible until a row never closes. **All three events are required:**
+  wrong is invisible until a row never closes. **All four events are required:**
   seeding the state alone leaves a recording that captures nothing, and seeding
   plus capture alone leaves one that never flushes and therefore never finishes.
-  That second mistake shipped and was caught in live verification."
+  That second mistake shipped and was caught in live verification.
+
+  The fourth is the disclosure. A reload drops the websocket, so every peer
+  dropped our presence entry and the recording flag with it; resuming capture
+  without re-announcing gives a recording that runs on with nobody informed."
   [row]
   (when (and (some? row) (nil? (:stop-reason row)))
     [(seed-resumed-session row)
      (sr/watch-commits)
-     (start-persisting)]))
+     (start-persisting)
+     (dwn/broadcast-recording (:file-id row) true)]))
 
 (defn resume-recording
   "If this file had a recording in progress when the page went away, fetch it and

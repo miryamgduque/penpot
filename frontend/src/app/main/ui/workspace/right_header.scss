@@ -177,6 +177,7 @@
   block-size: var(--sp-xs);
   border-radius: 50%;
   background-color: var(--color-accent-error);
+
   // Reads against both the header band and the button's selected state.
   box-shadow: 0 0 0 2px var(--color-background-primary);
   pointer-events: none;

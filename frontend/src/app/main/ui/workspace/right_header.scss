@@ -162,6 +162,43 @@
   display: flex;
   align-items: center;
   margin-inline-end: 0.125rem;
+  position: relative;
+}
+
+// Recording indicator: everyone on the file must be able to tell a design
+// session is being recorded, including people who never open the panel. Rides
+// the toggle rather than sitting beside it so it cannot be mistaken for a
+// separate control — there is nothing to click here, it is a status.
+.recording-dot {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  inline-size: var(--sp-xs);
+  block-size: var(--sp-xs);
+  border-radius: 50%;
+  background-color: var(--color-accent-error);
+  // Reads against both the header band and the button's selected state.
+  box-shadow: 0 0 0 2px var(--color-background-primary);
+  pointer-events: none;
+  animation: right-header-rec-pulse 1.6s ease-in-out infinite;
+}
+
+// A frozen indicator is indistinguishable from a dead one; motion says "live".
+@keyframes right-header-rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recording-dot {
+    animation: none;
+  }
 }
 
 .history-button {

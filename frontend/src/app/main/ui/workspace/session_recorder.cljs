@@ -33,8 +33,10 @@
   (:require
    [app.common.data.macros :as dm]
    [app.common.time :as ct]
+   [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.session-persist :as spersist]
    [app.main.data.workspace.session-recorder :as srec]
+   [app.main.data.workspace.session-review :as srev]
    [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
@@ -107,7 +109,7 @@
 
 (mf/defc session-row*
   {::mf/private true}
-  [{:keys [session on-export]}]
+  [{:keys [session on-export on-review]}]
   (let [started  (:started-at session)
         stopped  (:stopped-at session)
         reason   (stop-reason-label (:stop-reason session))
@@ -134,6 +136,17 @@
                        history is incomplete. The timeline itself is intact."}
         (str dropped " raw dropped")])
 
+     ;; only a finished session can be reviewed: critiquing a recording that is
+     ;; still running would judge an unfinished process
+     (when stopped
+       [:> icon-button* {:variant (if (:has-review session) "primary" "ghost")
+                         :aria-label "Review this session"
+                         :title (if (:has-review session)
+                                  "Already reviewed — run it again"
+                                  "Ask the agent to critique this session")
+                         :on-click #(on-review (:id session))
+                         :icon i/feedback}])
+
      [:> icon-button* {:variant "ghost"
                        :aria-label "Export this session"
                        :title "Copy this session as JSON"
@@ -142,7 +155,7 @@
 
 (mf/defc sessions-popover*
   {::mf/private true}
-  [{:keys [sessions on-export on-export-all]}]
+  [{:keys [sessions on-export on-export-all on-review]}]
   [:div {:class (stl/css :popover)}
    [:div {:class (stl/css :popover-head)}
     [:span "Recorded sessions"]
@@ -159,7 +172,8 @@
       (for [s sessions]
         [:> session-row* {:key (dm/str (:id s))
                           :session s
-                          :on-export on-export}])])])
+                          :on-export on-export
+                          :on-review on-review}])])])
 
 (mf/defc record-controls*
   "Start/stop a recording and browse this file's sessions.
@@ -206,6 +220,33 @@
              (when id [id])))))
 
         on-export-all (mf/use-fn (fn [] (on-export nil)))
+
+        on-review
+        (mf/use-fn
+         (fn [id]
+           (reset! note* "Reviewing…")
+           (st/emit!
+            (spersist/load-session-for-review
+             id
+             (fn [session err]
+               (if session
+                 (st/emit!
+                  (srev/review-session
+                   session
+                   (fn [[kind payload]]
+                     (case kind
+                       ;; the critique goes to the agent transcript: it is a
+                       ;; reply from the agent about this file, and that is
+                       ;; where the user already reads those
+                       :review (do (st/emit! (dwaip/append-message "assistant" payload))
+                                   (reset! note* "Review added to the chat")
+                                   (st/emit! (spersist/fetch-sessions)))
+                       :note   (st/emit! (dwaip/append-message "note" payload))
+                       :usage  (st/emit! (dwaip/accumulate-review-usage payload))
+                       :error  (reset! note* (str "Review failed: " (name payload)))
+                       nil))))
+                 (reset! note* (str "Could not load that session"
+                                    (when err (str " (" (name err) ")"))))))))))
 
         on-toggle-list
         (mf/use-fn
@@ -262,6 +303,7 @@
        [:*
         [:> sessions-popover* {:sessions sessions
                                :on-export on-export
-                               :on-export-all on-export-all}]
+                               :on-export-all on-export-all
+                               :on-review on-review}]
         (when note
           [:span {:class (stl/css :note)} note])])]))

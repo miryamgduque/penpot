@@ -20,6 +20,7 @@
    [frontend-tests.data.session-events-test]
    [frontend-tests.data.session-persist-test]
    [frontend-tests.data.session-recorder-test]
+   [frontend-tests.data.session-review-test]
    [frontend-tests.data.uploads-test]
    [frontend-tests.data.viewer-test]
    [frontend-tests.data.workspace-colors-test]
@@ -108,6 +109,7 @@
    'frontend-tests.data.session-events-test
    'frontend-tests.data.session-persist-test
    'frontend-tests.data.session-recorder-test
+   'frontend-tests.data.session-review-test
    'frontend-tests.data.uploads-test
    'frontend-tests.data.viewer-test
    'frontend-tests.data.workspace-colors-test

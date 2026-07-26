@@ -111,6 +111,36 @@
     (t/is (= 0 (:flush-failures s)))
     (t/is (false? (:dirty? s)))))
 
+(defn- degraded-session
+  "A session that hit the failure ceiling and went local-only."
+  []
+  (reduce (fn [s _] (sp/mark-flush-failed s))
+          (session-after-one-commit)
+          (range sp/max-flush-failures)))
+
+(t/deftest the-closing-flush-is-attempted-even-when-local-only
+  (t/testing "local-only exists to stop hammering an unresponsive backend, and
+              one attempt on stop is not hammering. Without this the row keeps
+              stopped_at NULL forever once a mid-recording blip trips the flag —
+              the very outcome the resume path exists to avoid"
+    (let [s (-> (degraded-session)
+                (assoc :active? false :stopped-at 2000 :stop-reason :manual :dirty? true))]
+      (t/is (true? (:local-only? s)))
+      (t/is (true? (sp/should-flush? s))
+            "the closing flush gets its attempt"))))
+
+(t/deftest local-only-still-suppresses-flushes-while-recording
+  (t/testing "the exception is the closing flush only — an open session that
+              gave up must not resume hammering"
+    (t/is (false? (sp/should-flush? (degraded-session))))))
+
+(t/deftest a-successful-flush-lifts-local-only
+  (t/testing "the backend answered, so the session is demonstrably not
+              local-only — leaving the flag set would keep telling the user a
+              recording did not persist when it did"
+    (let [s (sp/mark-flushed (degraded-session))]
+      (t/is (false? (:local-only? s))))))
+
 ;; --- the payload
 
 (t/deftest the-payload-carries-what-the-backend-needs

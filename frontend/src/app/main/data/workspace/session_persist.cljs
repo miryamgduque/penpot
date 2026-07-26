@@ -73,14 +73,25 @@
 ;; --- pure decisions
 
 (defn should-flush?
+  "A dirty session flushes, unless it has given up on the backend — with one
+  exception: the CLOSING flush always gets an attempt.
+
+  `:local-only?` exists to stop hammering a backend that is not answering, and a
+  single attempt on stop is not hammering. Without the exception a session that
+  hit the ceiling mid-recording could never send its closing flush even after
+  the backend recovered, leaving the row with `stopped_at` NULL forever — the
+  exact outcome the reload path above exists to avoid. If the backend is still
+  down the attempt simply fails again."
   [s]
-  (boolean (and s (:dirty? s) (not (:local-only? s)))))
+  (boolean (and s (:dirty? s)
+                (or (not (:local-only? s))
+                    (some? (:stopped-at s))))))
 
 (defn mark-flushed
-  "The server accepted this timeline: nothing pending, and any failure streak is
-  over."
+  "The server accepted this timeline: nothing pending, any failure streak is
+  over, and the session is demonstrably not local-only after all."
   [s]
-  (assoc s :dirty? false :flush-failures 0))
+  (assoc s :dirty? false :flush-failures 0 :local-only? false))
 
 (defn mark-flush-failed
   "Keep the events and stay dirty so the next attempt retries. At the ceiling,

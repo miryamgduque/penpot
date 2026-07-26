@@ -20,15 +20,73 @@
   gap: deprecated.$s-4;
 }
 
-// --- live status
+// --- the record button
+//
+// No DS glyph reads as "record" (there is no such icon, and `play` reads as
+// "run"), so the circle glyph is tinted to become the universal red dot. Live
+// recording fills it.
 
-.status {
+.rec-button svg {
+  stroke: #e11d48;
+}
+
+.rec-button-live svg {
+  fill: #e11d48;
+  stroke: #e11d48;
+}
+
+// --- the recording timer card
+//
+// Lives at the top of the panel BODY, above the observer alerts: while a session
+// is recording that is the most important state in the panel, and stopping must
+// not mean hunting through the header.
+
+.timer-card {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-4;
-  padding-inline: deprecated.$s-6;
-  border-radius: deprecated.$br-4;
+  gap: deprecated.$s-8;
+  margin-block-end: deprecated.$s-4;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-accent-error);
+  border-radius: deprecated.$br-8;
   background-color: var(--color-background-tertiary);
+}
+
+.timer-main {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-inline-size: 0;
+}
+
+.timer-elapsed {
+  @include deprecated.small-title-typography;
+
+  color: var(--color-foreground-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-meta {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+.timer-stop {
+  @include deprecated.body-small-typography;
+
+  flex-shrink: 0;
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-accent-error);
+  border-radius: deprecated.$br-4;
+  background: none;
+  color: var(--color-accent-error);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-accent-error);
+    color: var(--color-background-primary);
+  }
 }
 
 .rec-dot {

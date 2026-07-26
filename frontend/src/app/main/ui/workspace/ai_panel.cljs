@@ -35,6 +35,7 @@
    [app.main.data.workspace.elicitation :as el]
    [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.selection :as dws]
+   [app.main.data.workspace.session-persist :as dwsp]
    [app.main.data.workspace.skill-state :as skst]
    [app.main.data.workspace.slash-commands :as slc]
    [app.main.data.workspace.team-skills :as dwts]
@@ -2559,6 +2560,10 @@
         ;; the menu open — only a click outside it closes.
         more-open*  (mf/use-state false)
         more-open?  (deref more-open*)
+
+        ;; whether a design session is being recorded, so the menu row can say
+        ;; "Stop" rather than offering to start a second one
+        recording-session? (true? (:active? (mf/deref refs/session-recorder)))
         more-ref    (mf/use-ref nil)
         toggle-more (mf/use-fn #(swap! more-open* not))
         close-more  (mf/use-fn #(reset! more-open* false))]
@@ -2641,6 +2646,16 @@
                       :on-click #(do (close-more) (open-skills))}
              [:> i/icon* {:icon-id i/list-checks}]
              [:span "Skills"]]
+            ;; A labelled entry, not just the header dot: an unlabelled icon for
+            ;; something as consequential as "start recording everyone's edits"
+            ;; is not discoverable, and it was not found in practice.
+            (when (contains? cf/flags :design-session-recording)
+              [:button {:type "button"
+                        :class (stl/css :more-option)
+                        :on-click #(do (close-more)
+                                       (st/emit! (dwsp/toggle-session-recording)))}
+               [:> i/icon* {:icon-id i/stroke-circle}]
+               [:span (if recording-session? "Stop recording session" "Record design session")]])
             [:div {:class (stl/css :more-row)}
              [:span {:class (stl/css :more-row-label)} "Text size"]
              [:div {:class (stl/css :font-stepper)}

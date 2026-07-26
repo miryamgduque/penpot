@@ -309,6 +309,21 @@
 ;; the recorder's state, so folding them together would put a require cycle
 ;; between the two. Phase 08 emits both.
 
+(defn toggle-session-recording
+  "Start or stop a recording, wiring persistence when starting.
+
+  The right entry point for UI: `session-recorder/toggle-recording` alone would
+  start capture with nothing flushing it. Lives here rather than in the recorder
+  because the recorder must not depend on persistence (it works without a backend
+  at all), and this direction of the dependency already exists."
+  []
+  (ptk/reify ::toggle-session-recording
+    ptk/WatchEvent
+    (watch [_ state _]
+      (if (sr/recording? state)
+        (rx/of (sr/stop-recording))
+        (rx/of (sr/start-recording) (start-persisting))))))
+
 (defn start-persisting
   "Flush the recording on a debounce, and once more the moment it stops.
 

@@ -21,14 +21,21 @@
   says out loud when a recording has stopped persisting (`:local-only?`) or was
   ended by a cap rather than by a person.
 
-  **Known gap, deliberately not solved here:** the indicator is visible only to
-  the profile whose panel is open. A collaborator being recorded sees nothing.
-  Closing that needs presence work (broadcasting recording state over the
-  websocket) and is a blocker for shipping beyond this branch, not a nicety — see
-  the phase file.
+  While a session runs, `recording-timer*` shows elapsed time, the event count and
+  a Stop action as a card at the top of the panel body, shaped like the observer
+  notification cards beneath it.
 
-  DS gaps worked around: there is no `record` or `stop` glyph, so `play` starts a
-  recording and a styled `stroke-circle` marks the active state."
+  **Recording state is visible only inside the panel** (Santi, 2026-07-26: the
+  workspace-header REC badge was removed as out of place). The state IS still
+  broadcast over the websocket and lands on each collaborator's presence entry, so
+  a future surface can show it without new plumbing — but as it stands a
+  collaborator with the panel closed sees nothing, which is a product decision to
+  revisit before this ships beyond the branch.
+
+  DS gap worked around: there is no `record` or `stop` glyph. `stroke-circle` is
+  tinted into the universal red dot (filled while live), and the sessions browser
+  uses `clock` — `history` would have been the same glyph as the chat's own
+  History button sitting next to it."
   (:require-macros [app.main.style :as stl])
   (:require
    [app.common.data.macros :as dm]
@@ -105,26 +112,31 @@
           #(js/clearInterval id))))
 
     (when recording?
-      [:div {:class (stl/css :timer-card)}
-       [:span {:class (stl/css :rec-dot)}]
-       [:div {:class (stl/css :timer-main)}
-        [:span {:class (stl/css :timer-elapsed)}
-         (duration-label (- now (:started-at session 0)))]
-        [:span {:class (stl/css :timer-meta)}
-         (let [n (count (:events session []))]
-           (str "Recording this session · " n (if (= 1 n) " event" " events")))]]
+      ;; wrapper mirrors `.observer-list`: same horizontal chat padding, so the
+      ;; card lines up with the notification cards below it rather than floating
+      ;; at a different inset
+      [:div {:class (stl/css :timer-list)}
+       [:div {:class (stl/css :timer-card)}
+        [:div {:class (stl/css :timer-body)}
+         [:span {:class (stl/css :rec-dot)}]
+         [:div {:class (stl/css :timer-main)}
+          [:span {:class (stl/css :timer-elapsed)}
+           (duration-label (- now (:started-at session 0)))]
+          [:span {:class (stl/css :timer-meta)}
+           (let [n (count (:events session []))]
+             (str "Recording this session · " n (if (= 1 n) " event" " events")))]]
 
-       (when (:local-only? session)
-         [:span {:class (stl/css :status-warning)
-                 :title (str "The last " spersist/max-flush-failures
-                             " saves failed. Recording continues in this browser "
-                             "but is no longer being stored.")}
-          "not saving"])
+         (when (:local-only? session)
+           [:span {:class (stl/css :status-warning)
+                   :title (str "The last " spersist/max-flush-failures
+                               " saves failed. Recording continues in this browser "
+                               "but is no longer being stored.")}
+            "not saving"])
 
-       [:button {:type "button"
-                 :class (stl/css :timer-stop)
-                 :on-click on-stop}
-        "Stop"]])))
+         [:button {:type "button"
+                   :class (stl/css :timer-stop)
+                   :on-click on-stop}
+          "Stop"]]]])))
 
 (mf/defc session-row*
   {::mf/private true}

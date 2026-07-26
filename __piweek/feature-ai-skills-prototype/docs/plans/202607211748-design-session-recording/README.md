@@ -138,7 +138,7 @@ Verified by exploration on 2026-07-21, not from memory:
 5. [Phase 05 — Separate database](./done-phase-05-separate-database.md) — second Postgres DB, its own pool and migrations ✅ **live-verified**
 6. [Phase 06 — Session RPC](./done-phase-06-session-rpc.md) — idempotent upsert + list/get + **admin export for a bot** ✅
 7. [Phase 07 — Persistence wiring](./done-phase-07-persistence-wiring.md) — debounced flush, retry-then-disclose, reload resume ✅ *(logic only; reachable in Phase 08)*
-8. [Phase 08 — Recording UI](./doing-phase-08-recording-ui.md) — record control + session browser ⏸ **code complete, every live check blocked on browser tooling**
+8. [Phase 08 — Recording UI](./done-phase-08-recording-ui.md) — record control, REC badge for collaborators, session browser + export ✅ **LIVE-VERIFIED**
 9. [Phase 09 — Review turn](./todo-phase-09-review-turn.md) — the feedback loop itself
 
 Phases 01–04 deliver a working recorder with no backend at all (drivable from
@@ -163,14 +163,12 @@ durable. 08–09 make it usable and close the loop.
 
 ## Risks
 
-- **Attribution correctness is the whole feature.** If remote events are
-  mislabelled the critique is worse than useless — it would blame the wrong
-  person. Phases 02 and 03 shipped the code and traced every link in source, but
-  **nothing has run in a browser yet**: Chrome was unreachable all session, and
-  `session-recorder` is not even in the `:main` build until something requires
-  it. **Phase 08 creates the first caller and owns every outstanding live check**
-  (see its "Live verification debt" section). Until then treat all attribution as
-  code-traced and unit-tested, *not* live-proven.
+- ~~**Attribution correctness is the whole feature.**~~ **VERIFIED LIVE
+  (2026-07-26, phase 08).** A two-session run proved a collaborator's edit is
+  recorded as `source: :remote` and attributed to *their* session, and an agent
+  turn proved `who: :agent` with the right model — including the reflow commit
+  that lands ~100ms after the tool returns, which is the case the 400ms grace
+  window exists for. Details in the phase 08 file.
 - **Volume.** A drag emits dozens of commits. Caps and the noise filter are not
   polish; without them the first real session will be unusable and may blow the
   4M payload cap that already aborted two agent turns (NYT postmortem).

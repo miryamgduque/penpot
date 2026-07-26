@@ -55,6 +55,9 @@
    [beicon.v2.core :as rx]
    [potok.v2.core :as ptk]))
 
+;; `resume-recording` re-emits it, and it is defined further down
+(declare start-persisting)
+
 (def max-flush-failures
   "How many consecutive failed flushes before the recording stops trying and
   declares itself local-only. Low on purpose: the point is to tell the user
@@ -245,6 +248,20 @@
                    :flush-failures 0
                    :local-only? false})))))
 
+(defn resume-events
+  "What to emit for a fetched row, or nil when it must not be resumed.
+
+  Pure, so the composition is testable — and it needs to be, because getting it
+  wrong is invisible until a row never closes. **All three events are required:**
+  seeding the state alone leaves a recording that captures nothing, and seeding
+  plus capture alone leaves one that never flushes and therefore never finishes.
+  That second mistake shipped and was caught in live verification."
+  [row]
+  (when (and (some? row) (nil? (:stop-reason row)))
+    [(seed-resumed-session row)
+     (sr/watch-commits)
+     (start-persisting)]))
+
 (defn resume-recording
   "If this file had a recording in progress when the page went away, fetch it and
   carry on. A no-op otherwise, and a no-op if the row has since been finished or
@@ -259,10 +276,9 @@
         (when-let [row-id (some-> file-id active-session-id)]
           (->> (rp/cmd! :get-design-session {:id row-id})
                (rx/mapcat (fn [row]
-                            (if (or (nil? row) (some? (:stop-reason row)))
-                              (do (forget-active!) (rx/empty))
-                              (rx/of (seed-resumed-session row)
-                                     (sr/watch-commits)))))
+                            (if-let [events (resume-events row)]
+                              (rx/from events)
+                              (do (forget-active!) (rx/empty)))))
                (rx/catch (fn [_]
                            ;; the row is gone, or unreadable by this profile:
                            ;; forget it rather than retrying forever

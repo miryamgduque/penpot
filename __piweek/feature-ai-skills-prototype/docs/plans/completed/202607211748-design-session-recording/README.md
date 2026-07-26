@@ -138,7 +138,7 @@ Verified by exploration on 2026-07-21, not from memory:
 5. [Phase 05 — Separate database](./done-phase-05-separate-database.md) — second Postgres DB, its own pool and migrations ✅ **live-verified**
 6. [Phase 06 — Session RPC](./done-phase-06-session-rpc.md) — idempotent upsert + list/get + **admin export for a bot** ✅
 7. [Phase 07 — Persistence wiring](./done-phase-07-persistence-wiring.md) — debounced flush, retry-then-disclose, reload resume ✅ *(logic only; reachable in Phase 08)*
-8. [Phase 08 — Recording UI](./done-phase-08-recording-ui.md) — record control, REC badge for collaborators, session browser + export ✅ **LIVE-VERIFIED**
+8. [Phase 08 — Recording UI](./done-phase-08-recording-ui.md) — record control, session browser + export ✅ **LIVE-VERIFIED**
 9. [Phase 09 — Review turn](./done-phase-09-review-turn.md) — the feedback loop itself ✅ **LIVE-VERIFIED with a real Opus 4.8 turn**
 
 Phases 01–04 deliver a working recorder with no backend at all (drivable from
@@ -210,8 +210,12 @@ a bot. Eleven commits on `feature/ai-skills-prototype-session-recording`.
 - **Persistence** (`session-persist`) — debounced flush, retry-then-disclose,
   resume across reloads.
 - **UI** (`ui/session-recorder`) — record control, live counter, session browser,
-  clipboard export, and a **REC badge on the presence widget** so everyone on the
-  file knows.
+  clipboard export.
+  - ⚠️ **Open privacy gap.** The plan called for a REC badge on the presence
+    widget so everyone on the file knows they are being recorded. It shipped and
+    was then removed as out of place in the header (Santi, 2026-07-26), so a
+    collaborator with the AI panel closed currently sees nothing. Recordings are
+    still announced over the websocket — the surface for it is what is missing.
 - **Review** (`session-review`) — a tool-less Opus turn that critiques the session
   and stores its verdict.
 - Behind `:design-session-recording`, **off by default**.

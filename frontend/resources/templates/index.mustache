@@ -30,7 +30,12 @@
       globalThis.penpotVersion = "{{& version}}";
       globalThis.penpotVersionTag = "{{& version_tag}}";
       globalThis.penpotBuildDate = "{{& build_date}}";
-      {{#flags}}globalThis.penpotFlags = "{{& flags}}";{{/flags}}
+      {{! NOTE: this block is a module, so it is implicitly deferred and runs
+          AFTER the synchronous config.js below despite appearing first. The
+          guard is what actually keeps config.js authoritative — in a packaged
+          image nginx-entrypoint.sh injects the runtime flags there, and this
+          build-time snapshot must not clobber them. }}
+      {{#flags}}globalThis.penpotFlags = globalThis.penpotFlags || "{{& flags}}";{{/flags}}
     </script>
 
     {{# manifest}}

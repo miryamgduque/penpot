@@ -62,6 +62,11 @@
 
 (def default
   {:database-uri "postgresql://postgres/penpot_test"
+   ;; design session recordings live in their own database; point the suite at a
+   ;; test copy so it never writes into the one a running devenv records into
+   :sessions-database-uri "postgresql://postgres/penpot_sessions_test"
+   :sessions-database-username "penpot"
+   :sessions-database-password "penpot"
    :redis-uri "redis://valkey/1"
    :auto-file-snapshot-every 1
    :file-data-backend "db"})
@@ -77,6 +82,10 @@
    :enable-quotes
    :enable-rpc-climit
    :enable-auto-file-snapshot
+   ;; off by default in the shipped flag set; the suite turns it on so the
+   ;; feature can be exercised, and one test disables it again to prove the
+   ;; gate refuses at the RPC
+   :enable-design-session-recording
    :disable-file-validation])
 
 (defn state-init
@@ -102,6 +111,9 @@
                      (assoc-in [::db/pool ::db/uri] (:database-uri config))
                      (assoc-in [::db/pool ::db/username] (:database-username config))
                      (assoc-in [::db/pool ::db/password] (:database-password config))
+                     (assoc-in [:app.main/sessions-pool ::db/uri] (:sessions-database-uri config))
+                     (assoc-in [:app.main/sessions-pool ::db/username] (:sessions-database-username config))
+                     (assoc-in [:app.main/sessions-pool ::db/password] (:sessions-database-password config))
                      (assoc-in [:app.rpc/methods :app.setup/templates] templates)
                      (assoc-in [:app.rpc/methods :app.setup/templates] templates)
                      (update :app.rpc/rlimit assoc

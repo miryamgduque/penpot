@@ -314,6 +314,46 @@
                  (dm/get-in state [:ai-panel file-id :busy?])))
              st/state))
 
+;; --- Design session recording
+
+(def session-recorder
+  "The live recording for the current file, or nil. See
+  `app.main.data.workspace.session-recorder`."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:session-recorder file-id])))
+             st/state))
+
+(def design-sessions
+  "This file's recorded sessions, metadata only, newest first. The backend
+  decides what is visible (every session for an admin, your own otherwise), so
+  this is rendered as given."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:design-sessions file-id])))
+             st/state))
+
+(defn recording-in-progress?
+  "Whether a design session is being recorded on this file by ANYONE — a
+  collaborator who broadcast it, or us.
+
+  A recording captures identifiable activity by people who did not start it, so
+  the answer has to be available outside the AI panel: someone with the panel
+  closed is exactly the person who would otherwise never know.
+  `:workspace-recording` holds the session ids that have announced a recording;
+  it is cleared alongside presence on disconnect / leave-file, so a collaborator
+  who closes the tab mid-recording cannot leave this stuck on.
+
+  Pure so the disclosure rule is testable without standing up the store."
+  [state]
+  (let [file-id (:current-file-id state)
+        mine?   (dm/get-in state [:session-recorder file-id :active?])
+        theirs? (seq (:workspace-recording state))]
+    (boolean (or mine? theirs?))))
+
+(def file-recording?
+  (l/derived recording-in-progress? st/state))
+
 (def ai-panel-usage
   "Running token-usage totals for the current file's chat (spend meter)."
   (l/derived (fn [state]

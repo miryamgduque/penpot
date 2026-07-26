@@ -43,6 +43,9 @@
 (declare handle-file-restored)
 (declare handle-library-change)
 (declare handle-pointer-send)
+(declare handle-recording-update)
+(declare handle-join-file)
+(declare reannounce-recording)
 (declare handle-export-update)
 
 (defn initialize
@@ -84,6 +87,15 @@
                                   (rx/mapcat #(->> (rx/from initmsg)
                                                    (rx/map dws/send))))
 
+                             ;; ...and say again that we are recording. Our
+                             ;; disconnect made every peer clear us, and the
+                             ;; re-subscription above does not carry it back.
+                             ;; No ordering constraint: `handle-recording-update`
+                             ;; accepts an id it has not met yet.
+                             (->> stream
+                                  (rx/filter (ptk/type? ::dws/opened))
+                                  (rx/map (fn [_] (reannounce-recording))))
+
                              ;; Emit presence event for current user;
                              ;; this is because websocket server don't
                              ;; emits this for the same user.
@@ -122,14 +134,18 @@
                 (dpl/close-current-plugin {:close-only-edition-plugins? true}))
          (rx/of (dwly/set-options-mode :design)))))))
 
-(defn- process-message
+(defn process-message
+  ;; public only so the routing itself is testable: a regression here (a branch
+  ;; pointed back at the wrong handler) is invisible to a test that calls the
+  ;; handlers directly
   [{:keys [type] :as msg}]
   (case type
-    :join-file              (handle-presence msg)
+    :join-file              (handle-join-file msg)
     :leave-file             (handle-presence msg)
     :presence               (handle-presence msg)
     :disconnect             (handle-presence msg)
     :pointer-update         (handle-pointer-update msg)
+    :recording-update       (handle-recording-update msg)
     :file-change            (handle-file-change msg)
     :file-deleted           (handle-file-deleted msg)
     :file-restored          (handle-file-restored msg)
@@ -156,6 +172,90 @@
                      :vport (:vport local)
                      :position point}]
         (rx/of (dws/send message))))))
+
+;; --- Design session recording presence
+;;
+;; Recording state is its OWN set of session ids, not a key on the presence
+;; entry. Riding presence looked tidier — cleanup came for free — but it made
+;; disclosure depend on message ordering: an update had to be dropped when its
+;; session was not yet known, or it would conjure a presence entry with no
+;; profile behind it and break the avatar list. That drop is unacceptable here.
+;; A `:recording-update` that loses a race against its own `:join-file` would
+;; be discarded, and on a two-person file nothing would ever re-send it, so
+;; someone would be recorded for the rest of their session with no indication.
+;;
+;; A separate set has no such constraint: it can hold an id we have not met
+;; yet, and it is cleaned up alongside presence on disconnect / leave-file.
+
+(defn handle-recording-update
+  "A collaborator started or stopped recording this file.
+
+  Deliberately unconditional — see the note above. Order of arrival relative to
+  the sender's `:join-file` does not matter."
+  [{:keys [session-id recording?] :as _msg}]
+  (ptk/reify ::handle-recording-update
+    ptk/UpdateEvent
+    (update [_ state]
+      (update state :workspace-recording
+              (fn [ids]
+                (let [ids (or ids #{})]
+                  (if recording?
+                    (conj ids session-id)
+                    (disj ids session-id))))))))
+
+(defn broadcast-recording
+  "Tell everyone on the file that this session started or stopped recording."
+  [file-id recording?]
+  (ptk/reify ::broadcast-recording
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (rx/of (dws/send {:type :recording-update
+                        :file-id file-id
+                        :recording? (boolean recording?)})))))
+
+(defn- local-recording?
+  "Whether THIS session has a recording running on `file-id`.
+
+  Reads the state path directly instead of going through `session-recorder`,
+  which already depends on this namespace for `broadcast-recording` — requiring
+  it back would be a cycle."
+  [state file-id]
+  (boolean (get-in state [:session-recorder file-id :active?])))
+
+(defn reannounce-recording
+  "Say again that we are recording, for the benefit of someone who was not
+  listening the first time.
+
+  `:recording-update` is fire-and-forget pub/sub: the server keeps no record of
+  which files are being recorded, so the single announcement at start only ever
+  reaches the sessions connected at that instant. Two gaps follow, and both
+  leave a person unwarned while their activity is captured — the exact failure
+  the indicator exists to prevent:
+
+  - someone who OPENS the file mid-recording is never told, ever;
+  - a dropped websocket makes every peer `dissoc` our presence entry (and with
+    it the recording flag), and nothing puts it back on reconnect.
+
+  So we re-announce whenever a new session joins and whenever our own socket
+  comes back. Announcing more than necessary is harmless — the receiver just
+  re-asserts a boolean it already held."
+  []
+  (ptk/reify ::reannounce-recording
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [file-id (:current-file-id state)]
+        (when (local-recording? state file-id)
+          (rx/of (broadcast-recording file-id true)))))))
+
+(defn handle-join-file
+  "A session joined the file: track its presence, and if we are recording, tell
+  it so — it missed the original announcement."
+  [msg]
+  (ptk/reify ::handle-join-file
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (rx/of (handle-presence msg)
+             (reannounce-recording)))))
 
 ;; --- Finalize Websocket
 
@@ -211,7 +311,12 @@
       ptk/UpdateEvent
       (update [_ state]
         (if (or (= :disconnect type) (= :leave-file type))
-          (update state :workspace-presence dissoc session-id)
+          (-> state
+              (update :workspace-presence dissoc session-id)
+              ;; recording state is tracked separately (see
+              ;; `handle-recording-update`) but shares this cleanup: a session
+              ;; that leaves is no longer recording anything here
+              (update :workspace-recording disj session-id))
           (update state :workspace-presence update-presence))))))
 
 
@@ -246,7 +351,14 @@
   (sm/check-fn schema:handle-file-change))
 
 (defn handle-file-change
-  [{:keys [file-id changes revn vern] :as msg}]
+  ;; `profile-id`/`session-id` name the collaborator whose edit this is. The
+  ;; schema above has always required them; they used to be dropped here, which
+  ;; left every remote change anonymous by the time it reached the commit
+  ;; stream. Note the backend never sends us our own session's changes
+  ;; (`:subscribe-file` filters them, backend/src/app/http/websocket.clj:153-155),
+  ;; so this is always somebody else — though possibly the same person in
+  ;; another tab, since session-id is per tab.
+  [{:keys [file-id changes revn vern profile-id session-id] :as msg}]
 
   (dm/assert!
    "expected valid parameters"
@@ -267,6 +379,8 @@
                           :file-vern vern
                           :save-undo? false
                           :source :remote
+                          :profile-id profile-id
+                          :session-id session-id
                           :redo-changes (vec changes)
                           :undo-changes []})))))
 

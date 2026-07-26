@@ -147,6 +147,32 @@
     ::mdef/labels []
     ::mdef/type :histogram}})
 
+;; Design session recordings live in a separate database, so they need a second
+;; connection pool.
+;;
+;; It is tempting to `(derive ::sessions-pool ::db/pool)` and inherit the
+;; existing behaviour. That does not work: integrant resolves `ig/ref` by `isa?`,
+;; so deriving makes every pre-existing `(ig/ref ::db/pool)` in this system map
+;; ambiguous — integrant fails to init with
+;; `:key :app.db/pool, :matching-keys (:app.db/pool :app.main/sessions-pool)`.
+;;
+;; So this is a DISTINCT key that delegates to `::db/pool`'s own multimethods.
+;; Same construction, logging, assertion and shutdown, no ref ambiguity. It also
+;; inherits the property that makes optionality free: `ig/init-key ::db/pool`
+;; returns nil when no uri is configured (`db.clj:87`), so an unconfigured
+;; recorder simply has no pool and Penpot boots and runs exactly as before.
+(defmethod ig/assert-key ::sessions-pool
+  [_ options]
+  (ig/assert-key ::db/pool options))
+
+(defmethod ig/init-key ::sessions-pool
+  [_ cfg]
+  (ig/init-key ::db/pool cfg))
+
+(defmethod ig/halt-key! ::sessions-pool
+  [_ pool]
+  (ig/halt-key! ::db/pool pool))
+
 (def system-config
   {::db/pool
    {::db/uri        (cf/get :database-uri)
@@ -156,6 +182,18 @@
     ::db/min-size   (cf/get :database-min-pool-size)
     ::db/max-size   (cf/get :database-max-pool-size)
     ::mtx/metrics   (ig/ref ::mtx/metrics)}
+
+   ::sessions-pool
+   {::db/name       :sessions
+    ::db/uri        (cf/get :sessions-database-uri)
+    ::db/username   (cf/get :sessions-database-username)
+    ::db/password   (cf/get :sessions-database-password)
+    ::db/min-size   (cf/get :sessions-database-min-pool-size 1)
+    ::db/max-size   (cf/get :sessions-database-max-pool-size 8)
+    ::mtx/metrics   (ig/ref ::mtx/metrics)}
+
+   :app.migrations/session-migrations
+   {::db/pool (ig/ref ::sessions-pool)}
 
    ;; Default netty IO pool (shared between several services)
    ::wrk/netty-io-executor
@@ -321,6 +359,16 @@
    :app.rpc/methods
    {::http.client/client (ig/ref ::http.client/client)
     ::db/pool            (ig/ref ::db/pool)
+    ;; the design-sessions database; nil when unconfigured, and those commands
+    ;; fail cleanly rather than the system refusing to start
+    ::sessions-pool      (ig/ref ::sessions-pool)
+
+    ;; NOTE: this dependency is only necessary for proper initialization ordering
+    ;; (same reasoning as ::setup/props below). Without it nothing refs the
+    ;; session migrations, so Integrant is free to start serving RPC before the
+    ;; sessions database has its tables and the first design-session call fails
+    ;; with a raw "relation design_session does not exist".
+    ::session-migrations (ig/ref :app.migrations/session-migrations)
     ::rds/pool           (ig/ref ::rds/pool)
     :app.nitrate/client  (ig/ref :app.nitrate/client)
     ::wrk/executor       (ig/ref ::wrk/executor)

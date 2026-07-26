@@ -11,10 +11,18 @@
    [frontend-tests.data.agent-test]
    [frontend-tests.data.agent-tools-test]
    [frontend-tests.data.ai-providers-test]
+   [frontend-tests.data.changes-provenance-test]
    [frontend-tests.data.design-doc-test]
    [frontend-tests.data.design-md-test]
    [frontend-tests.data.nitrate-test]
    [frontend-tests.data.repo-test]
+   [frontend-tests.data.session-actor-test]
+   [frontend-tests.data.session-events-test]
+   [frontend-tests.data.session-persist-test]
+   [frontend-tests.data.recording-disclosure-test]
+   [frontend-tests.data.recording-reannounce-test]
+   [frontend-tests.data.session-recorder-test]
+   [frontend-tests.data.session-review-test]
    [frontend-tests.data.uploads-test]
    [frontend-tests.data.viewer-test]
    [frontend-tests.data.workspace-colors-test]
@@ -94,10 +102,18 @@
    'frontend-tests.data.agent-test
    'frontend-tests.data.agent-tools-test
    'frontend-tests.data.ai-providers-test
+   'frontend-tests.data.changes-provenance-test
    'frontend-tests.data.design-doc-test
    'frontend-tests.data.design-md-test
    'frontend-tests.data.nitrate-test
    'frontend-tests.data.repo-test
+   'frontend-tests.data.session-actor-test
+   'frontend-tests.data.session-events-test
+   'frontend-tests.data.session-persist-test
+   'frontend-tests.data.recording-disclosure-test
+   'frontend-tests.data.recording-reannounce-test
+   'frontend-tests.data.session-recorder-test
+   'frontend-tests.data.session-review-test
    'frontend-tests.data.uploads-test
    'frontend-tests.data.viewer-test
    'frontend-tests.data.workspace-colors-test

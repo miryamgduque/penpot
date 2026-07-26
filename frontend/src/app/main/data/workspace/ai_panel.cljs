@@ -19,10 +19,12 @@
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
+   [app.main.data.session-actor :as sa]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-chats :as agent-chats]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
+   [app.main.data.workspace.session-events :as se]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
    [potok.v2.core :as ptk]))
@@ -190,6 +192,15 @@
         (assoc-in state [:ai-panel file-id :busy?] busy?)
         state))))
 
+(declare accumulate-usage)
+
+(defn accumulate-review-usage
+  "Meter a session review's spend on the panel's existing spend meter. A review
+  is a real model call on the user's key, so it belongs in the same total as
+  everything else rather than being invisible."
+  [usage]
+  (accumulate-usage usage))
+
 (defn- accumulate-usage
   "Adds one round's token usage into the file's running spend meter total."
   [usage]
@@ -253,17 +264,6 @@
 ;; "Semantic audit tick" section below)
 (def ^:private tick-idle-ms 4000)
 (def ^:private max-tick-shapes 50)
-
-(defn- touched-shape-ids
-  "Shape ids named by a commit's redo-changes (`:id` on add/mod/del forms,
-  `:shapes` on mov/reg forms)."
-  [redo-changes]
-  (into #{}
-        (mapcat (fn [{:keys [id shapes]}]
-                  (cond-> []
-                    (some? id)   (conj id)
-                    (seq shapes) (into shapes))))
-        redo-changes))
 
 (defn refresh-violations
   "Recompute the deterministic violations for the current file. Prunes ids
@@ -338,7 +338,7 @@
               (rx/of (seed-enforced-rules) (refresh-violations))
               (->> commits
                    (rx/map (fn [{:keys [redo-changes]}]
-                             (track-dirty (touched-shape-ids redo-changes)))))
+                             (track-dirty (se/touched-shape-ids redo-changes)))))
               (->> (rx/merge commits
                              (rx/filter (ptk/type? ::set-enforced-rules) stream))
                    (rx/debounce watcher-debounce-ms)
@@ -702,6 +702,18 @@
      ;; conversation too.
      (->> (rx/of ::end)
           (rx/mapcat (fn [_]
+                       ;; the turn is over on every path (done / checkpoint /
+                       ;; cancel / error): release the acting-agent marker so a
+                       ;; human edit right after the turn is recorded as theirs.
+                       ;; Belt to session-actor's own expiry braces — a cancel
+                       ;; mid-tool never reaches `end-agent-action!`.
+                       ;;
+                       ;; `release-actor!`, not `reset-actor!`: on the cancel
+                       ;; path the agent's trailing reflow commit is already
+                       ;; queued and is not cancelled with the turn, so a hard
+                       ;; wipe here would stamp it `:who :user`. Release starts
+                       ;; the same grace countdown a normal tool end would.
+                       (sa/release-actor!)
                        (if @ended?*
                          (rx/of (set-busy false)
                                 (agent-chats/persist-chat))

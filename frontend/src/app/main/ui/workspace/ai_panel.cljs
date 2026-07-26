@@ -24,6 +24,7 @@
    [app.common.media :as cm]
    [app.common.time :as ct]
    [app.common.uuid :as uuid]
+   [app.config :as cf]
    [app.main.data.ai-providers :as dai]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-chats :as dwach]
@@ -34,6 +35,7 @@
    [app.main.data.workspace.elicitation :as el]
    [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.selection :as dws]
+   [app.main.data.workspace.session-persist :as dwsp]
    [app.main.data.workspace.skill-state :as skst]
    [app.main.data.workspace.slash-commands :as slc]
    [app.main.data.workspace.team-skills :as dwts]
@@ -47,6 +49,7 @@
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
    [app.main.ui.hooks :as hooks]
+   [app.main.ui.workspace.session-recorder :as session-recorder]
    [app.util.dom :as dom]
    [app.util.keyboard :as kbd]
    [app.util.object :as obj]
@@ -1191,6 +1194,13 @@
       [:span {:class (stl/css :context-page)} (:name page)]
       [:span {:class (stl/css :context-sep)} "·"]
       [:span {:class (stl/css :context-selection)} (selection-label selected objects)]]
+
+     ;; The recording timer sits ABOVE the observer alerts on purpose: while a
+     ;; session is being recorded that is the most important state in the panel,
+     ;; and it is where the stop action has to be reachable without hunting
+     ;; through the header.
+     (when (contains? cf/flags :design-session-recording)
+       [:> session-recorder/recording-timer*])
 
      [:> observer-notifications* {:on-fix on-fix}]
 
@@ -2550,6 +2560,10 @@
         ;; the menu open — only a click outside it closes.
         more-open*  (mf/use-state false)
         more-open?  (deref more-open*)
+
+        ;; whether a design session is being recorded, so the menu row can say
+        ;; "Stop" rather than offering to start a second one
+        recording-session? (true? (:active? (mf/deref refs/session-recorder)))
         more-ref    (mf/use-ref nil)
         toggle-more (mf/use-fn #(swap! more-open* not))
         close-more  (mf/use-fn #(reset! more-open* false))]
@@ -2602,6 +2616,16 @@
          ;; act on the chat itself. Foundations / Skills navigation and the
          ;; text-size stepper live in the More-actions menu (US #38).
          [:> chat-controls*]
+         ;; Design session recording. Sits beside the conversation controls
+         ;; because it is the other thing you start and stop on a file — but it
+         ;; records EVERYONE's edits, not just the agent's (see
+         ;; app.main.ui.workspace.session-recorder).
+         ;;
+         ;; Behind a flag and OFF by default: a recording captures identifiable
+         ;; activity by people who did not press the button, so enabling it is a
+         ;; decision a deployment makes explicitly.
+         (when (contains? cf/flags :design-session-recording)
+           [:> session-recorder/record-controls*])
          ;; More actions — a dropdown of extra controls: the panel's
          ;; destinations (Foundations / Skills) and the text-size stepper.
          [:div {:class (stl/css :more-actions)
@@ -2622,6 +2646,16 @@
                       :on-click #(do (close-more) (open-skills))}
              [:> i/icon* {:icon-id i/list-checks}]
              [:span "Skills"]]
+            ;; A labelled entry, not just the header dot: an unlabelled icon for
+            ;; something as consequential as "start recording everyone's edits"
+            ;; is not discoverable, and it was not found in practice.
+            (when (contains? cf/flags :design-session-recording)
+              [:button {:type "button"
+                        :class (stl/css :more-option)
+                        :on-click #(do (close-more)
+                                       (st/emit! (dwsp/toggle-session-recording)))}
+               [:> i/icon* {:icon-id i/stroke-circle}]
+               [:span (if recording-session? "Stop recording session" "Record design session")]])
             [:div {:class (stl/css :more-row)}
              [:span {:class (stl/css :more-row-label)} "Text size"]
              [:div {:class (stl/css :font-stepper)}

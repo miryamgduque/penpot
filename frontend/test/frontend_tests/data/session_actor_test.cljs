@@ -80,6 +80,33 @@
   (sa/reset-actor!)
   (t/is (nil? (sa/current-actor 1000))))
 
+(t/deftest release-actor-keeps-the-grace-window-on-a-cancelled-turn
+  (t/testing "turn teardown must not cut the grace window short: a cancel
+              mid-tool never reaches end-agent-action!, but the agent's trailing
+              reflow commit is already queued on the global bus and is NOT
+              cancelled with the turn — a hard reset would stamp it :who :user"
+    (sa/begin-agent-action! settings 1000)
+    (sa/release-actor! 1000)
+    (t/is (some? (sa/current-actor (+ 1000 100)))
+          "the buffered :layout/update still lands on the agent")
+    (t/is (nil? (sa/current-actor (+ 1000 sa/grace-ms 1)))
+          "and the marker still releases once the window closes")))
+
+(t/deftest release-actor-can-only-shorten-a-marker
+  (t/testing "if end-agent-action! already started the countdown, teardown
+              arriving later must not extend it"
+    (let [gen (sa/begin-agent-action! settings 1000)]
+      (sa/end-agent-action! gen 1000)
+      ;; teardown lands 300ms into the 400ms window
+      (sa/release-actor! 1300)
+      (t/is (nil? (sa/current-actor (+ 1000 sa/grace-ms 1)))
+            "the original deadline stands"))))
+
+(t/deftest release-actor-on-a-clear-marker-is-a-noop
+  (sa/reset-actor!)
+  (sa/release-actor! 1000)
+  (t/is (nil? (sa/current-actor 1000))))
+
 ;; --- generations: a finished tool must not disturb a newer one
 
 (t/deftest a-stale-end-does-not-shorten-a-newer-marker

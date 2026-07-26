@@ -707,7 +707,13 @@
                        ;; human edit right after the turn is recorded as theirs.
                        ;; Belt to session-actor's own expiry braces — a cancel
                        ;; mid-tool never reaches `end-agent-action!`.
-                       (sa/reset-actor!)
+                       ;;
+                       ;; `release-actor!`, not `reset-actor!`: on the cancel
+                       ;; path the agent's trailing reflow commit is already
+                       ;; queued and is not cancelled with the turn, so a hard
+                       ;; wipe here would stamp it `:who :user`. Release starts
+                       ;; the same grace countdown a normal tool end would.
+                       (sa/release-actor!)
                        (if @ended?*
                          (rx/of (set-busy false)
                                 (agent-chats/persist-chat))

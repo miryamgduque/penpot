@@ -166,6 +166,26 @@
     (t/is (:active? s'))
     (t/is (nil? (:stop-reason s')))))
 
+(t/deftest closing-the-file-stops-the-session-without-current-file-id
+  (t/testing "`finalize-workspace` dissociates :current-file-id in its own
+              update, which runs before the close-driven stop reaches the
+              stream. Reading it from state there finds nil and the stop
+              silently no-ops, leaving the row open with stopped_at NULL
+              forever — observed against the real database before this arity
+              existed"
+    (let [;; state as it is by the time the close-driven stop actually runs
+          closing (dissoc (start) :current-file-id)
+          stopped (ptk/update (sr/stop-recording :file-closed file-id) closing)
+          s       (get-in stopped [:session-recorder file-id])]
+      (t/is (false? (:active? s)))
+      (t/is (= :file-closed (:stop-reason s)))
+      (t/is (true? (:dirty? s)) "and dirty, so the closing flush is sent"))))
+
+(t/deftest a-stop-without-an-explicit-file-id-still-reads-state
+  (t/testing "the manual path is unchanged by the new arity"
+    (let [stopped (ptk/update (sr/stop-recording :manual) (start))]
+      (t/is (false? (:active? (get-in stopped [:session-recorder file-id])))))))
+
 (t/deftest a-stopped-recording-ignores-further-commits
   (let [state (-> (start)
                   (as-> st (ptk/update (sr/stop-recording) st))

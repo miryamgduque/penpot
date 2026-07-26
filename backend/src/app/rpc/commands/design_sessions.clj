@@ -218,6 +218,37 @@
     (check-can-read! pool profile-id (:file-id row) (:profile-id row))
     (decode-row row)))
 
+;; --- Mutation: store a session's critique
+;;
+;; Separate from `::upsert-design-session` because a review is written AFTER the
+;; session is finished, and that upsert deliberately refuses a finished row. The
+;; review is stored so it can be re-read without spending tokens again.
+;;
+;; Same read rule as `::get-design-session`: a team admin, or the profile that
+;; recorded it. Whoever may read a session may critique it.
+
+(def ^:private schema:set-design-session-review
+  [:map {:title "set-design-session-review"}
+   [:id ::sm/uuid]
+   [:review [:maybe [:string {:max 20000}]]]])
+
+(def ^:private sql:set-review
+  "UPDATE design_session SET review = ?, updated_at = now() WHERE id = ?")
+
+(sv/defmethod ::set-design-session-review
+  {::doc/added "2.13"
+   ::sm/params schema:set-design-session-review}
+  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id id review]}]
+  (let [spool (get-sessions-pool cfg)
+        row   (db/get* spool :design-session {:id id})]
+    (when-not row
+      (ex/raise :type :not-found
+                :code :object-not-found
+                :hint "design session not found"))
+    (check-can-read! pool profile-id (:file-id row) (:profile-id row))
+    (db/exec-one! spool [sql:set-review review id])
+    {:id id}))
+
 ;; --- Query: bulk export for a bot
 ;;
 ;; The reason this feature exists: an admin hands a file's recorded sessions to

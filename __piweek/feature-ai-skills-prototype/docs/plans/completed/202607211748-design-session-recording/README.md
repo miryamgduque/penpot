@@ -1,6 +1,6 @@
 # Design Session Recording
 
-**Status:** doing
+**Status:** done
 **Created:** 2026-07-21
 **Apps:** `frontend`, `backend`, `docker/devenv`
 **Dependencies:** None
@@ -139,7 +139,7 @@ Verified by exploration on 2026-07-21, not from memory:
 6. [Phase 06 — Session RPC](./done-phase-06-session-rpc.md) — idempotent upsert + list/get + **admin export for a bot** ✅
 7. [Phase 07 — Persistence wiring](./done-phase-07-persistence-wiring.md) — debounced flush, retry-then-disclose, reload resume ✅ *(logic only; reachable in Phase 08)*
 8. [Phase 08 — Recording UI](./done-phase-08-recording-ui.md) — record control, REC badge for collaborators, session browser + export ✅ **LIVE-VERIFIED**
-9. [Phase 09 — Review turn](./todo-phase-09-review-turn.md) — the feedback loop itself
+9. [Phase 09 — Review turn](./done-phase-09-review-turn.md) — the feedback loop itself ✅ **LIVE-VERIFIED with a real Opus 4.8 turn**
 
 Phases 01–04 deliver a working recorder with no backend at all (drivable from
 the console, the way agent tools were verified in past sessions). 05–07 make it
@@ -185,3 +185,66 @@ durable. 08–09 make it usable and close the loop.
 - **Privacy.** This records identifiable per-person activity on a shared document.
   Before anything ships beyond the branch, decide who may read a session and
   whether participants are told they are being recorded.
+
+
+## Completion Summary
+
+**Completed:** 2026-07-26
+
+### What shipped
+
+Press record on a file; every layout interaction by every participant is captured
+with attribution; press stop; hand it to an agent for critique — or export it for
+a bot. Eleven commits on `feature/ai-skills-prototype-session-recording`.
+
+- **Event model** (`session-events`) — commits become a semantic timeline, one
+  event per gesture, machine noise filtered out.
+- **Provenance** (`changes`, `notifications`, `session-actor`) — every commit now
+  says which profile, which browser session, human or agent, and on which model.
+- **Recorder** (`session-recorder`) — start/stop, bounded buffers, three ceilings
+  that never truncate silently.
+- **Isolated storage** — recordings live in their own Postgres database with its
+  own pool and migrations, optional everywhere, droppable without touching Penpot.
+- **RPC** (`design-sessions`) — idempotent upsert, list, get, admin-only export,
+  review storage.
+- **Persistence** (`session-persist`) — debounced flush, retry-then-disclose,
+  resume across reloads.
+- **UI** (`ui/session-recorder`) — record control, live counter, session browser,
+  clipboard export, and a **REC badge on the presence widget** so everyone on the
+  file knows.
+- **Review** (`session-review`) — a tool-less Opus turn that critiques the session
+  and stores its verdict.
+- Behind `:design-session-recording`, **off by default**.
+
+### What changed from the original plan
+
+- **`:origin` was unusable as a semantic label** (6 of 133 call sites populate
+  it). Events are classified from the changes themselves — schema-validated and
+  refactor-proof.
+- **`ig/derive` for a second DB pool breaks Penpot's boot** (ambiguous refs). A
+  delegating key was needed instead.
+- **Create/append/finish collapsed into one idempotent upsert**, which then
+  dissolved the mid-gesture flush hazard phases 01 and 04 had both flagged.
+- **Side turns cannot mutate**, so phase 03's side-turn marking was unnecessary.
+- **Session detail view and participant count were descoped**, not half-built —
+  the latter because a wrong participant count on a record of who did what is
+  worse than none.
+- **Two bugs beyond the plan's scope were fixed**: `PENPOT_FLAGS` never reached
+  the frontend in dev builds (affecting every flag, `:mcp` included), and resume
+  restarted capture without flushing.
+
+### Lessons & follow-ups
+
+- **Live verification earned its keep.** Every phase passed its unit tests; the
+  resume bug only appeared with a real reload against a real backend, because
+  each piece worked and only the composition was wrong.
+- **The devenv OOM-killed the backend** mid-verification (swap exhausted, 13
+  other containers up). Not a code fault, but worth knowing before a long session.
+- **Open follow-ups**: no orphan reaper for recordings whose file is deleted
+  (cross-database cascades do not exist); no per-file quota; participant count
+  wants a denormalized column; the 3s flush debounce is untuned; and **any editor
+  can start a recording while only admins can export** — deliberate, now visible
+  via the badge, but worth revisiting.
+- **Privacy is resolved for a prototype, not for a product**: the recorder is
+  announced and flag-gated. Whether participants must consent, rather than merely
+  be informed, remains a product decision.

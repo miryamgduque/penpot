@@ -182,6 +182,22 @@
              ;; list is simply empty
              (rx/catch (fn [_] (rx/of (sessions-fetched file-id [])))))))))
 
+(defn load-session-for-review
+  "Fetch one session's full timeline and hand it to `on-ready`.
+
+  The list carries metadata only, so a review has to pull the events. `on-ready`
+  receives `[session nil]` or `[nil error-code]`."
+  [id on-ready]
+  (ptk/reify ::load-session-for-review
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :get-design-session {:id id})
+           (rx/map (fn [row] (on-ready row nil) nil))
+           (rx/filter some?)
+           (rx/catch (fn [cause]
+                       (on-ready nil (or (:code (ex-data cause)) :load-failed))
+                       (rx/empty)))))))
+
 ;; --- export, the bot-facing path
 ;;
 ;; Admins only, enforced by the backend. The bundle is structured events rather

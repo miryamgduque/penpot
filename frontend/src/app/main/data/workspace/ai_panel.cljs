@@ -192,6 +192,15 @@
         (assoc-in state [:ai-panel file-id :busy?] busy?)
         state))))
 
+(declare accumulate-usage)
+
+(defn accumulate-review-usage
+  "Meter a session review's spend on the panel's existing spend meter. A review
+  is a real model call on the user's key, so it belongs in the same total as
+  everything else rather than being invisible."
+  [usage]
+  (accumulate-usage usage))
+
 (defn- accumulate-usage
   "Adds one round's token usage into the file's running spend meter total."
   [usage]

@@ -208,13 +208,15 @@
                   :events []
                   :stop-reason nil}
           types  (mapv ptk/type (sp/resume-events row))]
-      (t/is (= 3 (count types))
-            "seed + capture + flush; two of the three is the bug")
+      (t/is (= 4 (count types))
+            "seed + capture + flush + disclose; three of the four is the bug")
       (t/is (contains? (set types) :app.main.data.workspace.session-persist/seed-resumed-session))
       (t/is (contains? (set types) :app.main.data.workspace.session-recorder/watch-commits)
             "capture, or the resumed recording records nothing")
       (t/is (contains? (set types) :app.main.data.workspace.session-persist/start-persisting)
-            "flushing, or the row never closes"))))
+            "flushing, or the row never closes")
+      (t/is (contains? (set types) :app.main.data.workspace.notifications/broadcast-recording)
+            "re-announce, or the reload leaves everyone else unwarned"))))
 
 (t/deftest a-finished-or-missing-row-yields-no-resume-events
   (t/is (nil? (sp/resume-events nil)))

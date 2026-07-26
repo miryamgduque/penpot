@@ -44,6 +44,8 @@
 (declare handle-library-change)
 (declare handle-pointer-send)
 (declare handle-recording-update)
+(declare handle-join-file)
+(declare reannounce-recording)
 (declare handle-export-update)
 
 (defn initialize
@@ -84,6 +86,18 @@
                                   (rx/filter (ptk/type? ::dws/opened))
                                   (rx/mapcat #(->> (rx/from initmsg)
                                                    (rx/map dws/send))))
+
+                             ;; ...and say again that we are recording. Our
+                             ;; disconnect made every peer drop our presence
+                             ;; entry, taking the recording flag with it, and
+                             ;; the re-subscription above does not carry it
+                             ;; back. Delayed so our `:join-file` lands first —
+                             ;; `handle-recording-update` ignores an update for
+                             ;; a session it does not yet know.
+                             (->> stream
+                                  (rx/filter (ptk/type? ::dws/opened))
+                                  (rx/map (fn [_] (reannounce-recording)))
+                                  (rx/delay 1000))
 
                              ;; Emit presence event for current user;
                              ;; this is because websocket server don't
@@ -126,7 +140,7 @@
 (defn- process-message
   [{:keys [type] :as msg}]
   (case type
-    :join-file              (handle-presence msg)
+    :join-file              (handle-join-file msg)
     :leave-file             (handle-presence msg)
     :presence               (handle-presence msg)
     :disconnect             (handle-presence msg)
@@ -187,6 +201,50 @@
       (rx/of (dws/send {:type :recording-update
                         :file-id file-id
                         :recording? (boolean recording?)})))))
+
+(defn- local-recording?
+  "Whether THIS session has a recording running on `file-id`.
+
+  Reads the state path directly instead of going through `session-recorder`,
+  which already depends on this namespace for `broadcast-recording` — requiring
+  it back would be a cycle."
+  [state file-id]
+  (boolean (get-in state [:session-recorder file-id :active?])))
+
+(defn reannounce-recording
+  "Say again that we are recording, for the benefit of someone who was not
+  listening the first time.
+
+  `:recording-update` is fire-and-forget pub/sub: the server keeps no record of
+  which files are being recorded, so the single announcement at start only ever
+  reaches the sessions connected at that instant. Two gaps follow, and both
+  leave a person unwarned while their activity is captured — the exact failure
+  the indicator exists to prevent:
+
+  - someone who OPENS the file mid-recording is never told, ever;
+  - a dropped websocket makes every peer `dissoc` our presence entry (and with
+    it the recording flag), and nothing puts it back on reconnect.
+
+  So we re-announce whenever a new session joins and whenever our own socket
+  comes back. Announcing more than necessary is harmless — the receiver just
+  re-asserts a boolean it already held."
+  []
+  (ptk/reify ::reannounce-recording
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [file-id (:current-file-id state)]
+        (when (local-recording? state file-id)
+          (rx/of (broadcast-recording file-id true)))))))
+
+(defn- handle-join-file
+  "A session joined the file: track its presence, and if we are recording, tell
+  it so — it missed the original announcement."
+  [msg]
+  (ptk/reify ::handle-join-file
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (rx/of (handle-presence msg)
+             (reannounce-recording)))))
 
 ;; --- Finalize Websocket
 

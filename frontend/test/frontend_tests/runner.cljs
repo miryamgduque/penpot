@@ -19,6 +19,7 @@
    [frontend-tests.data.session-actor-test]
    [frontend-tests.data.session-events-test]
    [frontend-tests.data.session-persist-test]
+   [frontend-tests.data.recording-disclosure-test]
    [frontend-tests.data.session-recorder-test]
    [frontend-tests.data.session-review-test]
    [frontend-tests.data.uploads-test]
@@ -108,6 +109,7 @@
    'frontend-tests.data.session-actor-test
    'frontend-tests.data.session-events-test
    'frontend-tests.data.session-persist-test
+   'frontend-tests.data.recording-disclosure-test
    'frontend-tests.data.session-recorder-test
    'frontend-tests.data.session-review-test
    'frontend-tests.data.uploads-test

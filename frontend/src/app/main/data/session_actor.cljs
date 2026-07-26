@@ -112,9 +112,31 @@
               state)))
    nil))
 
+(defn release-actor!
+  "Turn teardown: let the marker lapse after the grace window rather than cutting
+  it immediately.
+
+  A hard reset here would defeat `grace-ms` on the one path that needs it most.
+  A turn cancelled mid-tool never reaches `end-agent-action!`, so the marker is
+  still on its `max-action-ms` ceiling — but the agent's trailing reflow commit
+  (shape-layout's 100ms buffer) is already queued on the global bus and is NOT
+  cancelled with the turn. Wiping the marker synchronously would stamp that
+  commit `:who :user`.
+
+  `min` so this can only ever shorten a marker, never extend one: if
+  `end-agent-action!` already started the countdown, its deadline stands."
+  ([] (release-actor! (now-ms)))
+  ([now]
+   (swap! state*
+          (fn [{:keys [actor until] :as state}]
+            (if (some? actor)
+              (assoc state :until (min until (+ now grace-ms)))
+              state)))
+   nil))
+
 (defn reset-actor!
-  "Drop any marker immediately. Called on turn teardown — belt to the expiry
-  braces — and between tests."
+  "Drop any marker immediately. For tests, and for anything that must guarantee
+  no marker survives; turn teardown wants `release-actor!` instead."
   []
   (reset! state* {:gen 0 :actor nil :until 0})
   nil)

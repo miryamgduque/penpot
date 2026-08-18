@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OSS agent survey: what eleven open-source AI agents taught us</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --bg:#121218; --surface:#191A22; --card:#1E202B; --text:#ECEDF4; --text-soft:#A2A5BA;
+    --text-mute:#71748A; --line:rgba(255,255,255,.09); --line-soft:rgba(255,255,255,.05);
+    --skill:#8B93FF; --affirm:#3FCB88; --caution:#FFB454;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-sans);
+    line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 52rem; margin: 0 auto; padding: clamp(2.5rem, 6vw, 5rem) 1.4rem 5rem; }
+  a { color: var(--skill); }
+  .back { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .04em;
+    text-decoration: none; color: var(--text-mute); }
+  .back:hover { color: var(--skill); }
+  .kicker { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--skill); margin: 1.8rem 0 .8rem; }
+  h1 { font-size: clamp(1.7rem, 4vw, 2.4rem); line-height: 1.12; letter-spacing: -.02em; margin: .8rem 0 .5rem; }
+  h2 { font-size: 1.2rem; letter-spacing: -.01em; margin: 2.2rem 0 .7rem; }
+  .meta { color: var(--text-mute); font-family: var(--font-mono); font-size: .8rem; line-height: 1.7; }
+  p { color: var(--text-soft); margin: .7rem 0; }
+  ul { margin: .5rem 0 .5rem 0; padding-left: 1.1rem; display: grid; gap: .5rem; }
+  li { color: var(--text-soft); }
+  li strong { color: var(--text); font-weight: 600; }
+  .ahead { border-left: 2px solid var(--affirm); padding-left: 1rem; }
+  .ahead li strong { color: var(--affirm); }
+  .proj { border: 1px solid var(--line); border-radius: 10px; padding: .85rem 1.05rem; background: var(--card); }
+  .projs { display: grid; gap: .7rem; margin-top: .8rem; }
+  .proj h3 { font-family: var(--font-mono); font-size: .82rem; letter-spacing: .02em; color: var(--skill); margin-bottom: .25rem; }
+  .proj p { margin: 0; font-size: .95rem; }
+  .proj .lic { color: var(--text-mute); font-weight: 400; }
+  .note { color: var(--text-mute); font-size: .88rem; border-top: 1px solid var(--line-soft);
+    margin-top: 2.6rem; padding-top: 1rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="deck.html">← Back to the plan</a>
+
+  <p class="kicker">Internal research · condensed</p>
+  <h1>What eleven open-source AI agents taught us</h1>
+  <p class="meta">2026-07-19 · Three researchers pulled the actual prompt and config source files from each project's repo, and mapped what they found against our own architecture and our measured weaknesses (the Kahoot and NYT postmortems).</p>
+
+  <p><strong>What's in the set:</strong> nine of the eleven are AI <em>coding</em> agents; only Onlook is a true design tool, with bolt.diy as a UI generator. So this is mostly a survey of <em>agent architecture and prompting patterns</em> that carry across domains, plus how rule-enforcement looks across the field, not a head-to-head of design competitors.</p>
+
+  <h2>The one line that matters for the pitch</h2>
+  <p>Every researcher independently confirmed the same thing: <strong>enforcing rules structurally, at the point a change is made, is rare even among these coding agents, and nobody does it for design.</strong> Roo Code is the only one enforcing <em>anything</em> at the tool (file restrictions); the two design-adjacent tools (Onlook, bolt.diy) rely on prompts and preview instead. That's the claim behind "Reason 1."</p>
+
+  <h2>Where we were already ahead</h2>
+  <ul class="ahead">
+    <li><strong>Tool-boundary rule enforcement</strong>: a raw hex color is rejected by the tool itself, not merely discouraged in the prompt. Nobody else does this for design rules.</li>
+    <li><strong>Visual self-review loop</strong>: the agent renders its own work and looks at it. Onlook, the closest cousin, leans on the user's live preview instead.</li>
+    <li><strong>Graduated governance</strong>: suggest / apply-with-review / auto-fix. Everyone else has at most a binary plan-vs-act or ask-vs-build split.</li>
+    <li><strong>Skills architecture</strong>: a short catalog in the prompt, full bodies loaded on demand, layered by scope. Zed and OpenHands landed near this; our per-scope cascade is a superset.</li>
+  </ul>
+
+  <h2>The eleven projects, one line each</h2>
+  <div class="projs">
+    <div class="proj"><h3>Cline <span class="lic">· Apache-2.0</span></h3><p>Strong "emit every independent tool call now" parallelism doctrine, plan/act via message tagging, and a user-editable markdown checklist for progress.</p></div>
+    <div class="proj"><h3>Roo Code <span class="lic">· Apache-2.0</span></h3><p>Modes defined as data (named tool subsets with file restrictions, enforced at tool validation) and a strict delegation contract for subtasks.</p></div>
+    <div class="proj"><h3>Aider <span class="lic">· Apache-2.0</span></h3><p>A ranked "repo map" of the codebase, and an architect/editor split: a strong model writes the spec, a cheap model executes it.</p></div>
+    <div class="proj"><h3>OpenHands / agent-sdk <span class="lic">· MIT</span></h3><p>Deterministic keyword triggers that inject knowledge on every message, path-triggered context, and robust conversation-compaction guards.</p></div>
+    <div class="proj"><h3>Gemini CLI <span class="lic">· Apache-2.0</span></h3><p>Tools run in parallel by default (serial is the marked case), a one-sentence rule for ambiguous intent, and layered loop-detection.</p></div>
+    <div class="proj"><h3>Codex CLI <span class="lic">· Apache-2.0</span></h3><p>A disciplined plan tool (exactly one step in progress), a byte budget with precedence rules for its instructions file, and approval-escalation as a third outcome.</p></div>
+    <div class="proj"><h3>Goose <span class="lic">· Apache-2.0</span></h3><p>"Recipes": playbooks with typed parameters and machine-checkable success criteria, procedures you can verify, not just advice.</p></div>
+    <div class="proj"><h3>Zed <span class="lic">· GPL (patterns only)</span></h3><p>Tool "profiles" (write / ask / minimal, each with a default model) and the crispest parallelism wording found in the survey.</p></div>
+    <div class="proj"><h3>Onlook <span class="lic">· Apache-2.0 · closest cousin</span></h3><p>Ships the user's selected element as a structured "I am looking at this" block, and teaches the agent its own UI. No self-review loop.</p></div>
+    <div class="proj"><h3>bolt.diy <span class="lic">· MIT</span></h3><p>The strongest anti-generic language found, a ban list ("avoid templated aesthetics… no simplistic headers", "never use placeholders") and one-shot holistic output.</p></div>
+    <div class="proj"><h3>Dyad <span class="lic">· Apache-2.0</span></h3><p>A default rules document when a file has none, a tight scope trio ("don't do more than asked", "check whether it's already done"), and a plan mode with an enforced accept gate.</p></div>
+  </div>
+
+  <h2>Top things we took from it</h2>
+  <ul>
+    <li><strong>Better parallelism wording</strong> (Cline / Zed / Gemini): our worst measured metric was near-serial tool calls; this is a prompt-only fix.</li>
+    <li><strong>An anti-generic "ban list"</strong> (bolt.diy): prohibitions of named generic moves, added to the nudge that fires when a file has no direction.</li>
+    <li><strong>"Check whether it's already done"</strong> (Dyad): one line that stops redundant work.</li>
+    <li><strong>Stop after three failed fixes</strong> (Gemini + Aider): re-approach instead of looping.</li>
+    <li><strong>Adopt a plan tool</strong>: the survey's clearest verdict: all four major CLIs ship one, as passive progress the user can see without being interrupted.</li>
+  </ul>
+
+  <p class="note">This is a condensed summary. The full internal write-up (per-project source files, exact quotes, and the ranked adopt list) lives in <span style="font-family:var(--font-mono)">docs/oss-agent-survey.md</span>.</p>
+</div>
+</body>
+</html>

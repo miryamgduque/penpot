@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How we compare to today's design tools</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --bg:#121218; --surface:#191A22; --card:#1E202B; --text:#ECEDF4; --text-soft:#A2A5BA;
+    --text-mute:#71748A; --line:rgba(255,255,255,.09); --line-soft:rgba(255,255,255,.05);
+    --skill:#8B93FF; --affirm:#3FCB88; --caution:#FFB454; --rule:#FF6350;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-sans);
+    line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 58rem; margin: 0 auto; padding: clamp(2.5rem, 6vw, 5rem) 1.4rem 5rem; }
+  a { color: var(--skill); }
+  .back { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .04em;
+    text-decoration: none; color: var(--text-mute); }
+  .back:hover { color: var(--skill); }
+  .kicker { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--skill); margin: 1.8rem 0 .8rem; }
+  h1 { font-size: clamp(1.7rem, 4vw, 2.4rem); line-height: 1.12; letter-spacing: -.02em; margin: .8rem 0 .5rem; }
+  h2 { font-size: 1.2rem; letter-spacing: -.01em; margin: 2.4rem 0 .7rem; }
+  .meta { color: var(--text-mute); font-family: var(--font-mono); font-size: .8rem; line-height: 1.7; }
+  p { color: var(--text-soft); margin: .7rem 0; }
+  ul { margin: .5rem 0; padding-left: 1.1rem; display: grid; gap: .55rem; }
+  li { color: var(--text-soft); }
+  li strong { color: var(--text); font-weight: 600; }
+  .tablewrap { overflow-x: auto; margin: 1rem 0; border: 1px solid var(--line); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; min-width: 44rem; font-size: .9rem; background: var(--card); }
+  th, td { text-align: left; padding: .7rem .85rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); font-weight: 600; }
+  td:first-child, th:first-child { color: var(--text); font-weight: 600; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  .us td { background: rgba(139,147,255,.08); }
+  .us td:first-child { color: var(--skill); }
+  .no { color: var(--rule); } .yes { color: var(--affirm); } .part { color: var(--caution); }
+  .note { color: var(--text-mute); font-size: .88rem; border-top: 1px solid var(--line-soft);
+    margin-top: 2.6rem; padding-top: 1rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="deck.html">← Back to the plan</a>
+
+  <p class="kicker">Competitive check · condensed</p>
+  <h1>How we compare to today's design tools</h1>
+  <p class="meta">The fair comparison set: tools where a designer actually creates in a design surface, using design tokens and a real design system, and where AI is built in. (Converters, token-management platforms, and generic prompt-to-UI generators were excluded, since you can't create <em>with your own tokens and system</em> in them.)</p>
+
+  <p>The pattern is consistent: <strong>all of them let you design with tokens and a design system, and all now ship AI. What none of them do is stop you (or their AI) from going off-system.</strong> That is the gap our approach fills.</p>
+
+  <div class="tablewrap">
+    <table>
+      <tr><th>Tool</th><th>Design tokens</th><th>Design system</th><th>Built-in AI</th><th>Enforces the rules?</th></tr>
+      <tr><td>Figma</td><td>Variables (with modes)</td><td>Published component libraries</td><td>Figma AI + Figma Make (prompt to design/code)</td><td><span class="no">No</span> — a raw color or a detached component is always allowed.</td></tr>
+      <tr><td>Motiff</td><td>Variables / token tooling</td><td>"AI design systems" (auto-detects components)</td><td>AI ("Magic") design features</td><td><span class="no">No</span> — AI-assisted, not enforced.</td></tr>
+      <tr><td>Framer</td><td>Color / text styles, CSS variables</td><td>Components</td><td>Framer AI (layouts, copy, sites)</td><td><span class="no">No</span> — styles are optional, raw values allowed.</td></tr>
+      <tr><td>UXPin (Merge)</td><td>Design tokens</td><td>Design from real coded components</td><td>AI component features</td><td><span class="part">Partly</span> — you build from real components, but nothing enforces token/spacing/naming rules beyond that.</td></tr>
+      <tr class="us"><td>Penpot agent (us)</td><td>Tokens</td><td>Skills &amp; rules, org → team → file</td><td>Native, integrated agent</td><td><span class="yes">Yes</span> — off-token values are rejected at the write path, for you and the agent.</td></tr>
+    </table>
+  </div>
+
+  <h2>The two things that set us apart</h2>
+  <ul>
+    <li><strong>Enforcement, not suggestion.</strong> The others let you and their AI design <em>with</em> tokens; ours makes off-token work impossible for the rules you mark strict. UXPin's Merge is the closest, but that's component reuse, not a rule engine you can point at colors, spacing, or names.</li>
+    <li><strong>A rule-aware agent, built in.</strong> Their AI generates; it doesn't inherit your organization / team / file rules and refuse to break them. Ours does, and any AI model you bring inherits the same rules.</li>
+  </ul>
+
+  <h2>Where they're genuinely ahead</h2>
+  <p>Worth stating plainly so this isn't one-sided: these are mature products. Figma's library ecosystem, Framer's publish-to-web, Motiff's AI design-system detection, and UXPin's real-component fidelity are all things we don't match today. Our claim is narrow and specific: <strong>on-system by enforcement, with an agent that can't break the rules.</strong></p>
+
+  <p class="note">Knowledge as of early 2026; these tools ship features quickly, so verify current capabilities before quoting any specific. The UXPin "partly" is a real partial exception worth acknowledging rather than glossing over.</p>
+</div>
+</body>
+</html>

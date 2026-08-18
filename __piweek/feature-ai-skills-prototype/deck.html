@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Penpot AI Agent: approaches, product binding, and infra options</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+    /* deck is dark, single theme, same neutrals as the pitch's dark side */
+    --bg:#121218; --surface:#191A22; --card:#1E202B; --text:#ECEDF4; --text-soft:#A2A5BA;
+    --text-mute:#71748A; --line:rgba(255,255,255,.09); --line-soft:rgba(255,255,255,.05);
+
+    /* five semantic roles, red is "rule" only; costs use the neutral "tradeoff" tone */
+    --rule:#FF6350;    --rule-bg:rgba(255,99,80,.13);        /* enforcement / guardrail */
+    --skill:#8B93FF;   --skill-bg:rgba(139,147,255,.14);     /* knowledge / accent */
+    --affirm:#3FCB88;  --affirm-bg:rgba(63,203,136,.14);     /* proven / positive */
+    --caution:#FFB454; --caution-bg:rgba(255,180,84,.14);    /* note / watch-out */
+    --tradeoff:#93A0B8;--tradeoff-bg:rgba(147,160,184,.12);  /* cost / con, neutral, not alarming */
+    /* per-part wayfinding accents (nav "Part N of 6" + active dot only; not semantic roles) */
+    --part-1:#6EA8FF; --part-2:#FFA94D; --part-3:#51CF66; --part-4:#3BC9DB; --part-5:#FF8CC8; --part-6:#B197FC; --part-7:#F5C74B;
+    /* add-on slide: not a numbered part — its own accent + a lighter tone of the same neutral bg */
+    --addon:#63E6BE; --addon-bg:#1C1D26;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text);
+    font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+
+  .slide { display: none; min-height: 100vh; padding: 5vh 8vw; flex-direction: column;
+    justify-content: center; }
+  .slide.active { display: flex; }
+  .slide--addon { background: var(--addon-bg); }
+
+  /* ===== shared component: .kicker ===== */
+  .kicker { font-family: var(--font-mono); font-size: .85rem; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--cur-part, var(--skill)); margin-bottom: 1rem; }
+
+  /* per-slide global "you are here" line, above the brow */
+  .act { font-family: var(--font-mono); font-size: .95rem; letter-spacing: .04em; white-space: nowrap; }
+  .act__part { color: var(--cur-part, var(--skill)); font-weight: 600; text-transform: uppercase; }
+  .act__goal { color: var(--text-mute); }
+  .act__goal::before { content: " · "; }
+
+  h1 { font-size: 3.2rem; line-height: 1.1; font-weight: 700; max-width: 22ch; letter-spacing: -.02em; }
+  h2 { font-size: 2.1rem; line-height: 1.15; margin-bottom: 1.6rem; max-width: 28ch; letter-spacing: -.015em; }
+  h3 { font-size: 1.05rem; margin-bottom: .5rem; }
+  p, li { font-size: 1.08rem; line-height: 1.55; color: var(--text-soft); max-width: 100ch; }
+  li strong, p strong { color: var(--text); font-weight: 600; }
+  ul { padding-left: 1.2rem; display: grid; gap: .55rem; }
+  em { color: var(--text); font-style: italic; }
+  a { color: var(--skill); text-underline-offset: 3px; }
+  :focus-visible { outline: 2px solid var(--skill); outline-offset: 3px; border-radius: 3px; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2.2rem; align-items: start; }
+  @media (max-width: 48rem){ .cols { grid-template-columns: 1fr; } }
+  /* quieter "does not do" reassurance block: subordinate to the list above it */
+  .aside-note { margin-top: 1.3rem; max-width: 78ch; padding: .85rem 1.1rem; opacity: .82; }
+  .aside-note h3 { font-size: .72rem; }
+  .aside-note ul { padding-left: 1.1rem; gap: .4rem; margin-top: .55rem; }
+  .aside-note li { font-size: .9rem; color: var(--text-mute); }
+  .aside-note li strong { color: var(--text-soft); font-weight: 600; }
+  .col-head { font-family: var(--font-mono); font-size: .78rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text); margin-bottom: .7rem;
+    padding-bottom: .4rem; border-bottom: 1px solid var(--line); }
+  .col-head span { color: var(--text-mute); text-transform: none; letter-spacing: 0; }
+  .rmnote { display: block; margin-top: .35rem; font-family: var(--font-mono);
+    font-size: .72rem; color: var(--affirm); }
+  .sidenote { border-left: 3px solid var(--caution); background: var(--caution-bg);
+    padding: .6rem .9rem; border-radius: 6px; margin-bottom: 1.3rem; max-width: 100ch;
+    font-size: .95rem; line-height: 1.5; color: var(--text-soft); }
+
+  /* ===== shared component: .card (+ role modifiers) ===== */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.2rem 1.4rem; }
+  .card h3 { font-family: var(--font-mono); font-size: .8rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text); }
+  .card--affirm   h3 { color: var(--affirm); }
+  .card--tradeoff h3 { color: var(--tradeoff); }
+  .card--caution  h3 { color: var(--caution); }
+  .card--rule     h3 { color: var(--rule); }
+  .card--rule       { border-color: color-mix(in srgb, var(--rule) 30%, var(--line)); }
+
+  /* ===== shared component: .tag (+ role modifiers) ===== */
+  .tag { display: inline-block; font-family: var(--font-mono); font-size: .72rem;
+    border: 1px solid var(--line); border-radius: 999px; padding: .15rem .6rem;
+    margin: 0 .35rem .45rem 0; color: var(--text-soft); }
+  .tag--rule     { color: var(--rule);     border-color: color-mix(in srgb, var(--rule) 45%, var(--line)); }
+  .tag--skill    { color: var(--skill);    border-color: color-mix(in srgb, var(--skill) 45%, var(--line)); }
+  .tag--affirm   { color: var(--affirm);   border-color: color-mix(in srgb, var(--affirm) 45%, var(--line)); }
+  .tag--caution  { color: var(--caution);  border-color: color-mix(in srgb, var(--caution) 45%, var(--line)); }
+  .tag--tradeoff { color: var(--tradeoff); border-color: color-mix(in srgb, var(--tradeoff) 45%, var(--line)); }
+  /* hover tooltips on stat tags and glossary terms */
+  [data-tip] { position: relative; }
+  .tag[data-tip], .term[data-tip] { cursor: help; }
+  .tag[data-tip]:hover { border-color: var(--text-mute); }
+  .term { border-bottom: 1px dotted var(--text-mute); }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; left: 0; bottom: calc(100% + .5rem);
+    width: max-content; max-width: 19rem;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: .55rem .7rem; font-family: var(--font-sans); font-size: .82rem;
+    line-height: 1.45; letter-spacing: 0; text-transform: none; font-weight: 400;
+    white-space: normal; box-shadow: 0 10px 30px rgba(0,0,0,.45); z-index: 40; }
+
+  /* click-to-explain lines: popover floats below the line, over the text */
+  li.explain { cursor: pointer; position: relative; }
+  li.explain:hover { color: var(--text); }
+  li.explain .detail { display: none; }
+  li.explain.open .detail { display: block; position: absolute; top: calc(100% + .4rem); left: 0;
+    width: min(40rem, 80vw); z-index: 40;
+    background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--skill);
+    border-radius: 8px; padding: .7rem .85rem; color: var(--text-soft);
+    font-size: .92rem; line-height: 1.5; box-shadow: 0 14px 40px rgba(0,0,0,.5);
+    animation: explainpop .13s ease-out; }
+  @keyframes explainpop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+  /* horizon groups (learning flywheel): split bullets by time-frame */
+  .phase { margin-bottom: 1.1rem; }
+  .phase:last-child { margin-bottom: 0; }
+  .phase__label { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .12em;
+    text-transform: uppercase; margin-bottom: .3rem; }
+  .phase ul { margin: 0; }
+  .phase--now .phase__label { color: var(--affirm); }
+  .phase--pilot .phase__label { color: var(--skill); }
+  .phase--later .phase__label { color: var(--text-mute); }
+
+  /* roadmap accordion */
+  .acc-hint { color: var(--text-mute); font-size: .85rem; margin-bottom: 1rem; }
+  .accs { border-top: 1px solid var(--line); }
+  .acc { border-bottom: 1px solid var(--line); }
+  .acc__head { width: 100%; background: none; border: 0; color: inherit; font: inherit;
+    cursor: pointer; display: grid; grid-template-columns: 7rem 1fr auto 1.4rem; gap: 1rem;
+    align-items: baseline; padding: .95rem .3rem; text-align: left; }
+  .acc__head:hover { background: rgba(255,255,255,.03); }
+  .acc__when { font-family: var(--font-mono); font-size: .82rem; color: var(--text-mute); }
+  .acc__title { font-weight: 600; font-size: 1.05rem; color: var(--text); }
+  .acc__dep { font-family: var(--font-mono); font-size: .72rem; color: var(--text-mute); white-space: nowrap; }
+  .acc__chev { color: var(--text-mute); justify-self: end; transition: transform .15s ease; }
+  .acc.open .acc__chev { transform: rotate(90deg); color: var(--cur-part, var(--skill)); }
+  .acc__body { display: none; padding: .1rem .3rem 1.1rem; }
+  .acc.open .acc__body { display: block; }
+  .acc__body p { color: var(--text-soft); font-size: .95rem; line-height: 1.55; max-width: 72ch; margin: 0; }
+  .acc__body a { color: var(--cur-part, var(--skill)); text-decoration: none; font-weight: 500; }
+  .acc__body a:hover { color: var(--text); }
+  .slink { cursor: pointer; }
+  .acc__opt { font-family: var(--font-mono); font-size: .62rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-mute); border: 1px solid var(--line); border-radius: 4px; padding: .1rem .38rem; margin-left: .5rem; vertical-align: middle; }
+  @media (max-width: 40rem){ .acc__head { grid-template-columns: 1fr 1.4rem; } .acc__when, .acc__dep { display: none; } }
+
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { text-align: left; padding: .5rem .8rem; border-bottom: 1px solid var(--line);
+    color: var(--text-soft); vertical-align: top; }
+  th { color: var(--text); font-family: var(--font-mono); font-size: .75rem;
+    letter-spacing: .1em; text-transform: uppercase; }
+  td:first-child { color: var(--text); white-space: nowrap; }
+
+  .big { font-size: 1.5rem; color: var(--text); max-width: 30ch; line-height: 1.4; }
+  .metric { font-family: var(--font-mono); color: var(--affirm); }
+  /* unified postmortem fields (Reason 3 cards) */
+  .pm { display: grid; gap: .6rem; margin: 0; }
+  .pm dt { font-family: var(--font-mono); font-size: .64rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text-mute); margin-bottom: .1rem; }
+  .pm dd { margin: 0; color: var(--text-soft); font-size: .95rem; line-height: 1.45; }
+  code { font-family: var(--font-mono); font-size: .92em; color: var(--skill); }
+
+  .backlink { position: fixed; top: 2.2vh; right: 3vw; font-family: var(--font-mono);
+    font-size: .72rem; letter-spacing: .04em; color: var(--text-soft); text-decoration: none; z-index: 20;
+    padding: .32rem .7rem; border: 1px solid var(--line); border-radius: 999px;
+    background: color-mix(in srgb, var(--card) 70%, transparent);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .backlink:hover { color: var(--skill); border-color: var(--skill); }
+
+  /* ===== deck navigation: dots ===== */
+  .dots { position: fixed; bottom: 2.6vh; right: 3vw;
+    display: flex; flex-direction: column; align-items: flex-end; gap: .5rem; z-index: 30; }
+  .dot-row { display: flex; gap: .45rem; align-items: center; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: 0; padding: 0;
+    background: var(--text-mute); opacity: .5; cursor: pointer;
+    transition: opacity .2s, background .2s, transform .2s; }
+  .dots button:hover { opacity: .9; }
+  .dots button[aria-current="true"] { background: var(--cur-part, var(--skill)); opacity: 1; transform: scale(1.4); }
+  .dots button.group-start { margin-left: .55rem; }
+
+  /* ===== REVIEW: temporary per-slide summaries (remove later, grep "REVIEW") ===== */
+  .review { position: fixed; bottom: 2.4vh; left: 3vw; max-width: 40rem; z-index: 25;
+    border: 1px dashed var(--caution); border-radius: 10px;
+    background: color-mix(in srgb, var(--card) 90%, transparent);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    padding: .7rem .9rem; color: var(--text-soft); font-size: .82rem; line-height: 1.5; }
+  .review::before { content: "Slide summary · review only"; display: block; font-family: var(--font-mono);
+    font-size: .6rem; letter-spacing: .14em; text-transform: uppercase; color: var(--caution); margin-bottom: .3rem; }
+
+  @media print {
+    .slide { display: flex !important; page-break-after: always; min-height: 100vh; }
+    .dots, .backlink, .review { display: none; }
+  }
+</style>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzRBNTdFMCIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDQgNCkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMiA4VjRIOCIvPjxyZWN0IHdpZHRoPSIxNiIgaGVpZ2h0PSIxMiIgeD0iNCIgeT0iOCIgcng9IjIiLz48cGF0aCBkPSJNMiAxNGgyIi8+PHBhdGggZD0iTTIwIDE0aDIiLz48cGF0aCBkPSJNMTUgMTN2MiIvPjxwYXRoIGQ9Ik05IDEzdjIiLz48L2c+PC9zdmc+">
+</head>
+<body>
+
+<div class="dots" id="dots" aria-label="Go to slide"><div class="act" id="nav-act"></div><div class="dot-row" id="dot-row"></div></div>
+<a class="backlink" href="index.html">← Pitch</a>
+
+<!-- REVIEW:start -->
+<div class="review" id="review" aria-hidden="true"></div>
+<!-- REVIEW:end -->
+
+<section class="slide active">
+  <div class="kicker">feature/ai-skills-prototype · 2026-07-19</div>
+  <h1>An AI design agent, built into Penpot</h1>
+  <p class="big" style="margin-top:1.4rem">The approaches we took, why they're built into the product,
+  and how it can run: on our servers or the customer's own, including open-source models they host themselves.</p>
+  <p style="margin-top:2.4rem"><span class="tag" data-tip="Saved code changes on this branch; a rough gauge of how much work went in.">315 commits</span><span class="tag" data-tip="About 43,000 lines of code added or changed for this feature.">~43k lines</span><span class="tag" data-tip="The 57 actions the AI can take inside Penpot, like creating shapes or applying tokens.">57 native tools</span><span class="tag" data-tip="Automated checks that run on every change to keep the feature working.">554 tests</span><span class="tag tag--affirm" data-tip="Kept up to date with Penpot's main development line, so the branch stays current.">synced upstream develop</span></p>
+</section>
+
+<section class="slide">
+  <div class="kicker">What shipped</div>
+  <h2>What's actually built, not a demo</h2>
+  <div class="cols">
+    <ul>
+      <li><strong>Agent panel</strong>, native workspace dock: streaming chat, stop, model picker, image attachments, slash commands, live spend meter.</li>
+      <li><strong>Skills &amp; rules</strong>, design intent as organizational objects: app → team → file cascade, dashboard CRUD, per-scope enable/disable, promote-to-team.</li>
+      <li><strong>Foundations / DESIGN.md</strong>, a short design brief kept with each file, following Google's DESIGN.md convention. A quick interview fills it in, and it's added to every chat with the AI.</li>
+    </ul>
+    <ul>
+      <li><strong>Enforcement</strong>, rules checked at the write path: a raw hex on a token-only file is <em>rejected by the tool</em>, not discouraged by the prompt.</li>
+      <li><strong>Operating modes</strong>, graduated governance: <em>suggest</em> for audits, <em>apply-with-review</em> as the default for generative work, <em>auto-fix</em> only for a whitelisted safe set (loss-less token swaps, layer renames).</li>
+      <li><strong>Observers &amp; audit</strong>, ambient watchers flag violations as you work; "Fix via chat" hands them to the agent.</li>
+      <li><strong>Durable chats</strong>, conversations are saved for each file and come back when you reopen it, along with what each one cost.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Reason 1</div>
+  <h2>Rules are enforced by the software, not just asked for</h2>
+  <p style="margin-bottom:1.4rem">Other AI tools put your rules in the prompt and hope the model obeys. We put them at the point where a change is saved, so a change that breaks a strict rule cannot be written at all, by any model.</p>
+  <ul>
+    <li class="explain">The agent edits through <strong>the same pipeline a person does</strong>, so everything it touches stays undoable, synced to collaborators and exportable, and there is only one way into the file.<span class="detail">The agent does not have a private back door into the file. Every change it makes goes through Penpot's normal changes pipeline, so anything it does is undoable, shows up live for collaborators, and exports normally. It works like a real user rather than around the app, and that is what makes the next point possible: with one road in, you can put a gate on it.</span></li>
+    <li class="explain">A change that breaks a strict rule is <strong>refused before it lands</strong>, with an error naming the fix, so the only way forward is to do it correctly, whichever model is driving.<span class="detail">The rules that matter are checked at the tool boundary, the moment a change is applied. Ask for a raw colour on a token-only file and the tool refuses and names the fix ("use a colour token"), so the only way forward is to do it correctly. Because the gate sits below the AI rather than inside its prompt, it holds for any model you bring, frontier, cheap or open-source, and for a human clicking too.</span></li>
+    <li class="explain">The tools report <strong>what really happened on the canvas</strong>, not what was asked for, because layout moves things afterwards and an agent working from a false picture compounds its mistakes.<span class="detail">This matters more than it sounds. Layout often moves a shape after it is placed, so a tool that echoed back the requested position would leave the agent building on a false picture of the screen, and the errors compound. Ours report the settled result instead, list what they find in the order a person reads (top to bottom, left to right) so the agent's mental model matches yours, and verify by reading the file back. When something fails they say so, rather than claim a success that did not happen.</span></li>
+    <li class="explain">Tokens, spacing and naming can be enforced; <strong>taste cannot</strong>, so judgement calls stay as guidance the agent follows and a human reviews. We claim the narrow thing, and it is the one that causes the cleanup.<span class="detail">Anything a computer can test can be enforced: must be a token, spacing on the grid, names following a pattern, no detached components. Judgement calls (is this the right accent colour? is this layout good?) cannot be hard-blocked; those stay as skills and foundations the agent follows and a human reviews. We claim the narrow thing, and it is the thing that actually causes cleanup work.</span></li>
+    <li class="explain">Neither the <a href="oss-agent-survey.html" target="_blank" rel="noopener">eleven agents we surveyed</a> nor the <a href="design-tools-comparison.html" target="_blank" rel="noopener">design tools designers use</a> do this: their AI <strong>generates with</strong> your system, but is never <strong>bound by</strong> it.<span class="detail">Three researchers read the actual prompt and config source of eleven open-source agents: only one enforced anything at the tool itself (file restrictions), and none enforced design rules. On the design side, Figma, Motiff, Framer and UXPin all ship AI that can design using your variables and component libraries, and they are good at it. What none of them will do is refuse: a raw colour, a detached component or off-grid spacing is still accepted by the file. Their AI generates with your system; it is never bound by it. Same ingredients, opposite guarantee. They are ahead of us in plenty of other ways; this is the narrow claim we make.</span></li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Reason 2</div>
+  <h2>Design intent lives with the file</h2>
+  <ul>
+    <li><strong>Skills cascade</strong> across organization, team, and file. The most specific rule wins, and a strict one can't be loosened lower down, so a rule set once governs every agent conversation in its scope.</li>
+    <li><strong>Foundations travel with the file.</strong> The design brief is saved on the file itself (as Penpot plugin data), so copying the file brings it along. No per-machine setup, no prompt files scattered on laptops.</li>
+    <li><strong>Playbooks load only when needed.</strong> A short index of what's available rides in the prompt; a cheap model round picks the matching playbook and pulls in its full instructions with the task, instead of carrying them all every time.</li>
+    <li><strong>A file with no direction gets a nudge.</strong> Ask for a build on a blank brief and the agent pushes back first: commit to a type, a colour, and a few signature details, rather than produce something generic.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Reason 3</div>
+  <h2>Grounded in real measurement, not guesswork</h2>
+  <div class="cols">
+    <div class="card">
+      <h3>Kahoot session</h3>
+      <dl class="pm">
+        <div><dt>Cost</dt><dd><span class="metric">232 calls · $8.84</span></dd></div>
+        <div><dt>What broke</dt><dd>the wrong flow order got baked into the file.</dd></div>
+        <div><dt>Fix</dt><dd>tools now speak reading order, validate ids, disclose cascades, and return settled geometry.</dd></div>
+        <div><dt>The save</dt><dd>roughly <span class="metric">150 calls</span>, about two-thirds of the run, went to fighting the tools instead of designing; the fixes remove that waste.</dd></div>
+      </dl>
+    </div>
+    <div class="card">
+      <h3>NYT session</h3>
+      <dl class="pm">
+        <div><dt>Cost</dt><dd><span class="metric">133 rounds</span> for one screen.</dd></div>
+        <div><dt>What broke</dt><dd>nearly one tool call per round (<span class="metric">1.24</span>), so a single screen dragged on.</dd></div>
+        <div><dt>Fix</dt><dd>composition tools (build_tree, clone_shape, batches), image budgets, and playbook injection.</dd></div>
+        <div><dt>The save</dt><dd>about a third more work per round now (<span class="metric">1.68</span>), so the same screen finishes in far fewer rounds.</dd></div>
+      </dl>
+    </div>
+  </div>
+  <p style="margin-top:1.4rem">Every experiment ran against the <strong>live spend meter</strong>; more than once the right outcome was refuting our own plan.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Reason 4</div>
+  <h2>Keeping the running cost down on purpose</h2>
+  <p style="margin-bottom:1.4rem">To do that, the agent reuses work it has already done, drops old parts of the conversation it no longer needs, and hands the boring parts to a cheaper AI.</p>
+  <ul>
+    <li><strong>Prompt caching</strong>, stable cached prefix (system + tools), volatile context on the user message; cache hits &gt;90% by round 3.</li>
+    <li><strong>Compaction ladder</strong>, stale-result stubbing → structured summary (Task / Done / Decisions / <em>Learned</em> / Open, anchored re-compaction) → hard trim.</li>
+    <li><strong>Side contexts</strong>, broad reading delegated to a cheap-model scout; playbook matching, watcher ticks and compaction never bill like design work.</li>
+    <li>Typical screen build today: <span class="metric">$1–4</span> on frontier models; a one-line rename: <span class="metric">cents</span>.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">The scorecard · 1/2</div>
+  <h2>What building it in gets us</h2>
+  <p style="margin-bottom:1.4rem">The other way already exists: Penpot's own MCP server, driven from outside by external agents (Claude Code, Cursor, VS Code, Codex).</p>
+  <ul>
+    <li><strong>No drift</strong>, agent, tools and skills ship with every Penpot release; a refactor breaks at build time, not at a user's desk.</li>
+    <li><strong>Skills are organizational</strong>, multi-level, inherited, toggleable per scope. An MCP client just loads skill files, a shared repo at best, with no inheritance, scoping, or enforcement.</li>
+    <li><strong>Reactive skills exist at all</strong>: observers need standing presence in the workspace; a protocol client only acts when called.</li>
+    <li><strong>Purpose-built tools beat a blank code box</strong>: the agent calls typed, checked actions with plain names (create a shape, change a stroke), so every write passes one gate that rejects off-rule edits. Raw <code>execute_code</code> over the plugin API can do anything, which is exactly why the rules can't be enforced on it.</li>
+    <li><strong>Product integration</strong>, caching, spend metering, durable chats, in-canvas forms, wasm renders: none reachable from outside.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">The scorecard · 2/2</div>
+  <h2>What building it in costs us</h2>
+  <div class="cols">
+    <div class="card card--tradeoff">
+      <h3>Costs</h3>
+      <ul>
+        <li>Context management is ours to build (compaction, caching, budgets); Claude Code/Cursor bring their own.</li>
+        <li>Provider dialects, streaming codecs, model catalogs: maintained in-tree.</li>
+      </ul>
+    </div>
+    <div class="card card--caution">
+      <h3>The MCP question</h3>
+      <p>Penpot ships its own MCP server today, giving external agents (Claude Code, Cursor, VS Code, Codex) a door in. But that path runs on <code>execute_code</code>, so it skips the rule enforcement. Keep it, drop it, or align it behind the native tools: an open decision.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Learning from others</div>
+  <h2>What we learned from other open-source AI tools</h2>
+  <ul>
+    <li class="explain">Compaction should keep the lessons, not just recent turns, and anchor a few messages when it re-summarizes (Kimi, opencode).<span class="detail">An AI has a limited memory for a conversation, so when a chat gets long it compresses the older part into a summary. The lesson: keep what was actually learned, the decisions made and mistakes not to repeat, not just the most recent messages, and hold on to a few of the original early messages word-for-word so the summary does not drift from what was really said.</span></li>
+    <li class="explain">Staying tightly scoped and asking before assuming beats an over-eager agent (Kimi, Codex).<span class="detail">An eager AI tends to do more than you asked: you request one small thing and it redesigns half the file, which you then have to review and pay for. Better to do exactly what was asked and no more, and when the request is unclear, ask a question instead of guessing.</span></li>
+    <li class="explain">Naming the generic moves to avoid, and telling the agent to work in parallel, measurably improves output (bolt.diy; Cline, Zed, Gemini).<span class="detail">Two lessons in one. First, instead of telling the AI to "be creative", give it a list of clichés it must NOT do (bland headers, cookie-cutter layouts, placeholder text); a "don't do these" list beats a vague "be original". Second, when several tasks are independent, do them at the same time instead of one by one, which is faster.</span></li>
+    <li class="explain">A passive plan with one step in progress gives visibility without interrupting the user (Codex).<span class="detail">For a long task, the agent keeps a visible checklist with exactly one step marked "in progress" at a time, so you can see where it is. It is just there to glance at, it does not stop to ask you to approve each step, so you can follow along without being interrupted.</span></li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Infra · today</div>
+  <h2>BYOK through a dumb-pipe proxy</h2>
+  <ul>
+    <li class="explain">User pastes their provider key in <strong>Settings → Integrations</strong>; keys live server-side only, never reach the browser.<span class="detail">Your AI account's secret key is stored on Penpot's server and never sent down to the web page in your browser, so a webpage or extension cannot grab it. You paste it once in Settings, then Integrations. (BYOK means "bring your own key": you use your own AI account and pay that company directly.)</span></li>
+    <li class="explain">The backend proxy (<code>ai_providers.clj</code>) re-emits provider SSE verbatim, no request inspection, no lock-in, provider switching mid-conversation.<span class="detail">The go-between server just forwards your request to the AI company and streams the reply straight back, unchanged (SSE is the technique that streams the answer word by word). It does not read, alter, or store what you send, so you are never locked in, and you can even switch AI provider partway through a conversation. (ai_providers.clj is the code file that does this.)</span></li>
+    <li class="explain"><strong>Design content goes where you point it</strong>: it flows through the proxy to the provider you connected, so that provider is who sees it.<span class="detail">Penpot does not run the AI here; your request is passed to whichever AI company you connected, and that company processes your design. The proxy itself keeps nothing, but the panel does save the conversation per file (durable chats), and that saved history includes the design context sent to the AI.</span></li>
+    <li class="explain">Speaks <strong>two dialects</strong>: Anthropic native, and OpenAI-compatible (OpenAI, Zhipu, Moonshot today), one canonical message model re-encoded per round.<span class="detail">Different AI companies expect slightly different request formats. Penpot speaks two: Anthropic's own, and the OpenAI-compatible one that OpenAI, Zhipu and Moonshot all accept. Internally it keeps the conversation in one standard form and translates it for each provider, so adding a new provider is mostly a translation step, not a rebuild.</span></li>
+    <li class="explain">No subscription through Penpot; spend is the user's own, metered live in the panel.<span class="detail">Penpot does not sell you an AI subscription. Because you brought your own key, the cost lands on your own AI account, and the panel shows a live running tally of what the current session is costing you.</span></li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Infra · the near step</div>
+  <h2>Customers run the AI themselves</h2>
+  <ul>
+    <li class="explain">Penpot is <strong>self-hostable</strong>; the agent should be too. Any endpoint speaking the OpenAI dialect plugs into the existing proxy: <strong>vLLM, TGI, Ollama, llama.cpp servers</strong>, pointing at Qwen, Llama, DeepSeek, GLM…<span class="detail">You can run an open AI model on your own computers using free serving programs (vLLM, TGI, Ollama, llama.cpp) with open models like Qwen, Llama, DeepSeek or GLM. Because they all can speak the same request format OpenAI uses, and Penpot's pass-through already speaks it, your own model plugs straight in with no new plumbing.</span></li>
+    <li class="explain">The architecture is ready: BYOK = bring your own <em>endpoint</em> is one base-URL field away; the canonical message model already re-encodes per dialect.<span class="detail">Today you bring your own key (an account with an AI company). Self-hosting is the same idea but you bring your own endpoint, a web address pointing at your own model instead of a company's. The only missing piece is a text box to type that address; Penpot already keeps the conversation in one standard form and translates it to each provider's format.</span></li>
+    <li class="explain"><strong>Data sovereignty, not just privacy</strong>: the model runs inside the customer's own perimeter, so their designs and IP never cross into another company's servers or jurisdiction. AI normally turns every design tool into an outbound data flow; self-hosting is what shuts that off.<span class="detail">Data sovereignty is about whose laws and whose keys govern your data, not just where it is stored. Most AI features quietly send your design work out to an external company's servers to run the model. When the model runs on your own machines, none of that leaves your network, so you keep full legal and physical control of your design IP.</span></li>
+  </ul>
+  <div class="cols" style="margin-top:1.2rem">
+    <div class="card card--caution">
+      <h3>Watch-outs</h3>
+      <ul>
+        <li>Most OSS servers lack <strong>prompt caching</strong>: our cost model leans on it; expect different economics per round.</li>
+        <li>Tool-calling and vision quality vary sharply by model; the 57-tool surface needs an <strong>eval gate</strong> per model.</li>
+        <li>Our OpenAI-dialect image path is still live-unverified: verify before offering vision on OSS models.</li>
+      </ul>
+    </div>
+    <div class="card card--affirm">
+      <h3>Why it's still right</h3>
+      <ul>
+        <li>Matches Penpot's open-source identity and enterprise deployments, and its public <strong>data-sovereignty</strong> stance (aligned with EU tech-sovereignty and GDPR). Our strongest enterprise story.</li>
+        <li>Skills, enforcement, foundations are model-agnostic: the moat is the product layer, not the model.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Infra · a future model</div>
+  <h2>Penpot runs the AI for you</h2>
+  <p style="margin-bottom:1.4rem">The furthest-out step, not near-term like self-hosting: a future model for once demand and economics prove out.</p>
+  <div class="cols">
+    <div class="card card--affirm">
+      <h3>Pros</h3>
+      <ul>
+        <li>Zero-setup UX: AI works out of the box; billing bundled with the product.</li>
+        <li>Central model curation, prompt-cache tuning, migration on our schedule.</li>
+        <li>Fleet-level telemetry → evals and regression detection.</li>
+      </ul>
+    </div>
+    <div class="card card--tradeoff">
+      <h3>Cons</h3>
+      <ul>
+        <li>We own margins, abuse, quotas and rate limits.</li>
+        <li>The <strong>sovereignty cost</strong>: design content transits our inference path, so Penpot becomes a data processor and the in-perimeter guarantee from self-hosting is gone.</li>
+        <li>GPU capacity or reseller contracts; on-call for a new class of outage.</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:1.2rem">A future SaaS tier if demand proves out; BYOK and self-hosting stay the near-term paths.</p>
+</section>
+
+<section class="slide">
+  <div class="kicker">Beyond the roadmap · nearer-term</div>
+  <h2>Room to grow, two ways</h2>
+  <div class="cols">
+    <div>
+      <div class="col-head">More efficient <span>· cheaper to run</span></div>
+      <ul>
+        <li><strong>Vision economy</strong>, we lean heavily on renders, but not every look needs full-res colour. Structure and nesting checks can ride <em>grayscale, downscaled</em> renders (image tokens scale with pixels; payload caps are real). Every KB matters.</li>
+        <li><strong>Multi-model routing</strong>, the scout, compaction and playbook matching already run on a cheap model; extend it: an architect/executor split where the frontier model writes the dense spec and a cheap model executes the tool calls, aligned with subtask delegation.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="col-head">More capable <span>· does more than edit the canvas</span></div>
+      <ul>
+        <li><strong>Artifacts generation</strong>, beyond canvas edits: style guides, handoff specs, component documentation, review reports, deliverables generated from the same file intelligence.</li>
+        <li><strong>Plan generation</strong>, a visible plan artifact with one step in progress at a time: passive progress for the user, resumability for the agent (the survey's clearest go signal).<span class="rmnote">✓ already on the roadmap: Aug '26 (Harden)</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Beyond the roadmap · already in motion</div>
+  <h2>The developer may be an agent</h2>
+  <p style="margin-bottom:1.4rem">Another longer-term idea: developers increasingly rely on AI to write and review code, so the finished design should be delivered to those AI programs directly, not only to human developers.</p>
+  <p class="sidenote">Not a new idea: Penpot already delivers designs to coding agents through its <strong>MCP server</strong>, so design-to-agent exists today. The open point is how this product's native handoff (<code>generate_code</code>, component contracts) connects to and strengthens that, rather than running a parallel path. <em>(Where Penpot's own roadmap sits on this: to confirm.)</em></p>
+  <ul>
+    <li class="explain">Development has changed: developers write, and increasingly review, <strong>less code every year</strong>. Assume an agent on the receiving end of the handoff.<span class="detail">Developers now lean on AI coding tools to write and review a growing share of their code, so more of what they ship is machine-generated. The point: plan for the design handoff to be received by an AI agent, not only a human.</span></li>
+    <li class="explain">So deliver artifacts <strong>to agents</strong> (Claude Code, Cursor, Codex): machine-consumable handoff (structured specs, tokens, component contracts, <code>generate_code</code> output), served through the thin MCP facade over the same native registry.<span class="detail">Instead of a picture a human reads off, produce a handoff a machine can consume directly: structured specs, the design tokens, component contracts, even generated code. It would be served over MCP (the standard way outside AI tools connect), reusing the same native tools rather than building a second system.</span></li>
+    <li class="explain">Penpot's position sharpens: the design file as the <strong>source of truth agents build from</strong>, design-to-agent, not just design-to-developer.<span class="detail">This gives Penpot a clear role: the design file becomes the trusted source that AI agents build software from, extending "design to developer" into "design to agent."</span></li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">Beyond the roadmap · furthest out</div>
+  <h2>A detached panel, Claude-Code-style</h2>
+  <p style="margin-bottom:1.4rem">A longer-term idea: agents that run on their own in the background, with nobody watching, to review and audit a whole team's design files, like automated overnight checks that file what they find.</p>
+  <ul>
+    <li class="explain">Sessions unbound from an open workspace tab: <strong>headless agents against design files</strong>.<span class="detail">Normally the agent runs inside an open Penpot browser tab. "Headless" means it runs on a server with no window and no person present, working directly on the design files.</span></li>
+    <li class="explain">What it unlocks: <strong>standing audit loops</strong>, nightly governance / a11y / token sweeps across a team's files, filing findings as comments and reports; long builds that outlive a browser tab; <strong>CI for design</strong> ("the handoff blocks if the audit fails").<span class="detail">Because it does not need a person present, it can run on a schedule: every night it checks a team's files for rule, accessibility (a11y) and token problems and files what it finds. It can run jobs too long for a browser tab, and act as a gate, like the automated checks in software (CI), that stops a design handoff if it fails the audit.</span></li>
+    <li class="explain"><strong>The eyes already exist</strong>: the agent renders and reviews its own work today, so an unattended one isn't a new capability. The only real question is <em>where</em> it fits: build-with-me stays at the canvas; check-my-work suits detached.<span class="detail">The agent already renders images of its work and looks at them to check itself (the visual self-review loop). So a headless version that nobody watches already has the one thing it needs: the ability to see what it is checking. What is left to decide is only where it fits, designing together still wants you at the canvas, while checking, reviewing and batch jobs suit the detached mode.</span></li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">How we would approach the next steps</div>
+  <h2>Pilot it next, then add options step by step</h2>
+  <p style="margin-bottom:1.4rem">Take it into a structured designer pilot on real work. Everything after, the deployment options and the dates, depends on that data.</p>
+  <ul>
+    <li class="explain"><strong>Now:</strong> a designer pilot; real usage is what turns the prototype into a product, and it feeds the flywheel.<span class="detail">The immediate step: put it in front of real designers doing real work. That real use is what turns a prototype into a product, and it produces the data the learning loop (next slide) runs on. This is the one decision being asked for.</span></li>
+    <li class="explain"><strong>Then, step by step:</strong> BYOK (today, done) → <strong>custom endpoint</strong> for OSS/self-hosted (small, high enterprise value).<span class="detail">How people run the AI, expanded gradually. Today you bring your own key (BYOK, already built). Next, a small addition: a field to point it at a self-hosted or open-source model, a big deal for privacy-sensitive enterprises. Capabilities added in sequence, not all at once.</span></li>
+    <li class="explain"><strong>Guardrail:</strong> verify the OSS / OpenAI-dialect path (eval harness + live check, per-model gating) before offering it.<span class="detail">A safety check before promising the self-hosted option: run the automated quality tests, do a real live check of the open-model path, and gate each model on whether it is actually good enough. Do not sell it until it is proven.</span></li>
+    <li class="explain"><strong>Keep investing where we're alone:</strong> write-path enforcement, organizational skills, self-review, the model market commoditizes; the product binding doesn't.<span class="detail">Keep putting effort into the things no rival has: rules enforced as changes are saved, organization-level skills, the agent reviewing its own work. AI models are becoming cheap and interchangeable, so an edge built on the model is fragile; how these capabilities are built into the product is the durable moat.</span></li>
+  </ul>
+</section>
+
+<section class="slide">
+  <div class="kicker">How we would reduce the risk</div>
+  <h2>The product that learns from its designers</h2>
+  <p style="margin-bottom:1.4rem">Why the pilot isn't a gamble: it feeds a loop that turns real designer usage into a product that keeps improving itself. Parts already run; the pilot switches on the rest.</p>
+  <div class="phase phase--now">
+    <div class="phase__label">Running now</div>
+    <ul>
+      <li class="explain"><strong>Keep learning from the field</strong>. The provider/OSS survey is becoming a standing practice, not a one-off: two rounds done, adoptions shipped within days; repeat on a cadence.<span class="detail">We study other AI tools (commercial providers and open-source projects) and adopt the good ideas. It's been done twice so far, with improvements shipped within days, and the intent is to keep it going regularly rather than as a one-off.</span></li>
+    </ul>
+  </div>
+  <div class="phase phase--pilot">
+    <div class="phase__label">Starts at the designer pilot · Sep–Oct '26</div>
+    <ul>
+      <li class="explain"><strong>Sessions become data.</strong> We already store every agent conversation per file: add the designer's <em>own edits after</em> the agent's work. Every manual fix of a misaligned or mis-nested shape is ground-truth feedback no benchmark can fake.<span class="detail">Every chat with the agent is already saved per file. The new part: also capture the edits the designer makes right after the agent's work. When someone manually fixes a shape the agent misplaced or mis-nested, that correction is real, honest feedback about what the agent got wrong, the kind no lab benchmark can fake.</span></li>
+      <li class="explain"><strong>Postmortems on autopilot</strong>, an agentic loop mines transcripts + edit deltas for insights (what did users undo? re-nest? re-space?), closing the loop back into tools, doctrine and playbooks. Our two hand-made postmortems each paid for themselves; automate the method.<span class="detail">An automated agent reviews the saved sessions and the designers' follow-up edits to spot patterns, what people undid, re-nested or re-spaced, and turns those into fixes for the tools and the agent's instructions. We did this by hand twice and each analysis paid for itself; the idea is to automate the method.</span></li>
+    </ul>
+  </div>
+  <div class="phase phase--later">
+    <div class="phase__label">Further out</div>
+    <ul>
+      <li class="explain"><strong>Feedback to the user too</strong>, the same analysis can surface "the agent keeps getting X wrong in your files, here's a skill/foundation that would fix it."<span class="detail">The same analysis can help the user directly: it can notice the agent repeatedly gets something wrong in your files and suggest a rule or setting (a skill or foundation) that would fix it going forward.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">Roadmap</div>
+  <h2>A realistic path to publishing</h2>
+  <p class="acc-hint">Click a milestone for the detail.</p>
+  <div class="accs">
+    <div class="acc">
+      <button class="acc__head" type="button"><span class="acc__when">Aug '26</span><span class="acc__title">Harden</span><span class="acc__dep">needs: nothing</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
+      <div class="acc__body"><p>Making the prototype solid enough for real users, and it can start now because nothing blocks it. We pull in the cheap, high-value fixes from our <a href="oss-agent-survey.html" target="_blank" rel="noopener">survey of eleven open-source agents</a> (mostly better prompt wording). The headline one is <strong>parallelism</strong>: the agent's worst measured habit was doing independent steps one at a time instead of at once, so we A/B-test two versions of that instruction and keep whichever is faster. We also ship the <a class="slink" data-goto="13">plan tool</a> (a visible progress checklist), run a live end-to-end check of the OpenAI-compatible and image paths (built but not yet verified), encrypt the stored provider keys (today they are plaintext), add spend limits, and stand up the first automated quality tests.</p></div>
+    </div>
+    <div class="acc">
+      <button class="acc__head" type="button"><span class="acc__when">Sep–Oct '26</span><span class="acc__title">Designer pilot</span><span class="acc__dep">needs: designers, server, budget</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
+      <div class="acc__body"><p>Real designers use the agent on real work, in organized test sessions. We record everything: the chat with the agent and, crucially, the edits the designer makes right after (every manual fix is honest feedback on what the agent got wrong). A nightly job turns that into concrete improvements to the tools and the agent's instructions, which is the <a class="slink" data-goto="17">learning flywheel</a> starting to turn. This is the critical path of the whole plan: every later milestone runs on the data the pilot produces, which is why it needs designers' time in scheduled sessions, plus a dedicated server and a model budget.</p></div>
+    </div>
+    <div class="acc">
+      <button class="acc__head" type="button"><span class="acc__when">Oct–Nov '26</span><span class="acc__title">OSS-model track <span class="acc__opt">optional</span></span><span class="acc__dep">needs: GPU server</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
+      <div class="acc__body"><p>A separate track that runs at the same time as the pilot, not after it. The main deliverable is small but valuable: a settings field where a customer points the agent at their own <a class="slink" data-goto="11">self-hosted or open-source model</a> instead of a commercial one. Because open models vary a lot in quality, each has to pass an automated quality gate before we offer it, and we keep a capability matrix recording which models can do what (see images, call tools reliably, and so on). It needs a GPU server so we can actually run those open models to test them. This track is optional: deferring or dropping it does not block the path to publish.</p></div>
+    </div>
+    <div class="acc">
+      <button class="acc__head" type="button"><span class="acc__when">Nov–Dec '26</span><span class="acc__title">Private beta</span><span class="acc__dep">needs: pilot results</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
+      <div class="acc__body"><p>Open the agent to a small set of external teams outside Penpot, to see how it holds up in the wild: real teams, real files, real budgets. The focus is validating the product beyond our own pilot and gathering the quality, stability, and cost data a launch needs. We also use the beta to study the <a class="slink" data-goto="12">managed-tier</a> question (whether it is worth Penpot hosting the AI for customers), but that is something we learn along the way, not the goal. It depends on what the pilot produced (recorded sessions, designers' edits, and real quality and cost numbers), so it cannot start earlier.</p></div>
+    </div>
+    <div class="acc">
+      <button class="acc__head" type="button"><span class="acc__when">Q1 '27</span><span class="acc__title">Publish</span><span class="acc__dep">needs: a passing beta</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
+      <div class="acc__body"><p>General availability: the agent ships to everyone, but behind a feature flag so we can turn it on gradually and roll it back if needed. Alongside it, we publish clear documentation for enterprises that want to run the whole thing on their own servers with their own <a class="slink" data-goto="11">self-hosted models</a>. It only ships once the beta has met its exit criteria, the agreed bar for quality, stability, and cost.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="kicker">The ask</div>
+  <h2>What we need to get there</h2>
+  <div class="cols">
+    <div class="card card--caution">
+      <h3>What we're asking for</h3>
+      <ul>
+        <li><strong>Designers' time</strong>, scheduled user-testing sessions; their real work is the training signal.</li>
+        <li><strong>A dedicated server</strong>, staging instance with session recording + the nightly agentic analysis loop.</li>
+        <li><strong>Model budget</strong>, up to ~$4k/mo covering the pilot, the private beta, and evals across models.</li>
+        <li><span class="acc__opt" style="margin-left:0">optional</span> <strong>A GPU server for open-source models</strong>, vLLM-class serving to prove the self-hosted story we want to sell.</li>
+      </ul>
+    </div>
+    <div class="card card--affirm">
+      <h3>Why these dates hold</h3>
+      <p>The critical path is the <strong>flywheel, not the code</strong>: every milestone after August consumes the pilot's results. Fund the server + budget first and the rest is sequencing; without them the dates slip one-for-one.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide slide--addon" data-addon>
+  <div class="kicker">Nitrate</div>
+  <h2>What an organization governs</h2>
+  <ul>
+    <li><strong>Mandatory rules.</strong> Rules marked mandatory hold everywhere. No team or file can loosen them. The cascade already enforces this; Nitrate is where an org sets it.</li>
+    <li><strong>Allowed providers and models.</strong> The org decides which AI providers and models may be used, and whether people bring their own key or use the org's. A compliance boundary, not a preference.</li>
+    <li><strong>Organization-wide foundations.</strong> A company tone of voice, naming conventions, and standing context that every team and file inherits, and can tighten but not drop.</li>
+  </ul>
+  <div class="card card--tradeoff aside-note">
+    <h3>What it deliberately does not do</h3>
+    <ul>
+      <li>Logs cover only the relevant events already defined, nothing an ordinary action wouldn't log. <strong>Not a record of who asked the agent what.</strong></li>
+      <li>Whether the agent applies changes directly or only suggests stays each person's choice. <strong>The org doesn't override it.</strong></li>
+    </ul>
+  </div>
+</section>
+
+<script>
+  const slides = [...document.querySelectorAll(".slide")];
+  // groups: name + last slide (1-based) in each
+  const groups = [
+    { name: "Open", to: 2, goal: "Introduction" },
+    { name: "The core reasons", to: 6, goal: "Strengths of the approach" },
+    { name: "Why native", to: 9, goal: "Advantages of building it in" },
+    { name: "Deployment options", to: 12, goal: "How it can be deployed" },
+    { name: "Beyond the roadmap", to: 15, goal: "Potential steps beyond the roadmap" },
+    { name: "Close", to: 17, goal: "The plan, and how we de-risk it" },
+    { name: "Roadmap", to: 19, goal: "The roadmap (and the ask)" },
+  ];
+  const groupFor = (num) => groups.find((g) => num <= g.to) || groups[groups.length - 1];
+  const groupStarts = new Set();
+  { let prev = 0; for (const g of groups) { groupStarts.add(prev); prev = g.to; } }
+
+  // the "Part N of 6 · goal" act line now lives once, above the nav dots (updated in show())
+
+  // glossary: wrap the first occurrence of each jargon term per slide with a hover tooltip
+  const glossary = {
+    "MCP": "Model Context Protocol: a standard way for outside AI programs (like Claude Code or Cursor) to connect to a tool.",
+    "write-path": "The point where a change is saved to the file. Enforcing here blocks a bad change as it is written, not just discourages it.",
+    "write path": "The point where a change is saved to the file. Enforcing here blocks a bad change as it is written, not just discourages it.",
+    "changes pipeline": "Penpot's normal system for applying edits, so changes are undoable and synced to everyone in the file.",
+    "BYOK": "Bring Your Own Key: you supply your own account with an AI company, and pay that company directly.",
+    "SSE": "Server-Sent Events: a way to stream the AI's reply piece by piece as it is written.",
+    "proxy": "A simple go-between server that passes requests along without changing them.",
+    "inference": "Running the AI model to produce a result.",
+    "OSS": "Open-source software: freely available code that anyone can run and host themselves.",
+    "prompt caching": "Reusing parts of an earlier request so the AI does not re-charge for the same context.",
+    "compaction": "Trimming or summarizing old parts of the conversation to keep it small and cheap.",
+    "cascade": "Rules layered by scope (company, team, file), where the most specific one wins.",
+    "evals": "Evaluations: automated tests that measure how well the AI performs.",
+    "plugin-data": "Extra data stored on a Penpot file; here, used to keep the design's rules with the file itself.",
+    "vLLM": "A program for running open-source AI models efficiently on your own hardware.",
+    "spend meter": "A live readout of how much the current AI session has cost.",
+  };
+  {
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const terms = Object.keys(glossary).sort((a, b) => b.length - a.length);
+    slides.forEach((slide) => {
+      terms.forEach((term) => {
+        const re = new RegExp("(^|[^A-Za-z0-9_])(" + esc(term) + ")(?![A-Za-z0-9_])", "i");
+        const walker = document.createTreeWalker(slide, NodeFilter.SHOW_TEXT, {
+          acceptNode(n) {
+            if (!n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+            if (n.parentElement.closest(".term, .act, .kicker, h1, h2, code, .explain")) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        });
+        let node;
+        while ((node = walker.nextNode())) {
+          const m = re.exec(node.nodeValue);
+          if (!m) continue;
+          const start = m.index + m[1].length;
+          const matched = m[2];
+          const span = document.createElement("span");
+          span.className = "term";
+          span.setAttribute("data-tip", glossary[term]);
+          span.textContent = matched;
+          const frag = document.createDocumentFragment();
+          const before = node.nodeValue.slice(0, start);
+          const after = node.nodeValue.slice(start + matched.length);
+          if (before) frag.appendChild(document.createTextNode(before));
+          frag.appendChild(span);
+          if (after) frag.appendChild(document.createTextNode(after));
+          node.parentNode.replaceChild(frag, node);
+          break; // first occurrence of this term in this slide only
+        }
+      });
+    });
+  }
+
+  const dotsWrap = document.getElementById("dot-row");
+  const navAct = document.getElementById("nav-act");
+  // REVIEW: temporary per-slide plain-language summaries (remove later, grep "REVIEW")
+  const review = document.getElementById("review");
+  const summaries = [
+    "The title slide. Penpot is a tool designers use to draw the screens of apps and websites. This project adds an AI helper inside it. The slide introduces what's coming, plus a few numbers showing how much work has gone in.",
+    "A list of the real, working parts already built into Penpot (not a fake demo): a chat box to talk to the AI, a place to set your design rules, checks that run automatically when you save, a watcher that flags mistakes as you work, and chats that are saved so you don't lose them.",
+    "The main idea: your design rules aren't just polite suggestions the AI is asked to follow, they're enforced by the software. If the AI tries to make a change that breaks a rule, the program refuses to save it. The team checked eleven other AI tools and none of them do this.",
+    "Your rules and instructions are stored inside the design file itself. So whenever any AI works on that file it automatically knows and follows the rules, and nobody has to set anything up on their own computer.",
+    "Why the approach is trustworthy: the decisions come from real, measured sessions, not guesses. The slide shows two examples where the team watched what went wrong and how much it cost, and let the data change their plans.",
+    "How they keep the running cost down. The AI charges money each time it's used, so they reuse work it has already done, drop old parts of the conversation it no longer needs, and give the boring parts to a cheaper AI. A typical screen costs about one to four dollars.",
+    "The upsides of building the AI straight into Penpot instead of bolting it on: it never falls out of step with the software, the rules can be shared across a whole company, it can watch your work and react, and everything fits together better.",
+    "The real downsides of building it in-house: the team has to build and maintain more themselves. Plus a note that they could add back a way for outside AI programs to connect later, if it's ever needed.",
+    "What the team learned from studying other free, publicly-shared AI tools: some good ideas they borrowed, and a few things only this project does (like refusing to save work that breaks the rules).",
+    "How it works right now. You bring your own account with an AI company and paste in your key; a small go-between server passes your requests along without storing or reading them. It works with several different AI companies.",
+    "The near step: the customer runs the AI on their own computers, even using free AI models, so their designs never leave their own network. Great for privacy, and it's close to done, the architecture is basically one setting away. The slide is upfront about a few rough edges.",
+    "A future model, further off: Penpot provides the AI for you so it just works out of the box and Penpot handles the bill. The catch is that Penpot then owns the cost, and your designs pass through its systems. Offered as a later step, once demand proves it out.",
+    "Future ideas to make it cheaper and better: use simpler, smaller pictures when full detail isn't needed, split the work between an expensive smart AI and a cheap fast one, and have it produce more kinds of useful output.",
+    "Beyond the roadmap: deliver the finished design to AI coding agents directly, not only to human developers. Not new, Penpot's MCP server already does design-to-agent today; the point is connecting this product's handoff to it.",
+    "Beyond the roadmap: AIs that run unattended in the background to review and audit whole teams' design files, like automated overnight checks that file their findings. The furthest-out of the three.",
+    "My plan, and the one decision asked for: take it into a designer pilot on real work next. After that, add deployment options step by step (self-host, then a managed tier when demand proves out), keep investing in the parts no rival has, and verify the open-source path before offering it.",
+    "Why the pilot isn't a gamble: it feeds a loop that turns real designer usage into a product that keeps improving itself. Some of it runs already; the pilot switches on the rest.",
+    "A realistic schedule for getting this ready to release, roughly August 2026 to early 2027. Click any milestone to see what it involves.",
+    "What the team needs to get there: designers' time to test it, a computer to run it on, a budget for the AI usage, and ideally a machine for open-source models. The dates only hold if the server and budget come first.",
+    "An add-on: what a company (an 'organization') can set for everyone. Three things it controls, rules that can't be loosened, which AI providers and models are allowed, and company-wide design foundations. Plus a reassuring note on what it deliberately does not do: it isn't surveillance of who asked the agent what, and it doesn't take away each person's choice of whether the agent acts directly or only suggests.",
+  ];
+  const dots = slides.map((_, j) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("aria-label", "Slide " + (j + 1) + " · " + groupFor(j + 1).goal);
+    if (j > 0 && groupStarts.has(j)) b.classList.add("group-start");
+    b.addEventListener("click", () => show(j));
+    dotsWrap.appendChild(b);
+    return b;
+  });
+  // the add-on isn't a numbered part: relabel its dot and set it apart from the last group
+  const addonIdx = slides.findIndex((s) => s.hasAttribute("data-addon"));
+  if (addonIdx > -1) {
+    dots[addonIdx].setAttribute("aria-label", "Add-on · " + slides[addonIdx].querySelector("h2").textContent);
+    dots[addonIdx].classList.add("group-start");
+  }
+  let i = 0;
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, j) => s.classList.toggle("active", j === i));
+    document.querySelectorAll(".explain.open").forEach(closeExplain);
+    dots.forEach((d, j) => d.setAttribute("aria-current", j === i ? "true" : "false"));
+    if (slides[i].hasAttribute("data-addon")) {  // add-on: not a numbered part
+      navAct.innerHTML = '<span class="act__part">Add-on</span><span class="act__goal">' +
+        slides[i].querySelector("h2").textContent + '</span>';
+      document.documentElement.style.setProperty("--cur-part", "var(--addon)");
+    } else {
+      const gi = groups.indexOf(groupFor(i + 1));
+      navAct.innerHTML = '<span class="act__part">Part ' + (gi + 1) + ' of ' + groups.length +
+        '</span><span class="act__goal">' + groups[gi].goal + '</span>';
+      document.documentElement.style.setProperty("--cur-part", "var(--part-" + (gi + 1) + ")");
+    }
+    if (review) review.textContent = summaries[i] || "";  // REVIEW
+    window.scrollTo(0, 0);
+  }
+  addEventListener("keydown", (e) => {
+    if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    if (e.key === "Home") show(0);
+    if (e.key === "End") show(slides.length - 1);
+  });
+  addEventListener("click", (e) => {
+    if (e.target.closest("a, .dots, .explain, .acc")) return;    // don't hijack links, dots, explain lines, or the accordion
+    if (String(getSelection()).length) return;                 // let the user select/copy text
+    const band = innerWidth * 0.12;                             // only the outer 12% each side navigates
+    if (e.clientX >= innerWidth - band) show(i + 1);
+    else if (e.clientX <= band) show(i - 1);
+  });
+  // click-to-explain: floating plain-language detail (accordion per slide)
+  const closeExplain = (o) => { o.classList.remove("open"); const d = o.querySelector(".detail"); if (d) { d.style.left = ""; d.style.top = ""; d.style.bottom = ""; } };
+  const placeExplain = (li) => {
+    const d = li.querySelector(".detail");
+    d.style.left = ""; d.style.top = ""; d.style.bottom = "";  // reset to CSS default (below-left)
+    const overlap = 200;                                  // px of the text's right end the popover covers
+    const lr = li.getBoundingClientRect();
+    const w = d.getBoundingClientRect().width;
+    const leftInLi = lr.width - overlap;                  // shift right, anchored to the text's right edge (no drift)
+    if (leftInLi > 0 && lr.left + leftInLi + w <= innerWidth - 16) d.style.left = leftInLi + "px";
+    if (d.getBoundingClientRect().bottom > innerHeight - 12) {  // below would run off the bottom → flip above the line
+      d.style.top = "auto"; d.style.bottom = "calc(100% + .4rem)";
+    }
+  };
+  document.querySelectorAll(".explain").forEach((li) => {
+    li.addEventListener("click", (e) => {
+      if (e.target.closest(".detail")) return;            // let them read/select the explanation
+      const open = li.classList.contains("open");
+      li.closest(".slide").querySelectorAll(".explain.open").forEach(closeExplain);
+      if (!open) { li.classList.add("open"); placeExplain(li); }
+    });
+  });
+  // floating popover: click anywhere outside an explain line closes it
+  addEventListener("click", (e) => {
+    if (!e.target.closest(".explain")) document.querySelectorAll(".explain.open").forEach(closeExplain);
+  });
+
+  // roadmap accordion: one milestone open at a time
+  document.querySelectorAll(".acc__head").forEach((h) => {
+    h.addEventListener("click", () => {
+      const item = h.closest(".acc"), wasOpen = item.classList.contains("open");
+      item.closest(".accs").querySelectorAll(".acc.open").forEach((o) => o.classList.remove("open"));
+      if (!wasOpen) item.classList.add("open");
+    });
+  });
+  // cross-slide links jump to the referenced slide
+  document.querySelectorAll(".slink").forEach((a) => {
+    a.addEventListener("click", (e) => { e.preventDefault(); show(parseInt(a.dataset.goto, 10) - 1); });
+  });
+
+  show(0);
+</script>
+</body>
+</html>

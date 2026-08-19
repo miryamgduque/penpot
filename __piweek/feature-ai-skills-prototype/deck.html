@@ -185,18 +185,9 @@
   .dots button[aria-current="true"] { background: var(--cur-part, var(--skill)); opacity: 1; transform: scale(1.4); }
   .dots button.group-start { margin-left: .55rem; }
 
-  /* ===== REVIEW: temporary per-slide summaries (remove later, grep "REVIEW") ===== */
-  .review { position: fixed; bottom: 2.4vh; left: 3vw; max-width: 40rem; z-index: 25;
-    border: 1px dashed var(--caution); border-radius: 10px;
-    background: color-mix(in srgb, var(--card) 90%, transparent);
-    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-    padding: .7rem .9rem; color: var(--text-soft); font-size: .82rem; line-height: 1.5; }
-  .review::before { content: "Slide summary · review only"; display: block; font-family: var(--font-mono);
-    font-size: .6rem; letter-spacing: .14em; text-transform: uppercase; color: var(--caution); margin-bottom: .3rem; }
-
   @media print {
     .slide { display: flex !important; page-break-after: always; min-height: 100vh; }
-    .dots, .backlink, .review { display: none; }
+    .dots, .backlink { display: none; }
   }
 </style>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzRBNTdFMCIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDQgNCkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMiA4VjRIOCIvPjxyZWN0IHdpZHRoPSIxNiIgaGVpZ2h0PSIxMiIgeD0iNCIgeT0iOCIgcng9IjIiLz48cGF0aCBkPSJNMiAxNGgyIi8+PHBhdGggZD0iTTIwIDE0aDIiLz48cGF0aCBkPSJNMTUgMTN2MiIvPjxwYXRoIGQ9Ik05IDEzdjIiLz48L2c+PC9zdmc+">
@@ -206,9 +197,6 @@
 <div class="dots" id="dots" aria-label="Go to slide"><div class="act" id="nav-act"></div><div class="dot-row" id="dot-row"></div></div>
 <a class="backlink" href="index.html">← Pitch</a>
 
-<!-- REVIEW:start -->
-<div class="review" id="review" aria-hidden="true"></div>
-<!-- REVIEW:end -->
 
 <section class="slide active">
   <div class="kicker">feature/ai-skills-prototype · 2026-07-19</div>
@@ -625,30 +613,6 @@
 
   const dotsWrap = document.getElementById("dot-row");
   const navAct = document.getElementById("nav-act");
-  // REVIEW: temporary per-slide plain-language summaries (remove later, grep "REVIEW")
-  const review = document.getElementById("review");
-  const summaries = [
-    "The title slide. Penpot is a tool designers use to draw the screens of apps and websites. This project adds an AI helper inside it. The slide introduces what's coming, plus a few numbers showing how much work has gone in.",
-    "A list of the real, working parts already built into Penpot (not a fake demo): a chat box to talk to the AI, a place to set your design rules, checks that run automatically when you save, a watcher that flags mistakes as you work, and chats that are saved so you don't lose them.",
-    "The main idea: your design rules aren't just polite suggestions the AI is asked to follow, they're enforced by the software. If the AI tries to make a change that breaks a rule, the program refuses to save it. The team checked eleven other AI tools and none of them do this.",
-    "Your rules and instructions are stored inside the design file itself. So whenever any AI works on that file it automatically knows and follows the rules, and nobody has to set anything up on their own computer.",
-    "Why the approach is trustworthy: the decisions come from real, measured sessions, not guesses. The slide shows two examples where the team watched what went wrong and how much it cost, and let the data change their plans.",
-    "How they keep the running cost down. The AI charges money each time it's used, so they reuse work it has already done, drop old parts of the conversation it no longer needs, and give the boring parts to a cheaper AI. A typical screen costs about one to four dollars.",
-    "The upsides of building the AI straight into Penpot instead of bolting it on: it never falls out of step with the software, the rules can be shared across a whole company, it can watch your work and react, and everything fits together better.",
-    "The real downsides of building it in-house: the team has to build and maintain more themselves. Plus a note that they could add back a way for outside AI programs to connect later, if it's ever needed.",
-    "What the team learned from studying other free, publicly-shared AI tools: some good ideas they borrowed, and a few things only this project does (like refusing to save work that breaks the rules).",
-    "How it works right now. You bring your own account with an AI company and paste in your key; a small go-between server passes your requests along without storing or reading them. It works with several different AI companies.",
-    "The near step: the customer runs the AI on their own computers, even using free AI models, so their designs never leave their own network. Great for privacy, and it's close to done, the architecture is basically one setting away. The slide is upfront about a few rough edges.",
-    "A future model, further off: Penpot provides the AI for you so it just works out of the box and Penpot handles the bill. The catch is that Penpot then owns the cost, and your designs pass through its systems. Offered as a later step, once demand proves it out.",
-    "Future ideas to make it cheaper and better: use simpler, smaller pictures when full detail isn't needed, split the work between an expensive smart AI and a cheap fast one, and have it produce more kinds of useful output.",
-    "Beyond the roadmap: deliver the finished design to AI coding agents directly, not only to human developers. Not new, Penpot's MCP server already does design-to-agent today; the point is connecting this product's handoff to it.",
-    "Beyond the roadmap: AIs that run unattended in the background to review and audit whole teams' design files, like automated overnight checks that file their findings. The furthest-out of the three.",
-    "My plan, and the one decision asked for: take it into a designer pilot on real work next. After that, add deployment options step by step (self-host, then a managed tier when demand proves out), keep investing in the parts no rival has, and verify the open-source path before offering it.",
-    "Why the pilot isn't a gamble: it feeds a loop that turns real designer usage into a product that keeps improving itself. Some of it runs already; the pilot switches on the rest.",
-    "A realistic schedule for getting this ready to release, roughly August 2026 to early 2027. Click any milestone to see what it involves.",
-    "What the team needs to get there: designers' time to test it, a computer to run it on, a budget for the AI usage, and ideally a machine for open-source models. The dates only hold if the server and budget come first.",
-    "An add-on: what a company (an 'organization') can set for everyone. Three things it controls, rules that can't be loosened, which AI providers and models are allowed, and company-wide design foundations. Plus a reassuring note on what it deliberately does not do: it isn't surveillance of who asked the agent what, and it doesn't take away each person's choice of whether the agent acts directly or only suggests.",
-  ];
   const dots = slides.map((_, j) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -680,7 +644,6 @@
         '</span><span class="act__goal">' + groups[gi].goal + '</span>';
       document.documentElement.style.setProperty("--cur-part", "var(--part-" + (gi + 1) + ")");
     }
-    if (review) review.textContent = summaries[i] || "";  // REVIEW
     window.scrollTo(0, 0);
   }
   addEventListener("keydown", (e) => {

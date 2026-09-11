@@ -1221,24 +1221,32 @@
      ;; No Disable action here on purpose: that choice is made at the skill's
      ;; own detail view, with its description in view.
      (for [{:keys [id name label blurb promoted-by]} arrived-skills]
-       [:div {:key id :class (stl/css :arrival-notice)}
-        [:div {:class (stl/css :arrival-top)}
-         [:div {:class (stl/css :arrival-icon)}
-          [:> i/icon* {:icon-id i/sparkles :size "s"}]]
-         [:div {:class (stl/css :arrival-text-col)}
-          [:div {:class (stl/css :arrival-title)} (dm/str "New team skill: " label)]
-          [:div {:class (stl/css :arrival-body)}
-           (dm/str "Promoted by " (or promoted-by "a teammate") ". " blurb)]]]
-        [:div {:class (stl/css :arrival-footer)}
-         [:button {:type "button"
-                   :class (stl/css :arrival-dismiss)
-                   :aria-label (dm/str "Dismiss arrival notice for " label)
-                   :on-click #(on-dismiss-arrival id)}
-          "Dismiss"]
-         [:button {:type "button"
-                   :class (stl/css :arrival-view)
-                   :on-click #(on-view-arrival id name)}
-          "View skill"]]])
+       (let [open-detail (fn [event]
+                           (when (or (nil? event) (kbd/enter? event) (kbd/space? event))
+                             (some-> event dom/prevent-default)
+                             (on-view-arrival id name)))]
+         [:div {:key id
+                :class (stl/css :arrival-notice)
+                :role "button"
+                :tab-index 0
+                :on-click #(on-view-arrival id name)
+                :on-key-down open-detail}
+          [:div {:class (stl/css :arrival-text-col)}
+           [:div {:class (stl/css :arrival-title-row)}
+            [:div {:class (stl/css :arrival-title)} label]
+            [:span {:class (stl/css :catalog-new-pill)} "New"]]
+           [:div {:class (stl/css :arrival-promoted-by)}
+            (dm/str "Promoted by " (or promoted-by "a teammate") ".")]
+           [:div {:class (stl/css :arrival-body)} blurb]]
+          [:button {:type "button"
+                    :class (stl/css :arrival-close)
+                    :aria-label (dm/str "Dismiss arrival notice for " label)
+                    :title "Dismiss"
+                    :on-click (fn [event]
+                                (dom/stop-propagation event)
+                                (on-dismiss-arrival id))
+                    :on-key-down dom/stop-propagation}
+           [:> i/icon* {:icon-id i/close}]]]))
 
      (if (or (seq messages) (some? pending-form))
        [:> transcript* {:messages messages :busy? busy? :form pending-form

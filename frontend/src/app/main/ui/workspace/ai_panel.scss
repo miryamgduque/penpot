@@ -663,6 +663,98 @@
   cursor: pointer;
 }
 
+// Arrival notice (US #52): a team skill promoted since this member last
+// acknowledged one. Informational — no Disable control here, only Dismiss
+// and View skill; the same shape as .handoff-notice (icon added), stacked
+// like .observer-list when more than one has arrived.
+.arrival-notice {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  margin: 0 var(--sp-m);
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+}
+
+.arrival-top {
+  display: flex;
+  align-items: flex-start;
+  gap: deprecated.$s-8;
+}
+
+.arrival-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+  border-radius: deprecated.$br-4;
+  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+  color: var(--color-accent-primary);
+}
+
+.arrival-text-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: deprecated.$s-2;
+  min-inline-size: 0;
+}
+
+.arrival-title {
+  @include scaled-body-small;
+
+  font-weight: 600;
+  color: var(--color-foreground-primary);
+}
+
+.arrival-body {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+.arrival-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+}
+
+.arrival-dismiss {
+  @include scaled-body-small;
+
+  flex: none;
+  padding: 0 deprecated.$s-4;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+}
+
+.arrival-view {
+  @include scaled-body-small;
+
+  flex: none;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background: none;
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
 // Fresh-chat suggestion: the conversation outgrew the handoff threshold.
 // Stacked: text (with the ✕) on top, the action full-width at the bottom —
 // side by side the text wrapped into a skinny column in the narrow panel.

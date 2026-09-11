@@ -872,8 +872,19 @@
 
 (mf/defc chat-tab*
   {::mf/private true}
-  [{:keys [on-create-skill]}]
-  (let [messages  (mf/deref refs/ai-panel-messages)
+  [{:keys [on-create-skill on-view-skill]}]
+  (let [catalog        (mf/deref refs/skills-catalog)
+        ;; US #52: team skills promoted since this member last acknowledged
+        ;; them — never the promoter's own (see :arrived in team-skill->entry).
+        arrived-skills (mf/with-memo [catalog]
+                         (into [] (comp (mapcat :skills) (filter :arrived)) catalog))
+        on-dismiss-arrival (mf/use-fn #(st/emit! (dwts/mark-team-skill-seen! %)))
+        on-view-arrival (mf/use-fn
+                         (mf/deps on-view-skill)
+                         (fn [id name]
+                           (st/emit! (dwts/mark-team-skill-seen! id))
+                           (on-view-skill name)))
+        messages  (mf/deref refs/ai-panel-messages)
         page      (mf/deref refs/workspace-page)
         selected  (mf/deref refs/selected-shapes)
         objects   (mf/deref refs/workspace-page-objects)
@@ -1203,6 +1214,31 @@
        [:> session-recorder/recording-timer*])
 
      [:> observer-notifications* {:on-fix on-fix}]
+
+     ;; Arrival notice (US #52): one dismissible card per team skill promoted
+     ;; since this member last acknowledged one — informational, not a
+     ;; decision gate (the skill is already active, default on, per US #12).
+     ;; No Disable action here on purpose: that choice is made at the skill's
+     ;; own detail view, with its description in view.
+     (for [{:keys [id name label blurb promoted-by]} arrived-skills]
+       [:div {:key id :class (stl/css :arrival-notice)}
+        [:div {:class (stl/css :arrival-top)}
+         [:div {:class (stl/css :arrival-icon)}
+          [:> i/icon* {:icon-id i/sparkles :size "s"}]]
+         [:div {:class (stl/css :arrival-text-col)}
+          [:div {:class (stl/css :arrival-title)} (dm/str "New team skill: " label)]
+          [:div {:class (stl/css :arrival-body)}
+           (dm/str "Promoted by " (or promoted-by "a teammate") ". " blurb)]]]
+        [:div {:class (stl/css :arrival-footer)}
+         [:button {:type "button"
+                   :class (stl/css :arrival-dismiss)
+                   :aria-label (dm/str "Dismiss arrival notice for " label)
+                   :on-click #(on-dismiss-arrival id)}
+          "Dismiss"]
+         [:button {:type "button"
+                   :class (stl/css :arrival-view)
+                   :on-click #(on-view-arrival id name)}
+          "View skill"]]])
 
      (if (or (seq messages) (some? pending-form))
        [:> transcript* {:messages messages :busy? busy? :form pending-form
@@ -2522,6 +2558,15 @@
                            (reset! skill* nil)
                            (reset! creating* true)
                            (reset! view* :skills)))
+        ;; Arrival notice's "View skill" (US #52): jump straight to that
+        ;; skill's detail in the Skills view, same destination `on-select`
+        ;; opens from the list.
+        on-view-skill   (mf/use-fn
+                         (fn [name]
+                           (reset! creating* false)
+                           (reset! promoting* nil)
+                           (reset! skill* name)
+                           (reset! view* :skills)))
         ;; Pop one level: create/detail → list → chat. Branch on the deref'd
         ;; values (in deps) — reading the atoms from a no-deps callback captures
         ;; their initial nil/false and jumps straight to chat.
@@ -2695,4 +2740,5 @@
                                                :on-tone on-tone-interview
                                                :on-create on-add-foundation}])
         (empty? pool) [:> connect-empty*]
-        :else         [:> chat-tab* {:on-create-skill on-create-skill}])]]))
+        :else         [:> chat-tab* {:on-create-skill on-create-skill
+                                     :on-view-skill on-view-skill}])]]))

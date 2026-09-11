@@ -104,8 +104,8 @@ mutation rather than piggybacking "seen" onto the fetch itself.
 ## Phases
 
 1. [Phase 01 — Backend: `team_skill_seen` + `arrived?` + mark-seen RPC](./done-phase-01-backend-arrival-state.md) — new table/migration, extend `get-team-skills` with a computed `:arrived?`, add `::mark-team-skill-seen` mutation.
-2. [Phase 02 — Frontend data: surface `arrived?` through the catalog](./doing-phase-02-frontend-data-arrival.md) — thread the field through `team_skills.cljs` → `agent_skills.cljs`'s `full-catalog`/`team-skill->entry`, add the `mark-team-skill-seen!` action.
-3. [Phase 03 — Arrival notice card UI](./todo-phase-03-arrival-notice-ui.md) — new dismissible card(s) patterned on `handoff-notice`, wired to Dismiss/View skill → `mark-team-skill-seen!` + reuse of the existing detail view.
+2. [Phase 02 — Frontend data: surface `arrived?` through the catalog](./done-phase-02-frontend-data-arrival.md) — thread the field through `team_skills.cljs` → `agent_skills.cljs`'s `full-catalog`/`team-skill->entry`, add the `mark-team-skill-seen!` action.
+3. [Phase 03 — Arrival notice card UI](./doing-phase-03-arrival-notice-ui.md) — new dismissible card(s) patterned on `handoff-notice`, wired to Dismiss/View skill → `mark-team-skill-seen!` + reuse of the existing detail view.
 4. [Phase 04 — Skill-list "NEW" highlight](./todo-phase-04-list-new-highlight.md) — accent tint + border + "NEW" pill on arrived rows, 20s client-side ephemeral fade.
 5. [Phase 05 — Live verification + wrap-up](./todo-phase-05-live-verification.md) — two-account devenv check, completion summary, move to `completed/`.
 

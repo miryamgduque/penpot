@@ -22,6 +22,7 @@
    [app.main.ui.hooks :as hooks]
    [app.main.ui.hooks.resize :refer [use-resize-observer]]
    [app.main.ui.modal :refer [modal-container*]]
+   [app.main.ui.workspace.ai-panel :refer [ai-panel*]]
    [app.main.ui.workspace.colorpicker]
    [app.main.ui.workspace.context-menu :refer [context-menu*]]
    [app.main.ui.workspace.coordinates :as coordinates]
@@ -71,6 +72,8 @@
         colorpalette?  (:colorpalette layout)
         textpalette?   (:textpalette layout)
         hide-ui?       (:hide-ui layout)
+
+        ai-panel-open? (mf/deref refs/ai-panel-open?)
 
         on-resize
         (mf/use-fn
@@ -123,7 +126,20 @@
                      :file file
                      :selected selected
                      :section options-mode
-                     :drawing-tool (get drawing :tool)}])]))
+                     :drawing-tool (get drawing :tool)}])
+
+     ;; All-In Penpot (Agents) panel: a native right-docked side panel. Its
+     ;; open state is file-bound and in-memory (survives navigation, resets on
+     ;; a hard refresh) — see app.main.data.workspace.ai-panel.
+     (when (and (not ^boolean hide-ui?) ^boolean ai-panel-open?)
+       [:> ai-panel* {:file file :page page}])
+
+     ;; Host container for plugins opened with the `dock` option (see
+     ;; @penpot/plugins-runtime create-modal): the plugins runtime mounts the
+     ;; plugin-modal element here, turning it into an integrated side panel.
+     (when-not hide-ui?
+       [:aside {:id "plugin-dock"
+                :class (stl/css :plugin-dock)}])]))
 
 (mf/defc workspace-loader*
   {::mf/private true}

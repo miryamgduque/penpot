@@ -227,6 +227,22 @@
                       (assoc :session-id session-id))]
       (mbus/pub! msgbus :topic file-id :message message))))
 
+;; Design session recording. Broadcast so that everyone on the file can see a
+;; recording is running — a recording captures identifiable activity by people
+;; who did not start it, so the indicator must not be private to whoever did.
+;;
+;; Same shape as :pointer-update: the server stamps the real profile and session
+;; rather than trusting the client's, and the subscriber's own session is
+;; filtered out by the :subscribe-file channel transducer.
+(defmethod handle-message :recording-update
+  [{:keys [::mbus/msgbus]} {:keys [::ws/state ::session-id ::profile-id]} {:keys [file-id] :as message}]
+  (when (::file-subscription @state)
+    (let [message (-> message
+                      (assoc :subs-id file-id)
+                      (assoc :profile-id profile-id)
+                      (assoc :session-id session-id))]
+      (mbus/pub! msgbus :topic file-id :message message))))
+
 (defmethod handle-message :default
   [_ {:keys [::ws/id]} message]
   (l/warn :hint "received unexpected message"

@@ -11,6 +11,7 @@
    [app.db :as db]
    [app.migrations.clj.migration-0023 :as mg0023]
    [app.migrations.clj.migration-0145 :as mg0145]
+   [app.migrations.clj.migration-0153 :as mg0153]
    [app.util.migrations :as mg]
    [integrant.core :as ig]))
 
@@ -493,7 +494,40 @@
     :fn (mg/resource "app/migrations/sql/0150-mod-storage-object-table.sql")}
 
    {:name "0151-mod-file-tagged-object-thumbnail-table"
-    :fn (mg/resource "app/migrations/sql/0151-mod-file-tagged-object-thumbnail-table.sql")}])
+    :fn (mg/resource "app/migrations/sql/0151-mod-file-tagged-object-thumbnail-table.sql")}
+
+   {:name "0152-add-design-skill-tables"
+    :fn (mg/resource "app/migrations/sql/0152-add-design-skill-tables.sql")}
+
+   {:name "0153-seed-design-skills"
+    :fn mg0153/migrate}
+
+   {:name "0154-add-profile-ai-provider-table"
+    :fn (mg/resource "app/migrations/sql/0154-add-profile-ai-provider-table.sql")}
+
+   {:name "0155-add-profile-skill-state-table"
+    :fn (mg/resource "app/migrations/sql/0155-add-profile-skill-state-table.sql")}
+
+   {:name "0156-add-profile-skill-table"
+    :fn (mg/resource "app/migrations/sql/0156-add-profile-skill-table.sql")}
+
+   {:name "0157-profile-skill-reactive"
+    :fn (mg/resource "app/migrations/sql/0157-profile-skill-reactive.sql")}
+
+   {:name "0158-add-profile-agent-chat-table"
+    :fn (mg/resource "app/migrations/sql/0158-add-profile-agent-chat-table.sql")}
+
+   {:name "0159-profile-skill-on-demand"
+    :fn (mg/resource "app/migrations/sql/0159-profile-skill-on-demand.sql")}
+
+   {:name "0160-add-team-skill-table"
+    :fn (mg/resource "app/migrations/sql/0160-add-team-skill-table.sql")}
+
+   {:name "0161-add-profile-skill-promoted-to"
+    :fn (mg/resource "app/migrations/sql/0161-add-profile-skill-promoted-to.sql")}
+
+   {:name "0162-add-team-skill-seen-table"
+    :fn (mg/resource "app/migrations/sql/0162-add-team-skill-seen-table.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]
@@ -510,3 +544,36 @@
   (when-not (db/read-only? pool)
     (l/info :hint "running migrations" :module module)
     (some->> (seq migrations) (apply-migrations! pool "main"))))
+
+;; --- Design session recordings
+;;
+;; These live in a SEPARATE database (see `::main/sessions-pool`), so they get
+;; their own migration set with its own module name. The existing machinery
+;; already supports this without change: `mg/setup!` creates a `migrations`
+;; bookkeeping table in whichever database the pool points at, and its
+;; `unique(module, step)` means the module name is all that keeps the two sets
+;; apart. Numbering here is therefore independent of Penpot's main sequence,
+;; which also sidesteps the recurring hazard of two branches claiming the same
+;; migration number.
+
+(def session-migrations
+  [{:name "0001-add-design-session-tables"
+    :fn (mg/resource "app/migrations/sessions/0001-add-design-session-tables.sql")}])
+
+(defmethod ig/assert-key ::session-migrations
+  [_ {:keys [::db/pool]}]
+  (assert (or (nil? pool) (db/pool? pool))
+          "expected valid pool or nil"))
+
+(defmethod ig/init-key ::session-migrations
+  [module {:keys [::db/pool]}]
+  ;; A nil pool is the normal, supported state: the sessions database is
+  ;; optional, and Penpot must boot without it. Recording is the only thing
+  ;; that degrades.
+  (if (nil? pool)
+    (l/info :hint "sessions database not configured, skipping migrations"
+            :module module)
+    (when-not (db/read-only? pool)
+      (l/info :hint "running migrations" :module module)
+      (some->> (seq session-migrations)
+               (apply-migrations! pool "sessions")))))

@@ -32,6 +32,10 @@ export class PluginModalElement extends HTMLElement {
 
   disconnectedCallback() {
     this.#dragEvents?.();
+    if (this.hasAttribute('docked')) {
+      // the dock column collapsing changes the workspace layout
+      window.dispatchEvent(new Event('resize'));
+    }
   }
 
   calculateZIndex() {
@@ -128,22 +132,27 @@ export class PluginModalElement extends HTMLElement {
       );
     });
 
+    // docked panels are part of the workspace layout: no dragging
+    const isDocked = this.hasAttribute('docked');
+
     // move modal to the top
-    this.#dragEvents = dragHandler(
-      header,
-      this.wrapper,
-      () => {
-        this.calculateZIndex();
-      },
-      {
-        start: () => {
-          this.wrapper.classList.add('is-dragging');
-        },
-        end: () => {
-          this.wrapper.classList.remove('is-dragging');
-        },
-      },
-    );
+    this.#dragEvents = isDocked
+      ? null
+      : dragHandler(
+          header,
+          this.wrapper,
+          () => {
+            this.calculateZIndex();
+          },
+          {
+            start: () => {
+              this.wrapper.classList.add('is-dragging');
+            },
+            end: () => {
+              this.wrapper.classList.remove('is-dragging');
+            },
+          },
+        );
 
     this.addEventListener('message', (e: Event) => {
       if (!iframe.contentWindow) {

@@ -239,3 +239,181 @@
     outline: $b-1 solid var(--color-accent-primary);
   }
 }
+
+.ai-provider-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xl);
+}
+
+// same rhythm as .mcp-server-title: air between the section title and
+// its description
+.ai-provider-title {
+  margin: var(--sp-s) 0;
+}
+
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-m);
+}
+
+.provider-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+}
+
+// Title and the "key saved" tag share a baseline-aligned row so the tag lines
+// up with the provider label; the models hint sits below.
+.provider-card-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-m);
+}
+
+.provider-connected {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-xs);
+}
+
+.provider-connected-tag {
+  color: var(--color-accent-success);
+  white-space: nowrap;
+}
+
+.provider-key-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s);
+}
+
+.provider-key-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sp-s);
+  align-items: center;
+}
+
+.provider-key-status {
+  color: var(--color-foreground-secondary);
+  min-block-size: var(--sp-l);
+}
+
+.provider-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s);
+}
+
+.provider-models-note {
+  color: var(--color-accent-warning);
+}
+
+.provider-models-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+  max-block-size: $sz-224;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.provider-models-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s);
+
+  &:has(:disabled) {
+    opacity: 0.6;
+  }
+}
+
+.provider-models-context {
+  margin-inline-start: auto;
+  color: var(--color-foreground-secondary);
+  font-size: 0.6875rem;
+}
+
+// Sits after the context size, so a row reads "… 1M context · Images".
+// Only rendered for models that accept image input, hence no "no" variant:
+// the absence is the signal.
+.provider-models-vision {
+  flex-shrink: 0;
+  border: 1px solid var(--color-background-quaternary);
+  border-radius: $br-4;
+  padding: 0 var(--sp-xxs);
+  color: var(--color-foreground-secondary);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+}
+
+// The models hint ("Claude models") sits next to the provider name.
+.provider-card-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-s);
+}
+
+.provider-models-hint {
+  white-space: nowrap;
+}
+
+.ai-provider-description {
+  white-space: pre-line;
+}
+
+.provider-models-combobox {
+  position: relative;
+}
+
+.provider-models-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-s);
+  inline-size: 100%;
+  padding: var(--sp-s) var(--sp-m);
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+}
+
+.provider-models-caret {
+  flex: none;
+  color: var(--color-foreground-secondary);
+}
+
+.provider-models-trigger-open .provider-models-caret {
+  transform: rotate(180deg);
+}
+
+.provider-models-menu {
+  position: absolute;
+  inset-block-start: calc(100% + var(--sp-xs));
+  inset-inline: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xs);
+  max-block-size: $sz-224;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--sp-s);
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  box-shadow: 0 var(--sp-xs) var(--sp-m) rgb(0 0 0 / 20%);
+  list-style: none;
+}

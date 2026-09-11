@@ -2448,6 +2448,72 @@ msgstr "Resolved value:"
 msgid "inspect.tabs.styles.variants-panel"
 msgstr "Variant Properties"
 
+msgid "integrations.ai-provider.title"
+msgstr "Penpot Agent"
+
+msgid "integrations.ai-provider.description"
+msgstr ""
+"Add your own AI provider accounts to power the Penpot Agent.\n"
+"Keys are stored with your profile and only used from Penpot's server, so they "
+"never reach the browser."
+
+msgid "integrations.ai-provider.key.label"
+msgstr "API key"
+
+msgid "integrations.ai-provider.key.placeholder"
+msgstr "Paste your API key"
+
+msgid "integrations.ai-provider.key.placeholder-rotate"
+msgstr "Paste a new key to replace it"
+
+msgid "integrations.ai-provider.autosave-hint"
+msgstr "Saved automatically when you click away."
+
+msgid "integrations.ai-provider.saving"
+msgstr "Saving…"
+
+msgid "integrations.ai-provider.saved"
+msgstr "Saved"
+
+msgid "integrations.ai-provider.disconnect"
+msgstr "Remove key"
+
+msgid "integrations.ai-provider.status.saved"
+msgstr "Key saved · ending in %s"
+
+msgid "integrations.ai-provider.models.title"
+msgstr "Models"
+
+msgid "integrations.ai-provider.models.select-one"
+msgstr "Enable at least one model to make this provider usable in the agent chat."
+
+msgid "integrations.ai-provider.models.save-key-first"
+msgstr "Save an API key above to enable models for the agent chat."
+
+msgid "integrations.ai-provider.models.context"
+msgstr "%s context"
+
+msgid "integrations.ai-provider.models.vision"
+msgstr "Images"
+
+msgid "integrations.ai-provider.models.vision-hint"
+msgstr "This model can read images you attach in the agent chat."
+
+msgid "integrations.ai-provider.models.count"
+msgstr "%s models enabled"
+
+msgid "integrations.ai-provider.models.select-placeholder"
+msgstr "Select models"
+
+msgid "integrations.ai-provider.error.generic"
+msgstr "Something went wrong while saving the key. Please try again."
+
+msgid "integrations.ai-provider.notification.key-saved"
+msgstr "%s key saved."
+
+msgid "integrations.ai-provider.notification.disconnected"
+msgstr "%s key removed."
+
 #: src/app/main/ui/settings/integrations.cljs:629
 msgid "integrations.access-tokens.create"
 msgstr "Create new access token"
@@ -3461,6 +3527,42 @@ msgstr "Sketch"
 #: src/app/main/ui/dashboard/sidebar.cljs:1070
 msgid "labels.sources"
 msgstr "Sources"
+
+#: src/app/main/ui/dashboard/sidebar.cljs
+msgid "labels.agent-skills"
+msgstr "Agent Skills"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "title.agent-skills"
+msgstr "Agent Skills"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.description"
+msgstr "Skills your team promoted, shared with everyone in their agent panel."
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.empty-title"
+msgstr "No team skills yet"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.empty-desc"
+msgstr "Promote a skill from the Agent panel to share it with your team."
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.trigger"
+msgstr "Example trigger phrase"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.what"
+msgstr "What it does"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.by"
+msgstr "by %s"
+
+#: src/app/main/ui/dashboard/agent_skills.cljs
+msgid "dashboard.agent-skills.no-test"
+msgstr "No test action here — the dashboard has no open file to act on."
 
 #: src/app/main/ui/onboarding/questions.cljs:53
 msgid "labels.start"
@@ -10109,3 +10211,139 @@ msgstr "Click to close the path"
 
 msgid "notifications.invitation-canceled"
 msgstr "This invitation is no longer available."
+
+#: src/app/main/ui/dashboard/team.cljs, src/app/main/ui/dashboard/skills.cljs
+msgid "labels.skills"
+msgstr "Skills & Rules"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "title.team-skills"
+msgstr "Skills & Rules - %s - Penpot"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.description"
+msgstr "Design intent your AI agents inherit when working on this team's files. Skills are knowledge (playbooks, conventions); rules are constraints that can be watched and enforced at the write path. File-level skills are managed inside each file."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.team-section"
+msgstr "This team"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.team-section-desc"
+msgstr "Skills and rules for every file in this team."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.app-section"
+msgstr "App level (all teams)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.app-section-desc"
+msgstr "The instance-wide set, seeded from the official penpot-ai-kit. Switch an entry off to stop inheriting it in this team."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.create"
+msgstr "+ New skill or rule"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.empty"
+msgstr "No skills defined at this level yet."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.save-success"
+msgstr "Skill saved successfully."
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.kind.skill"
+msgstr "Skill (knowledge for the agent)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.kind.rule"
+msgstr "Rule (checkable constraint)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.enforcement.advisory"
+msgstr "Advisory (context the agent follows)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.enforcement.triggered"
+msgstr "Triggered (watched, surfaced on changes)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.enforcement.enforced"
+msgstr "Enforced (violating writes are rejected)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.name"
+msgstr "Name"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.kind"
+msgstr "Kind"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.enforcement"
+msgstr "Enforcement"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.trigger"
+msgstr "Trigger"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.mandatory"
+msgstr "Mandatory"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.mandatory-hint"
+msgstr "More specific levels cannot loosen or disable it"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.description"
+msgstr "Description"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.description-hint"
+msgstr "One line the agent sees in its manifest"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.body"
+msgstr "Body (markdown)"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.form.body-hint"
+msgstr "The full convention or constraint, in markdown"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.toggle-hint"
+msgstr "Enable or disable this entry"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "dashboard.skills.mandatory-toggle-hint"
+msgstr "Mandatory entries cannot be disabled"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.create-design-skill.title-team"
+msgstr "New team skill or rule"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.create-design-skill.title-app"
+msgstr "New app-level skill or rule"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.create-design-skill.submit-label"
+msgstr "Create"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.edit-design-skill.title"
+msgstr "Edit skill"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.edit-design-skill.submit-label"
+msgstr "Save"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.delete-design-skill.title"
+msgstr "Delete skill"
+
+#: src/app/main/ui/dashboard/skills.cljs
+msgid "modals.delete-design-skill.message"
+msgstr "This removes the skill for everyone it applies to. Files keep their own file-level skills."

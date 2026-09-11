@@ -1,0 +1,219 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) KALEIDOS INC Sucursal en España SL
+
+@use "refactor/common-refactor.scss" as *;
+@use "ds/typography.scss" as t;
+
+.agent-skills-page {
+  // the dashboard content area is a grid (header row + content row); with no
+  // dashboard header we span both rows so the page fills the area instead of
+  // being clipped to the 64px header row.
+  grid-row: 1 / -1;
+  grid-column: 1 / -1;
+  min-block-size: 0;
+
+  display: flex;
+  flex-direction: column;
+  gap: $s-16;
+  padding: $s-32;
+  overflow-y: auto;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: $s-4;
+}
+
+.hero-title {
+  @include t.use-typography("title-large");
+
+  color: var(--color-foreground-primary);
+}
+
+.hero-desc {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+}
+
+// --- List
+
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: $s-8;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-inline-size: $s-712;
+}
+
+// A promoted skill: a full-width clickable card (name + short description +
+// tags) that opens its read-only detail.
+.skill-card {
+  display: flex;
+  flex-direction: column;
+  gap: $s-6;
+  inline-size: 100%;
+  padding: $s-16;
+  border: $s-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
+  background-color: var(--color-background-primary);
+  cursor: pointer;
+  text-align: start;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.skill-name {
+  @include t.use-typography("body-large");
+
+  color: var(--color-foreground-primary);
+}
+
+.skill-desc {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+}
+
+// A muted metadata row that matches the Skills panel's plain-text badges (not
+// filled pills): category · reactive · by <promoter>, dot-separated.
+.skill-tags {
+  display: flex;
+  gap: $s-6;
+  align-items: center;
+  flex-wrap: wrap;
+
+  > * + *::before {
+    content: "·";
+    margin-inline-end: $s-6;
+    color: var(--color-foreground-secondary);
+  }
+}
+
+.skill-tag {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+.skill-by {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+}
+
+// --- Detail
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: $s-12;
+  max-inline-size: $s-712;
+}
+
+.detail-head {
+  display: flex;
+  gap: $s-8;
+  align-items: center;
+}
+
+.detail-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: $s-4;
+  border: none;
+  border-radius: $br-8;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+.detail-name {
+  @include t.use-typography("title-medium");
+
+  color: var(--color-foreground-primary);
+}
+
+.detail-label {
+  @include t.use-typography("body-small");
+
+  margin-block-start: $s-4;
+  color: var(--color-foreground-secondary);
+  text-transform: uppercase;
+}
+
+.detail-trigger {
+  @include t.use-typography("body-medium");
+
+  margin: 0;
+  color: var(--color-foreground-primary);
+  font-style: italic;
+}
+
+.detail-what {
+  @include t.use-typography("body-medium");
+
+  margin: 0;
+  color: var(--color-foreground-primary);
+}
+
+.detail-note {
+  @include t.use-typography("body-small");
+
+  margin: $s-8 0 0;
+  color: var(--color-foreground-secondary);
+  font-style: italic;
+}
+
+// --- Empty state
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: $s-8;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: $s-32;
+  text-align: center;
+}
+
+.empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: $s-48;
+  block-size: $s-48;
+  border-radius: 50%;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
+}
+
+.empty-title {
+  @include t.use-typography("title-small");
+
+  color: var(--color-foreground-primary);
+}
+
+.empty-desc {
+  @include t.use-typography("body-small");
+
+  max-inline-size: $s-360;
+  color: var(--color-foreground-secondary);
+}

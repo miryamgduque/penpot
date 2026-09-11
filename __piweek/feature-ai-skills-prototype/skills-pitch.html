@@ -1,0 +1,368 @@
+<title>Penpot Skills &amp; Rules &mdash; the design that governs the AI</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+    /* light theme (default) &mdash; neutrals biased toward the indigo accent, chosen not inherited */
+    --bg:        #ECEEF6;
+    --surface:   #F5F6FB;
+    --card:      #FFFFFF;
+    --text:      #17181F;
+    --text-soft: #565A6E;
+    --text-mute: #868AA0;
+    --line:      #DEE0EC;
+    --line-soft: #E9EAF3;
+    --rule:      #D8402A;   /* enforcement / guardrail signal */
+    --rule-bg:   #FBE6E1;
+    --skill:     #4A57E0;   /* knowledge */
+    --skill-bg:  #E4E6FB;
+    --ok:        #1D8A5B;
+    --grid:      rgba(24, 24, 54, 0.055);
+    --shadow:    0 1px 2px rgba(20,22,40,.04), 0 8px 30px rgba(20,22,40,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:        #121218;
+      --surface:   #191A22;
+      --card:      #1E202B;
+      --text:      #ECEDF4;
+      --text-soft: #A2A5BA;
+      --text-mute: #71748A;
+      --line:      rgba(255,255,255,.09);
+      --line-soft: rgba(255,255,255,.05);
+      --rule:      #FF6350;
+      --rule-bg:   rgba(255,99,80,.13);
+      --skill:     #8593FF;
+      --skill-bg:  rgba(133,147,255,.14);
+      --ok:        #3FCB88;
+      --grid:      rgba(255,255,255,.038);
+      --shadow:    0 1px 2px rgba(0,0,0,.3), 0 12px 40px rgba(0,0,0,.35);
+    }
+  }
+  /* explicit toggle wins in both directions */
+  :root[data-theme="light"] {
+    --bg:#ECEEF6; --surface:#F5F6FB; --card:#FFFFFF; --text:#17181F; --text-soft:#565A6E;
+    --text-mute:#868AA0; --line:#DEE0EC; --line-soft:#E9EAF3; --rule:#D8402A; --rule-bg:#FBE6E1;
+    --skill:#4A57E0; --skill-bg:#E4E6FB; --ok:#1D8A5B; --grid:rgba(24,24,54,.055);
+    --shadow:0 1px 2px rgba(20,22,40,.04), 0 8px 30px rgba(20,22,40,.06);
+  }
+  :root[data-theme="dark"] {
+    --bg:#121218; --surface:#191A22; --card:#1E202B; --text:#ECEDF4; --text-soft:#A2A5BA;
+    --text-mute:#71748A; --line:rgba(255,255,255,.09); --line-soft:rgba(255,255,255,.05);
+    --rule:#FF6350; --rule-bg:rgba(255,99,80,.13); --skill:#8593FF; --skill-bg:rgba(133,147,255,.14);
+    --ok:#3FCB88; --grid:rgba(255,255,255,.038); --shadow:0 1px 2px rgba(0,0,0,.3), 0 12px 40px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--text);
+    background-color: var(--bg);
+    background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+    background-size: 22px 22px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  .band { padding: clamp(3.5rem, 8vw, 6.5rem) 1.5rem; }
+  .band--surface { background: color-mix(in srgb, var(--surface) 82%, transparent); border-block: 1px solid var(--line-soft); }
+  .wrap { max-width: 62rem; margin-inline: auto; }
+  .prose { max-width: 40rem; }
+
+  /* ---- type ---- */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: .72rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    margin: 0 0 1.4rem;
+    display: flex; align-items: center; gap: .6rem;
+  }
+  .eyebrow::before { content:""; width: 1.6rem; height: 1px; background: var(--text-mute); display:inline-block; }
+
+  h1 {
+    font-size: clamp(2.3rem, 5.4vw, 3.7rem);
+    line-height: 1.03;
+    letter-spacing: -.028em;
+    font-weight: 800;
+    margin: 0 0 1.3rem;
+    text-wrap: balance;
+  }
+  h1 .hot { color: var(--rule); }
+  h2 {
+    font-size: clamp(1.5rem, 3.2vw, 2.15rem);
+    line-height: 1.12;
+    letter-spacing: -.022em;
+    font-weight: 750;
+    margin: 0 0 1rem;
+    text-wrap: balance;
+  }
+  .lead { font-size: clamp(1.08rem, 1.9vw, 1.28rem); color: var(--text-soft); max-width: 40rem; margin: 0; }
+  p { margin: 0 0 1rem; }
+  .section-kicker {
+    font-family: var(--font-mono); font-size:.74rem; letter-spacing:.16em; text-transform:uppercase;
+    color: var(--skill); margin: 0 0 .9rem;
+  }
+  a { color: var(--skill); text-underline-offset: 3px; }
+  :focus-visible { outline: 2px solid var(--skill); outline-offset: 3px; border-radius: 3px; }
+
+  /* ---- hero ---- */
+  .hero { display:grid; gap: clamp(2.2rem, 5vw, 3.4rem); grid-template-columns: 1fr; align-items:center; }
+  @media (min-width: 60rem){ .hero { grid-template-columns: 1.05fr .95fr; } }
+  .hero__cta { display:flex; flex-wrap:wrap; gap:.7rem; margin-top: 1.9rem; align-items:center; }
+  .tag {
+    font-family: var(--font-mono); font-size:.74rem; letter-spacing:.02em;
+    padding:.34rem .6rem; border-radius: 6px; border:1px solid var(--line);
+    color: var(--text-soft); background: var(--card);
+  }
+
+  /* ---- enforcement vignette ---- */
+  .vig {
+    background: var(--card); border:1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow); overflow:hidden; font-family: var(--font-mono); font-size:.82rem;
+  }
+  .vig__bar { display:flex; align-items:center; gap:.5rem; padding:.7rem .9rem; border-bottom:1px solid var(--line-soft); color:var(--text-mute); font-size:.72rem; letter-spacing:.04em; }
+  .dot { width:.6rem; height:.6rem; border-radius:50%; background: var(--line); }
+  .vig__body { padding: 1.1rem .95rem 1.25rem; display:flex; flex-direction:column; gap:.55rem; }
+  .ln { display:flex; gap:.6rem; align-items:flex-start; line-height:1.5; }
+  .ln .who { color: var(--text-mute); flex: 0 0 auto; }
+  .ln .msg { color: var(--text); }
+  .ln--bad .glyph { color: var(--rule); }
+  .ln--bad .msg { color: var(--rule); }
+  .ln--ok .glyph { color: var(--ok); }
+  .swatch { display:inline-block; width:.82em; height:.82em; border-radius:3px; vertical-align:-1px; margin-right:.15em; border:1px solid rgba(128,128,128,.35); }
+  .cursor { display:inline-block; width:.55em; height:1.05em; background:var(--skill); vertical-align:-2px; margin-left:.1em; }
+  @media (prefers-reduced-motion: no-preference){
+    .cursor{ animation: blink 1.1s steps(1) infinite; }
+    .reveal{ opacity:0; transform: translateY(10px); animation: rise .7s cubic-bezier(.2,.7,.2,1) forwards; }
+    .reveal.d1{ animation-delay:.05s } .reveal.d2{ animation-delay:.16s } .reveal.d3{ animation-delay:.27s }
+    .vig .ln{ opacity:0; animation: rise .5s ease forwards; }
+    .vig .ln:nth-child(1){animation-delay:.35s} .vig .ln:nth-child(2){animation-delay:.7s}
+    .vig .ln:nth-child(3){animation-delay:1.15s} .vig .ln:nth-child(4){animation-delay:1.5s}
+  }
+  @keyframes blink { 50%{ opacity:0 } }
+  @keyframes rise { to{ opacity:1; transform:none } }
+
+  /* ---- pillars ---- */
+  .grid-cards { display:grid; gap: 1rem; grid-template-columns: 1fr; margin-top: 2.4rem; }
+  @media (min-width: 42rem){ .grid-cards { grid-template-columns: 1fr 1fr; } }
+  .card {
+    background: var(--card); border:1px solid var(--line); border-radius: 12px;
+    padding: 1.3rem 1.35rem 1.4rem; box-shadow: var(--shadow);
+  }
+  .card__label {
+    font-family: var(--font-mono); font-size:.76rem; letter-spacing:.02em;
+    color: var(--skill); margin: 0 0 .7rem; display:inline-flex; align-items:center; gap:.4rem;
+  }
+  .card__label::before{ content:"\203A"; color: var(--text-mute); }
+  .card h3 { font-size: 1.12rem; margin:0 0 .45rem; letter-spacing:-.01em; }
+  .card p { margin:0; color: var(--text-soft); font-size:.97rem; }
+  .card--rule .card__label{ color: var(--rule); }
+  .card--rule{ border-color: color-mix(in srgb, var(--rule) 30%, var(--line)); }
+
+  /* ---- build list ---- */
+  .stack { display:grid; gap:1px; margin-top:2.2rem; background:var(--line-soft); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .row { background: var(--card); padding: 1.15rem 1.3rem; display:grid; gap:.25rem .95rem; grid-template-columns: 1fr; }
+  @media (min-width: 40rem){ .row{ grid-template-columns: 12rem 1fr; align-items:baseline; } }
+  .row .rlabel{ font-family:var(--font-mono); font-size:.82rem; color:var(--text); font-weight:600; letter-spacing:-.01em; }
+  .row .rdesc{ color:var(--text-soft); font-size:.96rem; }
+
+  /* ---- comparison ---- */
+  .tablewrap{ overflow-x:auto; margin-top:2rem; border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow); }
+  table{ border-collapse:collapse; width:100%; min-width:40rem; background:var(--card); }
+  th, td{ text-align:left; padding:.95rem 1.1rem; vertical-align:top; border-bottom:1px solid var(--line-soft); }
+  thead th{ font-size:.9rem; letter-spacing:-.01em; }
+  thead th:first-child{ color:var(--text-mute); font-weight:600; font-family:var(--font-mono); font-size:.76rem; text-transform:uppercase; letter-spacing:.1em; }
+  thead .c-us{ color: var(--skill); }
+  tbody th{ font-weight:600; font-size:.9rem; color:var(--text); width:11rem; }
+  td{ color:var(--text-soft); font-size:.95rem; }
+  td.us{ color:var(--text); }
+  tr:last-child th, tr:last-child td{ border-bottom:none; }
+  tr.spot td.us{ color:var(--rule); font-weight:600; }
+  tr.spot { background: var(--rule-bg); }
+  tr.spot th { color: var(--text); }
+  .mini{ font-family:var(--font-mono); font-size:.78rem; }
+
+  /* ---- plain terms ---- */
+  .plain{ background: var(--skill-bg); border:1px solid color-mix(in srgb, var(--skill) 24%, var(--line)); border-radius:14px; padding: clamp(1.6rem,4vw,2.4rem); }
+  .plain h2{ margin-top:0; }
+  .plain .analogy{ font-size: clamp(1.15rem,2.4vw,1.5rem); font-weight:650; letter-spacing:-.02em; line-height:1.28; color:var(--text); text-wrap:balance; margin:0 0 1.1rem; }
+  .plain p{ color: color-mix(in srgb, var(--text) 82%, var(--text-soft)); max-width:42rem; }
+
+  /* ---- status / footer ---- */
+  .status-grid{ display:grid; gap:1rem; grid-template-columns:1fr; margin-top:1.8rem; }
+  @media (min-width: 44rem){ .status-grid{ grid-template-columns:1fr 1fr; } }
+  .stat{ border:1px solid var(--line); border-radius:12px; padding:1.1rem 1.2rem; background:var(--card); }
+  .stat .k{ font-family:var(--font-mono); font-size:.74rem; letter-spacing:.1em; text-transform:uppercase; color:var(--text-mute); margin:0 0 .55rem; display:flex; align-items:center; gap:.45rem; }
+  .stat ul{ margin:0; padding-left:1.05rem; color:var(--text-soft); font-size:.95rem; }
+  .stat li{ margin:.2rem 0; }
+  .pip{ width:.5rem; height:.5rem; border-radius:50%; display:inline-block; }
+  .pip--ok{ background:var(--ok); } .pip--wait{ background:var(--text-mute); }
+  footer{ padding: 2.5rem 1.5rem 3.5rem; color:var(--text-mute); font-size:.85rem; text-align:center; }
+  .div{ height:1px; background:var(--line); max-width:62rem; margin:0 auto; }
+</style>
+
+<main>
+  <!-- HERO -->
+  <section class="band">
+    <div class="wrap hero">
+      <div>
+        <p class="eyebrow reveal">Penpot &middot; Skills &amp; Rules</p>
+        <h1 class="reveal d1">The design holds the rules. The&nbsp;AI <span class="hot">can't break them.</span></h1>
+        <p class="lead reveal d2">An AI designer that lives <em>inside</em> Penpot &mdash; it inherits your team's design conventions, and enforces the ones that matter at the moment work is written to the file. No plugins to wire up. No rules to copy between tools.</p>
+        <div class="hero__cta reveal d3">
+          <span class="tag">App &rarr; Team &rarr; File</span>
+          <span class="tag">Enforced, not suggested</span>
+          <span class="tag">BYOK &middot; any model</span>
+        </div>
+      </div>
+
+      <div class="vig reveal d2" aria-label="Example: the agent is stopped from using an off-token color">
+        <div class="vig__bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:.3rem">agent &middot; file &ldquo;Marketing site&rdquo;</span></div>
+        <div class="vig__body">
+          <div class="ln"><span class="who">agent</span><span class="msg">set fill <span class="swatch" style="background:#FF3B30"></span>#FF3B30 on &ldquo;hero-cta&rdquo;</span></div>
+          <div class="ln ln--bad"><span class="glyph who">&#10007;</span><span class="msg">Rejected &middot; rule &ldquo;token-only-colors&rdquo; &mdash; raw colors aren't allowed here.</span></div>
+          <div class="ln"><span class="who">agent</span><span class="msg">apply token <span class="swatch" style="background:#6366F1"></span>color.brand.primary</span></div>
+          <div class="ln ln--ok"><span class="glyph who">&#10003;</span><span class="msg">Applied. On-brand, on-token.<span class="cursor" aria-hidden="true"></span></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE SHIFT -->
+  <section class="band band--surface">
+    <div class="wrap prose">
+      <p class="section-kicker">The shift</p>
+      <h2>Design guidance used to live in the AI's head &mdash; or a doc it was free to ignore.</h2>
+      <p class="lead">We moved it into the design itself: your rules live in Penpot, at the app, team, and file level. Every agent that touches the work inherits them the same way &mdash; and the strict ones are guardrails the work physically has to pass, not hints in a prompt.</p>
+    </div>
+  </section>
+
+  <!-- VALUE PILLARS -->
+  <section class="band">
+    <div class="wrap">
+      <p class="section-kicker">Why it matters</p>
+      <h2>Five things that change.</h2>
+      <div class="grid-cards">
+        <div class="card">
+          <p class="card__label">bidirectional</p>
+          <h3>The design talks back</h3>
+          <p>Not a one-way prompt. The agent reads your live file and tokens; the file flags rule violations back &mdash; to the agent and to you &mdash; as you work, and batches them into one fix.</p>
+        </div>
+        <div class="card">
+          <p class="card__label">embedded</p>
+          <h3>No external app to reach the tools</h3>
+          <p>The chat agent is a panel next to your canvas. You don't open Claude Code or Cursor to use the design tools &mdash; they're already here, where you're designing.</p>
+        </div>
+        <div class="card">
+          <p class="card__label">no&#8209;sync</p>
+          <h3>Nothing to keep in sync</h3>
+          <p>Skills live in Penpot &mdash; in the file and in the team database, seeded from the official penpot-ai-kit. No rule files to copy into each person's setup, no drift between them.</p>
+        </div>
+        <div class="card">
+          <p class="card__label">layered</p>
+          <h3>Rules at every level</h3>
+          <p>Manage skills &amp; rules for the whole instance, one team, or a single file. They cascade &mdash; most-specific wins &mdash; and anything marked mandatory can't be loosened below.</p>
+        </div>
+        <div class="card card--rule">
+          <p class="card__label">enforced</p>
+          <h3>Guardrails, not suggestions</h3>
+          <p>&ldquo;Use only our color tokens&rdquo; isn't advice. The write path rejects an off-token fill or stroke &mdash; no matter which AI model, in-app or external, tried to make it.</p>
+        </div>
+        <div class="card">
+          <p class="card__label">skill&nbsp;vs&nbsp;rule</p>
+          <h3>Two kinds, on purpose</h3>
+          <p>A <strong>skill</strong> is know-how the agent follows (playbooks, conventions). A <strong>rule</strong> is a constraint that can be watched and enforced. Same system, different teeth.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHAT WE BUILT -->
+  <section class="band band--surface">
+    <div class="wrap prose">
+      <p class="section-kicker">What's in the branch</p>
+      <h2>Four moving parts, one idea.</h2>
+      <p>The work spans Penpot's backend, its dashboard, the design canvas, and the external door &mdash; knit together so a rule authored once behaves identically everywhere.</p>
+    </div>
+    <div class="wrap stack">
+      <div class="row"><div class="rlabel">The shared brain</div><div class="rdesc">One engine parses the skill format, layers the App &rarr; Team &rarr; File cascade, and runs the enforcement guard. Both the in-app agent and the external door use it, so they can never drift apart.</div></div>
+      <div class="row"><div class="rlabel">The control room</div><div class="rdesc">A database table plus a native <strong>Skills &amp; Rules</strong> page inside Penpot's dashboard &mdash; seeded with 16 starter skills from penpot-ai-kit. Create, edit, and switch rules on or off at the app and team level.</div></div>
+      <div class="row"><div class="rlabel">The workspace</div><div class="rdesc">Two docked panels next to the canvas: an <strong>Agent</strong> you chat with, and a <strong>Skills</strong> manager with a live <strong>Audit</strong> that watches the file for rule violations and hands them to the agent to fix in one pass.</div></div>
+      <div class="row"><div class="rlabel">The open door</div><div class="rdesc">External agents &mdash; Claude Code, Cursor, a CI job &mdash; can still connect over MCP and inherit the exact same rules and the exact same enforcement. Optional, not required.</div></div>
+    </div>
+  </section>
+
+  <!-- CURSOR COMPARISON -->
+  <section class="band">
+    <div class="wrap">
+      <p class="section-kicker">How it compares</p>
+      <h2>Cursor put the rules next to the code. This puts them <em>inside the design</em>.</h2>
+      <p class="lead" style="margin-bottom:.4rem">Different jobs &mdash; Cursor is an excellent AI code editor. The contrast is about <em>where</em> the rules live and <em>whether</em> they're enforceable.</p>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Dimension</th><th scope="col" class="mini">Cursor</th><th scope="col" class="c-us">Penpot Skills &amp; Rules</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Where you work</th><td>A separate AI code editor</td><td class="us">Inside Penpot, where you already design</td></tr>
+            <tr><th scope="row">What it governs</th><td>Your code</td><td class="us">The design itself &mdash; layers, colors, tokens &mdash; and the intent behind it</td></tr>
+            <tr><th scope="row">Where rules live</th><td>Rules files in each repo</td><td class="us">In Penpot at app / team / file level; they travel with the design</td></tr>
+            <tr class="spot"><th scope="row">How rules apply</th><td>Advisory &mdash; guidance added to the prompt</td><td class="us">Enforced &mdash; the write path rejects violations, any model</td></tr>
+            <tr><th scope="row">Setup per person</th><td>Each person installs &amp; configures the editor</td><td class="us">Nothing to install; managed once, in the product</td></tr>
+            <tr><th scope="row">Direction</th><td>You prompt it</td><td class="us">Bidirectional &mdash; the design flags issues back and the agent reads live context</td></tr>
+            <tr><th scope="row">Works with any AI</th><td>Yes, its models</td><td class="us">Yes &mdash; bring your own key; external agents get the same rules over MCP</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- PLAIN TERMS -->
+  <section class="band band--surface">
+    <div class="wrap">
+      <div class="plain">
+        <p class="section-kicker" style="color:var(--skill)">In plain terms</p>
+        <p class="analogy">Think of a style guide the AI physically cannot ignore &mdash; like a spell-checker that won't let the typo through.</p>
+        <p>Every team has design rules: the right colors, the right spacing, sensible names. Normally you just <em>hope</em> everyone &mdash; and every AI &mdash; remembers them. This bakes the rules into Penpot itself. The AI designer reads them automatically, and for the strict ones it simply can't produce work that breaks them.</p>
+        <p>The rules are set once and shared by the whole team, they live with your files, and you talk to the AI right inside Penpot &mdash; no second app to open, nothing to keep in sync. Set the guardrails; let anyone (or any AI) design fast without going off-brand.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATUS -->
+  <section class="band">
+    <div class="wrap prose">
+      <p class="section-kicker">Honest status</p>
+      <h2>A working proof of the approach.</h2>
+      <p>It's a prototype on a branch &mdash; enough to show the idea is real, not a shipped feature.</p>
+    </div>
+    <div class="wrap status-grid">
+      <div class="stat">
+        <p class="k"><span class="pip pip--ok"></span>Proven live in a dev build</p>
+        <ul>
+          <li>The database + starter skills seeded from penpot-ai-kit</li>
+          <li>The native Skills &amp; Rules dashboard page</li>
+          <li>Creating and saving a rule, end to end</li>
+          <li>Enforcement guard rejecting off-token colors</li>
+        </ul>
+      </div>
+      <div class="stat">
+        <p class="k"><span class="pip pip--wait"></span>Built, pending a full live run</p>
+        <ul>
+          <li>The in-canvas Agent + Skills panels reading live design data</li>
+          <li>Rules pushed from the team database into the panels</li>
+          <li>&ldquo;Fix via chat&rdquo; hand-off between the two panels</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <div class="div"></div>
+  <footer>Penpot Skills &amp; Rules &mdash; design intent that lives in the file, enforced at the write path.</footer>
+</main>

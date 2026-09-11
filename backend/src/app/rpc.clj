@@ -332,6 +332,9 @@
   (let [cfg (assoc cfg ::module "main" ::type "command" ::metrics-id :rpc-main-timing)]
     (->> (sv/scan-ns
           'app.rpc.commands.access-token
+          'app.rpc.commands.agent-chats
+          'app.rpc.commands.agent-web
+          'app.rpc.commands.ai-providers
           'app.rpc.commands.audit
           'app.rpc.commands.auth
           'app.rpc.commands.feedback
@@ -339,6 +342,8 @@
           'app.rpc.commands.binfile
           'app.rpc.commands.comments
           'app.rpc.commands.demo
+          'app.rpc.commands.design-sessions
+          'app.rpc.commands.design-skills
           'app.rpc.commands.files
           'app.rpc.commands.files-create
           'app.rpc.commands.files-share
@@ -350,8 +355,11 @@
           'app.rpc.commands.media
           'app.rpc.commands.nitrate
           'app.rpc.commands.profile
+          'app.rpc.commands.profile-skills
           'app.rpc.commands.projects
           'app.rpc.commands.search
+          'app.rpc.commands.skill-state
+          'app.rpc.commands.team-skills
           'app.rpc.commands.teams
           'app.rpc.commands.teams-invitations
           'app.rpc.commands.verify-token

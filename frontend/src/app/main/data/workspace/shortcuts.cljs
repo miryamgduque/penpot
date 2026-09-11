@@ -15,6 +15,7 @@
    [app.main.data.profile :as du]
    [app.main.data.shortcuts :as ds]
    [app.main.data.workspace :as dw]
+   [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.colors :as mdc]
    [app.main.data.workspace.comments :as dwcm]
    [app.main.data.workspace.drawing :as dwd]
@@ -490,6 +491,11 @@
                           :command (ds/a-mod "i")
                           :subsections [:panels]
                           :fn #(st/emit! (dcm/go-to-workspace :layout :assets))}
+
+   :toggle-ai-panel      {:tooltip (ds/alt "B")
+                          :command (ds/a-mod "b")
+                          :subsections [:panels]
+                          :fn #(st/emit! (dwaip/toggle-panel))}
 
    :toggle-history       {:tooltip (ds/meta-alt "H")
                           :command (ds/ca-mod "h")

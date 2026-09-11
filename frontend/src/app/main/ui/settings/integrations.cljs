@@ -13,6 +13,7 @@
    [app.common.time :as ct]
    [app.config :as cf]
    [app.main.broadcast :as mbc]
+   [app.main.data.ai-providers :as dai]
    [app.main.data.event :as ev]
    [app.main.data.modal :as modal]
    [app.main.data.notifications :as ntf]
@@ -22,6 +23,7 @@
    [app.main.ui.components.context-menu-a11y :refer [context-menu*]]
    [app.main.ui.ds.buttons.button :refer [button*]]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
+   [app.main.ui.ds.controls.checkbox :refer [checkbox*]]
    [app.main.ui.ds.controls.input :refer [input*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i :refer [icon*]]
@@ -35,6 +37,8 @@
    [app.util.dom :as dom]
    [app.util.forms :as fm]
    [app.util.i18n :as i18n :refer [tr]]
+   [beicon.v2.core :as rx]
+   [cuerdas.core :as str]
    [rumext.v2 :as mf]))
 
 (def notification-timeout 7000)
@@ -594,6 +598,273 @@
          (tr "integrations.mcp-server.mcp-keys.help")
          [:> icon* {:icon-id i/open-link}]]]]]]))
 
+;; --- AI providers section (account-level connections for the design agent)
+;;
+;; One card per supported provider, each independently connectable — this
+;; is not an either/or choice. The key is stored on blur without any
+;; up-front validation (an invalid key or an unfunded account only shows
+;; up when the user sends a message). Each card lists a curated subset of
+;; the provider's latest models; the models the user toggles on across all
+;; cards form the single pool that populates the chat's model picker.
+
+(def ^:private ai-provider-defs
+  [{:id "anthropic" :label "Anthropic"   :models-hint "Claude models"}
+   {:id "openai"    :label "OpenAI"      :models-hint "GPT models"}
+   {:id "zhipu"     :label "Zhipu AI"    :models-hint "GLM models"}
+   {:id "moonshot"  :label "Moonshot AI" :models-hint "Kimi models"}])
+
+;; Curated, hand-maintained catalog: a small subset of each provider's
+;; latest models with their context window (in tokens). Not a live fetch —
+;; edit this list as providers ship new models.
+;; The catalog now lives in app.main.data.ai-providers — the agent reads
+;; `:vision` to decide how to encode a turn, so it cannot live in a UI ns.
+
+(defn- format-context
+  "Human-friendly context-window size, e.g. 200000 → \"200K\", 1000000 → \"1M\"."
+  [n]
+  (cond
+    (nil? n)        nil
+    (>= n 1000000)  (dm/str (quot n 1000000) "M")
+    (>= n 1000)     (dm/str (quot n 1000) "K")
+    :else           (dm/str n)))
+
+(mf/defc ai-provider-card*
+  {::mf/private true}
+  [{:keys [provider label models-hint status]}]
+  (let [connected?  (:connected status)
+        enabled     (:enabled-models status)
+        enabled-set (set enabled)
+
+        api-key*    (mf/use-state "")
+        api-key     (deref api-key*)
+
+        pending*    (mf/use-state false)
+        pending?    (deref pending*)
+
+        ;; a transient "Saved" acknowledgement next to the key field,
+        ;; cleared as soon as the user edits the field again
+        saved?*     (mf/use-state false)
+        saved?      (deref saved?*)
+
+        ;; the model checkboxes live in a dropdown menu opened from a trigger
+        models-open* (mf/use-state false)
+        models-open? (deref models-open*)
+        models-ref   (mf/use-ref nil)
+        on-toggle-models (mf/use-fn #(swap! models-open* not))
+
+        ;; the curated catalog, plus any enabled model no longer in it
+        ;; (kept visible so the user can toggle it back off)
+        catalog     (get dai/ai-provider-models provider [])
+        catalog-ids (set (map :id catalog))
+        rows        (concat catalog
+                            (for [m enabled
+                                  :when (not (contains? catalog-ids m))]
+                              {:id m :label m :context nil :vision false}))
+
+        save-key
+        (mf/use-fn
+         (mf/deps provider label)
+         (fn [raw]
+           (let [key (str/trim (or raw ""))]
+             ;; autosave on blur: skip empties, no provider round-trip
+             (when-not (str/blank? key)
+               (reset! pending* true)
+               (st/emit!
+                (dai/set-ai-provider-key
+                 (with-meta {:provider provider :api-key key}
+                   {:on-success
+                    (fn [_]
+                      (reset! pending* false)
+                      (reset! api-key* "")
+                      (reset! saved?* true)
+                      (st/emit! (ntf/show {:level :info
+                                           :type :toast
+                                           :content (tr "integrations.ai-provider.notification.key-saved" label)
+                                           :timeout notification-timeout})))
+                    :on-error
+                    (fn [_cause]
+                      (reset! pending* false)
+                      (st/emit! (ntf/error (tr "integrations.ai-provider.error.generic")))
+                      (rx/empty))})))))))
+
+        on-key-change
+        (mf/use-fn
+         (fn [event]
+           (reset! saved?* false)
+           (reset! api-key* (dom/get-target-val event))))
+
+        on-key-blur
+        (mf/use-fn
+         (mf/deps save-key)
+         (fn [event]
+           (save-key (dom/get-target-val event))))
+
+        ;; Enter saves without leaving the field
+        on-key-down
+        (mf/use-fn
+         (mf/deps save-key)
+         (fn [event]
+           (when (= "Enter" (.-key event))
+             (dom/prevent-default event)
+             (save-key (dom/get-target-val event)))))
+
+        on-toggle-model
+        (mf/use-fn
+         (mf/deps provider enabled)
+         (fn [event]
+           (let [node    (dom/get-target event)
+                 model   (dom/get-data node "model")
+                 checked (dom/checked? node)
+                 next    (if checked
+                           (conj (vec enabled) model)
+                           (vec (remove #(= % model) enabled)))]
+             (st/emit! (dai/set-ai-provider-models {:provider provider
+                                                    :models next})))))
+
+        on-disconnect
+        (mf/use-fn
+         (mf/deps provider label)
+         (fn []
+           (st/emit! (dai/disconnect-ai-provider {:provider provider})
+                     (ntf/show {:level :info
+                                :type :toast
+                                :content (tr "integrations.ai-provider.notification.disconnected" label)
+                                :timeout notification-timeout}))))]
+
+    ;; close the models dropdown on any click outside of it
+    (mf/with-effect [models-open?]
+      (when ^boolean models-open?
+        (let [on-doc (fn [event]
+                       (let [node (mf/ref-val models-ref)]
+                         (when (and node (not (.contains node (dom/get-target event))))
+                           (reset! models-open* false))))]
+          (.addEventListener js/document "pointerdown" on-doc)
+          (fn [] (.removeEventListener js/document "pointerdown" on-doc)))))
+
+    [:div {:class (stl/css :provider-card)
+           :data-testid (dm/str "ai-provider-" provider)}
+     [:div {:class (stl/css :provider-card-header)}
+      [:div {:class (stl/css :provider-card-title)}
+       [:div {:class (stl/css :provider-card-name)}
+        [:> text* {:as "h3"
+                   :typography t/headline-small
+                   :class (stl/css :color-primary)}
+         label]
+        [:> text* {:as "span"
+                   :typography t/body-small
+                   :class (stl/css :color-secondary :provider-models-hint)}
+         models-hint]]
+       (when ^boolean connected?
+         [:div {:class (stl/css :provider-connected)}
+          [:> text* {:as "span"
+                     :typography t/body-small
+                     :class (stl/css :provider-connected-tag)}
+           (tr "integrations.ai-provider.status.saved" (:key-hint status))]
+          [:> icon-button* {:variant "ghost"
+                            :icon-size "s"
+                            :aria-label (tr "integrations.ai-provider.disconnect")
+                            :icon i/delete
+                            :on-click on-disconnect}]])]]
+
+     ;; the key is autosaved on blur — no explicit connect action
+     [:div {:class (stl/css :provider-key-form)}
+      [:div {:class (stl/css :provider-key-row)}
+       [:> input* {:type "text"
+                   :value api-key
+                   :aria-label (tr "integrations.ai-provider.key.label")
+                   :placeholder (if connected?
+                                  (tr "integrations.ai-provider.key.placeholder-rotate")
+                                  (tr "integrations.ai-provider.key.placeholder"))
+                   :on-change on-key-change
+                   :on-blur on-key-blur
+                   :on-key-down on-key-down}]]
+
+      (when (or pending? saved?)
+        [:> text* {:as "div"
+                   :typography t/body-small
+                   :class (stl/css :provider-key-status)}
+         (if pending?
+           (tr "integrations.ai-provider.saving")
+           (tr "integrations.ai-provider.saved"))])]
+
+     [:div {:class (stl/css :provider-models)}
+      [:> text* {:as "h4"
+                 :typography t/body-medium
+                 :class (stl/css :color-primary)}
+       (tr "integrations.ai-provider.models.title")]
+
+      (when (and connected? (empty? enabled))
+        [:> text* {:as "div"
+                   :typography t/body-small
+                   :class (stl/css :provider-models-note)}
+         (tr "integrations.ai-provider.models.select-one")])
+
+      [:div {:class (stl/css :provider-models-combobox)
+             :ref models-ref}
+       [:button {:type "button"
+                 :class (stl/css-case :provider-models-trigger true
+                                      :provider-models-trigger-open models-open?)
+                 :disabled (not connected?)
+                 :on-click on-toggle-models}
+        [:span {:class (stl/css :provider-models-trigger-label)}
+         (if (seq enabled)
+           (tr "integrations.ai-provider.models.count" (count enabled))
+           (tr "integrations.ai-provider.models.select-placeholder"))]
+        [:> icon* {:icon-id i/arrow-down :class (stl/css :provider-models-caret)}]]
+
+       (when models-open?
+         [:ul {:class (stl/css :provider-models-menu)}
+          (for [{:keys [id label context vision]} rows]
+            [:li {:key id :class (stl/css :provider-models-item)}
+             [:> checkbox* {:id (dm/str "ai-model-" provider "-" id)
+                            :label label
+                            :checked (contains? enabled-set id)
+                            :disabled (not connected?)
+                            :data-model id
+                            :on-change on-toggle-model}]
+             (when-let [ctx (format-context context)]
+               [:span {:class (stl/css :provider-models-context)}
+                (tr "integrations.ai-provider.models.context" ctx)])
+             ;; only called out when present: the agent chat can send images to
+             ;; these models, so it is worth knowing which of your enabled
+             ;; models can actually look at one
+             (when vision
+               [:span {:class (stl/css :provider-models-vision)
+                       :title (tr "integrations.ai-provider.models.vision-hint")}
+                (tr "integrations.ai-provider.models.vision")])])])]]]))
+
+(mf/defc ai-providers-section*
+  {::mf/private true}
+  []
+  (let [statuses (mf/deref refs/ai-providers)]
+
+    (mf/with-effect []
+      (st/emit! (dai/fetch-ai-providers)))
+
+    [:section {:class (stl/css :ai-provider-section)}
+     [:div
+      [:div {:class (stl/css :title)}
+       [:> heading* {:level 2
+                     :typography t/title-medium
+                     :class (stl/css :color-primary :ai-provider-title)}
+        (tr "integrations.ai-provider.title")]
+       [:> text* {:as "span"
+                  :typography t/body-small
+                  :class (stl/css :beta)}
+        (tr "integrations.mcp-server.title.beta")]]
+
+      [:> text* {:as "div"
+                 :typography t/body-medium
+                 :class (stl/css :color-secondary :ai-provider-description)}
+       (tr "integrations.ai-provider.description")]]
+
+     (for [{:keys [id label models-hint]} ai-provider-defs]
+       [:> ai-provider-card* {:key id
+                              :provider id
+                              :label label
+                              :models-hint models-hint
+                              :status (get statuses id)}])]))
+
 (mf/defc access-tokens-section*
   {::mf/private true}
   [{:keys [access-tokens]}]
@@ -668,8 +939,12 @@
      (when ^boolean mcp-enabled?
        [:> mcp-server-section* props])
 
-     (when (and ^boolean mcp-enabled?
-                ^boolean access-tokens-enabled?)
+     (when ^boolean mcp-enabled?
+       [:hr {:class (stl/css :separator)}])
+
+     [:> ai-providers-section* {}]
+
+     (when ^boolean access-tokens-enabled?
        [:hr {:class (stl/css :separator)}])
 
      (when ^boolean access-tokens-enabled?

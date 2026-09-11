@@ -14,8 +14,28 @@
   max-height: 100vh;
   user-select: none;
   display: grid;
-  grid-template: "left-sidebar viewport right-sidebar" 1fr / auto 1fr auto;
+  grid-template: "left-sidebar viewport right-sidebar ai-panel plugin-dock" 1fr / auto 1fr auto auto auto;
   overflow: hidden;
+}
+
+// Dock column for plugins opened with the `dock` option: an integrated,
+// full-height panel at the right edge. Collapses to zero width while empty,
+// so the viewport (1fr) reflows automatically when a plugin docks/undocks.
+.plugin-dock {
+  grid-area: plugin-dock;
+  width: 0;
+  overflow: hidden;
+  background-color: var(--color-background-primary);
+
+  // Like the sidebars, the dock must sit above the absolutely-positioned
+  // bottom palette wrapper (100vw wide), which otherwise hit-tests over the
+  // lower part of the panel and swallows clicks (e.g. the chat composer).
+  position: relative;
+  z-index: deprecated.$z-index-1;
+
+  &:has(plugin-modal) {
+    width: 420px;
+  }
 }
 
 .workspace-loader {

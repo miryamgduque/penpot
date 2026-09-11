@@ -244,6 +244,16 @@ async function renderTemplate(path, context = {}, partials = {}) {
     version_tag: VERSION_TAG,
     build_date: BUILD_DATE,
     build_ts: BUILD_TS,
+    // Feature flags for the frontend. The packaged image injects these by
+    // sed-ing js/config.js from its nginx entrypoint, but that file does not
+    // exist in a dev build, so `globalThis.penpotFlags` was never set and every
+    // frontend `cf/flags` check fell back to the default set — including the
+    // pre-existing `:mcp` one.
+    //
+    // Emitted ONLY when PENPOT_FLAGS is present in the build environment, so a
+    // packaged build (where it usually is not) renders nothing here and its own
+    // injection stays authoritative.
+    flags: process.env.PENPOT_FLAGS || "",
   });
 
   return mustache.render(content, context, partials);

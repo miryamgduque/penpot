@@ -15,6 +15,8 @@
    [app.common.types.tokens-lib :as ctob]
    [app.config :as cf]
    [app.main.data.helpers :as dsh]
+   [app.main.data.workspace.agent-skills :as ask]
+   [app.main.data.workspace.slash-commands :as slc]
    [app.main.data.workspace.tokens.selected-set :as dwts]
    [app.main.store :as st]
    [app.main.streams :as ms]
@@ -288,6 +290,166 @@
   (l/derived (fn [state]
                (when-let [file-id (:current-file-id state)]
                  (dm/get-in state [:recent-fonts file-id])))
+             st/state))
+
+(def ai-panel-open?
+  "Whether the All-In Penpot (Agents) panel is open for the current file.
+  In-memory and file-bound: survives navigation, resets on a hard refresh."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :open?])))
+             st/state))
+
+(def ai-panel-messages
+  "The Agents chat transcript for the current file (in-memory, file-bound)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :messages])))
+             st/state))
+
+(def ai-panel-busy?
+  "Whether an agent turn is currently running for the current file."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :busy?])))
+             st/state))
+
+;; --- Design session recording
+
+(def session-recorder
+  "The live recording for the current file, or nil. See
+  `app.main.data.workspace.session-recorder`."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:session-recorder file-id])))
+             st/state))
+
+(def design-sessions
+  "This file's recorded sessions, metadata only, newest first. The backend
+  decides what is visible (every session for an admin, your own otherwise), so
+  this is rendered as given."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:design-sessions file-id])))
+             st/state))
+
+(defn recording-in-progress?
+  "Whether a design session is being recorded on this file by ANYONE — a
+  collaborator who broadcast it, or us.
+
+  A recording captures identifiable activity by people who did not start it, so
+  the answer has to be available outside the AI panel: someone with the panel
+  closed is exactly the person who would otherwise never know.
+  `:workspace-recording` holds the session ids that have announced a recording;
+  it is cleared alongside presence on disconnect / leave-file, so a collaborator
+  who closes the tab mid-recording cannot leave this stuck on.
+
+  Pure so the disclosure rule is testable without standing up the store."
+  [state]
+  (let [file-id (:current-file-id state)
+        mine?   (dm/get-in state [:session-recorder file-id :active?])
+        theirs? (seq (:workspace-recording state))]
+    (boolean (or mine? theirs?))))
+
+(def file-recording?
+  (l/derived recording-in-progress? st/state))
+
+(def ai-panel-usage
+  "Running token-usage totals for the current file's chat (spend meter)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :usage])))
+             st/state))
+
+(def ai-panel-history
+  "The canonical wire history for the current file's chat. Consumers derive
+  sizes from it with `with-memo` — its identity only changes at turn
+  boundaries, so memoizing on it is cheap."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :history])))
+             st/state))
+
+(def ai-panel-handoff-dismissed
+  "Whether the fresh-chat suggestion was waved off for the current
+  conversation (conversation-scoped; cleared on new-chat/load-chat)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :handoff-dismissed])))
+             st/state))
+
+(def ai-panel-checkpoint
+  "The pending runaway checkpoint for the current file's chat, when a turn has
+  paused for the user's go-ahead (`{:rounds :usage :history :settings}`)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :checkpoint])))
+             st/state))
+
+(def ai-panel-violations
+  "Live auto-fix violations for the current file: the deterministic scan
+  plus the semantic tick's verdicts (tagged `:semantic`), deduped by
+  rule+shape with the deterministic entry winning."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (let [det  (dm/get-in state [:ai-panel file-id :violations])
+                       sem  (dm/get-in state [:ai-panel file-id :semantic-violations])
+                       seen (into #{} (map (juxt :rule :shapeId)) det)]
+                   (into (vec det)
+                         (remove #(contains? seen [(:rule %) (:shapeId %)]))
+                         sem))))
+             st/state))
+
+(def ai-panel-observer-dismissed
+  "`{skill-name signature}` of Observer notifications the user waved off
+  (issue #37): a card whose current signature matches its dismissed one stays
+  hidden until the violation set changes."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :observer-dismissed])))
+             st/state))
+
+(def ai-panel-pending-fix
+  "A Fix-it-now message queued while a turn was running; drained by the
+  panel when the turn ends."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :pending-fix])))
+             st/state))
+
+(def ai-panel-pending-form
+  "The open ask_user form for the current file — {:title :questions} — or nil.
+  Set while an agent turn is paused waiting on the user's answers."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :pending-form])))
+             st/state))
+
+(def ai-panel-composer-seed
+  "Text waiting to prefill the chat composer (set by the vibes view), or nil.
+  The composer consumes and clears it."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :composer-seed])))
+             st/state))
+
+;; NOTE: the design-doc (project vibes) reactive ref lives in
+;; app.main.data.workspace.design-doc/doc-ref — that ns reaches the changes
+;; pipeline, and requiring it from here closes a circular dependency through
+;; app.main.data.event.
+
+(def ai-panel-chats
+  "This file's saved conversation list (metadata only, newest first)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :chats])))
+             st/state))
+
+(def ai-panel-chat-id
+  "The active conversation's saved row id (nil until its first save)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :chat-id])))
              st/state))
 
 (def workspace-file-typography
@@ -660,3 +822,27 @@
 
 (def access-token-created
   (l/derived :access-token-created st/state))
+
+(def ai-providers
+  (l/derived :ai-providers st/state))
+
+(def resolved-skills-enabled
+  "Map of skill-name → effective on/off for the current file, resolving the user's
+  per-account + per-file overrides over the catalog defaults. Backs the Skills-tab
+  toggles."
+  (l/derived ask/resolved-enabled-map st/state))
+
+(def skills-catalog
+  "The full skills catalog — built-in groups with the user's created skills merged
+  in (US #9). Backs the Skills-tab list + detail."
+  (l/derived ask/full-catalog st/state))
+
+(def slash-menu-entries
+  "Entries for the chat composer's `/` menu: the special commands + every
+  enabled skill, each carrying its insertable trigger phrase."
+  (l/derived slc/menu-model st/state))
+
+(def skills-filter
+  "The Skills-tab list filter for this session (`:all` | `:enabled`). Defaults to
+  `:enabled`; in-memory only, resets on reload (US #30)."
+  (l/derived #(get % :skills-filter :enabled) st/state))

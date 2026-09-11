@@ -136,6 +136,9 @@
    {:query-params [:file-id :revn]
     :form-data? true}
 
+   ::sse/ai-agent-round-stream
+   {:stream? true}
+
    ::sse/export-binfile
    {:stream? true}
 
@@ -259,6 +262,29 @@
          (rx/map http/conditional-decode-transit)
          (rx/mapcat handle-response))))
 
+(defn- decode-blob-error
+  "On a `:blob?` export the body is a Blob, so a transit ERROR body (status
+  >= 400) reaches `handle-response` undecoded and degrades to the generic
+  `:unable-to-process-repository-response`. Read the blob back to text and
+  transit-decode it so the real error code survives. Success bodies (the
+  actual binary) are left untouched.
+
+  Not every error body is transit: when the exporter is down the reverse
+  proxy answers with an HTML 502/504 page. Decoding that would throw inside
+  the stream and mask the status, so a failed decode falls back to the raw
+  text and lets `handle-response` classify by status (502 -> :bad-gateway)."
+  [{:keys [status body] :as response}]
+  (if (and (>= status 400) (http/blob? body))
+    (->> (rx/from (.text ^js body))
+         (rx/map (fn [text]
+                   (assoc response :body
+                          (if (str/blank? text)
+                            text
+                            (try
+                              (t/decode-str text)
+                              (catch :default _ text)))))))
+    (rx/of response)))
+
 (defn- send-export
   [{:keys [blob?] :as params}]
   (->> (http/send! {:method :post
@@ -269,6 +295,7 @@
                     :credentials "include"
                     :response-type (if blob? :blob :text)})
        (rx/map http/conditional-decode-transit)
+       (rx/mapcat decode-blob-error)
        (rx/mapcat handle-response)))
 
 (defmethod cmd! :export

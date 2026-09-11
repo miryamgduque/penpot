@@ -1,0 +1,2945 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) KALEIDOS INC Sucursal en España SL
+
+@use "refactor/common-refactor.scss" as deprecated;
+@use "ds/typography.scss" as t;
+
+// --- Text scale
+//
+// The A−/A+ stepper sets `--ai-font-scale` inline on the panel root. The DS
+// typography mixins pin explicit rem font sizes, so no root font-size can
+// reach them by inheritance; these wrappers re-state font-size against the
+// variable instead. Every wrapped mixin's line-height is unitless, so leading
+// follows the size for free. Deliberately not scaled: the header band (aligned
+// to the workspace right-header) and fixed glyph boxes like the attachment ✕.
+
+@mixin scaled-body-small {
+  @include deprecated.body-small-typography;
+
+  font-size: calc(#{deprecated.$fs-12} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-small-title {
+  @include deprecated.small-title-typography;
+
+  font-size: calc(#{deprecated.$fs-14} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-title-small {
+  @include t.use-typography("title-small");
+
+  // the DS sheet's `$_fs-14` is private; it and the refactor `$fs-14` are both 14px-as-rem
+  font-size: calc(#{deprecated.$fs-14} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-headline-medium {
+  @include t.use-typography("headline-medium");
+
+  font-size: calc(#{deprecated.$fs-16} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-headline-small {
+  @include t.use-typography("headline-small");
+
+  font-size: calc(#{deprecated.$fs-12} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-med-title {
+  @include deprecated.med-title-typography;
+
+  font-size: calc(#{deprecated.$fs-20} * var(--ai-font-scale, 1));
+}
+
+@mixin scaled-big-title {
+  @include deprecated.big-title-typography;
+
+  font-size: calc(#{deprecated.$fs-24} * var(--ai-font-scale, 1));
+}
+
+// Native right-docked AI panel. The workspace grid gives it the `ai-panel`
+// column; this element fills that column's height. Like the sidebars and the
+// plugin dock, it sits above the absolutely-positioned bottom palette wrapper
+// (100vw wide) so clicks in its lower region aren't swallowed.
+.ai-panel {
+  grid-area: ai-panel;
+  display: flex;
+  flex-direction: column;
+
+  // width comes as an inline style from the resize hook (drag handle on the
+  // left edge, global persistence); $s-360 stays the floor/default in cljs
+  height: 100%;
+  // The workspace row is `1fr`, i.e. minmax(auto, 1fr) — its *auto minimum*
+  // is the content's min-content height, so without this a long transcript
+  // grows the row past the viewport and `.workspace` (overflow:hidden) just
+  // clips it. Collapsing the minimum is what lets `.transcript` scroll.
+  min-height: 0;
+  background-color: var(--panel-background-color);
+  position: relative;
+  z-index: deprecated.$z-index-1;
+
+  // Separation from the options sidebar on its left.
+  border-inline-start: deprecated.$s-1 solid var(--panel-border-color);
+
+  // The app-level `.workspace ::placeholder` rule pins every placeholder to
+  // 12px no matter what the input itself says. class+element+pseudo out-ranks
+  // its class+pseudo, and `inherit` follows the input's scaled size
+  // (pseudo-elements inherit from their originating element).
+  textarea::placeholder,
+  input::placeholder {
+    font-size: inherit;
+  }
+}
+
+// Left-edge drag handle: an invisible strip straddling the panel border, same
+// hit area and cursor as the sidebars' handles. Above the header/body so the
+// whole edge is grabbable.
+.resize-area {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: deprecated.$s-8;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: deprecated.$z-index-4;
+}
+
+// Left-edge drag handle: an invisible strip straddling the panel border, same
+// hit area and cursor as the sidebars' handles. Above the header/body so the
+// whole edge is grabbable.
+.resize-area {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  width: deprecated.$s-8;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: deprecated.$z-index-4;
+}
+
+// Title band. Height matches the workspace right-header so the tabs below
+// align with the sidebar's Design/Prototype/Inspect row. Inline padding uses
+// the same panel spacing token as the other panels.
+.header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  height: deprecated.$s-48;
+  padding-inline: var(--sp-m);
+}
+
+.title {
+  @include deprecated.small-title-typography;
+
+  color: var(--modal-title-foreground-color);
+}
+
+// Left of the header: the back arrow + "Skills" title in the Skills view.
+.header-lead {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+}
+
+// Right of the header: the A−/A+ stepper + Skills icon (chat only).
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-2;
+}
+
+// Conversation controls (new chat + history) and the History popover. The
+// container is the popover's anchor; the menu drops below the header band,
+// right-aligned, and borrows the model-picker menu's visual language.
+.chat-controls {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-2;
+}
+
+.chat-history-menu {
+  position: absolute;
+  inset-block-start: calc(100% + deprecated.$s-8);
+  inset-inline-end: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  min-inline-size: 220px;
+  max-inline-size: 280px;
+  max-block-size: 320px;
+  overflow-y: auto;
+  padding: deprecated.$s-4;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 0.3);
+}
+
+.chat-history-row {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-2;
+  border-radius: deprecated.$br-8;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+.chat-history-active .chat-history-title {
+  color: var(--color-accent-primary);
+}
+
+// The row's main hit area: title over a muted relative timestamp.
+.chat-history-select {
+  @include deprecated.body-small-typography;
+
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: none;
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  text-align: start;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+}
+
+.chat-history-title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-history-time {
+  color: var(--color-foreground-secondary);
+  font-size: deprecated.$fs-11;
+}
+
+.chat-history-rename,
+.chat-history-delete {
+  flex: none;
+}
+
+// The inline rename field: fills the row where the select button stood.
+.chat-history-rename-input {
+  @include deprecated.body-small-typography;
+
+  flex: 1;
+  min-inline-size: 0;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-accent-primary);
+  border-radius: deprecated.$br-6;
+  background-color: var(--color-background-secondary);
+  color: var(--color-foreground-primary);
+}
+
+// The text-size stepper buttons. Plain (unscaled) body-small type: they live
+// in the fixed header band and must not move as the body text steps.
+// Anchors the "more actions" dropdown to the ⋯ button in the header.
+.more-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+// The dropdown itself (mirrors .skill-menu), opening below the ⋯ button.
+.more-menu {
+  position: absolute;
+  inset-block-start: calc(100% + #{deprecated.$s-4});
+  inset-inline-end: 0;
+  z-index: 12;
+  min-width: 200px;
+  padding: deprecated.$s-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+}
+
+// A navigation row in the menu: icon + label, opens a destination (US #38 moved
+// Foundations / Skills here from the header).
+.more-option {
+  @include deprecated.body-small-typography;
+
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+  width: 100%;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background: none;
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+  text-align: start;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+// One action row: a label on the left, its control on the right.
+.more-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-4 deprecated.$s-8;
+}
+
+.more-row-label {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+}
+
+.font-stepper {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-2;
+}
+
+.font-step-btn {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-4 deprecated.$s-6;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-background-quaternary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+}
+
+// Fills the panel below the flex-none header; the chat/skills bodies size to it.
+.body {
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  // grid item of the DS `.tab-panel`; same auto-minimum story as `.ai-panel`
+  min-height: 0;
+}
+
+// Current-file context (page + selection) surfaced above the transcript.
+.context-chip {
+  @include scaled-body-small;
+
+  display: flex;
+  gap: deprecated.$s-6;
+  align-items: center;
+  padding: deprecated.$s-8 var(--sp-m);
+  border-block-end: deprecated.$s-1 solid var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.context-page {
+  color: var(--color-foreground-primary);
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.context-selection {
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+// --- Observer notifications (issue #37)
+// A fixed-height sibling ABOVE .transcript-wrap — never part of the scroll
+// area, so it cannot re-trigger the min-height:0 grid overflow bug. Each card's
+// expanded groups get their own bounded scroll instead. The look is a calm,
+// neutral toast-style card (no coloured tint); accent lands only on actions.
+
+.observer-list {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8 var(--sp-m);
+  border-block-end: deprecated.$s-1 solid var(--color-background-tertiary);
+}
+
+.observer-card {
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  overflow: hidden;
+}
+
+// Title over byline, ✕ top-right; the text block is the toggle.
+.observer-header-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.observer-header {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  flex: 1;
+  min-inline-size: 0;
+  padding: deprecated.$s-8;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: start;
+}
+
+.observer-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+  margin-block-start: deprecated.$s-8;
+  margin-inline-end: deprecated.$s-8;
+  padding: 0;
+  border: none;
+  border-radius: deprecated.$br-6;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+    color: var(--color-foreground-primary);
+  }
+}
+
+// Smaller than the old title-small — the card is a notice, not a section head.
+.observer-headline {
+  @include scaled-body-small;
+
+  overflow: hidden;
+  font-weight: 500;
+  color: var(--color-foreground-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.observer-summary {
+  @include scaled-body-small;
+
+  overflow: hidden;
+  color: var(--color-foreground-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.observer-groups {
+  @extend %new-scrollbar;
+
+  max-block-size: deprecated.$s-248;
+  overflow-y: auto;
+  padding: 0 deprecated.$s-8;
+}
+
+.observer-group {
+  padding-block: deprecated.$s-4 deprecated.$s-8;
+
+  & + & {
+    border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+  }
+}
+
+.observer-group-head {
+  display: flex;
+  gap: deprecated.$s-6;
+  align-items: center;
+  padding-block: deprecated.$s-6;
+}
+
+.observer-group-label {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.observer-group-count {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+// A quiet accent text action — apply just this rule's fixes.
+.observer-group-fix {
+  @include scaled-body-small;
+
+  margin-inline-start: auto;
+  padding: 0 deprecated.$s-4;
+  border: none;
+  background: none;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.observer-rows {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+// A flagged layer: reads as its own clickable surface (border + padding + a
+// jump affordance) so it's clearly "locate", distinct from Fix and Dismiss.
+.observer-row {
+  display: flex;
+  gap: deprecated.$s-8;
+  align-items: center;
+  inline-size: 100%;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-6;
+  background: none;
+  cursor: pointer;
+  text-align: start;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+.observer-swatch {
+  flex-shrink: 0;
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
+  border-radius: deprecated.$br-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+// No colour to show (e.g. layer naming): a neutral checker-ish marker.
+.observer-swatch-neutral {
+  background-color: var(--color-background-quaternary);
+}
+
+.observer-row-name {
+  @include scaled-body-small;
+
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--color-foreground-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.observer-semantic {
+  color: var(--color-accent-primary);
+}
+
+.observer-showmore {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-4 0 0;
+  border: none;
+  background: none;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.observer-footer {
+  display: flex;
+  gap: deprecated.$s-12;
+  align-items: center;
+  justify-content: flex-end;
+  padding: deprecated.$s-8;
+  border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+}
+
+// Muted, low-emphasis — clearly secondary to Fix all.
+.observer-dismiss {
+  @include scaled-body-small;
+
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+}
+
+// Primary action: solid accent.
+.observer-fixall {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: none;
+  border-radius: deprecated.$br-6;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-accent-primary-muted);
+    color: var(--color-foreground-primary);
+  }
+}
+
+// The runaway brake: a turn paused at its round/spend allowance,
+// waiting on the user's go-ahead. Rendered at the transcript tail.
+.checkpoint {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+}
+
+.checkpoint-label {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+.checkpoint-actions {
+  display: flex;
+  gap: deprecated.$s-8;
+}
+
+.checkpoint-continue {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: none;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-secondary);
+  cursor: pointer;
+}
+
+.checkpoint-stop {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+}
+
+// Arrival notice (US #52): a team skill promoted since this member last
+// acknowledged one. The whole card opens the skill's detail view (US #8's
+// existing toggle lives there — no Disable here, on purpose); only the ✕
+// (top-right, same shape as .observer-close) is exempted via
+// stop-propagation. Background matches .catalog-card-new's highlighted row
+// in the skills list, so the same "just arrived" signal reads consistently
+// in both places.
+.arrival-notice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+  margin: 0 var(--sp-m);
+  padding: deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+  text-align: start;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: deprecated.$s-2 solid var(--color-accent-primary);
+    outline-offset: deprecated.$s-1;
+  }
+}
+
+.arrival-text-col {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  min-inline-size: 0;
+  // Room so the text never runs under the absolutely-positioned ✕.
+  padding-inline-end: deprecated.$s-24;
+}
+
+// Same shape as .observer-close — a small icon-only dismiss in the card's
+// top-right corner. stop-propagation (in the click/keydown handlers) keeps
+// it from also triggering the card's own click-to-view.
+.arrival-close {
+  position: absolute;
+  inset-block-start: deprecated.$s-8;
+  inset-inline-end: deprecated.$s-8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+  padding: 0;
+  border: none;
+  border-radius: deprecated.$br-6;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+    color: var(--color-foreground-primary);
+  }
+}
+
+.arrival-title-row {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-6;
+}
+
+.arrival-title {
+  @include scaled-body-small;
+
+  font-weight: 600;
+  color: var(--color-foreground-primary);
+}
+
+.arrival-promoted-by {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+// Capped at 3 lines so a long description can't grow the card unbounded.
+.arrival-body {
+  @include scaled-body-small;
+
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--color-foreground-secondary);
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+// Fresh-chat suggestion: the conversation outgrew the handoff threshold.
+// Stacked: text (with the ✕) on top, the action full-width at the bottom —
+// side by side the text wrapped into a skinny column in the narrow panel.
+.handoff-notice {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  margin: 0 var(--sp-m);
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+}
+
+.handoff-header {
+  display: flex;
+  align-items: flex-start;
+  gap: deprecated.$s-6;
+}
+
+.handoff-text {
+  @include scaled-body-small;
+
+  flex: 1;
+  min-inline-size: 0;
+  color: var(--color-foreground-secondary);
+}
+
+.handoff-action {
+  @include scaled-body-small;
+
+  align-self: stretch;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background: none;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.handoff-dismiss {
+  @include scaled-body-small;
+
+  flex: none;
+  padding: 0 deprecated.$s-4;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+}
+
+// A Fix-it-now parked behind the running turn.
+.pending-fix {
+  display: flex;
+  align-items: flex-start;
+  gap: deprecated.$s-6;
+  margin: 0 var(--sp-m);
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+}
+
+.pending-fix-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  overflow: hidden;
+}
+
+.pending-fix-label {
+  @include scaled-body-small;
+
+  color: var(--color-accent-primary);
+}
+
+.pending-fix-text {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+  // the composed message can be long; two lines is enough of a preview
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pending-fix-cancel {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-accent-error);
+  }
+}
+
+// Anchors the jump-to-latest pill against the scrollport. The pill cannot live
+// inside `.transcript`: as a child of the scrolling box it scrolls away with
+// the messages (and `position: sticky` does not save it there).
+.transcript-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.transcript {
+  @extend %new-scrollbar;
+
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: var(--sp-m);
+  overflow-y: auto;
+  // The workspace sets `user-select: none` globally; re-enable it here so the
+  // conversation text can be selected and copied.
+  user-select: text;
+  // flex items default to min-height:auto, which would size us to content and
+  // silently defeat the overflow-y above
+  min-height: 0;
+  // the tab-switcher wraps us in a `scrollable-panel` (also overflow-y:auto);
+  // without this, scrolling past our end chains up to it
+  overscroll-behavior: contain;
+}
+
+.jump-to-latest {
+  position: absolute;
+  inset-block-end: deprecated.$s-8;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+}
+
+.message {
+  @include scaled-body-small;
+
+  max-width: 85%;
+  padding: deprecated.$s-8 deprecated.$s-12;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-primary);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.message-user {
+  align-self: flex-end;
+  background-color: var(--color-background-quaternary);
+}
+
+// Images the user attached, shown in their own bubble above the text — the
+// same order the model receives them in.
+.message-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-4;
+  margin-block-end: deprecated.$s-8;
+
+  // `.message` is pre-wrap; without this the flex line inherits the newline
+  white-space: normal;
+
+  &:only-child {
+    margin-block-end: 0;
+  }
+}
+
+.message-image {
+  max-inline-size: deprecated.$s-120;
+  max-block-size: deprecated.$s-120;
+  border-radius: deprecated.$br-4;
+}
+
+// Rendered assistant markdown. `.message` is `pre-wrap` for plain text; once
+// the blocks are real elements that would double every gap.
+.message-md {
+  white-space: normal;
+
+  // let the blocks own the spacing, but keep the bubble tight at its edges
+  > :first-child {
+    margin-block-start: 0;
+  }
+
+  > :last-child {
+    margin-block-end: 0;
+  }
+
+  p,
+  ul,
+  ol,
+  pre,
+  blockquote {
+    margin-block: deprecated.$s-8;
+  }
+
+  // The global element rule (base.scss `p { font-size: $fs12 }`) beats the
+  // bubble's INHERITED size, silently pinning paragraphs to 12px at every
+  // text-scale step — invisible at scale 1, wrong everywhere else.
+  p {
+    font-size: inherit;
+  }
+
+  h3,
+  h4,
+  h5,
+  h6 {
+    @include scaled-body-small;
+
+    margin-block: deprecated.$s-8 deprecated.$s-4;
+    font-weight: 600;
+  }
+
+  // the global reset (reset.scss:137) drops markers on every list; a rendered
+  // markdown list is meaningless without them
+  ul {
+    padding-inline-start: deprecated.$s-16;
+    list-style: disc;
+  }
+
+  ol {
+    padding-inline-start: deprecated.$s-16;
+    list-style: decimal;
+  }
+
+  li {
+    margin-block: deprecated.$s-2;
+  }
+
+  a {
+    color: var(--color-accent-primary);
+    text-decoration: underline;
+  }
+
+  code {
+    padding: 0 deprecated.$s-4;
+    border-radius: deprecated.$br-4;
+    background-color: var(--color-background-quaternary);
+    font-family: monospace;
+  }
+
+  // the markdown renderer's shape refs (button.shape-ref + data-shape-id):
+  // a chip that selects the shape on canvas through the transcript's one
+  // delegated click handler. :global — the class is emitted by markdown.cljs,
+  // not scoped by this module.
+  :global(.shape-ref) {
+    display: inline;
+    padding: 0 deprecated.$s-4;
+    border: none;
+    border-radius: deprecated.$br-4;
+    background-color: var(--color-background-quaternary);
+    color: var(--color-accent-primary);
+    font: inherit;
+    cursor: pointer;
+
+    &::before {
+      content: "⌖ ";
+    }
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  pre {
+    @extend %new-scrollbar;
+
+    padding: deprecated.$s-8;
+    border-radius: deprecated.$br-4;
+    background-color: var(--color-background-primary);
+    // long lines scroll inside the block rather than widening the panel
+    overflow-x: auto;
+
+    code {
+      padding: 0;
+      background-color: transparent;
+    }
+  }
+
+  blockquote {
+    padding-inline-start: deprecated.$s-8;
+    border-inline-start: deprecated.$s-2 solid var(--color-background-quaternary);
+    color: var(--color-foreground-secondary);
+  }
+}
+
+.message-thinking {
+  color: var(--color-foreground-secondary);
+  font-style: italic;
+}
+
+// A harness note (e.g. "✦ Conversation compacted") — a quiet seam in the
+// transcript, not a bubble from either party.
+.message-note {
+  align-self: center;
+  max-width: 100%;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  font-style: italic;
+}
+
+// Tool-call marker chip (e.g. read_design ✓)
+.tool-chip {
+  @include scaled-body-small;
+
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-6;
+  align-self: flex-start;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
+}
+
+.tool-chip-glyph {
+  color: var(--color-accent-success);
+}
+
+.tool-chip-name {
+  font-family: monospace;
+  color: var(--color-foreground-primary);
+}
+
+.tool-chip-error {
+  .tool-chip-glyph {
+    color: var(--color-accent-error);
+  }
+}
+
+// A run of consecutive tool calls, collapsed behind one summary row.
+.tool-group {
+  align-self: flex-start;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.tool-group-summary {
+  @extend .tool-chip;
+
+  cursor: pointer;
+  border: none;
+}
+
+.tool-group-caret {
+  color: var(--color-foreground-secondary);
+}
+
+.tool-group-detail {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-tertiary);
+}
+
+.tool-detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.tool-detail-name {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.tool-detail-payload {
+  @extend %new-scrollbar;
+
+  margin: 0;
+  padding: deprecated.$s-6;
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-secondary);
+  font-family: monospace;
+  font-size: calc(#{deprecated.$fs-11} * var(--ai-font-scale, 1));
+  // a long JSON payload must scroll inside its box, never widen the panel
+  overflow-x: auto;
+  max-height: deprecated.$s-160;
+  overflow-y: auto;
+  white-space: pre;
+}
+
+.tool-chip-detail {
+  color: var(--color-accent-error);
+}
+
+// One round's thinking, collapsed behind a summary row (shares the tool-group
+// shell). Quiet by design: secondary italic summary, plain-text detail.
+.thinking-summary {
+  font-style: italic;
+}
+
+.thinking-glyph,
+.thinking-label {
+  color: var(--color-foreground-secondary);
+}
+
+.thinking-detail {
+  @extend %new-scrollbar;
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+  // thinking is prose with paragraph breaks, not markdown — keep the breaks,
+  // wrap the lines, and never let a long round widen the panel
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: deprecated.$s-160;
+  overflow-y: auto;
+}
+
+.transcript-empty {
+  @include scaled-body-small;
+
+  flex: 1;
+  display: flex;
+  // Sit the bot just above the composer, on the left.
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: deprecated.$s-16;
+  text-align: center;
+  color: var(--color-foreground-secondary);
+}
+
+// A little greeting wave on the empty-chat bot, in the muted primary colour
+// nudged a touch darker toward the full accent.
+//
+// The DS presets are 16/32 and CSS width/height (even on the inner <use>) is not
+// honored for the sprite, so the 16px icon is scaled to 24 via transform. The
+// animation also drives `transform`, so scale(1.5) is baked into the resting
+// state and every keyframe. Order matters: scale is applied first (rightmost) so
+// the translate/rotate keep their pixel/degree values in the unscaled frame.
+.bot-icon {
+  transform-origin: center;
+  transform: scale(1.5);
+  color: color-mix(in srgb, var(--color-accent-primary-muted), var(--color-accent-primary) 30%);
+  animation: bot-greet 2.5s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes bot-greet {
+  0%   { transform: rotate(0deg) translateY(0) scale(1.5); }
+  15%  { transform: rotate(5deg) translateY(0) scale(1.5); }
+  30%  { transform: rotate(-10deg) translateY(0) scale(1.5); }
+  45%  { transform: rotate(0deg) translateY(-5px) scale(1.5); }
+  60%  { transform: rotate(0deg) translateY(0) scale(1.5); }
+  100% { transform: rotate(0deg) translateY(0) scale(1.5); }
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+}
+
+// Model picker: a custom dropdown that opens upward, with a manage-models link.
+.model-picker {
+  position: relative;
+  // Half width, pushed to the right of the composer footer.
+  width: 50%;
+  margin-inline-start: auto;
+}
+
+.model-picker-trigger {
+  @include scaled-body-small;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+  width: 100%;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: none;
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+}
+
+.model-picker-current {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-picker-caret {
+  flex: none;
+  color: var(--color-foreground-secondary);
+}
+
+.model-picker-open .model-picker-caret {
+  transform: rotate(180deg);
+}
+
+.model-picker-menu {
+  position: absolute;
+  inset-block-end: calc(100% + deprecated.$s-4);
+  // Right-anchored so it lines up with the half-width trigger, but free to grow
+  // left to fit full model names rather than truncating to half.
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  min-inline-size: 100%;
+  inline-size: max-content;
+  max-inline-size: 260px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+  max-block-size: 240px;
+  overflow-y: auto;
+  padding: deprecated.$s-4;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 30%);
+}
+
+.model-picker-group-label {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-4 deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.model-picker-option {
+  @include scaled-body-small;
+
+  display: block;
+  width: 100%;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+
+  &.selected {
+    color: var(--color-accent-primary);
+  }
+}
+
+.model-picker-manage {
+  @include scaled-body-small;
+
+  display: block;
+  margin-block-start: deprecated.$s-4;
+  padding: deprecated.$s-8;
+  border-block-start: deprecated.$s-1 solid var(--color-background-quaternary);
+  color: var(--color-accent-primary);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+// Chat tab: no-provider empty state — a single centered call to action.
+.connect-empty {
+  // Anchored above the vertical centre (block centre sits at 35% → 15% up).
+  position: absolute;
+  inset-block-start: 35%;
+  inset-inline: 0;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: deprecated.$s-8;
+  padding-inline: deprecated.$s-24;
+  text-align: center;
+}
+
+.connect-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: deprecated.$s-64;
+  height: deprecated.$s-64;
+  margin-block-end: deprecated.$s-4;
+  border-radius: 50%;
+  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+
+  svg {
+    stroke: var(--color-accent-primary);
+  }
+}
+
+.connect-title {
+  @include scaled-big-title;
+
+  color: var(--color-foreground-primary);
+}
+
+.connect-subtitle {
+  @include scaled-body-small;
+
+  margin: 0;
+  max-inline-size: 34ch;
+  color: var(--color-foreground-secondary);
+}
+
+.connect-button {
+  @include scaled-body-small;
+
+  margin-block-start: deprecated.$s-8;
+  padding: deprecated.$s-8 deprecated.$s-16;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  cursor: pointer;
+  text-decoration: none;
+
+  &:hover {
+    opacity: 0.88;
+    text-decoration: none;
+  }
+}
+
+// The input, with send/stop anchored over its bottom-right corner and attach
+// over its bottom-left. `position: relative` is what those absolutes hang from,
+// so the flex row the attach work originally used is gone: attach joins this
+// design rather than reinstating a row.
+.composer-row {
+  position: relative;
+  border-radius: deprecated.$br-8;
+}
+
+// Drop feedback on the whole row (the row is what accepts the drop), as an
+// outline rather than a border so it cannot shift the auto-growing textarea.
+.composer-row-dragging {
+  outline: deprecated.$s-2 dashed var(--color-accent-primary);
+  outline-offset: deprecated.$s-2;
+}
+
+// The `/` menu, floated above the composer row (same recipe as the
+// model-picker menu: bordered card, opens upward, scrolls when long).
+.slash-menu {
+  position: absolute;
+  inset-block-end: calc(100% + deprecated.$s-4);
+  inset-inline: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  max-block-size: 260px;
+  overflow-y: auto;
+  padding: deprecated.$s-4;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 30%);
+}
+
+.slash-option {
+  @include deprecated.body-small-typography;
+
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: deprecated.$s-8;
+  align-items: baseline;
+  width: 100%;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  text-align: start;
+  cursor: pointer;
+}
+
+// hover moves the highlight (pointer-enter), so active covers both inputs
+.slash-option-active {
+  background-color: var(--color-background-tertiary);
+}
+
+.slash-command {
+  color: var(--color-accent-primary);
+  white-space: nowrap;
+}
+
+.slash-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-detail {
+  grid-column: 2;
+  color: var(--color-foreground-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// The ask_user interview form, living in the transcript flow like a wide
+// assistant bubble: a bordered card of questions with pill-chip answers.
+.eform {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-16;
+  padding: deprecated.$s-12;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-secondary);
+}
+
+.eform-title {
+  @include deprecated.body-medium-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.eform-question {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-6;
+}
+
+.eform-prompt {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.eform-optional {
+  color: var(--color-foreground-secondary);
+  font-weight: 400;
+}
+
+.eform-hint {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+.eform-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-6;
+}
+
+.eform-chip {
+  @include deprecated.body-small-typography;
+
+  display: inline-flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-12;
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-foreground-secondary);
+  }
+}
+
+.eform-chip-active {
+  border-color: var(--color-accent-primary);
+  color: var(--color-accent-primary);
+}
+
+.eform-chip-mark {
+  color: inherit;
+}
+
+.eform-chip-other {
+  color: var(--color-foreground-secondary);
+
+  &.eform-chip-active {
+    color: var(--color-accent-primary);
+  }
+}
+
+.eform-other-input,
+.eform-textarea {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+
+  &::placeholder {
+    color: var(--color-foreground-secondary);
+  }
+}
+
+.eform-textarea {
+  resize: vertical;
+}
+
+.eform-actions {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+}
+
+.eform-submit {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-6 deprecated.$s-16;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  font-weight: 600;
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.eform-pending-hint {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+// Reference-image attachments on a text question.
+.eform-attach-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: deprecated.$s-6;
+}
+
+.eform-thumb {
+  position: relative;
+}
+
+.eform-thumb-img {
+  inline-size: 48px;
+  block-size: 48px;
+  object-fit: cover;
+  border-radius: deprecated.$br-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.eform-thumb-remove {
+  position: absolute;
+  inset-block-start: calc(-1 * deprecated.$s-6);
+  inset-inline-end: calc(-1 * deprecated.$s-6);
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
+  border: none;
+  border-radius: 50%;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-primary);
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+// User-skill playbook: read view + inline editor.
+.detail-body {
+  @include deprecated.body-small-typography;
+
+  max-block-size: 320px;
+  overflow: auto;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  color: var(--color-foreground-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.skill-edit {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  overflow-y: auto;
+}
+
+.skill-edit-body {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  min-block-size: 220px;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  font-family: monospace;
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.eform-attach-btn {
+  @include deprecated.body-small-typography;
+
+  display: inline-flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-foreground-secondary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+// Foundations (US #38): the list view — scope marker, one card per
+// foundation, the add affordance…
+.foundations-view {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  block-size: 100%;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+.foundations-scope {
+  @include deprecated.body-small-typography;
+
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+}
+
+.foundation-card {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-12;
+  width: 100%;
+  padding: deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.foundation-card-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  inline-size: deprecated.$s-32;
+  block-size: deprecated.$s-32;
+  color: var(--color-accent-primary);
+}
+
+.foundation-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-2;
+  min-inline-size: 0;
+}
+
+.foundation-card-title {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.foundation-card-summary {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.foundation-add {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 dashed var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: var(--color-accent-primary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+}
+
+// …the vibes foundation's full view: doc, editor, empty state.
+.vibes-view {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-8;
+  // fill the panel body (a definite-height flex item) so the read view scrolls
+  // instead of overflowing when a foundation doc is long
+  block-size: 100%;
+  min-block-size: 0;
+  overflow-y: auto;
+}
+
+.vibes-doc {
+  padding: deprecated.$s-16;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  // .message-md inherits its text color; in the transcript the bubble sets
+  // it, but here the workspace default (yellow) would leak through.
+  color: var(--color-foreground-primary);
+
+  // The doc is real content (not a chat line): the project title (frontmatter
+  // name) is headline-medium; its section headings are headline-small and
+  // paragraphs body-small, instead of .message-md's flat body-small-bold.
+  h3,
+  h4,
+  h5,
+  h6 {
+    @include scaled-headline-small;
+
+    margin-block: deprecated.$s-16 deprecated.$s-4;
+    color: var(--color-foreground-primary);
+  }
+
+  p {
+    @include scaled-body-small;
+
+    color: var(--color-foreground-primary);
+  }
+}
+
+// The DESIGN.md token summary: frontmatter rendered as swatches, type lines
+// and scale chips above the markdown body (US #38).
+.vibes-tokens {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  margin-block-end: deprecated.$s-12;
+  padding-block-end: deprecated.$s-12;
+  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.vibes-tokens-name {
+  @include scaled-headline-medium;
+
+  color: var(--color-foreground-primary);
+}
+
+.vibes-tokens-desc {
+  @include deprecated.body-small-typography;
+
+  margin: 0;
+  color: var(--color-foreground-secondary);
+}
+
+.vibes-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: deprecated.$s-8;
+}
+
+.vibes-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+  min-inline-size: 0;
+}
+
+.vibes-swatch-chip {
+  block-size: deprecated.$s-24;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+}
+
+.vibes-swatch-name {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibes-swatch-value {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+  font-family: "robotomono", monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibes-type-rows {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.vibes-type-row {
+  display: flex;
+  align-items: baseline;
+  gap: deprecated.$s-8;
+}
+
+.vibes-type-row,
+.vibes-scale-row {
+  display: flex;
+  align-items: baseline;
+  gap: deprecated.$s-8;
+}
+
+.vibes-token-label {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  min-inline-size: 72px;
+  color: var(--color-foreground-secondary);
+}
+
+.vibes-type-summary {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-primary);
+}
+
+.vibes-scale-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-4;
+}
+
+.vibes-scale-chip {
+  @include deprecated.body-small-typography;
+
+  padding: 0 deprecated.$s-6;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+  color: var(--color-foreground-primary);
+  font-family: "robotomono", monospace;
+}
+
+.vibes-editor {
+  @include deprecated.body-small-typography;
+
+  width: 100%;
+  min-block-size: 260px;
+  padding: deprecated.$s-8;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  font-family: monospace;
+  resize: vertical;
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+}
+
+// The conversational edit path on a foundation's detail (US #38).
+.foundation-ask {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+}
+
+// The structured frontmatter editor (US #38): token fields, never raw YAML.
+.vibes-form {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+}
+
+.vibes-form-field {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+}
+
+.vibes-form-label {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  min-inline-size: 72px;
+  color: var(--color-foreground-secondary);
+}
+
+.vibes-form-input {
+  @include deprecated.body-small-typography;
+
+  flex: 1;
+  min-inline-size: 0;
+  padding: deprecated.$s-4 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+
+  &:focus {
+    outline: none;
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.vibes-form-input-mono {
+  font-family: monospace;
+}
+
+.vibes-form-section-title {
+  @include deprecated.body-small-typography;
+
+  margin-block-start: deprecated.$s-8;
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.vibes-form-row {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+}
+
+.vibes-form-swatch {
+  flex: none;
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+}
+
+.vibes-form-remove {
+  @include deprecated.body-small-typography;
+
+  flex: none;
+  padding: 0 deprecated.$s-4;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-accent-error, #ff3277);
+  }
+}
+
+.vibes-form-add {
+  @include deprecated.body-small-typography;
+
+  align-self: flex-start;
+  padding: 0 deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-4;
+  background-color: var(--color-background-secondary);
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.vibes-form-type {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-4;
+}
+
+.vibes-form-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: deprecated.$s-4;
+}
+
+.vibes-form-note {
+  @include deprecated.body-small-typography;
+
+  margin: 0;
+  color: var(--color-foreground-secondary);
+  font-style: italic;
+}
+
+.vibes-counter {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+  text-align: end;
+}
+
+.vibes-counter-over {
+  color: var(--color-accent-error, #ff3277);
+}
+
+.vibes-problem {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-accent-error, #ff3277);
+}
+
+.vibes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-8;
+}
+
+.vibes-button,
+.vibes-button-primary {
+  @include deprecated.body-small-typography;
+
+  padding: deprecated.$s-6 deprecated.$s-12;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: transparent;
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-foreground-secondary);
+  }
+}
+
+.vibes-button-primary {
+  border-color: var(--color-accent-primary);
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  font-weight: 600;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.vibes-button-danger {
+  color: var(--color-accent-error, #ff3277);
+}
+
+.vibes-button-confirm {
+  border-color: var(--color-accent-error, #ff3277);
+}
+
+.vibes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: deprecated.$s-12;
+  padding: deprecated.$s-16;
+}
+
+.vibes-empty-title {
+  @include deprecated.body-medium-typography;
+
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.vibes-empty-text {
+  @include deprecated.body-small-typography;
+
+  color: var(--color-foreground-secondary);
+}
+
+// The real <input type=file>: kept in the DOM (the attach button clicks it)
+// but never shown.
+.composer-file-input {
+  display: none;
+}
+
+// Mirrors .composer-send across the textarea: same size and shape, other corner.
+// Below the input: attach on the left, model picker pushed to the right.
+.composer-footer {
+  display: flex;
+  align-items: center;
+}
+
+.composer-attach {
+  display: grid;
+  place-content: center;
+  flex: none;
+  width: deprecated.$s-28;
+  height: deprecated.$s-28;
+  border: none;
+  border-radius: deprecated.$br-8;
+  cursor: pointer;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-background-quaternary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-8;
+  margin-block-end: deprecated.$s-8;
+}
+
+.composer-attachment {
+  position: relative;
+  inline-size: deprecated.$s-52;
+  block-size: deprecated.$s-52;
+}
+
+.composer-attachment-img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: deprecated.$br-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.composer-attachment-remove {
+  position: absolute;
+  inset-block-start: calc(-1 * #{deprecated.$s-4});
+  inset-inline-end: calc(-1 * #{deprecated.$s-4});
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: deprecated.$fs-10;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-primary);
+
+  &:hover {
+    background-color: var(--color-accent-primary);
+    color: var(--color-background-primary);
+  }
+}
+
+// Attach rejections and the can't-read-images warning.
+.composer-hint {
+  @include scaled-body-small;
+
+  margin-block-end: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+}
+
+.composer-send,
+.composer-stop {
+  position: absolute;
+  // Vertically centred in the single-line input (36 − 28 = 8, split top/bottom).
+  inset-block-end: deprecated.$s-4;
+  inset-inline-end: deprecated.$s-8;
+  display: grid;
+  place-content: center;
+  width: deprecated.$s-28;
+  height: deprecated.$s-28;
+  border: none;
+  border-radius: deprecated.$br-8;
+  cursor: pointer;
+}
+
+// Send: the icon in the accent colour over a clear background.
+.composer-send {
+  background-color: transparent;
+  color: var(--color-accent-primary);
+
+  &:disabled {
+    color: var(--color-foreground-secondary);
+    cursor: default;
+    opacity: 0.5;
+  }
+}
+
+// Stop: a gray icon over a gray background.
+.composer-stop {
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+// The real <input type=file>: kept in the DOM (the attach button clicks it)
+// but never shown.
+.composer-file-input {
+  display: none;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: deprecated.$s-8;
+  margin-block-end: deprecated.$s-8;
+}
+
+.composer-attachment {
+  position: relative;
+  inline-size: deprecated.$s-52;
+  block-size: deprecated.$s-52;
+}
+
+.composer-attachment-img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  border-radius: deprecated.$br-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+}
+
+.composer-attachment-remove {
+  position: absolute;
+  inset-block-start: calc(-1 * #{deprecated.$s-4});
+  inset-inline-end: calc(-1 * #{deprecated.$s-4});
+  inline-size: deprecated.$s-16;
+  block-size: deprecated.$s-16;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: deprecated.$fs-10;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-primary);
+
+  &:hover {
+    background-color: var(--color-accent-primary);
+    color: var(--color-background-primary);
+  }
+}
+
+// Attach rejections and the can't-read-images warning.
+.composer-hint {
+  @include scaled-body-small;
+
+  margin-block-end: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+}
+
+.composer-input {
+  @include scaled-body-small;
+
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  // Starts as a single line (snug, so the one line sits vertically centred); the
+  // JS auto-grow takes it from here up to the cap.
+  min-height: deprecated.$s-36;
+  // Auto-grows with content (JS sets the height) up to here, then scrolls.
+  max-height: 200px;
+  overflow-y: auto;
+  resize: none;
+  padding: deprecated.$s-8;
+  // Reserve the bottom-right corner so text never runs under the send/stop
+  // button. Attach now lives below the input, so the left side is normal.
+  padding-inline-end: deprecated.$s-44;
+  border-radius: deprecated.$br-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+
+  &:focus {
+    border-color: var(--color-accent-primary);
+    outline: none;
+  }
+}
+
+// Spend meter + clear row, above the composer.
+.chat-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+}
+
+.usage-meter {
+  @include scaled-body-small;
+
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-foreground-secondary);
+}
+
+.chat-clear {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: deprecated.$s-2 deprecated.$s-6;
+  border-radius: deprecated.$br-6;
+  border: none;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background-color: var(--color-background-tertiary);
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+}
+
+// Skills tab: the built-in catalog, grouped Audits / Build / Auto-fix.
+.skills-tab {
+  @extend %new-scrollbar;
+
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  height: 100%;
+  padding: deprecated.$s-8;
+  overflow-y: auto;
+}
+
+// Segmented All / Enabled filter at the top of the Skills tab.
+.skills-filter {
+  display: flex;
+  gap: deprecated.$s-2;
+  padding: deprecated.$s-2;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  align-self: flex-start;
+}
+
+.skills-filter-option {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-2 deprecated.$s-12;
+  border: none;
+  border-radius: deprecated.$br-6;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+
+  &.selected {
+    background-color: var(--color-background-quaternary);
+    color: var(--color-foreground-primary);
+  }
+}
+
+.skills-empty {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-16 deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+  text-align: center;
+}
+
+// Filter + "Create skill" on one row at the top of the Skills list.
+.skills-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+}
+
+.create-skill-btn {
+  @include scaled-body-small;
+
+  flex: none;
+  padding: deprecated.$s-4 deprecated.$s-12;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-accent-primary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+// The guided creation flow.
+.skill-create {
+  @extend %new-scrollbar;
+
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  height: 100%;
+  padding: deprecated.$s-12;
+  overflow-y: auto;
+}
+
+.create-intro,
+.create-guard {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+.create-label {
+  @include scaled-body-small;
+
+  margin-block-start: deprecated.$s-8;
+  color: var(--color-foreground-primary);
+  font-weight: 600;
+}
+
+.create-input {
+  @include scaled-body-small;
+
+  box-sizing: border-box;
+  width: 100%;
+  min-height: deprecated.$s-40;
+  padding: deprecated.$s-8;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  resize: vertical;
+}
+
+textarea.create-input {
+  min-height: 5rem;
+}
+
+.create-modes {
+  display: flex;
+  gap: deprecated.$s-4;
+}
+
+.create-mode {
+  @include scaled-body-small;
+
+  flex: 1;
+  padding: deprecated.$s-6 deprecated.$s-4;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: transparent;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+
+  &.selected {
+    border-color: var(--color-accent-primary);
+    color: var(--color-foreground-primary);
+  }
+}
+
+.create-mode-hint {
+  color: var(--color-foreground-secondary);
+}
+
+.create-error {
+  @include scaled-body-small;
+
+  color: var(--color-accent-warning);
+}
+
+.create-submit {
+  @include scaled-body-small;
+
+  align-self: flex-start;
+  margin-block-start: deprecated.$s-8;
+  padding: deprecated.$s-8 deprecated.$s-16;
+  border: none;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  cursor: pointer;
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+// Promote-to-team confirmation (US #12): the muted note (reactive travels,
+// foundations don't) and the Cancel / Publish footer.
+.promote-note {
+  @include scaled-body-small;
+
+  margin-block-start: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+}
+
+.promote-actions {
+  display: flex;
+  gap: deprecated.$s-12;
+  align-items: center;
+  justify-content: flex-end;
+  margin-block-start: deprecated.$s-8;
+
+  // the accent Publish button drops its own top margin inside the flow footer
+  .create-submit {
+    margin-block-start: 0;
+  }
+}
+
+.promote-cancel {
+  @include scaled-body-small;
+
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--color-foreground-primary);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.catalog-group {
+  display: flex;
+  flex-direction: column;
+  // Rows are flush; the per-card divider separates them.
+  gap: 0;
+}
+
+.catalog-group-label {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-8 deprecated.$s-4 deprecated.$s-4;
+  color: var(--color-foreground-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.catalog-card {
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-1;
+  width: 100%;
+  padding: deprecated.$s-8 deprecated.$s-12;
+  // A divider between skills instead of a box border — same line, dropped on the
+  // last row of a group. Rows sit flush (group gap is 0) so the cards' padding
+  // frames the line symmetrically.
+  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+  background-color: transparent;
+  text-align: start;
+  cursor: pointer;
+  // Declared here (not only on .catalog-card-new) so removing that modifier
+  // class — the US #52 highlight fading after 20s — transitions back smoothly
+  // instead of snapping.
+  transition: background-color 0.9s ease;
+
+  &:last-child {
+    border-block-end: none;
+  }
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+
+  &:focus-visible {
+    outline: deprecated.$s-2 solid var(--color-accent-primary);
+    outline-offset: deprecated.$s-1;
+  }
+
+  // A disabled skill is dropped from the router; mute the name + description but
+  // keep the "Off" pill and the ⋯ menu legible so the state reads and it can be
+  // turned back on.
+  &.disabled {
+    .catalog-name,
+    .catalog-desc {
+      opacity: 0.55;
+    }
+  }
+}
+
+// US #52: a team skill promoted since this member last acknowledged one — see
+// skill-row*'s docstring for why the fade is purely cosmetic (20s, client-only)
+// and unrelated to the arrival notice's own seen-marking.
+.catalog-card-new {
+  background-color: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+}
+
+.catalog-new-pill {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: 0 deprecated.$s-6;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  white-space: nowrap;
+  transition: opacity 0.9s ease;
+}
+
+.catalog-new-pill-faded {
+  opacity: 0;
+}
+
+.catalog-card-head {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+}
+
+.catalog-name {
+  @include scaled-title-small;
+
+  // Push the "Off" pill + ⋯ menu to the trailing edge, whatever the name length.
+  margin-inline-end: auto;
+  color: var(--color-foreground-primary);
+}
+
+// Small state pill on a disabled row — legible on its own, no control needed.
+.catalog-off {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: 0 deprecated.$s-6;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-quaternary);
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+// A team-promoted skill (US #12): a small accent marker so a shared skill is
+// distinguishable from a personal one at a glance.
+.catalog-team {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: 0 deprecated.$s-6;
+  border-radius: deprecated.$br-8;
+  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+  color: var(--color-accent-primary);
+  white-space: nowrap;
+}
+
+
+// Anchors the ⋯ overflow menu inside the clickable row. Muted so it recedes but
+// stays visible without hover (touch-friendly, per the story); full contrast on
+// hover/focus.
+.catalog-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: default;
+  opacity: 0.6;
+
+  &:hover,
+  &:focus-within {
+    opacity: 1;
+  }
+
+  // Shrink the 32px DS icon-button so the row hugs the title (the button height,
+  // not the flex gap, is what pushes the description down). Override on the button
+  // element — the ghost variant sets its hover var on itself, so a parent-level
+  // override wouldn't win; set the darker-gray hover background directly instead.
+  button {
+    width: deprecated.$s-24;
+    height: deprecated.$s-24;
+
+    &:hover {
+      background-color: var(--color-background-secondary);
+    }
+  }
+}
+
+.catalog-card:hover .catalog-menu {
+  opacity: 1;
+}
+
+// The overflow menu itself (rendered by `dropdown` when open), anchored to the
+// trailing edge below the ⋯ button.
+.skill-menu {
+  position: absolute;
+  inset-block-start: calc(100% + #{deprecated.$s-4});
+  inset-inline-end: 0;
+  z-index: 12;
+  min-width: 160px;
+  margin: 0;
+  padding: deprecated.$s-4;
+  list-style: none;
+  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-primary);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+}
+
+.menu-option {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-6 deprecated.$s-8;
+  border-radius: deprecated.$br-6;
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+  }
+}
+
+.menu-option-disabled {
+  color: var(--color-foreground-secondary);
+  cursor: default;
+  opacity: 0.5;
+
+  &:hover {
+    background-color: transparent;
+  }
+}
+
+.catalog-desc {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-8;
+  flex-wrap: wrap;
+}
+
+.catalog-blurb {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+// A quiet metadata label (no dot): the reactive behavior reads plainly without
+// shouting on the card.
+.reactive-badge {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+.reactive-ondemand {
+  color: var(--color-foreground-secondary);
+}
+
+.reactive-observer {
+  color: var(--color-foreground-secondary);
+}
+
+// Read-only detail view (shown in place of the list within the Skills tab).
+.skill-detail {
+  @extend %new-scrollbar;
+
+  display: flex;
+  flex-direction: column;
+  gap: deprecated.$s-8;
+  height: 100%;
+  padding: deprecated.$s-12;
+  overflow-y: auto;
+}
+
+.detail-category {
+  @include scaled-small-title;
+
+  color: var(--color-foreground-secondary);
+}
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: deprecated.$s-8;
+}
+
+.detail-name {
+  @include scaled-med-title;
+
+  color: var(--color-foreground-primary);
+}
+
+.detail-tags {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-4;
+  margin-block: deprecated.$s-4 deprecated.$s-8;
+}
+
+.detail-section-label {
+  @include scaled-body-small;
+
+  margin-block-start: deprecated.$s-8;
+  color: var(--color-foreground-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.detail-example {
+  @include scaled-body-small;
+
+  padding: deprecated.$s-8 deprecated.$s-12;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-primary);
+  font-style: italic;
+}
+
+.detail-what {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-primary);
+  line-height: 1.5;
+}

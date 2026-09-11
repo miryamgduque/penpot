@@ -100,8 +100,10 @@ h.watch("translations", null, async function (path) {
 log.info("watch: assets (~)");
 h.watch(["resources/images", "resources/fonts"], null, async function (path) {
   log.info("changed:", path);
-  await h.compileSvgSprites();
+  // copyAssets mirrors resources/images/ and wipes the generated sprites, so it
+  // must run before compileSvgSprites (which writes them) — matching init order.
   await h.copyAssets();
+  await h.compileSvgSprites();
   await h.compileTemplates();
 });
 

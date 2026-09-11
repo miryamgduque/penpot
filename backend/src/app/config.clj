@@ -174,6 +174,16 @@
     [:database-min-pool-size {:optional true} ::sm/int]
     [:database-max-pool-size {:optional true} ::sm/int]
 
+    ;; Design session recordings, in their own database so they can be dropped,
+    ;; moved or scaled without touching the product tables. Deliberately has NO
+    ;; default: absent config means no pool, and recording degrades while the
+    ;; rest of Penpot boots and runs normally.
+    [:sessions-database-uri {:optional true} ::sm/uri]
+    [:sessions-database-username {:optional true} [:maybe :string]]
+    [:sessions-database-password {:optional true} [:maybe :string]]
+    [:sessions-database-min-pool-size {:optional true} ::sm/int]
+    [:sessions-database-max-pool-size {:optional true} ::sm/int]
+
     [:quotes-teams-per-profile {:optional true} ::sm/int]
     [:quotes-access-tokens-per-profile {:optional true} ::sm/int]
     [:quotes-projects-per-team {:optional true} ::sm/int]

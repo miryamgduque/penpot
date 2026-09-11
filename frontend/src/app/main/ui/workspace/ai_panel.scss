@@ -664,44 +664,69 @@
 }
 
 // Arrival notice (US #52): a team skill promoted since this member last
-// acknowledged one. Informational — no Disable control here, only Dismiss
-// and View skill; the same shape as .handoff-notice (icon added), stacked
-// like .observer-list when more than one has arrived.
+// acknowledged one. The whole card opens the skill's detail view (US #8's
+// existing toggle lives there — no Disable here, on purpose); only the ✕
+// (top-right, same shape as .observer-close) is exempted via
+// stop-propagation. Background matches .catalog-card-new's highlighted row
+// in the skills list, so the same "just arrived" signal reads consistently
+// in both places.
 .arrival-notice {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
+  gap: deprecated.$s-4;
   margin: 0 var(--sp-m);
-  padding: deprecated.$s-8;
+  padding: deprecated.$s-12;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-4;
-  background-color: var(--color-background-secondary);
-}
+  background-color: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+  text-align: start;
+  cursor: pointer;
 
-.arrival-top {
-  display: flex;
-  align-items: flex-start;
-  gap: deprecated.$s-8;
-}
-
-.arrival-icon {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  inline-size: deprecated.$s-24;
-  block-size: deprecated.$s-24;
-  border-radius: deprecated.$br-4;
-  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
-  color: var(--color-accent-primary);
+  &:focus-visible {
+    outline: deprecated.$s-2 solid var(--color-accent-primary);
+    outline-offset: deprecated.$s-1;
+  }
 }
 
 .arrival-text-col {
   display: flex;
   flex-direction: column;
-  flex: 1;
   gap: deprecated.$s-2;
   min-inline-size: 0;
+  // Room so the text never runs under the absolutely-positioned ✕.
+  padding-inline-end: deprecated.$s-24;
+}
+
+// Same shape as .observer-close — a small icon-only dismiss in the card's
+// top-right corner. stop-propagation (in the click/keydown handlers) keeps
+// it from also triggering the card's own click-to-view.
+.arrival-close {
+  position: absolute;
+  inset-block-start: deprecated.$s-8;
+  inset-inline-end: deprecated.$s-8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+  padding: 0;
+  border: none;
+  border-radius: deprecated.$br-6;
+  background: none;
+  color: var(--color-foreground-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--color-background-tertiary);
+    color: var(--color-foreground-primary);
+  }
+}
+
+.arrival-title-row {
+  display: flex;
+  align-items: center;
+  gap: deprecated.$s-6;
 }
 
 .arrival-title {
@@ -711,48 +736,21 @@
   color: var(--color-foreground-primary);
 }
 
+.arrival-promoted-by {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+// Capped at 3 lines so a long description can't grow the card unbounded.
 .arrival-body {
   @include scaled-body-small;
 
+  display: -webkit-box;
+  overflow: hidden;
   color: var(--color-foreground-secondary);
-}
-
-.arrival-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: deprecated.$s-8;
-}
-
-.arrival-dismiss {
-  @include scaled-body-small;
-
-  flex: none;
-  padding: 0 deprecated.$s-4;
-  border: none;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    color: var(--color-foreground-primary);
-  }
-}
-
-.arrival-view {
-  @include scaled-body-small;
-
-  flex: none;
-  padding: deprecated.$s-4 deprecated.$s-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-4;
-  background: none;
-  color: var(--color-foreground-primary);
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--color-accent-primary);
-  }
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 // Fresh-chat suggestion: the conversation outgrew the handoff threshold.

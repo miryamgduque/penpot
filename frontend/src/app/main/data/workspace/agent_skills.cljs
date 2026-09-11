@@ -374,19 +374,23 @@
 ;; A team-promoted skill (US #12, from `[:team-skills]`) is shaped exactly like a
 ;; user skill so it merges into the catalog by name with no special-casing —
 ;; every member sees it, default on. `:team? true` is only a display marker.
+;; `:arrived` (US #52) is true for every member except the promoter, until they
+;; Dismiss/View-skill the arrival notice — see app.rpc.commands.team-skills.
 (defn- team-skill->entry
   [ts]
-  {:id       (:id ts)
-   :name     (:name ts)
-   :label    (:label ts)
-   :blurb    (:description ts)
-   :reactive (:reactive ts)
-   :category (:category ts)
-   :enabled  true
-   :example  (:trigger ts)
-   :what     (:description ts)
-   :body     (:body ts)
-   :team?    true})
+  {:id           (:id ts)
+   :name         (:name ts)
+   :label        (:label ts)
+   :blurb        (:description ts)
+   :reactive     (:reactive ts)
+   :category     (:category ts)
+   :enabled      true
+   :example      (:trigger ts)
+   :what         (:description ts)
+   :body         (:body ts)
+   :team?        true
+   :promoted-by  (:promoted-by-name ts)
+   :arrived      (boolean (:arrived ts))})
 
 (defn user-skills
   "The user's created skills (from app-db) shaped as catalog entries."

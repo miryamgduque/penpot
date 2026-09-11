@@ -1,7 +1,8 @@
 # Notify team members when a skill arrives (US #52)
 
-**Status:** doing
+**Status:** done
 **Created:** 2026-09-10
+**Completed:** 2026-09-11
 **Taiga:** [US #52 — Notify team members when a skill arrives](https://tree.taiga.io/project/miryam-all-in-penpot/us/52)
 
 > **Execution mode (user directive, 2026-09-10):** same as US #12 — built **directly
@@ -106,8 +107,8 @@ mutation rather than piggybacking "seen" onto the fetch itself.
 1. [Phase 01 — Backend: `team_skill_seen` + `arrived?` + mark-seen RPC](./done-phase-01-backend-arrival-state.md) — new table/migration, extend `get-team-skills` with a computed `:arrived?`, add `::mark-team-skill-seen` mutation.
 2. [Phase 02 — Frontend data: surface `arrived?` through the catalog](./done-phase-02-frontend-data-arrival.md) — thread the field through `team_skills.cljs` → `agent_skills.cljs`'s `full-catalog`/`team-skill->entry`, add the `mark-team-skill-seen!` action.
 3. [Phase 03 — Arrival notice card UI](./done-phase-03-arrival-notice-ui.md) — new dismissible card(s) patterned on `handoff-notice`, wired to Dismiss/View skill → `mark-team-skill-seen!` + reuse of the existing detail view.
-4. [Phase 04 — Skill-list "NEW" highlight](./doing-phase-04-list-new-highlight.md) — accent tint + border + "NEW" pill on arrived rows, 20s client-side ephemeral fade.
-5. [Phase 05 — Live verification + wrap-up](./todo-phase-05-live-verification.md) — two-account devenv check, completion summary, move to `completed/`.
+4. [Phase 04 — Skill-list "NEW" highlight](./done-phase-04-list-new-highlight.md) — accent tint + border + "NEW" pill on arrived rows, 20s client-side ephemeral fade.
+5. [Phase 05 — Live verification + wrap-up](./done-phase-05-live-verification.md) — two-account devenv check, completion summary, move to `completed/`.
 
 ## Acceptance Criteria
 
@@ -137,3 +138,76 @@ mutation rather than piggybacking "seen" onto the fetch itself.
 - Any Penpot-level (non-Agent-panel) notification.
 - Changes to story #8's toggle mechanism.
 - Un-promoting / removing a team skill (unrelated, not touched here).
+
+## Completion Summary
+
+**Completed:** 2026-09-11 (built directly on `ai-skills-prototype`, lean gates
+compile + clj-kondo + cljfmt, tests waived; live-verified in devenv with two
+real accounts on the shared "Team"; not yet pushed).
+Commits: plan `bc61ce46fa` (P1), `0b97a46fc6` (P2), `4c6d8090e2` (P3),
+`ae7a74ab5a` (P4).
+
+### What shipped
+
+- **Backend (P1):** `team_skill_seen` table (migration `0162`, `(profile_id,
+  team_skill_id, seen_at)` — absence of a row means "arrived, not yet seen");
+  `get-team-skills` extended with a computed `:arrived` column
+  (`promoted_by <> requesting profile AND not yet seen`); a new
+  `::mark-team-skill-seen` mutation.
+- **Frontend data (P2):** `team-skill->entry` threads `:arrived` and
+  `:promoted-by` onto the merged catalog entry; `mark-team-skill-seen!`
+  (optimistic local flip + fire-and-forget RPC, matching the existing
+  `comments.cljs`/`clipboard.cljs` idiom).
+- **Arrival notice UI (P3):** a dismissible card per arrived skill in the
+  chat tab, patterned on the existing `handoff-notice` shape — icon, "New
+  team skill: \<name\>", "Promoted by \<promoter\>. \<description\>",
+  Dismiss + View skill. View skill reuses the existing `skill-detail*` view
+  unmodified via a new `on-view-skill` callback threaded from `ai-panel*`.
+- **List highlight (P4):** `skill-row*` gets an `arrived` prop driving a 20s
+  client-side-only fade (accent-tinted background + "New" pill), fully
+  decoupled from the notice's seen-marking so it reappears on a fresh panel
+  open until the member actually acts on the notice.
+
+### Changed from the original plan
+
+- **Field naming:** `:arrived?` (the plan's placeholder) became `:arrived`
+  throughout, to match the existing non-`?`-suffixed key convention already
+  used on catalog entries (`:source-skill-id`, etc.).
+- **`:promoted-by` added to `team-skill->entry` in Phase 02** rather than
+  Phase 03, since it's the same one-line passthrough shape and Phase 03
+  needed it immediately — a scope nudge, not a real deviation.
+- No other changes from the phase-by-phase design in this README; the
+  "seen-marking rule" (only Dismiss/View skill mark a skill seen — never
+  passive exposure to the list highlight) was decided during Phase 0
+  discovery and held through implementation without revision.
+
+### Live verification (2026-09-11, devenv, `demo@example.com` promoter /
+`demo2@example.com` "Demo Two" as a real second team member)
+
+Promoted a freshly-created personal skill ("Arrival notice copy check")
+through the actual "Promote to team" UI flow (not a pre-seeded row) —
+confirmed the promoter sees no notice/highlight for their own promotion,
+the second member sees the notice card and list highlight, Dismiss and View
+skill both persist (survive reload, don't reappear once acknowledged) and
+both correctly mark the skill seen, the list highlight is decoupled from
+that acknowledgment and reappears on a fresh open for a still-unacknowledged
+skill, and story #8's enable/disable toggle is untouched and fully
+functional from both the list row and the detail view. One backend-restart
+gotcha was hit and documented in Phase 03 (nREPL `:reload` doesn't reach the
+live HTTP RPC dispatch table — a real restart is needed); one transient
+frontend double-render right after publishing self-resolved on reload and
+was confirmed to be a rendering race, not a data bug, via direct DB queries.
+
+### Follow-ups / not done
+
+- The pill's CSS opacity-fade transition (Phase 04) couldn't be visually
+  confirmed mid-animation through the Browser pane's automation — the final
+  state and underlying logic were proven correct (`Animation.finish()`
+  snapped correctly; a fresh test element resolved instantly), but a plain
+  human eyeball check in a real browser tab would close this out fully.
+- The transient double-render of a just-promoted skill (personal + team
+  entry briefly coexisting until reload) is cosmetic and self-resolving;
+  a proper fix would sequence `user-skills`/`team-skills` refetches instead
+  of firing both after `promote-skill`, but wasn't worth it under this plan's
+  lean/tests-waived mode.
+- Not pushed to the remote branch yet.

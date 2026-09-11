@@ -18,15 +18,15 @@
 - [x] Format pass: `cljfmt check` → all formatted correctly
 - [x] shadow-cljs live watch rebuilt with 0 warnings after every edit
 - [x] **Live preview review in devenv** as the real second team member (`demo2@example.com`) — see Notes for the full log, including a browser-automation-specific quirk (not an app bug) caught during verification
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit
+- [x] Human approval received
+- [x] Committed with a gitmoji commit — `ae7a74ab5a`
 
 ## After Finish
 
-- [ ] Rename this file: `todo-` → `done-` prefix
-- [ ] Update README.md phase links to match new filename
-- [ ] Note any follow-up items or discoveries below
-- [ ] Check if next phase can proceed or needs adjustment
+- [x] Rename this file: `todo-` → `done-` prefix
+- [x] Update README.md phase links to match new filename
+- [x] Note any follow-up items or discoveries below
+- [x] Check if next phase can proceed or needs adjustment — yes, Phase 05 (final live verification + wrap-up) unblocked
 
 ## Files
 

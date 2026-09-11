@@ -20,15 +20,15 @@
 - [x] Format pass: `cljfmt check` → all formatted correctly
 - [x] shadow-cljs live watch rebuilt `:main` with 0 warnings after every edit (cljs + scss)
 - [x] **Live preview review in devenv**, logged in as the actual second team member (`demo2@example.com`, "Demo Two", not the promoter) on the shared "Team" — see Notes for the full verification log and one real bug caught + fixed along the way
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit
+- [x] Human approval received
+- [x] Committed with a gitmoji commit — `4c6d8090e2`
 
 ## After Finish
 
-- [ ] Rename this file: `todo-` → `done-` prefix
-- [ ] Update README.md phase links to match new filename
-- [ ] Note any follow-up items or discoveries below
-- [ ] Check if next phase can proceed or needs adjustment
+- [x] Rename this file: `todo-` → `done-` prefix
+- [x] Update README.md phase links to match new filename
+- [x] Note any follow-up items or discoveries below
+- [x] Check if next phase can proceed or needs adjustment — yes, Phase 04 unblocked
 
 ## Files
 

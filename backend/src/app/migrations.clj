@@ -524,7 +524,10 @@
     :fn (mg/resource "app/migrations/sql/0160-add-team-skill-table.sql")}
 
    {:name "0161-add-profile-skill-promoted-to"
-    :fn (mg/resource "app/migrations/sql/0161-add-profile-skill-promoted-to.sql")}])
+    :fn (mg/resource "app/migrations/sql/0161-add-profile-skill-promoted-to.sql")}
+
+   {:name "0162-add-team-skill-seen-table"
+    :fn (mg/resource "app/migrations/sql/0162-add-team-skill-seen-table.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]

@@ -2684,6 +2684,10 @@ textarea.create-input {
   background-color: transparent;
   text-align: start;
   cursor: pointer;
+  // Declared here (not only on .catalog-card-new) so removing that modifier
+  // class — the US #52 highlight fading after 20s — transitions back smoothly
+  // instead of snapping.
+  transition: background-color 0.9s ease;
 
   &:last-child {
     border-block-end: none;
@@ -2707,6 +2711,29 @@ textarea.create-input {
       opacity: 0.55;
     }
   }
+}
+
+// US #52: a team skill promoted since this member last acknowledged one — see
+// skill-row*'s docstring for why the fade is purely cosmetic (20s, client-only)
+// and unrelated to the arrival notice's own seen-marking.
+.catalog-card-new {
+  background-color: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+}
+
+.catalog-new-pill {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: 0 deprecated.$s-6;
+  border-radius: deprecated.$br-8;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  white-space: nowrap;
+  transition: opacity 0.9s ease;
+}
+
+.catalog-new-pill-faded {
+  opacity: 0;
 }
 
 .catalog-card-head {

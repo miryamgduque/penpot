@@ -1588,29 +1588,50 @@
   discreet ⋯ overflow menu (always visible, not hover-gated) holding the per-skill
   actions. Clicking the row body opens the detail view; the menu swallows its own
   clicks so it doesn't. Enable/Disable is instant; Fork / Promote to team are
-  entry points only (disabled — wired by US #10 / US #12)."
+  entry points only (disabled — wired by US #10 / US #12).
+
+  `arrived` (US #52) marks a just-promoted team skill: an accent highlight + a
+  \"New\" pill that hold for 20s after this row mounts, then fade — purely
+  client-side and ephemeral (see the plan's \"seen-marking rule\"; this fade
+  does NOT acknowledge the arrival, only the arrival notice's own Dismiss/View
+  skill does, so the highlight is expected to return on a future panel open
+  until the member acts on the notice)."
   {::mf/private true}
-  [{:keys [label blurb reactive enabled user? on-open on-set-enabled on-promote]}]
-  (let [show-menu?  (mf/use-state false)
-        toggle-menu (mf/use-fn #(swap! show-menu? not))
-        close-menu  (mf/use-fn #(reset! show-menu? false))
-        open-detail (mf/use-fn
-                     (mf/deps on-open)
-                     (fn [event]
-                       (when (or (nil? event) (kbd/enter? event) (kbd/space? event))
-                         (some-> event dom/prevent-default)
-                         (on-open))))
-        on-enable   (mf/use-fn
-                     (mf/deps on-set-enabled enabled)
-                     (fn []
-                       (on-set-enabled (not enabled))))]
-    [:div {:class (stl/css-case :catalog-card true :disabled (not enabled))
+  [{:keys [label blurb reactive enabled user? arrived on-open on-set-enabled on-promote]}]
+  (let [show-menu?    (mf/use-state false)
+        toggle-menu   (mf/use-fn #(swap! show-menu? not))
+        close-menu    (mf/use-fn #(reset! show-menu? false))
+        open-detail   (mf/use-fn
+                       (mf/deps on-open)
+                       (fn [event]
+                         (when (or (nil? event) (kbd/enter? event) (kbd/space? event))
+                           (some-> event dom/prevent-default)
+                           (on-open))))
+        on-enable     (mf/use-fn
+                       (mf/deps on-set-enabled enabled)
+                       (fn []
+                         (on-set-enabled (not enabled))))
+        highlighted?* (mf/use-state (boolean arrived))
+        highlighted?  (deref highlighted?*)]
+
+    (mf/with-effect [arrived]
+      (when arrived
+        (let [t (js/setTimeout #(reset! highlighted?* false) 20000)]
+          (fn [] (js/clearTimeout t)))))
+
+    [:div {:class (stl/css-case :catalog-card true
+                                :disabled (not enabled)
+                                :catalog-card-new (and arrived highlighted?))
            :role "button"
            :tab-index 0
            :on-click on-open
            :on-key-down open-detail}
      [:div {:class (stl/css :catalog-card-head)}
       [:span {:class (stl/css :catalog-name)} label]
+      (when arrived
+        [:span {:class (stl/css-case :catalog-new-pill true
+                                     :catalog-new-pill-faded (not highlighted?))}
+         "New"])
       [:> reactive-badge* {:reactive reactive}]
       (when-not enabled
         [:span {:class (stl/css :catalog-off)} "Off"])
@@ -2105,12 +2126,13 @@
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
             [:div {:class (stl/css :catalog-group-label)} category]
-            (for [{:keys [name label blurb reactive user?] :as entry} rows]
+            (for [{:keys [name label blurb reactive user? arrived] :as entry} rows]
               [:> skill-row* {:key name
                               :label label
                               :blurb blurb
                               :reactive reactive
                               :user? user?
+                              :arrived arrived
                               :enabled (get enabled-map name true)
                               :on-open #(on-select name)
                               :on-set-enabled #(toggle name %)

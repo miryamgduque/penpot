@@ -16,15 +16,15 @@
 - [x] Lint pass: `clj-kondo --lint frontend/src/app/main/data/workspace/team_skills.cljs frontend/src/app/main/data/workspace/agent_skills.cljs` → 0 errors/warnings
 - [x] Format pass: `cljfmt check` on the same files → all formatted correctly
 - [x] shadow-cljs live watch (window 0) picked up the change and rebuilt `:main`/`:worker`/`:storybook` — 0 warnings, 0 errors
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit
+- [x] Human approval received
+- [x] Committed with a gitmoji commit — `0b97a46fc6`
 
 ## After Finish
 
-- [ ] Rename this file: `todo-` → `done-` prefix
-- [ ] Update README.md phase links to match new filename
-- [ ] Note any follow-up items or discoveries below
-- [ ] Check if next phase can proceed or needs adjustment
+- [x] Rename this file: `todo-` → `done-` prefix
+- [x] Update README.md phase links to match new filename
+- [x] Note any follow-up items or discoveries below
+- [x] Check if next phase can proceed or needs adjustment — yes, Phase 03 unblocked
 
 ## Files
 

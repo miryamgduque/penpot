@@ -36,6 +36,27 @@
              (rx/map team-skills-fetched))
         (rx/empty)))))
 
+(defn mark-team-skill-seen!
+  "Acknowledges a team skill's arrival (US #52) — fired only from the arrival
+  notice's own Dismiss/View-skill actions, never automatically. Optimistically
+  flips `:arrived` to false in app-db so the notice/highlight clear right away,
+  without waiting on a refetch."
+  [team-skill-id]
+  (ptk/reify ::mark-team-skill-seen
+    ptk/UpdateEvent
+    (update [_ state]
+      (update state :team-skills
+              (fn [skills]
+                (mapv (fn [s]
+                        (cond-> s
+                          (= (:id s) team-skill-id) (assoc :arrived false)))
+                      skills))))
+
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :mark-team-skill-seen {:team-skill-id team-skill-id})
+           (rx/ignore)))))
+
 (defn promote-skill
   "Promotes the caller's personal skill (`source-id`) to `team-id` under the
   reviewed `name`/`description`, then refreshes both the team list (gains the new

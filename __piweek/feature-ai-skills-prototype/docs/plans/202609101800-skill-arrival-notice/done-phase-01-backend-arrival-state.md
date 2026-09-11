@@ -23,15 +23,15 @@
   - Not-found: bogus `team-skill-id` raises `{:type :not-found :code :object-not-found}` from `db/get`.
   - Non-member: a random `profile-id` calling `get-team-skills` for the team raises `{:type :not-found}` from `check-read-permissions!`.
   - Cleaned up the test `team_skill_seen` row afterward so the shared devenv/demo data is left as found.
-- [ ] Human approval received
-- [ ] Committed with a gitmoji commit
+- [x] Human approval received
+- [x] Committed with a gitmoji commit — `bc61ce46fa`
 
 ## After Finish
 
-- [ ] Rename this file: `todo-` → `done-` prefix
-- [ ] Update README.md phase links to match new filename
-- [ ] Note any follow-up items or discoveries below
-- [ ] Check if next phase can proceed or needs adjustment
+- [x] Rename this file: `todo-` → `done-` prefix
+- [x] Update README.md phase links to match new filename
+- [x] Note any follow-up items or discoveries below
+- [x] Check if next phase can proceed or needs adjustment — yes, Phase 02 unblocked
 
 ## Files
 

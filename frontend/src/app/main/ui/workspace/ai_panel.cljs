@@ -1734,15 +1734,17 @@
 
 (mf/defc foundations-list*
   "The file's foundations (US #38): one card per foundation (glyph, name,
-  one-line summary) and the add affordance — creation is agent-guided, so it
-  seeds the chat composer."
+  one-line summary). The add affordance is the header's own icon-button
+  (same line as the \"Foundations\" title, matching the Skills tab's
+  Filters/Create icon-buttons) — creation is agent-guided, so it seeds the
+  chat composer."
   {::mf/private true}
-  [{:keys [on-select on-interview on-tone on-create]}]
+  [{:keys [on-select on-interview on-tone]}]
   (let [foundations (mf/deref dd/foundations-ref)]
     [:div {:class (stl/css :foundations-view)}
      (if (empty? foundations)
        ;; Empty state: intro + two suggested starter foundations (agent-guided
-       ;; creation), then the add affordance (not wired yet — no-op for now).
+       ;; creation).
        [:div {:class (stl/css :vibes-empty)}
         [:p {:class (stl/css :vibes-empty-text)}
          "Standing design context for this file: vibes, tone of voice, naming rules, and more. Skills and the agent read them on every task."]
@@ -1757,9 +1759,7 @@
           [:> i/icon* {:icon-id i/heart}]]
          [:div {:class (stl/css :foundation-card-text)}
           [:div {:class (stl/css :foundation-card-title)} "Tone of voice"]
-          [:div {:class (stl/css :foundation-card-summary)} "Friendly, concise, active voice"]]]
-        [:button {:type "button" :class (stl/css :foundation-add)}
-         "+ Add a foundation"]]
+          [:div {:class (stl/css :foundation-card-summary)} "Friendly, concise, active voice"]]]]
        [:*
         (for [{:keys [slug doc]} foundations]
           [:button {:key slug
@@ -1772,11 +1772,7 @@
             [:div {:class (stl/css :foundation-card-title)}
              (dd/display-name slug)]
             (when-let [summary (foundation-summary doc)]
-              [:div {:class (stl/css :foundation-card-summary)} summary])]])
-        [:button {:type "button"
-                  :class (stl/css :foundation-add)
-                  :on-click on-create}
-         "+ Add a foundation"]])]))
+              [:div {:class (stl/css :foundation-card-summary)} summary])]])])]))
 
 (defn- vec-remove
   [v i]
@@ -2089,18 +2085,16 @@
   instant) and drops a disabled skill from the agent's router — see
   agent-skills/resolve-enabled.
 
-  The Filters icon-button (left of \"Create skill\", also an icon-button now)
-  opens a dropdown: a single \"Show only enabled skills\" row driving the
-  existing app-state all/enabled split (dwaip/set-skills-filter), plus two
-  independent local-only axes — reactive behavior and source (personal/team
-  — built-ins always show, regardless of this axis) — that reset on remount.
-  Category is list-grouping only, not a filter axis.
+  Filtering (Filters icon-button + \"Create skill\") lives in the panel
+  header now, same line as the \"Foundations\"/\"Skills\" title — the
+  `reactive-filter*`/`source-filter*` atoms are owned by ai-panel* and
+  passed down here so this component and the header stay in sync.
 
   Controlled by the panel: `selected` is the open skill's name (nil = list),
-  `on-select` opens one, `on-create` opens the creation flow (US #9). Back
-  navigation lives in the panel header (US #35)."
+  `on-select` opens one. Back navigation and Create both live in the panel
+  header (US #35)."
   {::mf/private true}
-  [{:keys [selected on-select on-create on-promote]}]
+  [{:keys [selected on-select on-promote reactive-filter* source-filter*]}]
   (let [catalog          (mf/deref refs/skills-catalog)
         skill            (when selected
                            (some (fn [{:keys [category skills]}]
@@ -2112,16 +2106,8 @@
                           (fn [name checked]
                             (st/emit! (skst/set-skill-enabled name checked))))
 
-        reactive-filter* (mf/use-state #{"on-demand" "observer"})
         reactive-filter  (deref reactive-filter*)
-        source-filter*   (mf/use-state #{:personal :team})
         source-filter    (deref source-filter*)
-
-        filters-open?*   (mf/use-state false)
-        filters-open?    (deref filters-open?*)
-        filter-ref       (mf/use-ref nil)
-        toggle-filters   (mf/use-fn #(swap! filters-open?* not))
-        close-filters    (mf/use-fn #(reset! filters-open?* false))
 
         ;; Category is a list-grouping, not a filter axis.
         visible?         (fn [{:keys [name reactive user? team?]}]
@@ -2142,54 +2128,6 @@
                            :on-close #(on-select nil)
                            :on-promote #(on-promote skill)}])
       [:div {:class (stl/css :skills-tab)}
-       ;; Project vibes moved to the Foundations view (US #38) — reached from
-       ;; the compass header icon, alongside any other standing context.
-       [:div {:class (stl/css :skills-toolbar)}
-        [:div {:class (stl/css :skills-filter-wrapper) :ref filter-ref}
-         [:> icon-button* {:variant "ghost"
-                           :icon i/filter
-                           :aria-label "Filters"
-                           :on-click toggle-filters}]
-         [:& dropdown {:show filters-open? :on-close close-filters :container filter-ref}
-          ;; Same listbox + tick-icon idiom as comments.cljs's sidebar-options
-          ;; (Show all/yours/mentions, Hide resolved) and this file's own
-          ;; .skill-menu — a row toggles itself, no native inputs. The tick
-          ;; only renders when a row is actually selected/included — an
-          ;; unchecked row carries no icon at all.
-          [:ul {:class (stl/css :skills-filter-dropdown)}
-           [:li {:class (stl/css-case :skills-filter-item true
-                                      :selected (= active :enabled))
-                 :on-click #(st/emit! (dwaip/set-skills-filter (if (= active :enabled) :all :enabled)))}
-            [:span {:class (stl/css :skills-filter-item-label)} "Show only enabled skills"]
-            (when (= active :enabled)
-              [:span {:class (stl/css :skills-filter-item-icon)}
-               [:> i/icon* {:icon-id i/tick}]])]
-           [:li {:class (stl/css :skills-filter-separator)}]
-           [:li {:class (stl/css :skills-filter-group-label)} "Behavior"]
-           (for [[k lbl] [["on-demand" "On-demand"] ["observer" "Observer"]]]
-             [:li {:key k
-                   :class (stl/css-case :skills-filter-item true
-                                        :selected (contains? reactive-filter k))
-                   :on-click #(swap! reactive-filter* toggle-set k)}
-              [:span {:class (stl/css :skills-filter-item-label)} lbl]
-              (when (contains? reactive-filter k)
-                [:span {:class (stl/css :skills-filter-item-icon)}
-                 [:> i/icon* {:icon-id i/tick}]])])
-           [:li {:class (stl/css :skills-filter-separator)}]
-           [:li {:class (stl/css :skills-filter-group-label)} "Source"]
-           (for [[k lbl] [[:personal "Personal"] [:team "Team"]]]
-             [:li {:key k
-                   :class (stl/css-case :skills-filter-item true
-                                        :selected (contains? source-filter k))
-                   :on-click #(swap! source-filter* toggle-set k)}
-              [:span {:class (stl/css :skills-filter-item-label)} lbl]
-              (when (contains? source-filter k)
-                [:span {:class (stl/css :skills-filter-item-icon)}
-                 [:> i/icon* {:icon-id i/tick}]])])]]]
-        [:> icon-button* {:variant "ghost"
-                          :icon i/add
-                          :aria-label "Create skill"
-                          :on-click on-create}]]
        (if (seq groups)
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
@@ -2700,7 +2638,26 @@
         recording-session? (true? (:active? (mf/deref refs/session-recorder)))
         more-ref    (mf/use-ref nil)
         toggle-more (mf/use-fn #(swap! more-open* not))
-        close-more  (mf/use-fn #(reset! more-open* false))]
+        close-more  (mf/use-fn #(reset! more-open* false))
+
+        ;; Skills' Filters dropdown (US #52 follow-up): lives in the header,
+        ;; same line as the title, so the filter state is owned here and
+        ;; handed down to skills-tab* rather than living inside it.
+        skills-filter-active (mf/deref refs/skills-filter)
+        reactive-filter*   (mf/use-state #{"on-demand" "observer"})
+        reactive-filter    (deref reactive-filter*)
+        source-filter*     (mf/use-state #{:personal :team})
+        source-filter      (deref source-filter*)
+        filters-open?*     (mf/use-state false)
+        filters-open?      (deref filters-open?*)
+        filter-ref         (mf/use-ref nil)
+        toggle-filters     (mf/use-fn #(swap! filters-open?* not))
+        close-filters      (mf/use-fn #(reset! filters-open?* false))
+
+        ;; Only the plain list sub-view gets the header's action icon-buttons
+        ;; — a skill/foundation's own detail, create, or promote leaf doesn't.
+        skills-list?       (and skills? (not creating?) (nil? promoting) (nil? skill))
+        foundations-list?  (and foundations? (nil? foundation))]
 
     ;; Providers are configured on the settings page; load them so we know
     ;; whether to show the chat or the connect-a-provider prompt. Skill state
@@ -2744,7 +2701,66 @@
             skill        "Skill info"
             :else        "Skills")]]
         [:span {:class (stl/css :title)} "Agent"])
-      (when-not (or skills? foundations?)
+      (cond
+        ;; Skills' list: Filters (own dropdown, state owned here and handed
+        ;; to skills-tab*) + Create, both icon-buttons, same line as the title.
+        skills-list?
+        [:div {:class (stl/css :header-actions)}
+         [:div {:class (stl/css :skills-filter-wrapper) :ref filter-ref}
+          [:> icon-button* {:variant "ghost"
+                            :icon i/filter
+                            :aria-label "Filters"
+                            :on-click toggle-filters}]
+          [:& dropdown {:show filters-open? :on-close close-filters :container filter-ref}
+           ;; Same listbox + tick-icon idiom as comments.cljs's sidebar-options
+           ;; and this file's own .skill-menu — a row toggles itself, no
+           ;; native inputs. The tick only renders when a row is actually
+           ;; selected/included — an unchecked row carries no icon at all.
+           [:ul {:class (stl/css :skills-filter-dropdown)}
+            [:li {:class (stl/css-case :skills-filter-item true
+                                       :selected (= skills-filter-active :enabled))
+                  :on-click #(st/emit! (dwaip/set-skills-filter (if (= skills-filter-active :enabled) :all :enabled)))}
+             [:span {:class (stl/css :skills-filter-item-label)} "Show only enabled skills"]
+             (when (= skills-filter-active :enabled)
+               [:span {:class (stl/css :skills-filter-item-icon)}
+                [:> i/icon* {:icon-id i/tick}]])]
+            [:li {:class (stl/css :skills-filter-separator)}]
+            [:li {:class (stl/css :skills-filter-group-label)} "Behavior"]
+            (for [[k lbl] [["on-demand" "On-demand"] ["observer" "Observer"]]]
+              [:li {:key k
+                    :class (stl/css-case :skills-filter-item true
+                                         :selected (contains? reactive-filter k))
+                    :on-click #(swap! reactive-filter* toggle-set k)}
+               [:span {:class (stl/css :skills-filter-item-label)} lbl]
+               (when (contains? reactive-filter k)
+                 [:span {:class (stl/css :skills-filter-item-icon)}
+                  [:> i/icon* {:icon-id i/tick}]])])
+            [:li {:class (stl/css :skills-filter-separator)}]
+            [:li {:class (stl/css :skills-filter-group-label)} "Source"]
+            (for [[k lbl] [[:personal "Personal"] [:team "Team"]]]
+              [:li {:key k
+                    :class (stl/css-case :skills-filter-item true
+                                         :selected (contains? source-filter k))
+                    :on-click #(swap! source-filter* toggle-set k)}
+               [:span {:class (stl/css :skills-filter-item-label)} lbl]
+               (when (contains? source-filter k)
+                 [:span {:class (stl/css :skills-filter-item-icon)}
+                  [:> i/icon* {:icon-id i/tick}]])])]]]
+         [:> icon-button* {:variant "ghost"
+                           :icon i/add
+                           :aria-label "Create skill"
+                           :on-click open-create}]]
+
+        ;; Foundations' list: a single Create icon-button, same line as the
+        ;; title, replacing the old full-width "+ Add a foundation" button.
+        foundations-list?
+        [:div {:class (stl/css :header-actions)}
+         [:> icon-button* {:variant "ghost"
+                           :icon i/add
+                           :aria-label "Add a foundation"
+                           :on-click on-add-foundation}]]
+
+        (not (or skills? foundations?))
         [:div {:class (stl/css :header-actions)}
          ;; Conversation controls (new chat + history) lead the band — they
          ;; act on the chat itself. Foundations / Skills navigation and the
@@ -2816,8 +2832,9 @@
                         promoting [:> skill-promote* {:skill promoting :on-done close-promote}]
                         :else     [:> skills-tab* {:selected skill
                                                    :on-select on-select
-                                                   :on-create open-create
-                                                   :on-promote open-promote}])
+                                                   :on-promote open-promote
+                                                   :reactive-filter* reactive-filter*
+                                                   :source-filter* source-filter*}])
         ;; Foundations: the file's standing design context (US #38); every
         ;; foundation gets the full detail (render, agent input, edit, delete).
         foundations?  (if (some? foundation)
@@ -2826,8 +2843,7 @@
                                               :on-deleted on-foundation-deleted}]
                         [:> foundations-list* {:on-select on-open-foundation
                                                :on-interview on-vibes-interview
-                                               :on-tone on-tone-interview
-                                               :on-create on-add-foundation}])
+                                               :on-tone on-tone-interview}])
         (empty? pool) [:> connect-empty*]
         :else         [:> chat-tab* {:on-create-skill on-create-skill
                                      :on-view-skill on-view-skill}])]]))

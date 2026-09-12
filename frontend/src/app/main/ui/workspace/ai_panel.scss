@@ -1776,28 +1776,6 @@
   white-space: nowrap;
 }
 
-.foundation-add {
-  @include deprecated.body-small-typography;
-
-  width: 100%;
-  padding: deprecated.$s-8;
-  border: deprecated.$s-1 dashed var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover:not(:disabled) {
-    border-color: var(--color-accent-primary);
-    color: var(--color-foreground-primary);
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.6;
-  }
-}
-
 // …the vibes foundation's full view: doc, editor, empty state.
 .vibes-view {
   display: flex;
@@ -2518,13 +2496,6 @@
 // Filter + "Create skill" on one row at the top of the Skills list.
 // Filters sits immediately left of Create skill — both icon-buttons grouped
 // together at the trailing edge, not spread across the row.
-.skills-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: deprecated.$s-4;
-}
-
 // The guided creation flow.
 .skill-create {
   @extend %new-scrollbar;

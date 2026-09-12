@@ -2437,34 +2437,74 @@
   overflow-y: auto;
 }
 
-// Segmented All / Enabled filter at the top of the Skills tab.
-.skills-filter {
-  display: flex;
-  gap: deprecated.$s-2;
-  padding: deprecated.$s-2;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
-  align-self: flex-start;
+// Filters icon-button + panel at the top of the Skills tab, replacing the
+// old segmented All/Enabled control (now one of the panel's groups).
+.skills-filter-wrapper {
+  position: relative;
 }
 
-.skills-filter-option {
+// Same shared listbox primitives as comments.scss's .comment-mode-dropdown /
+// .dropdown-item (basic-rules.scss's %dropdown-wrapper / %dropdown-element-base)
+// instead of a one-off panel — consistent with the app's other filter menus.
+.skills-filter-dropdown {
+  @extend %dropdown-wrapper;
+
+  // Opens leftward (like .more-menu/.skill-menu) — the trigger sits at the
+  // toolbar's trailing edge, right against the panel's own right edge, so
+  // anchoring at `left: 0` pushed the panel off past the visible viewport.
+  top: calc(100% + #{deprecated.$s-4});
+  left: auto;
+  inset-inline-end: 0;
+  width: auto;
+  min-width: 200px;
+  margin: 0;
+}
+
+.skills-filter-group-label {
   @include scaled-body-small;
 
-  padding: deprecated.$s-2 deprecated.$s-12;
-  border: none;
-  border-radius: deprecated.$br-6;
-  background-color: transparent;
+  padding: deprecated.$s-8 deprecated.$s-8 deprecated.$s-4;
   color: var(--color-foreground-secondary);
-  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
 
-  &:hover {
-    color: var(--color-foreground-primary);
+.skills-filter-item {
+  @extend %dropdown-element-base;
+
+  justify-content: space-between;
+}
+
+.skills-filter-item-label {
+  @include deprecated.body-small-typography;
+}
+
+.skills-filter-item-icon {
+  @include deprecated.flex-center;
+
+  inline-size: deprecated.$s-24;
+  block-size: deprecated.$s-24;
+
+  svg {
+    @extend %button-icon-small;
+
+    stroke: transparent;
+  }
+}
+
+.skills-filter-item.selected {
+  .skills-filter-item-label {
+    color: var(--menu-foreground-color);
   }
 
-  &.selected {
-    background-color: var(--color-background-quaternary);
-    color: var(--color-foreground-primary);
+  .skills-filter-item-icon svg {
+    stroke: var(--icon-foreground-hover);
   }
+}
+
+.skills-filter-separator {
+  block-size: deprecated.$s-12;
 }
 
 .skills-empty {
@@ -2476,27 +2516,13 @@
 }
 
 // Filter + "Create skill" on one row at the top of the Skills list.
+// Filters sits immediately left of Create skill — both icon-buttons grouped
+// together at the trailing edge, not spread across the row.
 .skills-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: deprecated.$s-8;
-}
-
-.create-skill-btn {
-  @include scaled-body-small;
-
-  flex: none;
-  padding: deprecated.$s-4 deprecated.$s-12;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
-  background-color: transparent;
-  color: var(--color-accent-primary);
-  cursor: pointer;
-
-  &:hover {
-    background-color: var(--color-background-tertiary);
-  }
+  justify-content: flex-end;
+  gap: deprecated.$s-4;
 }
 
 // The guided creation flow.
@@ -2842,10 +2868,15 @@ textarea.create-input {
   flex-wrap: wrap;
 }
 
+// Capped at 3 lines so a long description can't grow the row unbounded.
 .catalog-blurb {
   @include scaled-body-small;
 
+  display: -webkit-box;
+  overflow: hidden;
   color: var(--color-foreground-secondary);
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 // A quiet metadata label (no dot): the reactive behavior reads plainly without

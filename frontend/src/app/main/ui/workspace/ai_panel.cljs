@@ -1604,7 +1604,7 @@
   skill does, so the highlight is expected to return on a future panel open
   until the member acts on the notice)."
   {::mf/private true}
-  [{:keys [label blurb reactive enabled user? arrived on-open on-set-enabled on-promote]}]
+  [{:keys [label blurb enabled user? arrived on-open on-set-enabled on-promote]}]
   (let [show-menu?    (mf/use-state false)
         toggle-menu   (mf/use-fn #(swap! show-menu? not))
         close-menu    (mf/use-fn #(reset! show-menu? false))
@@ -1639,7 +1639,6 @@
         [:span {:class (stl/css-case :catalog-new-pill true
                                      :catalog-new-pill-faded (not highlighted?))}
          "New"])
-      [:> reactive-badge* {:reactive reactive}]
       (when-not enabled
         [:span {:class (stl/css :catalog-off)} "Off"])
       ;; The menu lives inside the clickable row, so swallow its click/keydown to
@@ -2078,34 +2077,63 @@
        [:p {:class (stl/css :vibes-empty-text)}
         "This foundation is gone — someone may have removed it just now."]])))
 
+(defn- toggle-set
+  [s v]
+  (if (contains? s v) (disj s v) (conj s v)))
+
 (mf/defc skills-tab*
-  "The built-in skills catalog: rows grouped by category. Each row opens its
-  detail view on click and carries a discreet ⋯ menu (Enable/Disable + Fork /
+  "The built-in skills catalog: rows grouped by category (Setup/Audits/Build),
+  same as before US #52's flatten-then-revert. Each row opens its detail
+  view on click and carries a discreet ⋯ menu (Enable/Disable + Fork /
   Promote entry points). Enable/Disable flips the skill for this file (per-user,
   instant) and drops a disabled skill from the agent's router — see
   agent-skills/resolve-enabled.
+
+  The Filters icon-button (left of \"Create skill\", also an icon-button now)
+  opens a dropdown: a single \"Show only enabled skills\" row driving the
+  existing app-state all/enabled split (dwaip/set-skills-filter), plus two
+  independent local-only axes — reactive behavior and source (personal/team
+  — built-ins always show, regardless of this axis) — that reset on remount.
+  Category is list-grouping only, not a filter axis.
 
   Controlled by the panel: `selected` is the open skill's name (nil = list),
   `on-select` opens one, `on-create` opens the creation flow (US #9). Back
   navigation lives in the panel header (US #35)."
   {::mf/private true}
   [{:keys [selected on-select on-create on-promote]}]
-  (let [catalog     (mf/deref refs/skills-catalog)
-        skill       (when selected
-                      (some (fn [{:keys [category skills]}]
-                              (some #(when (= selected (:name %)) (assoc % :category category)) skills))
-                            catalog))
-        enabled-map (mf/deref refs/resolved-skills-enabled)
-        active      (mf/deref refs/skills-filter)
-        toggle      (mf/use-fn
-                     (fn [name checked]
-                       (st/emit! (skst/set-skill-enabled name checked))))
-        ;; Under :enabled, hide disabled skills; drop groups left empty.
-        visible?    (fn [name] (or (= active :all) (get enabled-map name true)))
-        groups      (keep (fn [{:keys [category skills]}]
-                            (let [rows (filterv #(visible? (:name %)) skills)]
-                              (when (seq rows) [category rows])))
-                          catalog)]
+  (let [catalog          (mf/deref refs/skills-catalog)
+        skill            (when selected
+                           (some (fn [{:keys [category skills]}]
+                                   (some #(when (= selected (:name %)) (assoc % :category category)) skills))
+                                 catalog))
+        enabled-map      (mf/deref refs/resolved-skills-enabled)
+        active           (mf/deref refs/skills-filter)
+        toggle           (mf/use-fn
+                          (fn [name checked]
+                            (st/emit! (skst/set-skill-enabled name checked))))
+
+        reactive-filter* (mf/use-state #{"on-demand" "observer"})
+        reactive-filter  (deref reactive-filter*)
+        source-filter*   (mf/use-state #{:personal :team})
+        source-filter    (deref source-filter*)
+
+        filters-open?*   (mf/use-state false)
+        filters-open?    (deref filters-open?*)
+        filter-ref       (mf/use-ref nil)
+        toggle-filters   (mf/use-fn #(swap! filters-open?* not))
+        close-filters    (mf/use-fn #(reset! filters-open?* false))
+
+        ;; Category is a list-grouping, not a filter axis.
+        visible?         (fn [{:keys [name reactive user? team?]}]
+                           (and (or (= active :all) (get enabled-map name true))
+                                (contains? reactive-filter reactive)
+                                (or (and (not user?) (not team?))
+                                    (and user? (contains? source-filter :personal))
+                                    (and team? (contains? source-filter :team)))))
+        groups           (keep (fn [{:keys [category skills]}]
+                                 (let [rows (filterv visible? skills)]
+                                   (when (seq rows) [category rows])))
+                               catalog)]
     (if skill
       (let [enabled? (get enabled-map (:name skill) true)]
         [:> skill-detail* {:skill skill
@@ -2117,27 +2145,59 @@
        ;; Project vibes moved to the Foundations view (US #38) — reached from
        ;; the compass header icon, alongside any other standing context.
        [:div {:class (stl/css :skills-toolbar)}
-        [:div {:class (stl/css :skills-filter)}
-         (for [[opt lbl] [[:all "All"] [:enabled "Enabled"]]]
-           [:button {:key (name opt)
-                     :type "button"
-                     :class (stl/css-case :skills-filter-option true
-                                          :selected (= active opt))
-                     :on-click #(st/emit! (dwaip/set-skills-filter opt))}
-            lbl])]
-        [:button {:class (stl/css :create-skill-btn)
-                  :type "button"
-                  :on-click on-create}
-         "+ Create skill"]]
+        [:div {:class (stl/css :skills-filter-wrapper) :ref filter-ref}
+         [:> icon-button* {:variant "ghost"
+                           :icon i/filter
+                           :aria-label "Filters"
+                           :on-click toggle-filters}]
+         [:& dropdown {:show filters-open? :on-close close-filters :container filter-ref}
+          ;; Same listbox + tick-icon idiom as comments.cljs's sidebar-options
+          ;; (Show all/yours/mentions, Hide resolved) and this file's own
+          ;; .skill-menu — a row toggles itself, no native inputs. The tick
+          ;; only renders when a row is actually selected/included — an
+          ;; unchecked row carries no icon at all.
+          [:ul {:class (stl/css :skills-filter-dropdown)}
+           [:li {:class (stl/css-case :skills-filter-item true
+                                      :selected (= active :enabled))
+                 :on-click #(st/emit! (dwaip/set-skills-filter (if (= active :enabled) :all :enabled)))}
+            [:span {:class (stl/css :skills-filter-item-label)} "Show only enabled skills"]
+            (when (= active :enabled)
+              [:span {:class (stl/css :skills-filter-item-icon)}
+               [:> i/icon* {:icon-id i/tick}]])]
+           [:li {:class (stl/css :skills-filter-separator)}]
+           [:li {:class (stl/css :skills-filter-group-label)} "Behavior"]
+           (for [[k lbl] [["on-demand" "On-demand"] ["observer" "Observer"]]]
+             [:li {:key k
+                   :class (stl/css-case :skills-filter-item true
+                                        :selected (contains? reactive-filter k))
+                   :on-click #(swap! reactive-filter* toggle-set k)}
+              [:span {:class (stl/css :skills-filter-item-label)} lbl]
+              (when (contains? reactive-filter k)
+                [:span {:class (stl/css :skills-filter-item-icon)}
+                 [:> i/icon* {:icon-id i/tick}]])])
+           [:li {:class (stl/css :skills-filter-separator)}]
+           [:li {:class (stl/css :skills-filter-group-label)} "Source"]
+           (for [[k lbl] [[:personal "Personal"] [:team "Team"]]]
+             [:li {:key k
+                   :class (stl/css-case :skills-filter-item true
+                                        :selected (contains? source-filter k))
+                   :on-click #(swap! source-filter* toggle-set k)}
+              [:span {:class (stl/css :skills-filter-item-label)} lbl]
+              (when (contains? source-filter k)
+                [:span {:class (stl/css :skills-filter-item-icon)}
+                 [:> i/icon* {:icon-id i/tick}]])])]]]
+        [:> icon-button* {:variant "ghost"
+                          :icon i/add
+                          :aria-label "Create skill"
+                          :on-click on-create}]]
        (if (seq groups)
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
             [:div {:class (stl/css :catalog-group-label)} category]
-            (for [{:keys [name label blurb reactive user? arrived] :as entry} rows]
+            (for [{:keys [name label blurb user? arrived] :as entry} rows]
               [:> skill-row* {:key name
                               :label label
                               :blurb blurb
-                              :reactive reactive
                               :user? user?
                               :arrived arrived
                               :enabled (get enabled-map name true)
@@ -2145,7 +2205,7 @@
                               :on-set-enabled #(toggle name %)
                               :on-promote #(on-promote entry)}])])
          [:div {:class (stl/css :skills-empty)}
-          "No enabled skills. Switch to All to see everything."])])))
+          "No skills match these filters."])])))
 
 (mf/defc connect-empty*
   "Shown in place of the whole panel body (tabs included) when no AI provider

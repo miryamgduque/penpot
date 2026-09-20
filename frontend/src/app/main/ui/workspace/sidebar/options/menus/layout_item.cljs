@@ -506,30 +506,41 @@
                      :title "Align self end"
                      :id    "align-self-end"}]])
 
+;; NOTE: multi-select assembly (shapes/multiple.cljs `extract-attrs`) fills
+;; every editable attr a shape lacks with an EXPLICIT nil, merges differing
+;; values to :multiple, and does the same for applied-tokens — so this schema
+;; must admit nil and :multiple everywhere, or shift-selecting two layout
+;; children with fill sizing crashes the sidebar on prop validation.
+(def ^:private schema:size-value
+  [:maybe [:or :float :int [:= :multiple]]])
+
 (def ^:private schema:layout-item-props-schema
   [:map
    [:layout-item-margin
     {:optional true}
-    [:map
-     [:m1 {:optional true} [:or :float :int]]
-     [:m2 {:optional true} [:or :float :int]]
-     [:m3 {:optional true} [:or :float :int]]
-     [:m4 {:optional true} [:or :float :int]]]]
+    [:maybe
+     [:or
+      [:= :multiple]
+      [:map
+       [:m1 {:optional true} schema:size-value]
+       [:m2 {:optional true} schema:size-value]
+       [:m3 {:optional true} schema:size-value]
+       [:m4 {:optional true} schema:size-value]]]]]
 
-   [:layout-item-margin-type {:optional true} :keyword]
+   [:layout-item-margin-type {:optional true} [:maybe :keyword]]
 
-   [:layout-item-h-sizing {:optional true} :keyword]
-   [:layout-item-v-sizing {:optional true} :keyword]
+   [:layout-item-h-sizing {:optional true} [:maybe :keyword]]
+   [:layout-item-v-sizing {:optional true} [:maybe :keyword]]
 
-   [:layout-item-min-w {:optional true} [:or :float :int]]
-   [:layout-item-max-w {:optional true} [:or :float :int]]
-   [:layout-item-min-h {:optional true} [:or :float :int]]
-   [:layout-item-max-h {:optional true} [:or :float :int]]])
+   [:layout-item-min-w {:optional true} schema:size-value]
+   [:layout-item-max-w {:optional true} schema:size-value]
+   [:layout-item-min-h {:optional true} schema:size-value]
+   [:layout-item-max-h {:optional true} schema:size-value]])
 
 (def ^:private schema:layout-size-constraints
   [:map
    [:values schema:layout-item-props-schema]
-   [:applied-tokens [:maybe [:map-of :keyword :string]]]
+   [:applied-tokens [:maybe [:map-of :keyword [:maybe [:or :string [:= :multiple]]]]]]
    [:ids [::sm/vec ::sm/uuid]]])
 
 (mf/defc layout-size-constraints*

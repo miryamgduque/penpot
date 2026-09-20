@@ -8,13 +8,26 @@
    [frontend-tests.code-gen-style-test]
    [frontend-tests.composable-tests.comp.sync-test]
    [frontend-tests.copy-as-svg-test]
+   [frontend-tests.data.agent-test]
+   [frontend-tests.data.agent-tools-test]
+   [frontend-tests.data.ai-providers-test]
+   [frontend-tests.data.changes-provenance-test]
    [frontend-tests.data.comments-filters-test]
    [frontend-tests.data.dashboard-test]
+   [frontend-tests.data.design-doc-test]
+   [frontend-tests.data.design-md-test]
    [frontend-tests.data.exports-assets-test]
    [frontend-tests.data.nitrate-test]
    [frontend-tests.data.persistence-test]
    [frontend-tests.data.profile-test]
+   [frontend-tests.data.recording-disclosure-test]
+   [frontend-tests.data.recording-reannounce-test]
    [frontend-tests.data.repo-test]
+   [frontend-tests.data.session-actor-test]
+   [frontend-tests.data.session-events-test]
+   [frontend-tests.data.session-persist-test]
+   [frontend-tests.data.session-recorder-test]
+   [frontend-tests.data.session-review-test]
    [frontend-tests.data.store-test]
    [frontend-tests.data.uploads-test]
    [frontend-tests.data.viewer-test]
@@ -27,8 +40,11 @@
    [frontend-tests.data.workspace-path-edition-test]
    [frontend-tests.data.workspace-reflow-test]
    [frontend-tests.data.workspace-shortcuts-test]
+   [frontend-tests.data.workspace-skill-gen-test]
+   [frontend-tests.data.workspace-skill-state-test]
    [frontend-tests.data.workspace-texts-test]
    [frontend-tests.data.workspace-thumbnails-test]
+   [frontend-tests.data.workspace-user-skills-test]
    [frontend-tests.data.workspace-versions-test]
    [frontend-tests.errors-test]
    [frontend-tests.fonts-test]
@@ -92,6 +108,7 @@
    [frontend-tests.ui.ds-controls-numeric-input-test]
    [frontend-tests.ui.gradient-handlers-test]
    [frontend-tests.ui.layout-container-multiple-test]
+   [frontend-tests.ui.markdown-test]
    [frontend-tests.ui.measures-menu-props-test]
    [frontend-tests.ui.routes-test]
    [frontend-tests.ui.settings-password-schema-test]
@@ -123,14 +140,27 @@
    'frontend-tests.code-gen-style-test
    'frontend-tests.composable-tests.comp.sync-test
    'frontend-tests.copy-as-svg-test
+   'frontend-tests.data.agent-test
+   'frontend-tests.data.agent-tools-test
+   'frontend-tests.data.ai-providers-test
+   'frontend-tests.data.changes-provenance-test
    'frontend-tests.data.comments-filters-test
    'frontend-tests.data.dashboard-test
+   'frontend-tests.data.design-doc-test
+   'frontend-tests.data.design-md-test
    'frontend-tests.data.nitrate-test
    'frontend-tests.data.persistence-test
    'frontend-tests.data.profile-test
    'frontend-tests.data.repo-test
-   'frontend-tests.data.store-test
    'frontend-tests.data.exports-assets-test
+   'frontend-tests.data.session-actor-test
+   'frontend-tests.data.session-events-test
+   'frontend-tests.data.session-persist-test
+   'frontend-tests.data.recording-disclosure-test
+   'frontend-tests.data.recording-reannounce-test
+   'frontend-tests.data.session-recorder-test
+   'frontend-tests.data.session-review-test
+   'frontend-tests.data.store-test
    'frontend-tests.data.uploads-test
    'frontend-tests.data.viewer-test
    'frontend-tests.data.workspace-colors-test
@@ -142,7 +172,10 @@
    'frontend-tests.data.workspace-path-edition-test
    'frontend-tests.data.workspace-reflow-test
    'frontend-tests.data.workspace-shortcuts-test
+   'frontend-tests.data.workspace-skill-state-test
    'frontend-tests.data.workspace-texts-test
+   'frontend-tests.data.workspace-skill-gen-test
+   'frontend-tests.data.workspace-user-skills-test
    'frontend-tests.data.workspace-thumbnails-test
    'frontend-tests.data.workspace-versions-test
    'frontend-tests.errors-test
@@ -205,6 +238,7 @@
    'frontend-tests.ui.ds-controls-numeric-input-test
    'frontend-tests.ui.gradient-handlers-test
    'frontend-tests.ui.layout-container-multiple-test
+   'frontend-tests.ui.markdown-test
    'frontend-tests.ui.measures-menu-props-test
    'frontend-tests.ui.routes-test
    'frontend-tests.render-dimensions-test

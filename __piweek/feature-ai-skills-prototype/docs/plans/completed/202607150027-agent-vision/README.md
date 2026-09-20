@@ -1,0 +1,306 @@
+<!-- TRANSIENT — part of the __piweek/ team scratch. Delete before the PR is finalized. -->
+
+# Agent vision — let the model see, both ways
+
+**Status:** done
+**Created:** 2026-07-15
+**Completed:** 2026-07-15
+**Apps:** `frontend`
+**User story:** TBD — not yet in Taiga
+**Depends on:** [Agent chat metaprompt](../202607142003-agent-metaprompt/) — start after it lands. This
+plan reworks the same `agent.cljs` codecs that plan is actively editing.
+**Supersedes:** that plan's
+[Phase 07 — The agent must see](../202607142003-agent-metaprompt/done-phase-07-render-refeed.md)
+— **decided 2026-07-15, closed as superseded.** See *Relationship to Phase 07* below.
+
+## Context
+
+Our agent is blind. It reasons entirely over JSON from `read_design`, and the only thing the
+user can hand it is text. Two different holes, one underlying gap — **no image ever reaches the
+model** — and therefore one shared foundation.
+
+The two halves:
+
+1. **The agent takes its own screenshot.** A tool it calls to render a board/shape to PNG and
+   look at the result. Agent-initiated, no user in the loop. This is the design-agent analog of
+   a code agent re-reading the file it just wrote.
+2. **The user attaches images.** Paste, pick, or drop up to 5 photos into the composer — a
+   reference screenshot, a competitor's UI, a whiteboard photo, a bug report.
+
+Both need the same thing first: an image content block in the canonical message model and in
+both provider codecs. Build that once, and each half becomes small.
+
+### What exploration already settled (2026-07-15, grounded in the code)
+
+- **The PNG is one synchronous call away.** `wasm.api/render-shape-pixels(shape-id, scale)`
+  returns a `Uint8Array` of PNG bytes — no network, no exporter service, no promise. It renders
+  to a dedicated **export surface**, not the viewport, with viewport state saved/restored, so it
+  works for boards that are off-screen or scrolled away. `app.main.data.exports.wasm/export-image-uri`
+  and the plugin API's `shape.export()` are both working precedents. **Phase 07's feasibility
+  spike is effectively pre-answered** — the expensive path (`rp/cmd! :export` → the headless
+  browser `exporter` service) is the one we avoid.
+- **The backend needs no changes at all.** `ai_providers.clj` is a dumb pipe: "the payload is
+  forwarded byte-for-byte and the response is never decoded." No content-block validation.
+- **But there is a hard cap, and it is ours, not the provider's.** The RPC schema pins
+  `:payload [:string {:max 4000000}]`. That is ~3 MB of raw image bytes **shared with the entire
+  rest of the payload** — full history, system prompt, every tool schema. Overrun is an RPC
+  *validation* error, not a provider error. Everything upstream is far more generous (nginx 300M,
+  http.clj 350 MiB), so this cap is the whole budget story.
+- **The seam is exactly one function.** `user-content` (`agent.cljs:41-53`) renders context+text
+  to a plain string, and its docstring says: "Both providers take a plain string here, so one
+  renderer serves both." That is precisely the assumption images break.
+- **The dialects diverge.** Anthropic wants bare base64 + a separate `media_type`; OpenAI wants a
+  full `data:` URI. So the canonical model stores `{:mtype :data}` and each encoder assembles its
+  own shape — consistent with the existing re-encode-per-round design that lets users switch
+  models mid-conversation.
+- **`read-file-as-data-url` already exists** (`webapi.cljs:60-62`), returns an rx observable that
+  drops straight into the rx-based send pipeline, and already carries a Safari/WebKit repeated-
+  mimetype fix we would otherwise re-hit.
+- **A free win:** the global canvas paste handler already declines `TEXTAREA` targets
+  (`viewport/actions.cljs:585-586`), so a composer paste handler will not race the
+  paste-image-onto-canvas flow. No coordination needed.
+
+### Decisions locked in with the user (2026-07-15)
+
+1. **Agent renders the canvas** — a clean export of a board/shape, *not* a capture of the
+   literal viewport as the user sees it.
+2. **Attachments are local-only, never stored.** Base64 in the browser, sent with the turn.
+   Nothing touches Penpot's media storage. Accepted consequence: attachments vanish from the
+   transcript on reload. Persistence is a follow-up, not this plan.
+3. **Images only, max 5.** PNG/JPEG/WebP. Text/code file attachments are out of scope.
+4. **Metaprompt Phase 07 is closed as superseded** by this plan — see below.
+
+### 🚩 Scope: Anthropic only for the prototype (decided 2026-07-15)
+
+**The demo is Friday 2026-07-17. Until then, Anthropic models are the only ones that matter** —
+verify against Claude, demo on Claude, and do not spend time on the other providers.
+
+**Do not read this as "the other providers work."** It is the opposite: it is the reason we
+accept that they are unverified. The specific debt:
+
+- **`encode-openai`'s image block has never met a live provider.** It is verified against
+  provider documentation and unit tests only (`{:type "image_url" :image_url {:url "data:…"}}`).
+  Every OpenAI-compatible provider — OpenAI, Zhipu, Moonshot — rides that one codepath, so if
+  the dialect is subtly wrong, **all three are broken and nothing in this plan would have caught
+  it.** The Anthropic half is proven live (Phase 04 read `VERIFY-7742` back off an attachment).
+- Closing it needs nothing more than one key for any OpenAI-compatible provider and one attached
+  image. It is a ten-minute job the moment a key exists — not a rewrite.
+- `glm-5v-turbo` is the one to try first when that day comes: it is the only non-Anthropic vision
+  model in the catalog, and it is a design-to-code specialist (Design2Code 94.8).
+
+**Before this ships to anyone outside the demo, either verify the OpenAI path or hide the
+non-Anthropic providers.** Offering a model that silently fails on an attached image is worse
+than not offering it.
+
+### Further decisions (2026-07-15, after Phase 01's evidence)
+
+5. **Guard on `render-wasm/v1` and degrade — no SVG fallback.** Agent vision is for
+   WASM-renderer users only; enable that renderer in settings for our own profile. Accepted
+   consequence: **SVG-renderer users get no agent vision at all.**
+6. **Multi-image return, no compositing.** There is no full-page render, so `render_board` takes
+   several boards and returns several image blocks rather than stitching a fake page.
+
+### Relationship to Phase 07 — **decided**
+
+**2026-07-15, the user's call: metaprompt Phase 07 is closed as superseded by this plan.** The
+metaprompt plan reached Phase 07 with this plan not yet started, and rather than run it as
+written the user chose to close it — correctly, because the two corrections below are not
+refinements, they are the difference between building the right tool and the wrong one:
+
+- **The spike is already answered** — use `render-shape-pixels`, synchronously; the exporter
+  service is the path to avoid.
+- **`render_region` was the wrong name** — the WASM API is per-shape, so region granularity does
+  not exist for free. This plan builds `render_board`.
+
+Phase 07 there would also have shipped only half the value: the shared image-block foundation
+unlocks user attachments too, which that phase never scoped.
+
+**What this plan inherits from it** (see its
+[closing note](../202607142003-agent-metaprompt/done-phase-07-render-refeed.md)): the
+structural-tools caveat and the cost-honesty warning are already carried in the risks below. The
+third inheritance is a hard-won correction and is folded into Phase 07 of this plan:
+**do not score blind-vs-seeing with `audit_file`.** Metaprompt Phase 06 measured it — a
+violations count scores the *floor* (no default names, no raw hex) and is structurally blind to
+design quality; a good and a mediocre design both score 0. Scoring this needs a judge model, a
+convention-aware check, or an honest human read.
+
+### Naming correction
+
+Phase 07 calls the tool `render_region`. **The WASM API renders a shape, not a rectangle** —
+`_render_shape_pixels` takes `(id, scale)` only. An arbitrary region would need a synthetic shape
+or the viewport-only `capture-canvas-snapshot`. This plan therefore builds **`render_board`**
+(a named board/shape, or the current selection) and treats "region" as out of scope.
+
+## Phases
+
+1. [Phase 01 — Prove the pixels](./done-phase-01-prove-the-pixels.md) — ✅ **done — it works,
+   better than assumed.** A text board renders in **4–40 ms** (160 ms first call) at **6 KB**,
+   with **legible text**, and an off-screen board rendered **byte-identical** to its on-screen
+   render — proving a true export, not a viewport capture. Cost is a non-issue (~0.5% of the
+   payload cap). **But two findings change the plan:** `render_board` only works on the **WASM
+   renderer, which is not the default** (a product decision, below), and **there is no full-page
+   render** — the root frame is 0.01×0.01 and silently returns a 1×1 PNG.
+2. [Phase 02 — Image blocks in the codecs](./done-phase-02-image-blocks.md) — ✅ **done**: the
+   shared foundation. `:images [{:mtype :data}]` on the canonical user message; `user-content`
+   split into `user-text` + a per-dialect encoder each. The no-image fast path returns a plain
+   string exactly as before. **10 tests, written failing first.** Verified against the
+   *documented* wire shapes only — **no image has reached a live model yet**; Phase 04 is the
+   real proof.
+3. [Phase 03 — Vision capability per model](./done-phase-03-vision-capability.md) — ✅ **done**:
+   a `:vision` flag on the catalog (moved to `data/ai-providers` so the agent can read it too),
+   plus `strip-images` so a mid-conversation switch to a text-only model degrades instead of
+   failing the whole history. Every model verified against provider docs — which also caught two
+   wrong context values (opus-4.8/sonnet-5 are 1M, not 200K) and **three dead or dying model
+   ids** still in the picker. That triggered a **catalog refresh** (same day, separate commit):
+   the lineup is now current, and **12 of 14 models see** — only Zhipu's `glm-5.2` and `glm-4.7`
+   are text-only, so degradation is now an in-provider distinction rather than a whole-provider
+   one.
+4. [Phase 04 — Attach images in the composer](./done-phase-04-composer-attach.md) — ✅ **done —
+   and the plan's foundation is now proven, not assumed.** Pick, paste, drop; ≤5; thumbnails;
+   remove; gated on `dai/vision?`. A live Claude read back an arbitrary string (`VERIFY-7742`)
+   from an attached image, so **the Anthropic codec is verified against a real provider**. The
+   OpenAI dialect still is not — no key for it here. Also produced Phase 05's number: **five
+   realistic screenshots are 66% of the payload cap in a single message** (743% for
+   photographic content), which makes downscale-on-attach urgent rather than defensive.
+5. [Phase 05 — Fit the budget](./done-phase-05-fit-the-budget.md) — ✅ **done**: cap the long
+   edge at 1568px + re-encode to WebP on attach, and prune images from all but the last 2 turns.
+   **The payload is now bounded, not merely smaller** — the pathological case is flat at ~60% of
+   cap from 2 turns to 60. A 12MP phone photo went from **544% of the cap on its own** to 6%
+   (90×). Verified live that 11px text survives the compression, so the fix costs nothing in
+   comprehension. Cap guard added, with the body build deferred into the stream so it actually
+   reaches the user.
+6. [Phase 06 — `render_board` tool](./done-phase-06-render-board-tool.md) — ✅ **done — the agent
+   has eyes.** Asked to describe a board it did not create, Opus reached for the tool unprompted
+   and said *"I looked at an actual rendered image of the board (not inferred from file data)"* —
+   verified from the wire, not its word: a real `image` block nested in a `tool_result`. **The
+   plan's "only large unknown" was a non-problem**: Anthropic's `tool_result` takes image blocks
+   first-class, so no user-message workaround. 131ms for 2 boards, ~$0.04/turn on Opus.
+   **Requires the WASM renderer** — the profile was switched to `:wasm` for the demo.
+7. [Phase 07 — See what you did](./done-phase-07-see-what-you-did.md) — ✅ **done — and the
+   re-feed was refuted, so it was not built.** Told to check its work, the agent ran
+   `modify → render → modify → render` **by itself** (4 renders, 3 edits, no harness). Harness
+   machinery would duplicate a loop the model already runs. Seeing beat blind decisively on an
+   inherited design — but partly for a confounded reason: **`read_design` cannot see inside a
+   board**, which cripples the blind arm for reasons unrelated to vision.
+
+**Sequencing note.** Attachments (02→05) come before the render tool (06→07) deliberately, even
+though the user asked about screenshots first. Attaching a photo is the cheapest possible
+end-to-end proof of the whole vision pipeline — codecs, provider, model — and it needs no WASM
+flag, no new tool, and no render. Once a pasted screenshot demonstrably reaches the model, the
+render tool is *only* the question of where the bytes come from. Phase 01 still runs first
+because it is cheap and its verdict can reshape the plan.
+
+## Acceptance Criteria
+
+- The canonical message model carries images, and **both** codecs encode them in their own
+  dialect, with tests covering each.
+- A user can attach up to 5 images by picker, paste, and drop; they render as thumbnails, are
+  individually removable, and the model demonstrably describes them.
+- Selecting a text-only model degrades gracefully — a clear affordance, never a provider error.
+- The 4M payload cap cannot be reached by normal use: images are downscaled on attach, and old
+  images are stripped from history.
+- Nothing is written to Penpot's media storage.
+- The agent can call `render_board` and act on what it sees, **or** the phase is explicitly
+  deferred with the spike's reason recorded.
+- The blind-vs-seeing claim is settled with evidence, including the honest cost per render.
+- `clj-kondo`, `cljfmt`, and `shadow-cljs compile main` stay clean; each phase verified live in
+  the devenv.
+
+## Open questions / risks
+
+- **Tool results may not be able to carry images on the OpenAI path.** Anthropic's `tool_result`
+  content is block-capable, so `render_board` can hand the PNG straight back. Most
+  OpenAI-compatible implementations **reject images in `tool` role messages**. The likely
+  workaround is: the tool returns text, and the image is appended as a following *user* message.
+  That asymmetry lands squarely in Phase 06 and is the single biggest unknown in this plan.
+  **Confirm it before designing the tool's return shape.**
+- **`render_board` only works on the WASM renderer, which is not the default.** ✅ *Measured in
+  Phase 01; **decided** 2026-07-15.* `:wasm-export` was a red herring — a product policy gate for
+  Penpot's own export feature, undeclared in `all-flags` and off everywhere. The real
+  precondition is **`render-wasm/v1`**, which is **off by default**: `:render-switch` ships
+  enabled, so the renderer comes from `[:profile :props :renderer]`, defaulting to **`:svg`**
+  (`features.cljs:36`). Without it the call throws `:wasm-critical` (an emscripten abort) —
+  **catchable, and the app survives** (verified), but the tool is dead for that user.
+  **Decision: guard on `render-wasm/v1` and degrade; enable the WASM renderer in settings for our
+  own profile. No SVG fallback.** The residual risk is now a *product* one, not a technical one:
+  **agent vision does not exist for SVG-renderer users**, which is most of them. If that becomes
+  unacceptable, the fallback (`render/render-frame` → `app.main.rasterizer/render`) is the known
+  price of universal support — unbuilt and unpriced.
+- **There is no full-page render.** ✅ *Measured in Phase 01; **decided** 2026-07-15.* The root
+  frame's selrect is **0.01 × 0.01** despite 22 top-level children, so rendering it returns an
+  84-byte **1×1 PNG** — silently, no error. **Decision: multi-image return** — the tool takes
+  several boards and returns several image blocks; no compositing. The agent renders **specific
+  boards**, never "the page". Phase 07's "re-feed the affected region" means **"the affected
+  board"**. Watch the token cost: N boards is N images, and that is the one place this decision
+  can get expensive.
+- **The render blocks the main thread** through a full Skia render + PNG encode. ✅ *Priced in
+  Phase 01:* 4–40 ms per board (160 ms on the first call only), 112 ms at scale 8. Fine for one
+  board on demand; still a jank risk for a re-feed loop that fires after every edit. **Scale 2 is
+  the sweet spot** — text already legible, 15 KB, 23 ms.
+- **Cost honesty, inherited from Phase 07.** An image is worth a lot of tokens. If seeing costs
+  10× and improves quality 5%, the honest answer is "gate it behind an explicit user action",
+  not "always on". Be genuinely open to refuting the hypothesis.
+- **Our tools are structural**, not freehand — the agent may already know where things are
+  because it placed them with explicit coordinates. The interesting case is a design it did
+  *not* create, or a WASM layout that settles differently than requested. Design the Phase 07
+  prompts around that case or the experiment trivially favours "blind is fine".
+- **Attachments do not survive reload** (decision 2). If that turns out to be annoying in
+  practice, persistence is a new plan, not a scope expansion here.
+- **A known upstream bug, adjacent but not ours:** `:jpeg`/`:webp` exports produce **PNG bytes
+  mislabelled** with the requested mimetype — the Rust side hardcodes PNG
+  (`render.rs:2419-2423`) while `export-image-uri` labels the blob from the requested type.
+  Harmless for us (we want PNG), worth reporting separately.
+
+## Completion Summary
+
+**Completed:** 2026-07-15 (same day it was created — seven phases, six commits)
+
+### What shipped
+
+Both halves of "let the model see", and both are **proven against a live model, not against
+documentation**:
+
+- **The user can attach images** — pick, paste or drop up to 5. A real Claude read an arbitrary
+  string (`VERIFY-7742`) back off an attachment, which is what retired the "the codecs match the
+  docs" caveat the plan carried from Phase 02.
+- **The agent can render boards and look at them** — `render_board`. Asked about a board it did
+  not author, Opus reached for it unprompted and said *"I looked at an actual rendered image of
+  the board (not inferred from file data)"*. Verified from the wire: a real `image` block nested
+  in a `tool_result`.
+- **Both are bounded.** Images are capped to 1568px + WebP on attach, and pruned from all but the
+  last 2 turns. The pathological payload is **flat at ~60% of cap from 2 turns to 60** — it stops
+  growing, which was the actual failure mode.
+- **Both degrade honestly.** A text-only model greys out the attach button and gets a note
+  instead of a silent lie; the SVG renderer gets a refusal naming the setting to change.
+
+### What changed from the original plan
+
+- **Phase 07's re-feed was refuted and not built.** The plan assumed the harness must re-feed a
+  render after each edit. It doesn't: the agent runs that loop itself. Not building it is the
+  phase's deliverable.
+- **Phase 01 pre-answered its own risk.** "Is a native render even reachable?" — the plan's
+  biggest open question — turned out to be one synchronous call. `:wasm-export`, the flag the
+  plan feared, was a red herring (undeclared, off everywhere, gates Penpot's own export feature).
+  The real gate is `render-wasm/v1`.
+- **"The only large unknown" was a non-problem.** Anthropic's `tool_result` takes image blocks
+  first-class. No workaround needed.
+- **A catalog refresh appeared out of nowhere.** Verifying `:vision` turned up **three dead or
+  dying model ids** and two wrong context windows. Fixed in its own commit.
+- **Phase 03's headline number is obsolete** — "half the catalog is text-only" became 2 of 14
+  after that refresh, and the surviving pair sits *inside* Zhipu, which is a better shape anyway.
+
+### Lessons & follow-ups
+
+- **`read_design` cannot see inside a board.** `summarize-shape` returns geometry for *top-level*
+  shapes only — no children. Both experiment arms hit it; both agents said so unprompted. Right
+  now `render_board` is the **only** way to introspect nested structure, which is a strange place
+  to be, and it means the blind-vs-seeing question has **never actually been tested fairly**.
+  This is the highest-value follow-up in the plan: fix it, then re-run Phase 07's experiment.
+- **The OpenAI codec has never met a live provider.** Anthropic-only was a deliberate call for
+  the 2026-07-17 demo (see the scope note above). All of OpenAI/Zhipu/Moonshot ride one
+  unverified codepath. Ten-minute job the moment a key exists.
+- **The demo profile is now on the WASM renderer.** `render_board` requires it. This is a durable
+  account-level change affecting every file.
+- **Measure before building.** Phase 05 was written around history accumulation; the measurement
+  said single-message size was the load-bearing problem. Phase 07 was written to build a re-feed;
+  the measurement said don't. Both phases would have shipped the wrong thing if built first.

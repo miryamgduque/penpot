@@ -23,6 +23,7 @@
    [app.main.store :as st]
    [app.main.ui.components.progress :refer [progress-notification-widget*]]
    [app.main.ui.context :as ctx]
+   [app.main.ui.dashboard.agent-skills :refer [agent-skills-page*]]
    [app.main.ui.dashboard.deleted :refer [deleted-section*]]
    [app.main.ui.dashboard.files :refer [files-section*]]
    [app.main.ui.dashboard.fonts :refer [fonts-page* font-providers-page*]]
@@ -32,6 +33,7 @@
    [app.main.ui.dashboard.projects :refer [projects-section*]]
    [app.main.ui.dashboard.search :refer [search-page*]]
    [app.main.ui.dashboard.sidebar :refer [sidebar*]]
+   [app.main.ui.dashboard.skills :refer [skills-page*]]
    [app.main.ui.dashboard.team :refer [team-settings-page* team-members-page* team-invitations-page* webhooks-page*]]
    [app.main.ui.dashboard.templates :refer [templates-section*]]
    [app.main.ui.hooks :as hooks]
@@ -150,6 +152,12 @@
 
        :dashboard-webhooks
        [:> webhooks-page* {:team team}]
+
+       :dashboard-skills
+       [:> skills-page* {:team team}]
+
+       :dashboard-agent-skills
+       [:> agent-skills-page* {:team team}]
 
        :dashboard-settings
        [:> team-settings-page* {:team team :profile profile}]

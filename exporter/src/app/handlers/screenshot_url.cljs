@@ -23,12 +23,13 @@
   Known residual risk (documented, accepted for the prototype): DNS rebinding
   between our lookup and Chromium's own resolution of the same hostname."
   (:require
-   ["undici" :as uhttp]
+   [app.auth :as auth]
    [app.browser :as bwr]
    [app.common.exceptions :as ex]
    [app.common.spec :as us]
    [app.common.uri :as u]
-   [app.config :as cf]
+   [app.jobs :as jobs]
+   [app.jobs.scheduler :as scheduler]
    [app.util.netguard :as ng]
    [cljs.spec.alpha :as s]
    [cuerdas.core :as str]
@@ -45,26 +46,6 @@
 (def ^:private viewport-height 800)
 (def ^:private max-page-height 2400)
 (def ^:private nav-timeout 15000)
-
-(defn- assert-authenticated!
-  "Validates the auth token against the backend (`get-teams` answers 200 only
-  for an authenticated profile). Promise of nil; raises `:unauthorized`."
-  [auth-token]
-  (if (str/blank? auth-token)
-    (p/rejected (ex/error :type :validation
-                          :code :unauthorized
-                          :hint "authentication required"))
-    (let [uri (-> (cf/get-internal-uri)
-                  (u/ensure-path-slash)
-                  (u/join "api/rpc/command/get-teams")
-                  (str))]
-      (->> (uhttp/fetch uri #js {:headers #js {"cookie" (str "auth-token=" auth-token)}})
-           (p/mcat (fn [response]
-                     (if (= 200 (.-status ^js response))
-                       (p/resolved nil)
-                       (p/rejected (ex/error :type :validation
-                                             :code :unauthorized
-                                             :hint "authentication required")))))))))
 
 (defn- guard-context-routes!
   "Re-checks EVERY request the page issues (subresources, redirect hops)
@@ -120,6 +101,55 @@
                                                (max viewport-height)
                                                (min max-page-height))}}))))
 
+(defn- capture!
+  [url full-page]
+  (bwr/exec! #js {:viewport #js {:width viewport-width
+                                 :height viewport-height}
+                  :deviceScaleFactor 1
+                  :userAgent bwr/default-user-agent}
+             (fn [page]
+               (p/let [context (.context ^js page)
+                       _       (guard-context-routes! context)
+                       _       (navigate! page url)
+                       shot    (shoot! page (boolean full-page))]
+                 shot))))
+
+(defn run-tracked!
+  "Runs `capture` (a fn of the job, promising the PNG bytes) as a real job, so
+  the screenshot answers to the same admission control as an export. Takes the
+  fn rather than calling `capture!` itself so a test can exercise the admission
+  path without a browser; it is handed the job so a capture can reach
+  `jobs/cancel-signal`. Public for tests.
+
+  A screenshot is not an export — it has no resource to hand back, so it
+  cannot use the export pipeline's prepare/resource machinery and answers
+  with the PNG inline instead. But it does take a browser from the same
+  bounded pool, and without a job it took one invisibly: an agent looping
+  `screenshot_page` could hold every browser while real exports waited on
+  `.acquire`, with nothing in the job API to show why. Going through the
+  scheduler gets the per-profile cap, the queue bound (`:queue-full` is
+  already a 429 upstream in `on-error`) and a cancellable, inspectable
+  record, while the caller still gets bytes."
+  [profile-id name capture]
+  (->> (jobs/create! {:profile-id profile-id
+                      :cmd :screenshot-url
+                      :backend "browser"
+                      :total 1
+                      :name name
+                      :resource-id nil}
+                     (fn [job]
+                       (->> (capture job)
+                            (p/fmap (fn [buffer]
+                                      ;; no uri/filename: nothing was stored,
+                                      ;; the bytes went straight to the caller
+                                      (jobs/complete! job {:mtype "image/png"
+                                                           :size (.-length ^js buffer)})
+                                      buffer))
+                            (p/merr (fn [cause]
+                                      (->> (jobs/fail! job cause)
+                                           (p/mcat (fn [_] (p/rejected cause)))))))))
+       (p/mcat scheduler/submit!)))
+
 (defn handler
   [{:keys [:request/auth-token] :as exchange} {:keys [url full-page]}]
   (let [{:keys [scheme host]} (u/uri url)]
@@ -127,19 +157,11 @@
       (ex/raise :type :validation
                 :code :invalid-url
                 :hint "url must be absolute http(s)"))
-    (->> (p/do!
-          (assert-authenticated! auth-token)
-          (ng/assert-public-host! host)
-          (bwr/exec! #js {:viewport #js {:width viewport-width
-                                         :height viewport-height}
-                          :deviceScaleFactor 1
-                          :userAgent bwr/default-user-agent}
-                     (fn [page]
-                       (p/let [context (.context ^js page)
-                               _       (guard-context-routes! context)
-                               _       (navigate! page url)
-                               shot    (shoot! page (boolean full-page))]
-                         shot))))
+    (->> (auth/require-profile-id auth-token)
+         (p/mcat (fn [profile-id]
+                   (p/do! (ng/assert-public-host! host)
+                          (run-tracked! profile-id host
+                                        (fn [_job] (capture! url full-page))))))
          (p/fmap (fn [buffer]
                    (-> exchange
                        (assoc :response/status 200)

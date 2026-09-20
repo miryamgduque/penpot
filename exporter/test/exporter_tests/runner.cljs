@@ -15,6 +15,7 @@
    [exporter-tests.jobs-test]
    [exporter-tests.renderer-svg-test]
    [exporter-tests.scheduler-test]
+   [exporter-tests.screenshot-url-test]
    [exporter-tests.shell-test]
    [exporter-tests.wasm-pool-test]
    [goog.object :as gobj]))
@@ -27,6 +28,7 @@
    'exporter-tests.jobs-test
    'exporter-tests.renderer-svg-test
    'exporter-tests.scheduler-test
+   'exporter-tests.screenshot-url-test
    'exporter-tests.shell-test
    'exporter-tests.wasm-pool-test])
 

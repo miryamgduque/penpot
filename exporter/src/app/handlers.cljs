@@ -113,7 +113,8 @@
   with the resource handle while the work runs."
   [{:keys [:request/params :request/auth-token] :as exchange}]
   (if (= :screenshot-url (:cmd params))
-    ;; Not an export: it renders an EXTERNAL page and answers with the PNG
-    ;; inline, so it never enters the jobs pipeline (no resource, no tracking).
+    ;; Not an export: it renders an EXTERNAL page and has no resource to hand
+    ;; back, so it answers with the PNG inline rather than going through
+    ;; export/prepare. It still runs as a scheduled job — see `run-tracked!`.
     (screenshot-url/handler exchange (us/conform ::screenshot-url/params params))
     (handle-export exchange params auth-token)))

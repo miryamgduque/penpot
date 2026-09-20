@@ -487,11 +487,14 @@
 
 (def ^:private screenshot-error-hints
   {:blocked-host "the host is private or blocked by this Penpot instance"
-   :unauthorized "your session was not accepted by the screenshot service"
+   :authentication-required "your session was not accepted by the screenshot service"
    :invalid-url "the url must be absolute http(s)"
    :unable-to-load-page "the page could not be loaded"
    :timeout "the screenshot service is busy — try again shortly"
-   :browser-not-ready "the screenshot service is busy — try again shortly"})
+   :browser-not-ready "the screenshot service is busy — try again shortly"
+   ;; a screenshot is admitted by the same scheduler as an export, so a busy
+   ;; exporter turns it away rather than queueing it behind every export
+   :queue-full "the export service is saturated — try again shortly"})
 
 (defn screenshot-error-message
   "One-line agent-facing message for a screenshot failure. Public for tests."

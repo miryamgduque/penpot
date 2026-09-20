@@ -1945,9 +1945,12 @@
 
 (t/deftest screenshot-errors-name-the-fix
   (t/is (str/includes? (atg/screenshot-error-message :blocked-host) "private"))
-  (t/is (str/includes? (atg/screenshot-error-message :unauthorized) "session"))
+  ;; the exporter reuses app.auth now, which raises :authentication-required
+  (t/is (str/includes? (atg/screenshot-error-message :authentication-required) "session"))
   (t/is (str/includes? (atg/screenshot-error-message :unable-to-load-page) "loaded"))
   (t/is (str/includes? (atg/screenshot-error-message :timeout) "busy"))
+  ;; a saturated exporter turns the screenshot away rather than queueing it
+  (t/is (str/includes? (atg/screenshot-error-message :queue-full) "saturated"))
   (t/is (str/includes? (atg/screenshot-error-message :odd-code) "odd-code")))
 
 ;; ---------------------------------------------------------------------------

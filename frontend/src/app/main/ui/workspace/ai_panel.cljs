@@ -1466,9 +1466,10 @@
      (get ask/reactive-label reactive reactive)]))
 
 (mf/defc skill-edit*
-  "Inline editor for a USER-CREATED skill: label, trigger phrase, reactive behavior and the
-  generated playbook body. The name slug is deliberately absent — it keys the
-  enable state and the router, so it never changes after creation."
+  "Inline editor for a USER-CREATED skill: label, trigger phrase, reactive
+  behavior and the generated playbook body. The name slug is deliberately
+  absent — it keys the enable state and the router, so it never changes after
+  creation."
   {::mf/private true}
   [{:keys [skill on-saved on-cancel]}]
   (let [label*    (mf/use-state (or (:label skill) ""))
@@ -1503,7 +1504,7 @@
               :value trigger
               :on-change #(reset! trigger* (dom/get-value (dom/get-target %)))}]
 
-     [:label {:class (stl/css :create-label)} "Mode"]
+     [:label {:class (stl/css :create-label)} "Behavior"]
      [:div {:class (stl/css :create-modes)}
       (for [[m lbl] [["on-demand" "💬 On-demand"] ["observer" "👁 Observer"]]]
         [:button {:key m

@@ -4,8 +4,11 @@ description: Expose a new tool or parameter to the in-app Penpot design agent â€
 ---
 
 <!-- TRANSIENT dev tooling â€” committed only so collaborators on this branch can
-     see it. DELETE the whole `.claude/skills/` entry before the PR merges; it is
-     not part of the Penpot product. -->
+     see it. DELETE THIS SKILL'S OWN DIRECTORY before the PR merges; it is not
+     part of the Penpot product. Do NOT delete `.agents/skills/` or the
+     `.claude/skills` symlink: those are upstream's and hold real project
+     skills. The branch's transient ones are the directories carrying this
+     banner. -->
 
 # Exposing a new tool or parameter to the in-app agent
 

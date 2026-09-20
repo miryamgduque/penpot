@@ -24,9 +24,9 @@
                                                    ::rpc/profile-id profile-id}
                                                   params))))
         set-enabled!       (fn [& {:as params}]
-                     (th/command! (merge {::th/type :set-skill-enabled
-                                          ::rpc/profile-id profile-id}
-                                         params)))]
+                             (th/command! (merge {::th/type :set-skill-enabled
+                                                  ::rpc/profile-id profile-id}
+                                                 params)))]
 
     (t/testing "no state initially"
       (t/is (empty? (get!))))

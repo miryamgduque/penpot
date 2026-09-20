@@ -71,6 +71,7 @@
   // width comes as an inline style from the resize hook (drag handle on the
   // left edge, global persistence); $s-360 stays the floor/default in cljs
   height: 100%;
+
   // The workspace row is `1fr`, i.e. minmax(auto, 1fr) — its *auto minimum*
   // is the content's min-content height, so without this a long transcript
   // grows the row past the viewport and `.workspace` (overflow:hidden) just
@@ -253,7 +254,7 @@
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
   background-color: var(--color-background-primary);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
 }
 
 // A navigation row in the menu: icon + label, opens a destination (US #38 moved
@@ -330,6 +331,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+
   // grid item of the DS `.tab-panel`; same auto-minimum story as `.ai-panel`
   min-height: 0;
 }
@@ -681,6 +683,7 @@
   flex-direction: column;
   gap: deprecated.$s-2;
   min-inline-size: 0;
+
   // Room so the text never runs under the absolutely-positioned ✕.
   padding-inline-end: deprecated.$s-24;
 }
@@ -829,6 +832,7 @@
   @include scaled-body-small;
 
   color: var(--color-foreground-secondary);
+
   // the composed message can be long; two lines is enough of a preview
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -869,12 +873,15 @@
   gap: deprecated.$s-8;
   padding: var(--sp-m);
   overflow-y: auto;
+
   // The workspace sets `user-select: none` globally; re-enable it here so the
   // conversation text can be selected and copied.
   user-select: text;
+
   // flex items default to min-height:auto, which would size us to content and
   // silently defeat the overflow-y above
   min-height: 0;
+
   // the tab-switcher wraps us in a `scrollable-panel` (also overflow-y:auto);
   // without this, scrolling past our end chains up to it
   overscroll-behavior: contain;
@@ -1023,6 +1030,7 @@
     padding: deprecated.$s-8;
     border-radius: deprecated.$br-4;
     background-color: var(--color-background-primary);
+
     // long lines scroll inside the block rather than widening the panel
     overflow-x: auto;
 
@@ -1055,7 +1063,7 @@
 }
 
 // Tool-call marker chip (e.g. read_design ✓)
-.tool-chip {
+%tool-chip {
   @include scaled-body-small;
 
   display: flex;
@@ -1066,6 +1074,10 @@
   border-radius: deprecated.$br-8;
   background-color: var(--color-background-tertiary);
   color: var(--color-foreground-secondary);
+}
+
+.tool-chip {
+  @extend %tool-chip;
 }
 
 .tool-chip-glyph {
@@ -1093,7 +1105,7 @@
 }
 
 .tool-group-summary {
-  @extend .tool-chip;
+  @extend %tool-chip;
 
   cursor: pointer;
   border: none;
@@ -1135,10 +1147,10 @@
   color: var(--color-foreground-secondary);
   font-family: monospace;
   font-size: calc(#{deprecated.$fs-11} * var(--ai-font-scale, 1));
+
   // a long JSON payload must scroll inside its box, never widen the panel
-  overflow-x: auto;
+  overflow: auto;
   max-height: deprecated.$s-160;
-  overflow-y: auto;
   white-space: pre;
 }
 
@@ -1162,6 +1174,7 @@
   @include scaled-body-small;
 
   color: var(--color-foreground-secondary);
+
   // thinking is prose with paragraph breaks, not markdown — keep the breaks,
   // wrap the lines, and never let a long round widen the panel
   white-space: pre-wrap;
@@ -1175,6 +1188,7 @@
 
   flex: 1;
   display: flex;
+
   // Sit the bot just above the composer, on the left.
   align-items: flex-end;
   justify-content: flex-start;
@@ -1203,12 +1217,29 @@
 }
 
 @keyframes bot-greet {
-  0%   { transform: rotate(0deg) translateY(0) scale(1.5); }
-  15%  { transform: rotate(5deg) translateY(0) scale(1.5); }
-  30%  { transform: rotate(-10deg) translateY(0) scale(1.5); }
-  45%  { transform: rotate(0deg) translateY(-5px) scale(1.5); }
-  60%  { transform: rotate(0deg) translateY(0) scale(1.5); }
-  100% { transform: rotate(0deg) translateY(0) scale(1.5); }
+  0% {
+    transform: rotate(0deg) translateY(0) scale(1.5);
+  }
+
+  15% {
+    transform: rotate(5deg) translateY(0) scale(1.5);
+  }
+
+  30% {
+    transform: rotate(-10deg) translateY(0) scale(1.5);
+  }
+
+  45% {
+    transform: rotate(0deg) translateY(-5px) scale(1.5);
+  }
+
+  60% {
+    transform: rotate(0deg) translateY(0) scale(1.5);
+  }
+
+  100% {
+    transform: rotate(0deg) translateY(0) scale(1.5);
+  }
 }
 
 .composer {
@@ -1222,6 +1253,7 @@
 // Model picker: a custom dropdown that opens upward, with a manage-models link.
 .model-picker {
   position: relative;
+
   // Half width, pushed to the right of the composer footer.
   width: 50%;
   margin-inline-start: auto;
@@ -1261,10 +1293,10 @@
 .model-picker-menu {
   position: absolute;
   inset-block-end: calc(100% + deprecated.$s-4);
+
   // Right-anchored so it lines up with the half-width trigger, but free to grow
   // left to fit full model names rather than truncating to half.
-  inset-inline-start: auto;
-  inset-inline-end: 0;
+  inset-inline: auto 0;
   min-inline-size: 100%;
   inline-size: max-content;
   max-inline-size: 260px;
@@ -1278,7 +1310,7 @@
   border-radius: deprecated.$br-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
-  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 30%);
+  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 0.3);
 }
 
 .model-picker-group-label {
@@ -1420,7 +1452,7 @@
   border-radius: deprecated.$br-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
-  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 30%);
+  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 0.3);
 }
 
 .slash-option {
@@ -1633,7 +1665,7 @@
   border-radius: 50%;
   background-color: var(--color-background-quaternary);
   color: var(--color-foreground-primary);
-  font-size: 9px;
+  font-size: 0.5625rem;
   line-height: 1;
   cursor: pointer;
 }
@@ -1649,7 +1681,7 @@
   border-radius: deprecated.$br-8;
   color: var(--color-foreground-secondary);
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .skill-edit {
@@ -1782,6 +1814,7 @@
   flex-direction: column;
   gap: deprecated.$s-8;
   padding: deprecated.$s-8;
+
   // fill the panel body (a definite-height flex item) so the read view scrolls
   // instead of overflowing when a foundation doc is long
   block-size: 100%;
@@ -1794,6 +1827,7 @@
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
   background-color: var(--color-background-primary);
+
   // .message-md inherits its text color; in the transcript the bubble sets
   // it, but here the workspace default (yellow) would leak through.
   color: var(--color-foreground-primary);
@@ -2241,6 +2275,7 @@
 .composer-send,
 .composer-stop {
   position: absolute;
+
   // Vertically centred in the single-line input (36 − 28 = 8, split top/bottom).
   inset-block-end: deprecated.$s-4;
   inset-inline-end: deprecated.$s-8;
@@ -2338,14 +2373,17 @@
   display: block;
   box-sizing: border-box;
   width: 100%;
+
   // Starts as a single line (snug, so the one line sits vertically centred); the
   // JS auto-grow takes it from here up to the cap.
   min-height: deprecated.$s-36;
+
   // Auto-grows with content (JS sets the height) up to here, then scrolls.
   max-height: 200px;
   overflow-y: auto;
   resize: none;
   padding: deprecated.$s-8;
+
   // Reserve the bottom-right corner so text never runs under the send/stop
   // button. Attach now lives below the input, so the left side is normal.
   padding-inline-end: deprecated.$s-44;
@@ -2639,6 +2677,7 @@ textarea.create-input {
 .catalog-group {
   display: flex;
   flex-direction: column;
+
   // Rows are flush; the per-card divider separates them.
   gap: 0;
 }
@@ -2659,6 +2698,7 @@ textarea.create-input {
   gap: deprecated.$s-1;
   width: 100%;
   padding: deprecated.$s-8 deprecated.$s-12;
+
   // A divider between skills instead of a box border — same line, dropped on the
   // last row of a group. Rows sit flush (group gap is 0) so the cards' padding
   // frames the line symmetrically.
@@ -2666,6 +2706,7 @@ textarea.create-input {
   background-color: transparent;
   text-align: start;
   cursor: pointer;
+
   // Declared here (not only on .catalog-card-new) so removing that modifier
   // class — the US #52 highlight fading after 20s — transitions back smoothly
   // instead of snapping.
@@ -2757,7 +2798,6 @@ textarea.create-input {
   white-space: nowrap;
 }
 
-
 // Anchors the ⋯ overflow menu inside the clickable row. Muted so it recedes but
 // stays visible without hover (touch-friendly, per the story); full contrast on
 // hover/focus.
@@ -2806,7 +2846,7 @@ textarea.create-input {
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
   background-color: var(--color-background-primary);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
 }
 
 .menu-option {

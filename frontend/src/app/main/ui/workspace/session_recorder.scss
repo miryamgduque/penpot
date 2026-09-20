@@ -108,6 +108,7 @@
   inline-size: deprecated.$s-8;
   block-size: deprecated.$s-8;
   border-radius: 50%;
+
   // deliberate hard-coded hue: see the note at the top
   background-color: #e11d48;
   animation: rec-pulse 1.6s ease-in-out infinite;
@@ -165,7 +166,7 @@
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
   background-color: var(--color-background-primary);
-  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 25%);
+  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 0.25);
 }
 
 .popover-head {

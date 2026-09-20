@@ -35,6 +35,9 @@
   position: relative;
   z-index: deprecated.$z-index-1;
 
+  // `plugin-modal` is the custom element the plugin runtime injects; stylelint
+  // only knows the HTML tag list, so it reads as an unknown type selector.
+  /* stylelint-disable-next-line selector-type-no-unknown */
   &:has(plugin-modal) {
     width: 420px;
   }

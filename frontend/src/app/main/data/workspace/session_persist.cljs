@@ -165,14 +165,14 @@
    (ptk/reify ::flush-session
      ptk/WatchEvent
      (watch [_ state _]
-      (let [file-id (or file-id* (:current-file-id state))
-            s       (sr/session state file-id)]
-        (when (should-flush? s)
-          (->> (rp/cmd! :upsert-design-session (flush-payload s))
-               (rx/mapcat (fn [_]
-                            (when-not (:active? s) (forget-active!))
-                            (rx/of (flushed file-id))))
-               (rx/catch (fn [_] (rx/of (flush-failed file-id)))))))))))
+       (let [file-id (or file-id* (:current-file-id state))
+             s       (sr/session state file-id)]
+         (when (should-flush? s)
+           (->> (rp/cmd! :upsert-design-session (flush-payload s))
+                (rx/mapcat (fn [_]
+                             (when-not (:active? s) (forget-active!))
+                             (rx/of (flushed file-id))))
+                (rx/catch (fn [_] (rx/of (flush-failed file-id)))))))))))
 
 ;; --- the file's session list
 

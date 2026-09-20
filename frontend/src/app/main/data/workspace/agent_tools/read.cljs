@@ -298,7 +298,7 @@
 
                                 :else
                                 (try
-                                  (let [bytes (wasm.api/render-shape-pixels id scale)]
+                                  (let [bytes (wasm.api/render-shape-pixels id scale :png)]
                                     {:name (or (:name (get objects id)) term)
                                      :id (str id)
                                      ;; raw PNG pixels; encoding decides the format

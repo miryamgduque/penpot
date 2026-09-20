@@ -1,15 +1,8 @@
 {:deps {:aliases [:dev]}
- :source-paths ["src" "test" "vendor" "../common"]
+ :source-paths ["src" "vendor" "../common"]
 
  :builds
- {:test
-  {:target :node-test
-   ;; .cjs: the exporter package.json is "type":"module" and the node-test
-   ;; target emits CommonJS
-   :output-to "target/tests.cjs"
-   :ns-regexp "-test$"}
-
-  :main
+ {:main
   {:target :esm
    :runtime :node
    :output-dir "target/"

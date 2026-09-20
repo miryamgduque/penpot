@@ -35,14 +35,14 @@
                         :name "tone-of-voice-checker"
                         :label "Tone of voice checker"
                         :category "Audits"
-                        :mode "suggest"
+                        :reactive "on-demand"
                         :trigger "Check the tone of voice on this screen."
                         :description "Reviews copy against a described tone."
                         :body "# Tone of voice checker\n\nFlag copy that doesn't match.")]
         (t/is (nil? (:error out)))
         (t/is (= "tone-of-voice-checker" (:name (:result out))))
         (t/is (= "Audits" (:category (:result out))))
-        (t/is (= "suggest" (:mode (:result out))))
+        (t/is (= "on-demand" (:reactive (:result out))))
         (t/is (= true (:enabled (:result out))))
         (t/is (some? (:id (:result out))))))
 
@@ -57,7 +57,7 @@
                         :name "tone-of-voice-checker"
                         :label "Tone of voice checker (again)"
                         :category "Audits"
-                        :mode "suggest"
+                        :reactive "on-demand"
                         :body "# again")]
         (t/is (nil? (:error out)))
         (t/is (= "tone-of-voice-checker-2" (:name (:result out))))
@@ -65,6 +65,6 @@
 
     (t/testing "a second profile does not see the first's skills"
       (t/is (empty? (list-skills pid2)))
-      (create pid2 :name "my-skill" :label "My skill" :category "Build" :mode "review" :body "# b")
+      (create pid2 :name "my-skill" :label "My skill" :category "Build" :reactive "observer" :body "# b")
       (t/is (= 1 (count (list-skills pid2))))
       (t/is (= 2 (count (list-skills pid1)))))))

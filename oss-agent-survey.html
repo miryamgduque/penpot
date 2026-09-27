@@ -46,12 +46,12 @@
 
   <p class="kicker">Internal research · condensed</p>
   <h1>What eleven open-source AI agents taught us</h1>
-  <p class="meta">2026-07-19 · Three researchers pulled the actual prompt and config source files from each project's repo, and mapped what they found against our own architecture and our measured weaknesses (the Kahoot and NYT postmortems).</p>
+  <p class="meta">2026-07-19 · Pulled the actual prompt and config source files from each project's repo, and mapped what we found against our own architecture and our measured weaknesses (the Kahoot and NYT postmortems).</p>
 
   <p><strong>What's in the set:</strong> nine of the eleven are AI <em>coding</em> agents; only Onlook is a true design tool, with bolt.diy as a UI generator. So this is mostly a survey of <em>agent architecture and prompting patterns</em> that carry across domains, plus how rule-enforcement looks across the field, not a head-to-head of design competitors.</p>
 
   <h2>The one line that matters for the pitch</h2>
-  <p>Every researcher independently confirmed the same thing: <strong>enforcing rules structurally, at the point a change is made, is rare even among these coding agents, and nobody does it for design.</strong> Roo Code is the only one enforcing <em>anything</em> at the tool (file restrictions); the two design-adjacent tools (Onlook, bolt.diy) rely on prompts and preview instead. That's the claim behind "Reason 1."</p>
+  <p>The finding held across all eleven: <strong>enforcing rules structurally, at the point a change is made, is rare even among these coding agents, and nobody does it for design.</strong> Roo Code is the only one enforcing <em>anything</em> at the tool (file restrictions); the two design-adjacent tools (Onlook, bolt.diy) rely on prompts and preview instead. That's the claim behind "Reason 1."</p>
 
   <h2>Where we were already ahead</h2>
   <ul class="ahead">

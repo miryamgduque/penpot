@@ -119,6 +119,11 @@
   .lead { font-size: 1.12rem; color: var(--text-soft); max-width: 40rem; margin: 0; }
   #top .lead { font-size: clamp(1.02rem, 1.7vw, 1.18rem); }
   #shift .lead, #teams .lead { max-width: 54rem; }
+  #bottom-line { padding-block: clamp(4.5rem, 11vw, 8.5rem); }
+  .closing { max-width: 72rem; margin-inline: auto; text-align: center; }
+  .closing__head { margin: 0 auto 1.1rem; color: var(--text); font-family: var(--font-sans); font-weight: 650;
+    font-size: clamp(1.2rem, 2.1vw, 1.6rem); line-height: 1.25; letter-spacing: -.02em; text-wrap: balance; }
+  .closing .lead { max-width: 46rem; margin-inline: auto; }
   p { margin: 0 0 1rem; }
   a { color: var(--skill); text-underline-offset: 3px; }
   :focus-visible { outline: 2px solid var(--skill); outline-offset: 3px; border-radius: 3px; }
@@ -280,7 +285,7 @@
     <a href="#why">For users</a>
     <a href="#teams">For teams</a>
     <a href="#compare">Compare</a>
-    <a href="#built">What we built</a>
+    <a href="#built">How it works</a>
   </nav>
   <a class="nav__deck" href="deck.html">Plan &rarr;</a>
 </header>
@@ -352,27 +357,32 @@
         <div class="card">
           <p class="card__label">bidirectional</p>
           <h3>The design talks back</h3>
-          <p>Not a one-way prompt. The agent reads your live file and tokens; the file flags rule violations back, to the agent and to you, as you work, and batches them into one fix.</p>
+          <p>The agent reads your live file and tokens, and the file flags what breaks a rule, to the agent and to you, as you work. One click hands it to the agent to fix.</p>
         </div>
         <div class="card">
           <p class="card__label">embedded</p>
-          <h3>No external app to reach the tools</h3>
-          <p>The chat agent is a panel next to your canvas. You don't open Claude Code or Cursor to use the design tools; they're already here, where you're designing.</p>
-        </div>
-        <div class="card">
-          <p class="card__label">no&#8209;sync</p>
-          <h3>Nothing to keep in sync</h3>
-          <p>Skills live in Penpot, in the file and in the team database, seeded from the official penpot-ai-kit. No rule files to copy into each person's setup, no drift between them.</p>
-        </div>
-        <div class="card">
-          <p class="card__label">layered</p>
-          <h3>Rules at every level</h3>
-          <p>Manage skills &amp; rules for the whole company, one team, or a single file. They cascade (most-specific wins) and anything marked mandatory can't be loosened below.</p>
+          <h3>No external app</h3>
+          <p>The agent is a panel next to your canvas. You don't open Claude Code or Cursor to use the design tools; they're already where you design.</p>
         </div>
         <div class="card card--rule">
           <p class="card__label">enforced</p>
           <h3>Guardrails, not suggestions</h3>
-          <p>&ldquo;Use only our color tokens&rdquo; isn't advice. The write path rejects an off-token fill or stroke, no matter which AI model made it.</p>
+          <p>&ldquo;Use only our color tokens&rdquo; isn't advice. A change that breaks a strict rule is rejected when it's written, whichever model made it.</p>
+        </div>
+        <div class="card">
+          <p class="card__label">self&#8209;review</p>
+          <h3>It checks its own work</h3>
+          <p>Before handing work back, the agent renders what it built and reviews it, so you get fewer surprises to fix.</p>
+        </div>
+        <div class="card">
+          <p class="card__label">handoff</p>
+          <h3>A handoff coding agents can use</h3>
+          <p>Tokens, component structure and generated code, so Claude Code or Cursor build with your real system, not from a screenshot.</p>
+        </div>
+        <div class="card">
+          <p class="card__label">your model</p>
+          <h3>Your model, your data</h3>
+          <p>Use the model you choose, including an open one running on your own machines, so your designs don't have to leave the company.</p>
         </div>
       </div>
     </div>
@@ -385,7 +395,8 @@
       <h2>Set the conventions once and everyone inherits them.</h2>
       <p class="lead" style="margin-bottom:1rem">Tokens settled your values and components your building blocks. Neither could hold the part that lingers in people's heads: how you validate a form, what you never ship, the house style&hellip;</p>
       <p class="lead" style="margin-bottom:1rem">That layer has always lived somewhere fragile: a doc getting old, something a teammate once explained to you, or a pattern you deduced by copying what everyone else seemed to be doing.</p>
-      <p class="lead">Now one person briefs the agent once and it becomes how it behaves for everyone. New designers inherit the conventions, and nobody has to be the design police.</p>
+      <p class="lead" style="margin-bottom:1rem">Now one person briefs the agent once and it becomes how it behaves for everyone. New designers inherit the conventions, and nobody has to be the design police.</p>
+      <p class="lead">Conventions can be set for the whole organization, a team, your own account or a single file. The most specific one wins, and the organization can mark some as mandatory so no team or file loosens them. They live in Penpot, so there are no rule files to copy onto each person's machine.</p>
       <div class="stack" style="margin-top:1.8rem">
         <div class="row"><div class="rlabel">Tokens</div><div class="rdesc">what values are allowed</div></div>
         <div class="row"><div class="rlabel">Components</div><div class="rdesc">what things are built from</div></div>
@@ -400,7 +411,7 @@
     <div class="wrap">
       <p class="kicker">The closest analogy in structure</p>
       <h2>Cursor put the rules next to the code. This puts them <em>inside the design</em>.</h2>
-      <p class="lead" style="margin-bottom:.4rem; max-width:none">If you've used Cursor, you already have the model: an AI that follows rules you've written down. Same idea, different world: Cursor governs code, this governs the design. The one difference that matters is whether those rules are <em>advisory</em> or <em>enforced</em>.</p>
+      <p class="lead" style="margin-bottom:.4rem; max-width:none">If you've used Cursor, you already have the model: an AI that follows rules you've written down. Same idea, different world: Cursor governs code, this governs the design. The main difference is whether those rules are <em>advisory</em> or <em>enforced</em>.</p>
       <div class="tablewrap">
         <table>
           <thead>
@@ -409,11 +420,11 @@
           <tbody>
             <tr><th scope="row">Where you work</th><td>A separate AI code editor</td><td class="us">Inside Penpot, where you already design</td></tr>
             <tr><th scope="row">What it governs</th><td>Your code</td><td class="us">The design itself: layers, colors, tokens, and the intent behind it</td></tr>
-            <tr><th scope="row">Where rules live</th><td>Rules files in each repo</td><td class="us">In Penpot at organization / team / file level; they travel with the design</td></tr>
-            <tr class="spot"><th scope="row">How rules apply</th><td>Advisory, guidance added to the prompt</td><td class="us">Enforced: the write path rejects violations, any model</td></tr>
+            <tr><th scope="row">Where rules live</th><td>Rules files in the repo, plus team rules</td><td class="us">In Penpot, at the organization, team and file level; they travel with the design</td></tr>
+            <tr class="spot"><th scope="row">How rules apply</th><td>Advisory, guidance added to the prompt</td><td class="us">Enforced: a change that breaks a strict rule is rejected when it's written, whatever the model</td></tr>
             <tr><th scope="row">Setup per person</th><td>Each person installs &amp; configures the editor</td><td class="us">Nothing to install; managed once, in the product</td></tr>
             <tr><th scope="row">Direction</th><td>You prompt it</td><td class="us">Bidirectional: the design flags issues back and the agent reads live context</td></tr>
-            <tr><th scope="row">Works with any AI</th><td>Yes, its models</td><td class="us">Yes, bring your own key; any model</td></tr>
+            <tr><th scope="row">Works with any AI</th><td>A choice of models</td><td class="us">Yes, any model, including one you host yourself</td></tr>
           </tbody>
         </table>
       </div>
@@ -423,24 +434,22 @@
   <!-- WHAT WE BUILT -->
   <section class="band band--surface" id="built">
     <div class="wrap prose">
-      <p class="kicker">What we built</p>
-      <h2>Three moving parts, one idea.</h2>
-      <p class="lead">It lives in three places in Penpot: the backend, the dashboard, and the canvas, wired together so a rule you set once works the same everywhere.</p>
+      <p class="kicker">How it works</p>
+      <h2>Three parts of Penpot, working together.</h2>
+      <p class="lead">The agent lives in three places in Penpot: the backend, the dashboard and the canvas. They're connected so a rule set once applies the same way everywhere.</p>
     </div>
     <div class="wrap stack">
-      <div class="row"><div class="rlabel">The engine</div><div class="rdesc">Works out which of your rules apply (company, team, or file) and blocks any change that breaks a strict one the moment it's written, whatever AI made it.</div></div>
-      <div class="row"><div class="rlabel">The control room</div><div class="rdesc">A page in Penpot's dashboard to write your rules and switch them on or off, for the whole company or one team. It comes with 12 ready-made ones from Penpot's kit.</div></div>
-      <div class="row"><div class="rlabel">The workspace</div><div class="rdesc">A panel beside your canvas with two tabs: chat with the agent, or manage your rules. As you work it flags anything off-rule and hands it to the agent to fix in one pass.</div></div>
+      <div class="row"><div class="rlabel">The engine</div><div class="rdesc">Works out which rules apply to each file, from the organization down to the file, and rejects any change that breaks a strict one the moment it's written, whatever model made it.</div></div>
+      <div class="row"><div class="rlabel">The control room</div><div class="rdesc">A page in the team's dashboard where the team writes its skills and rules and shares them, so everyone works from the same set. It comes with ready-made ones from Penpot's kit.</div></div>
+      <div class="row"><div class="rlabel">The workspace</div><div class="rdesc">A panel beside your canvas with two tabs: chat with the agent, or manage your rules. As you work it flags anything off-rule and hands it to the agent to fix in one step.</div></div>
     </div>
   </section>
 
   <!-- THE BOTTOM LINE -->
   <section class="band" id="bottom-line">
-    <div class="wrap prose">
-      <p class="kicker">The bottom line</p>
-      <h2>Set once. Shared by the team. Enforced on every write.</h2>
-      <p class="lead">Your rules live in the design, not in someone's head or a doc the AI can skip. Anyone can design fast, any AI you bring stays on-brand, and nobody's left cleaning up off-brand work after the fact.</p>
-      <a class="deeplink" href="deck.html">See how it's built, and where it's going <span class="arw" aria-hidden="true">&rarr;</span></a>
+    <div class="closing">
+      <p class="closing__head">Your conventions live in Penpot, where every agent can read them, and the strict ones are checked the moment work is written.</p>
+      <p class="lead">Designers can move fast without leaving someone to clean up off-brand work afterwards.</p>
     </div>
   </section>
 

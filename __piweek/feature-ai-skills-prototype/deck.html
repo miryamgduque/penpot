@@ -204,7 +204,7 @@
   <h1>Un agente de IA de diseño, integrado en Penpot</h1>
   <p class="big" style="margin-top:1.4rem">El enfoque que tomamos al integrarlo en el producto y cómo puede funcionar
   tanto en nuestros servidores como en los del cliente, incluyendo modelos open source que ellos mismos alojan.</p>
-  <p style="margin-top:2.4rem"><span class="tag" data-tip="Las 58 acciones que la IA puede realizar dentro de Penpot, como crear formas o aplicar tokens.">58 herramientas nativas</span><span class="tag" data-tip="Comprobaciones automáticas que cubren la función.">cientos de tests</span><span class="tag tag--affirm">sincronizado con upstream develop</span></p>
+  <p style="margin-top:2.4rem"><span class="tag" data-tip="Las 58 acciones que la IA puede realizar dentro de Penpot, como crear formas o aplicar tokens.">58 tools nativas</span><span class="tag" data-tip="Comprobaciones automáticas que cubren la función.">cientos de tests</span><span class="tag tag--affirm">sincronizado con upstream develop</span></p>
 </section>
 <section class="slide">
   <h2>Lo que se ha construido</h2>
@@ -215,7 +215,7 @@
       <li><strong>Foundations / DESIGN.md</strong>, un breve brief de diseño que se guarda con cada archivo, siguiendo la convención DESIGN.md de Google. Una entrevista rápida lo rellena, y se añade a cada conversación con la IA.</li>
     </ul>
     <ul>
-      <li><strong>Enforcement</strong>, reglas comprobadas en el write-path: un hex sin token en un archivo solo-tokens es <em>rechazado por la herramienta</em>, no simplemente desaconsejado por el prompt.</li>
+      <li><strong>Enforcement</strong>, reglas comprobadas en el write-path: un hex sin token en un archivo solo-tokens es <em>rechazado por la tool</em>, no simplemente desaconsejado por el prompt.</li>
       <li><strong>Modos de operación</strong>, gobernanza gradual: <em>suggest</em> para auditorías, <em>apply-with-review</em> como opción por defecto para trabajo generativo, <em>auto-fix</em> solo para un conjunto seguro predefinido (hoy, renombrados de capa; el resto del whitelist, como sustituciones de token, reordenar sin cambiar geometría o añadir metadata, está definido pero aún no conectado).</li>
       <li><strong>Observers</strong>, vigilantes ambientales que marcan infracciones mientras trabajas; "Arreglar por chat" se las pasa al agente. <strong>Audit</strong>, un escaneo del archivo bajo demanda que lista las infracciones de las reglas activas en ese momento.</li>
       <li><strong>Chats persistentes</strong>, las conversaciones se guardan por archivo y vuelven a aparecer al reabrirlo, junto con lo que costó cada una.</li>
@@ -227,10 +227,10 @@
   <h2>El agente trabaja dentro del workspace</h2>
   <p style="margin-bottom:1.4rem">La otra vía ya existe: el propio servidor MCP de Penpot, manejado desde fuera por agentes externos (Claude Code, Cursor, VS Code, Codex).</p>
   <ul>
-    <li class="explain"><strong>Sin desincronización:</strong> el agente, sus herramientas y las skills built-in van en el mismo código que Penpot.<span class="detail">Si alguien cambia una parte de Penpot que usan las herramientas del agente, el fallo aparece al compilar o en los tests del propio repositorio, no cuando alguien intenta usar el agente. Las instrucciones y skills de un agente externo viven fuera de Penpot, así que un cambio en Penpot puede dejarlas desfasadas sin que nadie lo note hasta usarlas.</span></li>
+    <li class="explain"><strong>Sin desincronización:</strong> el agente, sus tools y las skills built-in van en el mismo código que Penpot.<span class="detail">Si alguien cambia una parte de Penpot que usan las tools del agente, el fallo aparece al compilar o en los tests del propio repositorio, no cuando alguien intenta usar el agente. Las instrucciones y skills de un agente externo viven fuera de Penpot, así que un cambio en Penpot puede dejarlas desfasadas sin que nadie lo note hasta usarlas.</span></li>
     <li class="explain"><strong>Skills del equipo, no de cada portátil:</strong> un agente externo carga archivos de skill sin niveles ni forma de hacerlos cumplir.<span class="detail">Aquí las skills viven en Penpot por niveles (built-in, equipo, cuenta personal, archivo) y se activan o desactivan en cada uno, como se explica en el Punto 3. Un agente externo carga archivos de skill desde la máquina de cada persona o, como mucho, desde un repositorio compartido, y son solo texto en el prompt.</span></li>
     <li class="explain"><strong>Skills reactivas:</strong> los observers vigilan el archivo mientras trabajas; un agente externo solo actúa cuando se le llama.<span class="detail">Los observers necesitan estar presentes en el workspace: revisan cada cambio mientras el panel del agente está abierto y te avisan si algo rompe una regla. Un agente conectado por MCP no ve lo que pasa en el archivo hasta que alguien le pide algo.</span></li>
-    <li class="explain"><strong>Herramientas concretas en lugar de código libre:</strong> el agente usa 58 herramientas con parámetros definidos, así que cada cambio se puede revisar contra las reglas antes de aplicarse.<span class="detail">El servidor MCP de Penpot da a los agentes externos <code>execute_code</code>: el agente escribe JavaScript sobre la API de plugins y Penpot lo ejecuta. Puede hacer cualquier cosa, pero como es código libre no se puede saber de antemano qué colores o capas va a tocar, así que no hay forma de comprobarlo contra las reglas. Con herramientas como <code>create_shape</code> o <code>modify_shape</code> sabemos qué hace cada llamada y podemos rechazarla si rompe una regla. La contrapartida es que solo pueden hacer lo que hemos construido.</span></li>
+    <li class="explain"><strong>Tools concretas:</strong> el agente usa 58 tools con parámetros definidos, así que cada cambio se puede revisar contra las reglas antes de aplicarse.<span class="detail">El servidor MCP de Penpot da a los agentes externos <code>execute_code</code>: el agente escribe JavaScript sobre la API de plugins y Penpot lo ejecuta. Puede hacer cualquier cosa, pero como el agente escribe el código que quiera, no se puede saber de antemano qué colores o capas va a tocar, así que no hay forma de comprobarlo contra las reglas. Con tools como <code>create_shape</code> o <code>modify_shape</code> sabemos qué hace cada llamada y podemos rechazarla si rompe una regla. La contrapartida es que solo pueden hacer lo que hemos construido.</span></li>
     <li class="explain"><strong>Integración de producto:</strong> el gasto visible en el panel, conversaciones guardadas en cada archivo y formularios para preguntarte, piezas que un agente externo no tiene.<span class="detail">Un agente conectado por MCP solo ve lo que el servidor MCP expone. Desde dentro, el agente muestra su coste en vivo en el panel, guarda cada conversación con su archivo y puede pararse a hacerte preguntas con un formulario en el chat en lugar de adivinar. También renderiza su propio trabajo para revisarlo; desde fuera se pueden exportar imágenes de las formas, pero no forma parte del mismo bucle.</span></li>
   </ul>
 </section>
@@ -239,10 +239,9 @@
   <h2>El software garantiza que se cumplan las reglas</h2>
   <p style="margin-bottom:1.4rem"><span class="term" data-tip="Agentes externos como Claude Code o Cursor, y la IA de herramientas de diseño como Figma o Motiff.">Otras herramientas de IA</span> ponen tus reglas en el prompt y confían en que el modelo las obedezca. Nosotros las ponemos en el punto donde se guarda un cambio, de modo que un cambio que rompe una regla estricta no puede llegar a escribirse, sea cual sea el modelo.</p>
   <ul>
-    <li class="explain">El agente edita a través de <strong>el mismo pipeline que usa una persona</strong>, así que todo lo que toca sigue siendo reversible, se sincroniza con los colaboradores y es exportable, y solo hay una vía de entrada al archivo.<span class="detail">El agente no tiene una puerta trasera privada al archivo. Cada cambio que hace pasa por el pipeline de cambios normal de Penpot, así que todo lo que hace es reversible, aparece en vivo para los colaboradores, y se exporta con normalidad. Funciona como un usuario real, no rodeando la app, y eso es lo que hace posible el siguiente punto: con un único camino de entrada, se le puede poner una barrera.</span></li>
-    <li class="explain">Un cambio que rompe una regla estricta es <strong>rechazado antes de aplicarse</strong>, con un error que indica cómo corregirlo, de modo que la única forma de avanzar es hacerlo bien, sea cual sea el modelo al mando.<span class="detail">Las reglas que importan se comprueban en el límite de la herramienta, en el momento en que se aplica un cambio. Pide un color sin token en un archivo solo-tokens y la herramienta lo rechaza e indica cómo corregirlo («usa un token de color»), así que la única forma de avanzar es hacerlo bien. Como la barrera está por debajo de la IA y no dentro de su prompt, se mantiene con cualquier modelo que traigas, de última generación, económico o open source. A las personas que editan a mano no se les bloquea: si el panel del agente está abierto, los observers les avisan.</span></li>
+    <li class="explain">El agente edita a través <strong>del mismo pipeline que usa una persona</strong>, así que todo lo que toca sigue siendo reversible, se sincroniza con los colaboradores y es exportable, y solo hay una vía de entrada al archivo.<span class="detail">El agente no tiene una puerta trasera privada al archivo. Cada cambio que hace pasa por el pipeline de cambios normal de Penpot, así que todo lo que hace es reversible, aparece en vivo para los colaboradores, y se exporta con normalidad. Funciona como un usuario real, no rodeando la app, y eso es lo que hace posible el siguiente punto: con un único camino de entrada, se le puede poner una barrera.</span></li>
+    <li class="explain">Un cambio que rompe una regla estricta es <strong>rechazado antes de aplicarse</strong>, con un error que indica cómo corregirlo, de modo que la única forma de avanzar es hacerlo bien, sea cual sea el modelo al mando.<span class="detail">Las reglas que importan se comprueban en el límite de la tool, en el momento en que se aplica un cambio. Pide un color sin token en un archivo solo-tokens y la tool lo rechaza e indica cómo corregirlo («usa un token de color»), así que la única forma de avanzar es hacerlo bien. Como la barrera está por debajo de la IA y no dentro de su prompt, se mantiene con cualquier modelo que traigas, de última generación, económico o open source. A las personas que editan a mano no se les bloquea: si el panel del agente está abierto, los observers les avisan.</span></li>
     <li class="explain">Lo que se puede comprobar mecánicamente se puede forzar (por ahora, solo que un color venga de un token); <strong>el buen criterio no</strong>, y esas decisiones se quedan como guía que el agente sigue y una persona revisa.<span class="detail">Hoy solo hay una regla que bloquea de verdad: que el color venga de un token. El naming se audita (un modelo lo juzga y <code>audit_file</code> lo señala) pero no se rechaza al crear la forma; el espaciado en grid y los componentes desvinculados todavía no tienen ninguna regla que los fuerce. Las decisiones de criterio (¿es este el color de acento correcto? ¿es bueno este layout?) no se pueden bloquear de forma dura; esas quedan como skills y foundations que el agente sigue y una persona revisa.</span></li>
-    <li class="explain">Ni los <a href="oss-agent-survey.html" target="_blank" rel="noopener">once agentes que analizamos</a> ni las <a href="design-tools-comparison.html" target="_blank" rel="noopener">herramientas de diseño que usan los diseñadores</a> hacen esto: su IA <strong>genera con</strong> tu sistema, pero nunca <strong>queda sujeta a él</strong>.<span class="detail">Al estudiar el prompt y la configuración reales de once agentes open source se comprobó que solo uno forzaba algo en la propia herramienta (restricciones de archivo), y ninguno forzaba reglas de diseño. Por el lado de las herramientas de diseño, Figma, Motiff, Framer y UXPin traen todos IA capaz de diseñar usando tus variables y librerías de componentes, y se les da bien. Lo que ninguna hace es rechazar: un color sin token, un componente desvinculado o un espaciado fuera de grid sigue siendo aceptado por el archivo. Su IA genera con tu sistema; nunca queda sujeta a él. Mismos ingredientes, garantía opuesta. Nos llevan ventaja en muchos otros aspectos; esta es la afirmación concreta que hacemos nosotros.</span></li>
   </ul>
 </section>
 <section class="slide">
@@ -252,8 +251,7 @@
   <ul>
     <li class="explain"><strong>Skills en cascada:</strong> built-in, equipo, cuenta personal y archivo, y gana el ajuste más específico.<span class="detail">Cada nivel puede activar o desactivar una skill, y el ajuste más cercano al archivo es el que vale. La idea es que una regla obligatoria no se pueda relajar en un nivel inferior, para que una regla fijada una vez se aplique en todas las conversaciones de su ámbito.</span></li>
     <li class="explain"><strong>Las foundations viajan con el archivo:</strong> se guardan en su plugin-data, así que copiarlo o exportarlo las lleva consigo.<span class="detail">El brief de diseño forma parte del propio archivo. No hay que configurar nada en cada máquina ni repartir archivos de prompt por los portátiles del equipo.</span></li>
-    <li class="explain"><strong>Playbooks bajo demanda:</strong> un modelo barato elige el que encaja con la petición y el agente recibe solo ese (por ahora solo en el primer mensaje y con Anthropic).<span class="detail">Un playbook son las instrucciones detalladas para un tipo de tarea. El agente solo lleva una lista corta con sus nombres, y al empezar la conversación Haiku elige el adecuado y le pasa sus instrucciones completas, así que no hay que cargarlos todos en cada mensaje. Después, si hace falta otro, el agente lo pide con una herramienta. El modelo que elige podría ser de cualquier proveedor.</span></li>
-    <li class="explain"><strong>Un archivo sin rumbo recibe un empujón:</strong> sin foundations, componentes ni tokens, el agente fija una dirección antes de construir.<span class="detail">Si pides construir algo en un archivo así, el agente primero elige una tipografía, un color y uno o dos detalles característicos, y lo explica en una frase antes de empezar, en lugar de producir algo genérico.</span></li>
+    <li class="explain"><strong>Playbooks bajo demanda:</strong> un modelo barato elige el que encaja con la petición y el agente recibe solo ese (por ahora solo en el primer mensaje y con Anthropic).<span class="detail">Un playbook son las instrucciones detalladas para un tipo de tarea. El agente solo lleva una lista corta con sus nombres, y al empezar la conversación Haiku elige el adecuado y le pasa sus instrucciones completas, así que no hay que cargarlos todos en cada mensaje. Después, si hace falta otro, el agente lo pide con una tool. El modelo que elige podría ser de cualquier proveedor.</span></li>
   </ul>
 </section>
 <section class="slide">
@@ -262,36 +260,36 @@
   <ul>
     <li><strong>La gestión del contexto</strong> nos toca construirla a nosotros; Claude Code y Cursor traen la suya propia.
       <ul style="margin-top:.55rem">
-      <li class="explain"><strong>Prompt caching:</strong> en sesiones reales, entre el <span class="metric">94%</span> y el <span class="metric">96%</span> de lo enviado salió de la caché (medido solo con Anthropic).<span class="detail">Las instrucciones del agente, la lista de herramientas y el historial de la conversación se repiten en cada mensaje, así que el proveedor los guarda y no los cobra a precio completo otra vez. Lo que cambia, como tu petición o el estado del archivo, va aparte para no romper la caché.</span></li>
-      <li class="explain"><strong>Compaction en tres pasos:</strong> nota breve, resumen estructurado y, como último recurso, recorte.<span class="detail">Primero, los resultados viejos de las herramientas se sustituyen por una nota breve. Si no basta, la conversación se resume en un esquema fijo: tarea, lo hecho, decisiones, lo aprendido y lo pendiente. Solo si sigue siendo demasiado larga se recorta.</span></li>
+      <li class="explain"><strong>Prompt caching:</strong> en sesiones reales, entre el <span class="metric">94%</span> y el <span class="metric">96%</span> de lo enviado salió de la caché (medido solo con Anthropic).<span class="detail">Las instrucciones del agente, la lista de tools y el historial de la conversación se repiten en cada mensaje, así que el proveedor los guarda y no los cobra a precio completo otra vez. Lo que cambia, como tu petición o el estado del archivo, va aparte para no romper la caché.</span></li>
+      <li class="explain"><strong>Compaction en tres pasos:</strong> nota breve, resumen estructurado y, como último recurso, recorte.<span class="detail">Primero, los resultados viejos de las tools se sustituyen por una nota breve. Si no basta, la conversación se resume en un esquema fijo: tarea, lo hecho, decisiones, lo aprendido y lo pendiente. Solo si sigue siendo demasiado larga se recorta.</span></li>
       <li class="explain"><strong>Tareas secundarias en un modelo barato:</strong> explorar el archivo, elegir el playbook, las comprobaciones de los observers y los resúmenes (por ahora solo con Anthropic).<span class="detail">Estas tareas no necesitan el modelo más potente, así que las hace Haiku y no cuestan lo mismo que el trabajo de diseño. Hoy están fijadas a Anthropic en el código, pero podrían funcionar con el modelo barato de cualquier proveedor.</span></li>
       </ul>
     </li>
-    <li><strong>Las herramientas son nuestras:</strong> hay que mantenerlas y corregirlas midiendo sesiones reales.</li>
+    <li><strong>Las tools son nuestras:</strong> hay que mantenerlas y corregirlas midiendo sesiones reales.</li>
     <li><strong>El soporte de cada proveedor también:</strong> dialectos, streaming y catálogos de modelos van en el propio repositorio.</li>
-    <li><strong>Mantener su comportamiento al día:</strong> lo que Claude Code o Cursor mejoran por su cuenta, aquí nos toca seguirlo y adoptarlo.</li>
+    <li><strong>En esta línea, queremos probar el harness de DeepSeek</strong> que han publicado como open source.</li>
   </ul>
 </section>
 <section class="slide">
   <div class="kicker">Qué implica la integración</div>
   <h2>Ejemplo de dos sesiones reales</h2>
-  <p style="margin-bottom:1.4rem">Como las herramientas y la gestión del contexto son nuestras, cada problema que aparece en una sesión real nos toca encontrarlo y arreglarlo. Así fue en estas dos.</p>
+  <p style="margin-bottom:1.4rem">Como las tools y la gestión del contexto son nuestras, cada problema que aparece en una sesión real nos toca encontrarlo y arreglarlo. Así fue en estas dos.</p>
   <div class="cols">
     <div class="card">
       <h3>Sesión Kahoot</h3>
       <dl class="pm">
         <div><dt>Coste</dt><dd><span class="metric">232 llamadas · $8,84</span> (dos chats)</dd></div>
         <div><dt>Qué falló</dt><dd>el orden de flujo incorrecto quedó fijado en el archivo.</dd></div>
-        <div><dt>Arreglo</dt><dd>las herramientas ahora hablan en orden de lectura, validan ids, revelan cascadas y <span class="term" data-tip="El layout mueve las formas después de colocarlas. Si la herramienta devolviera la posición pedida, el agente trabajaría con una imagen falsa del lienzo y acumularía errores.">devuelven la geometría ya asentada</span>.</dd></div>
-        <div><dt>Lo que se perdía</dt><dd>unas <span class="metric">150</span> de las <span class="metric">223</span> llamadas del segundo chat se fueron en pelearse con las herramientas en vez de diseñar. Los arreglos van a por ese desperdicio, pero no hemos repetido la sesión para medirlo.</dd></div>
+        <div><dt>Arreglo</dt><dd>las tools ahora hablan en orden de lectura, validan ids, revelan cascadas y <span class="term" data-tip="El layout mueve las formas después de colocarlas. Si la tool devolviera la posición pedida, el agente trabajaría con una imagen falsa del lienzo y acumularía errores.">devuelven la geometría ya asentada</span>.</dd></div>
+        <div><dt>Lo que se perdía</dt><dd>unas <span class="metric">150</span> de las <span class="metric">223</span> llamadas del segundo chat se fueron en pelearse con las tools en vez de diseñar. Los arreglos van a por ese desperdicio, pero no hemos repetido la sesión para medirlo.</dd></div>
       </dl>
     </div>
     <div class="card">
       <h3>Sesión NYT</h3>
       <dl class="pm">
         <div><dt>Coste</dt><dd><span class="metric">133 rondas · ~$4</span> con Opus para una sola pantalla.</dd></div>
-        <div><dt>Qué falló</dt><dd>casi una llamada a herramienta por ronda (<span class="metric">1,24</span>), así que una sola pantalla se eternizaba.</dd></div>
-        <div><dt>Arreglo</dt><dd>herramientas de composición (build_tree, clone_shape, batches), presupuestos de imagen e inyección de playbooks.</dd></div>
+        <div><dt>Qué falló</dt><dd>casi una llamada a tool por ronda (<span class="metric">1,24</span>), así que una sola pantalla se eternizaba.</dd></div>
+        <div><dt>Arreglo</dt><dd>tools de composición (build_tree, clone_shape, batches), presupuestos de imagen e inyección de playbooks.</dd></div>
         <div><dt>Después</dt><dd>en las sesiones guardadas desde entonces, una media de <span class="metric">1,68</span> llamadas por ronda (entre 1,0 y 2,63), frente a 1,24. Esta pantalla no la hemos vuelto a medir.</dd></div>
       </dl>
     </div>
@@ -324,7 +322,7 @@
   <div class="kicker">Dónde se ejecuta la IA</div>
   <h2>El cliente aloja su propio modelo (el siguiente paso)</h2>
   <ul>
-    <li class="explain"><strong>Cualquier servidor compatible con OpenAI</strong> (vLLM, Ollama, llama.cpp...) podría usar el proxy que ya existe. Falta poder indicar su dirección, con la protección de seguridad que eso exige.<span class="detail">Un modelo open source como Qwen, Llama, DeepSeek o GLM se puede ejecutar en las máquinas del propio cliente con programas gratuitos como vLLM, Ollama o llama.cpp, que aceptan peticiones en el mismo formato que OpenAI. Penpot ya habla ese formato, así que no habría que rehacer la conexión. Hoy los proveedores son una lista fija de cuatro, con su dirección escrita en el código. Para esto hay que permitir una base URL propia, protegerla para que nadie pueda apuntar a un servidor interno (SSRF) y resolver dos cosas más: el medidor de gasto solo conoce precios de Claude y las tareas secundarias dependen de Anthropic.</span></li>
+    <li class="explain"><strong>Cualquier servidor compatible con OpenAI</strong> (vLLM, Ollama, llama.cpp...) podría usar el proxy que ya existe. Incluso podría ser un modelo alojado en un PC del propio cliente, para instalaciones locales de Penpot. Falta poder indicar su dirección, con la protección de seguridad que eso exige.<span class="detail">Un modelo open source como Qwen, Llama, DeepSeek o GLM se puede ejecutar en las máquinas del propio cliente con programas gratuitos como vLLM, Ollama o llama.cpp, que aceptan peticiones en el mismo formato que OpenAI. Penpot ya habla ese formato, así que no habría que rehacer la conexión. Hoy los proveedores son una lista fija de cuatro, con su dirección escrita en el código. Para esto hay que permitir una base URL propia, protegerla para que nadie pueda apuntar a un servidor interno (SSRF) y resolver dos cosas más: el medidor de gasto solo conoce precios de Claude y las tareas secundarias dependen de Anthropic.</span></li>
     <li class="explain"><strong>Soberanía de datos:</strong> los diseños no salen de la red del cliente.<span class="detail">La soberanía de datos trata de qué leyes y quién controla tus datos, no solo de dónde se guardan. La mayoría de funciones de IA envían el trabajo de diseño a los servidores de una empresa externa para ejecutar el modelo. Si el modelo corre en las máquinas del cliente, nada de eso sale de su red, y mantiene el control legal y físico de su propiedad intelectual.</span></li>
   </ul>
   <div class="cols" style="margin-top:1.2rem">
@@ -332,7 +330,7 @@
       <h3>En lo que hay que trabajar</h3>
       <ul>
         <li>Medir cómo funciona el <span class="term" data-tip="Reutilizar la parte de la petición que no cambia para no cobrarla entera cada vez.">caching</span> en cada servidor, porque de él depende el coste por ronda.</li>
-        <li>Probar cada modelo con un <span class="term" data-tip="Una batería de pruebas automáticas que un modelo tiene que pasar antes de ofrecerlo.">eval gate</span> antes de ofrecerlo, porque la calidad de <span class="term" data-tip="La capacidad del modelo de usar herramientas, como crear o modificar formas, en lugar de solo escribir texto.">tool-calling</span> y de visión varía mucho entre modelos.</li>
+        <li>Probar cada modelo con un <span class="term" data-tip="Una batería de pruebas automáticas que un modelo tiene que pasar antes de ofrecerlo.">eval gate</span> antes de ofrecerlo, porque la calidad de <span class="term" data-tip="La capacidad del modelo de usar tools, como crear o modificar formas, en lugar de solo escribir texto.">tool-calling</span> y de visión varía mucho entre modelos.</li>
         <li>Probar en vivo el envío de imágenes en el formato compatible con OpenAI, que el agente necesita para revisar su trabajo.</li>
       </ul>
     </div>
@@ -340,7 +338,7 @@
       <h3>Por qué encaja</h3>
       <ul>
         <li>Encaja con la identidad open source de Penpot y con su postura pública sobre <strong>soberanía de datos</strong>, alineada con la UE y el GDPR.</li>
-        <li>Lo que usa el usuario final (skills, reglas, foundations y herramientas) no depende del modelo, así que seguiría siendo compatible con uno propio.</li>
+        <li>Lo que usa el usuario final (skills, reglas, foundations y tools) no depende del modelo, así que seguiría siendo compatible con uno propio.</li>
       </ul>
     </div>
   </div>
@@ -369,54 +367,12 @@
   </div>
 </section>
 <section class="slide">
-  <div class="kicker">Más allá del roadmap · a corto plazo</div>
-  <h2>Margen de crecimiento, de dos formas</h2>
-  <div class="cols">
-    <div>
-      <div class="col-head">Más eficiente <span>· más barato de ejecutar</span></div>
-      <ul>
-        <li class="explain"><strong>Renders más ligeros:</strong> revisar la estructura con imágenes en gris y más pequeñas, para que cada revisión cueste menos.<span class="detail">El agente mira renders de su trabajo para revisarlo, y cada imagen se cobra según su tamaño (los modelos cuentan los píxeles como tokens) y tiene un límite de peso. Para comprobar si una forma está bien anidada o alineada no hacen falta el color ni la resolución completa, así que una versión en gris y reducida costaría bastante menos.</span></li>
-        <li class="explain"><strong>Un modelo caro que planifica y uno barato que ejecuta:</strong> el potente solo se usa donde hace falta, así cada tarea cuesta menos.<span class="detail">Hoy un modelo económico ya explora el archivo, elige el playbook y resume la conversación. La idea es ir más allá: el modelo más potente escribe una especificación detallada de lo que hay que hacer y uno más barato ejecuta las llamadas a herramientas. Así el modelo caro solo se usa para lo que de verdad necesita su capacidad.</span></li>
-      </ul>
-    </div>
-    <div>
-      <div class="col-head">Más capaz <span>· hace más que editar el lienzo</span></div>
-      <ul>
-        <li class="explain"><strong>Generar entregables:</strong> guías de estilo, especificaciones de handoff o documentación de componentes a partir del propio archivo, sin redactarlos a mano.<span class="detail">Además de editar el diseño, el agente podría producir documentos a partir de lo que ya sabe del archivo: sus tokens, componentes, reglas y foundations. Por ejemplo, una guía de estilo o la documentación de un componente para entregar a desarrollo.</span></li>
-        <li class="explain"><strong>Un plan visible:</strong> una checklist con el paso en curso, para seguir las tareas largas sin interrupciones y poder retomarlas si se cortan.<span class="detail">En una tarea larga, el agente mostraría una checklist con el paso en el que está, para que puedas seguirlo sin que te interrumpa. Si la sesión se corta, también podría retomarla desde ese plan. En la revisión de agentes open source fue la idea con más respaldo.</span><span class="rmnote">✓ ya está en el roadmap: ago. '26 (Harden)</span></li>
-        <li class="explain"><strong>Sugerencias para el usuario:</strong> si el agente se equivoca siempre en lo mismo en tus archivos, proponerte la skill o la foundation que lo evitaría.<span class="detail">Por ejemplo, si en tus archivos el agente usa una y otra vez colores sin token, el análisis podría sugerirte activar la regla de colores solo con tokens o añadir a tus foundations los que faltan.</span></li>
-      </ul>
-    </div>
-  </div>
-</section>
-<section class="slide">
-  <div class="kicker">Más allá del roadmap · en parte ya existe</div>
-  <h2>Un handoff que los agentes de código puedan usar directamente</h2>
-  <p style="margin-bottom:1.4rem">Cada vez más código lo escriben agentes como Claude Code o Cursor. La idea es que el handoff de diseño les llegue en un formato que puedan usar directamente, no solo como una imagen para una persona.</p>
-  <ul>
-    <li class="explain"><strong>Handoff legible por máquinas:</strong> tokens, estructura de componentes y código generado con <code>generate_code</code>, para que el agente construya con el sistema de diseño real y no a partir de una captura.<span class="detail">Hoy un desarrollador suele recibir el diseño como algo que mira: pantallas, medidas y colores que interpreta a mano. Un agente de código puede hacer más si recibe los datos: qué tokens se usan, cómo están organizados los componentes o un primer código generado. Así construye con los valores reales del sistema de diseño en lugar de adivinarlos a partir de una imagen.</span></li>
-    <li class="explain"><strong>Sobre lo que ya existe:</strong> el servidor MCP de Penpot ya da a estos agentes acceso a los diseños. La idea es que sirva estas mismas herramientas nativas en lugar de abrir una vía paralela.<span class="detail">MCP (Model Context Protocol) es la forma estándar en que agentes externos como Claude Code o Cursor se conectan a una herramienta. Penpot ya tiene un servidor MCP que les permite leer y modificar diseños. La idea es que ese servidor ofrezca las mismas herramientas que usa nuestro agente, con sus reglas, en lugar de mantener dos caminos distintos. Dónde se sitúa esto en el roadmap de Penpot está por confirmar.</span></li>
-  </ul>
-</section>
-<section class="slide">
-  <div class="kicker">Más allá del roadmap · lo más lejano</div>
-  <h2>Revisiones programadas de los archivos del equipo</h2>
-  <p style="margin-bottom:1.4rem">Una idea a más largo plazo: agentes que corren por su cuenta en segundo plano, sin que nadie los observe, para revisar y auditar los archivos de diseño de todo un equipo, como comprobaciones automáticas nocturnas que registran lo que encuentran.</p>
-  <ul>
-    <li class="explain"><strong>Revisiones programadas:</strong> cada noche el agente repasa los archivos del equipo (reglas, accesibilidad, tokens) y deja lo que encuentra como comentarios o informes, sin que nadie lo pida.<span class="detail">Normalmente el agente trabaja dentro de una pestaña de Penpot abierta en tu navegador. Ejecutarlo «headless» significa hacerlo en un servidor, sin ventana y sin nadie presente. Así podría funcionar según un calendario, por ejemplo cada noche, y revisar todos los archivos de un equipo en busca de reglas incumplidas, problemas de accesibilidad (a11y) o valores sin token.</span></li>
-    <li class="explain"><strong>Un control antes del handoff:</strong> si la revisión falla, el handoff se bloquea hasta corregirlo, como las comprobaciones automáticas del código (CI).<span class="detail">En desarrollo de software, CI (integración continua) son comprobaciones automáticas que se ejecutan con cada cambio y frenan la entrega si algo falla. Aplicado al diseño, un archivo no pasaría a desarrollo hasta que la revisión automática diera el visto bueno.</span></li>
-    <li class="explain"><strong>Tareas largas</strong> que no dependen de tener una pestaña abierta.<span class="detail">Hoy una tarea larga depende de que la pestaña siga abierta: si se cierra o se pierde la conexión, el trabajo se corta. En un servidor, el agente podría terminarla solo y avisar cuando acabe.</span></li>
-    <li class="explain"><strong>Lo que ya hay y lo que falta:</strong> el agente ya revisa su trabajo con renders, pero hoy corre en el navegador; hacerlo en un servidor es trabajo nuevo.<span class="detail">El agente ya genera imágenes de su trabajo y las mira para comprobarlo, así que la parte de revisar está resuelta. Lo que falta es poder ejecutarlo fuera del navegador: en un servidor, con permisos para acceder a los archivos del equipo, un calendario y un control del coste. Diseñar juntos seguiría siendo en el lienzo; esto encaja con revisar, comprobar y los trabajos por lotes.</span></li>
-  </ul>
-</section>
-<section class="slide">
   <div class="kicker">El plan para avanzar y reducir el riesgo</div>
   <h2>El piloto con diseñadores es el camino crítico</h2>
   <p style="margin-bottom:1.4rem">Cada paso se apoya en lo que aprendamos en el anterior. A partir del piloto, todo depende de los datos que salgan de él.</p>
   <ul>
     <li class="explain"><strong>Harden:</strong> dejar el prototipo listo para que lo usen personas reales, trabajando ya con un modelo abierto ejecutado en local.<span class="detail">Desde aquí usamos un modelo abierto que no es de frontera, como el último de GLM: nos cuesta menos, nos obliga a optimizar para equipos con menos recursos y deja a la vista fallos que un modelo de frontera taparía. Para eso hay que poder conectar un modelo propio y que las tareas secundarias y el medidor de gasto funcionen con cualquier proveedor. Además: mejorar el paralelismo, añadir el plan visible, cifrar las API keys, poner límites de gasto y montar las primeras evals.</span></li>
-    <li class="explain"><strong>Piloto con diseñadores:</strong> usarlo en trabajo real, en sesiones organizadas, para aprender dónde falla. Para eso hay que grabar las sesiones en un servidor dedicado, capturar las correcciones que hace el diseñador después del agente y montar un análisis nocturno que las convierta en propuestas de mejora.<span class="detail">Unos diseñadores usan el modelo abierto y otros uno de frontera, y después se alternan. Cada conversación con el agente se guarda en un servidor propio del piloto. Lo nuevo es registrar también lo que el diseñador cambia justo después del trabajo del agente: si recoloca una forma o corrige un color, esa corrección dice exactamente qué hizo mal el agente en trabajo real. Cada noche, un proceso automático revisa esas sesiones y propone mejoras para las herramientas y las instrucciones del agente. La diapositiva siguiente cuenta cómo se usa todo esto.</span></li>
-    <li class="explain"><strong>Vía de modelos OSS, en paralelo al piloto:</strong> abrir a los clientes lo que ya usamos nosotros, para que conecten el agente a su propio modelo open source.<span class="detail">La conexión de un modelo propio ya se hace en Harden. Lo que queda es probar cada modelo con un eval gate antes de ofrecerlo, anotar qué sabe hacer cada uno y documentar cómo usarlo. No depende del piloto, así que puede avanzar a la vez. Lo explica la <a class="slink" data-goto="10">diapositiva 10</a>.</span></li>
+    <li class="explain"><strong>Piloto con diseñadores:</strong> usarlo en trabajo real, en sesiones organizadas, para aprender dónde falla. Para eso hay que grabar las sesiones en un servidor dedicado, capturar las correcciones que hace el diseñador después del agente y montar un análisis nocturno que las convierta en propuestas de mejora.<span class="detail">Unos diseñadores usan el modelo abierto y otros uno de frontera, y después se alternan. Cada conversación con el agente se guarda en un servidor propio del piloto. Lo nuevo es registrar también lo que el diseñador cambia justo después del trabajo del agente: si recoloca una forma o corrige un color, esa corrección dice exactamente qué hizo mal el agente en trabajo real. Cada noche, un proceso automático revisa esas sesiones y propone mejoras para las tools y las instrucciones del agente. La diapositiva siguiente cuenta cómo se usa todo esto.</span></li>
     <li class="explain"><strong>Beta privada:</strong> abrirlo a algunos equipos externos para comprobar calidad, estabilidad y coste fuera de nuestro entorno.<span class="detail">Equipos de fuera de Kaleidos usarían el agente con sus propios archivos, sistemas de diseño y formas de trabajar. Así vemos si lo aprendido en el piloto se sostiene en otros contextos y reunimos los datos de calidad, estabilidad y coste que hacen falta antes de publicarlo.</span></li>
   </ul>
 </section>
@@ -428,14 +384,14 @@
     <div class="phase__label">Ya funciona</div>
     <ul>
       <li class="explain"><strong>Aprender de otros agentes:</strong> revisamos qué hacen otros agentes y adoptamos lo que funciona.<span class="detail">Revisamos cómo trabajan otros agentes, sobre todo open source, y adoptamos las ideas que funcionan: por ejemplo, conservar lo aprendido al resumir un chat largo o ceñirse a lo que se pide. Las últimas están en la <a class="slink" data-goto="8">diapositiva 8</a>.</span></li>
-      <li class="explain"><strong>Analizar sesiones a mano:</strong> los análisis de las sesiones Kahoot y NYT sirvieron para hacer mejoras importantes en las herramientas.<span class="detail">Revisamos a mano dos sesiones reales para ver dónde perdía tiempo y dinero el agente. De ahí salieron cambios en las herramientas, como devolver la posición real de las formas o poder construir varias a la vez. Lo cuenta la <a class="slink" data-goto="7">diapositiva 7</a>.</span></li>
+      <li class="explain"><strong>Analizar sesiones a mano:</strong> los análisis de las sesiones Kahoot y NYT sirvieron para hacer mejoras importantes en las tools.<span class="detail">Revisamos a mano dos sesiones reales para ver dónde perdía tiempo y dinero el agente. De ahí salieron cambios en las tools, como devolver la posición real de las formas o poder construir varias a la vez. Lo cuenta la <a class="slink" data-goto="7">diapositiva 7</a>.</span></li>
     </ul>
   </div>
   <div class="phase phase--pilot">
     <div class="phase__label">Con el piloto</div>
     <ul>
       <li class="explain"><strong>Las correcciones del diseñador como dato:</strong> lo que cambia justo después del agente dice qué hizo mal en trabajo real, algo que ninguna prueba de laboratorio puede sustituir.<span class="detail">Si el agente coloca una forma en el sitio equivocado o la anida donde no toca y el diseñador la corrige, esa corrección señala un fallo concreto en un caso real. Las pruebas automáticas solo cubren los casos que se nos ocurren; esto cubre los que pasan de verdad.</span></li>
-      <li class="explain"><strong>El análisis, automático:</strong> un proceso nocturno hace lo que hicimos a mano con Kahoot y NYT y propone mejoras para las herramientas y las instrucciones. Las revisamos y las aplicamos nosotros.<span class="detail">Cada noche se revisan las sesiones del día buscando patrones: qué deshace la gente, qué vuelve a anidar, qué reespacia. De ahí salen propuestas de cambio para las herramientas y las instrucciones del agente, que revisamos antes de aplicarlas.</span></li>
+      <li class="explain"><strong>El análisis, automático:</strong> un proceso nocturno hace lo que hicimos a mano con Kahoot y NYT y propone mejoras para las tools y las instrucciones. Las revisamos y las aplicamos nosotros.<span class="detail">Cada noche se revisan las sesiones del día buscando patrones: qué deshace la gente, qué vuelve a anidar, qué reespacia. De ahí salen propuestas de cambio para las tools y las instrucciones del agente, que revisamos antes de aplicarlas.</span></li>
     </ul>
   </div>
 </section>
@@ -446,15 +402,11 @@
   <div class="accs">
     <div class="acc open">
       <button class="acc__head" type="button"><span class="acc__when">oct. '26</span><span class="acc__title">Harden</span><span class="acc__dep">necesita: un pequeño presupuesto para pruebas</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
-      <div class="acc__body"><p>Objetivo: que el prototipo aguante el uso de personas reales. Desde aquí trabajamos con un modelo abierto que no es de frontera, como el último de GLM, ejecutado en local: nos cuesta menos, nos obliga a optimizar para equipos con menos recursos y deja a la vista fallos que un modelo de frontera taparía. Para eso hay que poder conectar un modelo propio (una base URL con su protección SSRF) y que las tareas secundarias y el medidor de gasto funcionen con cualquier proveedor. Además incluye aplicar las mejoras de la <a href="oss-agent-survey.html" target="_blank" rel="noopener">revisión de once agentes open source</a>; medir con un A/B si pedir al agente que haga a la vez los pasos independientes lo hace más rápido; añadir la <a class="slink" data-goto="12">herramienta de plan</a>; probar el envío de imágenes en el formato compatible con OpenAI; cifrar las API keys, que hoy se guardan sin cifrar; poner límites de gasto, y montar las primeras evals.</p></div>
+      <div class="acc__body"><p>Objetivo: que el prototipo aguante el uso de personas reales. Desde aquí trabajamos con un modelo abierto que no es de frontera, como el último de GLM, ejecutado en local: nos cuesta menos, nos obliga a optimizar para equipos con menos recursos y deja a la vista fallos que un modelo de frontera taparía. Para eso hay que poder conectar un modelo propio y que las tareas secundarias y el medidor de gasto funcionen con cualquier proveedor. Además incluye aplicar las mejoras de la <a href="oss-agent-survey.html" target="_blank" rel="noopener">revisión de once agentes open source</a>; medir con un A/B si pedir al agente que haga a la vez los pasos independientes lo hace más rápido; añadir la <a class="slink" data-goto="16">tool de plan</a>; probar el envío de imágenes en el formato compatible con OpenAI; cifrar las API keys, que hoy se guardan sin cifrar; poner límites de gasto, y montar las primeras evals.</p></div>
     </div>
     <div class="acc">
       <button class="acc__head" type="button"><span class="acc__when">nov.–dic. '26</span><span class="acc__title">Piloto con diseñadores</span><span class="acc__dep">necesita: diseñadores, servidor, presupuesto</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
-      <div class="acc__body"><p>Diseñadores de Kaleidos usan el agente en su trabajo real, en sesiones organizadas. Unos usan el modelo abierto y otros uno de frontera, y después se alternan. Se graba la conversación con el agente y lo que el diseñador corrige justo después, que muestra qué hizo mal. Cada noche, un proceso automático analiza esas sesiones y propone mejoras para las herramientas y las instrucciones, como cuenta <a class="slink" data-goto="16">cómo aprendemos del piloto</a>.</p></div>
-    </div>
-    <div class="acc">
-      <button class="acc__head" type="button"><span class="acc__when">dic. '26–ene. '27</span><span class="acc__title">Vía de modelos OSS</span><span class="acc__dep">necesita: servidor GPU</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
-      <div class="acc__body"><p>Abrir a los clientes lo que nosotros ya usamos desde Harden, para que conecten el agente a su propio <a class="slink" data-goto="10">modelo open source</a>, alojado en sus servidores, en lugar de a uno comercial. Incluye probar cada modelo con un eval gate antes de ofrecerlo, anotar qué sabe hacer cada uno (ver imágenes, usar herramientas...) y documentar cómo configurarlo.</p></div>
+      <div class="acc__body"><p>Diseñadores de Kaleidos usan el agente en su trabajo real, en sesiones organizadas. Unos usan el modelo abierto y otros uno de frontera, y después se alternan. Se graba la conversación con el agente y lo que el diseñador corrige justo después, que muestra qué hizo mal. Cada noche, un proceso automático analiza esas sesiones y propone mejoras para las tools y las instrucciones, como cuenta <a class="slink" data-goto="13">cómo aprendemos del piloto</a>.</p></div>
     </div>
     <div class="acc">
       <button class="acc__head" type="button"><span class="acc__when">ene.–feb. '27</span><span class="acc__title">Beta privada</span><span class="acc__dep">necesita: resultados del piloto</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
@@ -474,7 +426,39 @@
         <li><strong>Un servidor dedicado:</strong> una instancia de staging donde grabar las sesiones y ejecutar cada noche el análisis automático.</li>
         <li class="explain"><strong>Presupuesto de modelo:</strong> unos 1.000 € para Harden, 800 € para el piloto y 250 € para la beta, algo más de 2.000 € en total.<span class="detail">Contamos las sesiones de trabajo con el agente: en Harden, dos desarrolladores con 8 sesiones por semana cada uno; en el piloto, 4 diseñadores con 4 sesiones por semana; y durante todo el desarrollo, una diseñadora del equipo con 2 por semana y los dos desarrolladores con 2 cada uno. En total, unas 296 sesiones. La mitad va con Opus y la otra mitad con el modelo local, que no tiene coste por uso, igual que el análisis nocturno. Basándonos en nuestros datos de referencia, las 148 sesiones con Opus salen por entre $580 y $1.300. Tomamos la parte alta: unos 350 € en Harden, 800 € en el piloto y 250 € en la beta. A Harden le sumamos unos 650 € para otras pruebas y evals, según la estimación del equipo. Los equipos externos de la beta usan sus propias API keys.</span></li>
         <li><strong>Un PC para ejecutar el modelo abierto en local:</strong> presupuesto por confirmar según el modelo.</li>
-        <li><strong>Un servidor GPU:</strong> para ejecutar y probar modelos open source en la vía de modelos OSS.</li>
+        <li><strong>Un servidor GPU:</strong> para ejecutar modelos open source en las pruebas, las evals y el piloto.</li>
+  </ul>
+</section>
+<section class="slide">
+  <div class="kicker">Más allá del roadmap · a corto plazo</div>
+  <h2>Margen de crecimiento, de dos formas</h2>
+  <div class="cols">
+    <div>
+      <div class="col-head">Más eficiente <span>· más barato de ejecutar</span></div>
+      <ul>
+        <li class="explain"><strong>Renders más ligeros:</strong> revisar la estructura con imágenes en gris y más pequeñas, para que cada revisión cueste menos.<span class="detail">El agente mira renders de su trabajo para revisarlo, y cada imagen se cobra según su tamaño (los modelos cuentan los píxeles como tokens) y tiene un límite de peso. Para comprobar si una forma está bien anidada o alineada no hacen falta el color ni la resolución completa, así que una versión en gris y reducida costaría bastante menos.</span></li>
+        <li class="explain"><strong>Un modelo caro que planifica y uno barato que ejecuta:</strong> el potente solo se usa donde hace falta, así cada tarea cuesta menos.<span class="detail">Hoy un modelo económico ya explora el archivo, elige el playbook y resume la conversación. La idea es ir más allá: el modelo más potente escribe una especificación detallada de lo que hay que hacer y uno más barato ejecuta las llamadas a tools. Así el modelo caro solo se usa para lo que de verdad necesita su capacidad.</span></li>
+        <li class="explain"><strong>Un cookbook de patrones:</strong> recetas para crear elementos básicos y patrones de interfaz, para que el modelo no tenga que explorar cómo hacerlos cada vez.<span class="detail">Hoy, para construir algo tan común como un botón, una tarjeta o una barra de navegación, el modelo tiene que descubrir qué tools usar y en qué orden, y esas llamadas se pagan. Con un cookbook de recetas probadas iría directo a construirlo.</span></li>
+        <li class="explain"><strong>Mejor conexión con sistemas de diseño:</strong> aprovechar los que ya existen en librerías compartidas, o incluso ofrecer unos genéricos para archivos nuevos.<span class="detail">Si el agente encuentra y usa bien los componentes y tokens de una librería compartida, no tiene que recrearlos en cada archivo. Para un archivo nuevo sin librería, podría partir de un sistema de diseño genérico en lugar de empezar de cero.</span></li>
+      </ul>
+    </div>
+    <div>
+      <div class="col-head">Más capaz <span>· hace más que editar el lienzo</span></div>
+      <ul>
+        <li class="explain"><strong>Generar entregables:</strong> guías de estilo, especificaciones de handoff o documentación de componentes a partir del propio archivo, sin redactarlos a mano.<span class="detail">Además de editar el diseño, el agente podría producir documentos a partir de lo que ya sabe del archivo: sus tokens, componentes, reglas y foundations. Por ejemplo, una guía de estilo o la documentación de un componente para entregar a desarrollo.</span></li>
+        <li class="explain"><strong>Un plan visible:</strong> una checklist con el paso en curso, para seguir las tareas largas sin interrupciones y poder retomarlas si se cortan.<span class="detail">En una tarea larga, el agente mostraría una checklist con el paso en el que está, para que puedas seguirlo sin que te interrumpa. Si la sesión se corta, también podría retomarla desde ese plan. En la revisión de agentes open source fue la idea con más respaldo.</span><span class="rmnote">✓ ya está en el roadmap: oct. '26 (Harden)</span></li>
+        <li class="explain"><strong>Sugerencias para el usuario:</strong> si el agente se equivoca siempre en lo mismo en tus archivos, proponerte la skill o la foundation que lo evitaría.<span class="detail">Por ejemplo, si en tus archivos el agente usa una y otra vez colores sin token, el análisis podría sugerirte activar la regla de colores solo con tokens o añadir a tus foundations los que faltan.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+<section class="slide">
+  <div class="kicker">Más allá del roadmap · lo más lejano</div>
+  <h2>Revisiones programadas de los archivos del equipo</h2>
+  <p style="margin-bottom:1.4rem">Una idea a más largo plazo: agentes que corren por su cuenta en segundo plano, sin que nadie los observe, para revisar y auditar los archivos de diseño de todo un equipo, como comprobaciones automáticas nocturnas que registran lo que encuentran.</p>
+  <ul>
+    <li class="explain"><strong>Revisiones programadas:</strong> cada noche el agente repasa los archivos del equipo (reglas, accesibilidad, tokens) y deja lo que encuentra como comentarios o informes, sin que nadie lo pida.<span class="detail">Normalmente el agente trabaja dentro de una pestaña de Penpot abierta en tu navegador. Ejecutarlo «headless» significa hacerlo en un servidor, sin ventana y sin nadie presente. Así podría funcionar según un calendario, por ejemplo cada noche, y revisar todos los archivos de un equipo en busca de reglas incumplidas, problemas de accesibilidad (a11y) o valores sin token.</span></li>
+    <li class="explain"><strong>Tareas largas</strong> que no dependen de tener una pestaña abierta.<span class="detail">Hoy una tarea larga depende de que la pestaña siga abierta: si se cierra o se pierde la conexión, el trabajo se corta. En un servidor, el agente podría terminarla solo y avisar cuando acabe.</span></li>
   </ul>
 </section>
 <section class="slide slide--addon" data-addon>
@@ -483,7 +467,7 @@
   <p style="margin-bottom:1.4rem">Con un agente externo conectado por MCP, una organización apenas puede controlar nada: solo ve lo que expone el servidor MCP. Con el agente dentro de Penpot, la organización puede decidir cómo trabaja el agente y con qué, y eso abre posibilidades para Nitrate.</p>
   <ul>
     <li class="explain"><strong>Reglas y skills de la organización:</strong> definirlas una vez para que las hereden todos los equipos y archivos, y marcar como obligatorias las que no se pueden relajar.<span class="detail">Hoy las skills ya se organizan por niveles (built-in, equipo, cuenta personal y archivo). Nitrate añadiría el de la organización por encima de todos. Que una regla obligatoria no se pueda desactivar en un nivel inferior todavía no está construido: el campo existe en la base de datos, pero el agente aún no lo tiene en cuenta.</span></li>
-    <li class="explain"><strong>Guías de la organización:</strong> un tono de voz, convenciones de naming y contexto de empresa que cada equipo y archivo hereda, y puede ampliar pero no quitar.<span class="detail">Es lo mismo que hoy hacen las foundations de un archivo, pero a nivel de organización, para que el agente trabaje igual en todos los equipos.</span></li>
+    <li class="explain"><strong>Guías de la organización:</strong> un tono de voz, convenciones de naming y contexto de empresa que cada equipo y archivo hereda.<span class="detail">Es lo mismo que hoy hacen las foundations de un archivo, pero a nivel de organización, para que el agente trabaje igual en todos los equipos.</span></li>
     <li class="explain"><strong>Proveedores y modelos:</strong> la organización sabe qué proveedores y modelos configura cada persona, y puede decidir cuáles se permiten y si se usa la API key de cada uno o la de la organización.<span class="detail">Las API keys y los modelos que cada persona activa ya se guardan en Penpot. Eso permite a una organización fijar un límite de cumplimiento normativo, por ejemplo permitir solo modelos alojados en la UE o su propio modelo self-hosted.</span></li>
   </ul>
 </section>
@@ -496,9 +480,9 @@
     { name: "El enfoque", to: 5, goal: "Puntos fuertes del enfoque", hideGoal: true },
     { name: "Qué implica", to: 8, goal: "Qué implica la integración", hideGoal: true },
     { name: "Dónde se ejecuta", to: 11, goal: "Dónde se ejecuta la IA", hideGoal: true },
-    { name: "Más allá del roadmap", to: 14, goal: "Posibles pasos más allá del roadmap", hideGoal: true },
-    { name: "El plan", to: 16, goal: "El plan para avanzar y reducir el riesgo", hideGoal: true },
-    { name: "Roadmap", to: 18, goal: "El roadmap (y lo que pedimos)", hideGoal: true },
+    { name: "El plan", to: 13, goal: "El plan para avanzar y reducir el riesgo", hideGoal: true },
+    { name: "Roadmap", to: 15, goal: "El roadmap (y lo que pedimos)", hideGoal: true },
+    { name: "Más allá del roadmap", to: 17, goal: "Posibles pasos más allá del roadmap", hideGoal: true },
   ];
   const groupFor = (num) => groups.find((g) => num <= g.to) || groups[groups.length - 1];
   const groupStarts = new Set();
@@ -508,7 +492,7 @@
 
   // glossary: wrap the first occurrence of each jargon term per slide with a hover tooltip
   const glossary = {
-    "MCP": "Model Context Protocol: una forma estándar para que programas de IA externos (como Claude Code o Cursor) se conecten a una herramienta.",
+    "MCP": "Model Context Protocol: una forma estándar para que programas de IA externos (como Claude Code o Cursor) se conecten a una tool.",
     "write-path": "El punto en el que un cambio se guarda en el archivo. Forzarlo aquí bloquea un cambio malo en el momento de escribirlo, no solo lo desaconseja.",
     "write path": "El punto en el que un cambio se guarda en el archivo. Forzarlo aquí bloquea un cambio malo en el momento de escribirlo, no solo lo desaconseja.",
     "pipeline de cambios": "El sistema normal de Penpot para aplicar ediciones, de modo que los cambios son reversibles y se sincronizan con todos en el archivo.",

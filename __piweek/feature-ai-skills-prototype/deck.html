@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agente de IA de Penpot: enfoques, integración en el producto y opciones de infraestructura</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+    /* deck is dark, single theme, same neutrals as the pitch's dark side */
+    --bg:#121218; --surface:#191A22; --card:#1E202B; --text:#ECEDF4; --text-soft:#A2A5BA;
+    --text-mute:#71748A; --line:rgba(255,255,255,.09); --line-soft:rgba(255,255,255,.05);
+
+    /* five semantic roles, red is "rule" only; costs use the neutral "tradeoff" tone */
+    --rule:#FF6350;    --rule-bg:rgba(255,99,80,.13);        /* enforcement / guardrail */
+    --skill:#8B93FF;   --skill-bg:rgba(139,147,255,.14);     /* knowledge / accent */
+    --affirm:#3FCB88;  --affirm-bg:rgba(63,203,136,.14);     /* proven / positive */
+    --caution:#FFB454; --caution-bg:rgba(255,180,84,.14);    /* note / watch-out */
+    --tradeoff:#93A0B8;--tradeoff-bg:rgba(147,160,184,.12);  /* cost / con, neutral, not alarming */
+    /* per-part wayfinding accents (nav "Part N of 6" + active dot only; not semantic roles) */
+    --part-1:#6EA8FF; --part-2:#FFA94D; --part-3:#51CF66; --part-4:#3BC9DB; --part-5:#FF8CC8; --part-6:#B197FC; --part-7:#F5C74B;
+    /* add-on slide: not a numbered part — its own accent + a lighter tone of the same neutral bg */
+    --addon:#63E6BE; --addon-bg:#1C1D26;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text);
+    font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+
+  .slide { display: none; min-height: 100vh; padding: 5vh 8vw; flex-direction: column;
+    justify-content: center; }
+  .slide.active { display: flex; }
+  .slide--addon { background: var(--addon-bg); }
+
+  /* ===== shared component: .kicker ===== */
+  .kicker { font-family: var(--font-mono); font-size: .85rem; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--cur-part, var(--skill)); margin-bottom: 1rem; }
+
+  /* per-slide global "you are here" line, above the brow */
+  .act { font-family: var(--font-mono); font-size: .95rem; letter-spacing: .04em; white-space: nowrap; }
+  .act__part { color: var(--cur-part, var(--skill)); font-weight: 600; text-transform: uppercase; }
+  .act__goal { color: var(--text-mute); }
+  .act__goal::before { content: " · "; }
+
+  h1 { font-size: 3.2rem; line-height: 1.1; font-weight: 700; max-width: 22ch; letter-spacing: -.02em; }
+  h2 { font-size: 2.1rem; line-height: 1.15; margin-bottom: 1.6rem; max-width: 28ch; letter-spacing: -.015em; }
+  h3 { font-size: 1.05rem; margin-bottom: .5rem; }
+  p, li { font-size: 1.08rem; line-height: 1.55; color: var(--text-soft); max-width: 100ch; }
+  li strong, p strong { color: var(--text); font-weight: 600; }
+  ul { padding-left: 1.2rem; display: grid; gap: .55rem; }
+  em { color: var(--text); font-style: italic; }
+  a { color: var(--skill); text-underline-offset: 3px; }
+  :focus-visible { outline: 2px solid var(--skill); outline-offset: 3px; border-radius: 3px; }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 2.2rem; align-items: start; }
+  @media (max-width: 48rem){ .cols { grid-template-columns: 1fr; } }
+  /* quieter "does not do" reassurance block: subordinate to the list above it */
+  .aside-note { margin-top: 1.3rem; max-width: 78ch; padding: .85rem 1.1rem; opacity: .82; }
+  .aside-note h3 { font-size: .72rem; }
+  .aside-note ul { padding-left: 1.1rem; gap: .4rem; margin-top: .55rem; }
+  .aside-note li { font-size: .9rem; color: var(--text-mute); }
+  .aside-note li strong { color: var(--text-soft); font-weight: 600; }
+  .col-head { font-family: var(--font-mono); font-size: .78rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text); margin-bottom: .7rem;
+    padding-bottom: .4rem; border-bottom: 1px solid var(--line); }
+  .col-head span { color: var(--text-mute); text-transform: none; letter-spacing: 0; }
+  .rmnote { display: block; margin-top: .35rem; font-family: var(--font-mono);
+    font-size: .72rem; color: var(--affirm); }
+  .sidenote { border-left: 3px solid var(--caution); background: var(--caution-bg);
+    padding: .6rem .9rem; border-radius: 6px; margin-bottom: 1.3rem; max-width: 100ch;
+    font-size: .95rem; line-height: 1.5; color: var(--text-soft); }
+
+  /* ===== shared component: .card (+ role modifiers) ===== */
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 1.2rem 1.4rem; }
+  .card h3 { font-family: var(--font-mono); font-size: .8rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text); }
+  .card--affirm   h3 { color: var(--affirm); }
+  .card--tradeoff h3 { color: var(--tradeoff); }
+  .card--caution  h3 { color: var(--caution); }
+  .card--rule     h3 { color: var(--rule); }
+  .card--rule       { border-color: color-mix(in srgb, var(--rule) 30%, var(--line)); }
+
+  /* ===== shared component: .tag (+ role modifiers) ===== */
+  .tag { display: inline-block; font-family: var(--font-mono); font-size: .72rem;
+    border: 1px solid var(--line); border-radius: 999px; padding: .15rem .6rem;
+    margin: 0 .35rem .45rem 0; color: var(--text-soft); }
+  .tag--rule     { color: var(--rule);     border-color: color-mix(in srgb, var(--rule) 45%, var(--line)); }
+  .tag--skill    { color: var(--skill);    border-color: color-mix(in srgb, var(--skill) 45%, var(--line)); }
+  .tag--affirm   { color: var(--affirm);   border-color: color-mix(in srgb, var(--affirm) 45%, var(--line)); }
+  .tag--caution  { color: var(--caution);  border-color: color-mix(in srgb, var(--caution) 45%, var(--line)); }
+  .tag--tradeoff { color: var(--tradeoff); border-color: color-mix(in srgb, var(--tradeoff) 45%, var(--line)); }
+  /* hover tooltips on stat tags and glossary terms */
+  [data-tip] { position: relative; }
+  .tag[data-tip], .term[data-tip] { cursor: help; }
+  .tag[data-tip]:hover { border-color: var(--text-mute); }
+  .term { border-bottom: 1px dotted var(--text-mute); }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; left: 0; bottom: calc(100% + .5rem);
+    width: max-content; max-width: 19rem;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+    padding: .55rem .7rem; font-family: var(--font-sans); font-size: .82rem;
+    line-height: 1.45; letter-spacing: 0; text-transform: none; font-weight: 400;
+    white-space: normal; box-shadow: 0 10px 30px rgba(0,0,0,.45); z-index: 40; }
+
+  /* click-to-explain lines: popover floats below the line, over the text */
+  li.explain { cursor: pointer; position: relative; }
+  li.explain:hover { color: var(--text); }
+  li.explain .detail { display: none; }
+  li.explain.open .detail { display: block; position: absolute; top: calc(100% + .4rem); left: 0;
+    width: min(40rem, 80vw); z-index: 40;
+    background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--skill);
+    border-radius: 8px; padding: .7rem .85rem; color: var(--text-soft);
+    font-size: .92rem; line-height: 1.5; box-shadow: 0 14px 40px rgba(0,0,0,.5);
+    animation: explainpop .13s ease-out; }
+  @keyframes explainpop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+  /* horizon groups (learning flywheel): split bullets by time-frame */
+  .phase { margin-bottom: 1.1rem; }
+  .phase:last-child { margin-bottom: 0; }
+  .phase__label { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .12em;
+    text-transform: uppercase; margin-bottom: .3rem; }
+  .phase ul { margin: 0; }
+  .phase--now .phase__label { color: var(--affirm); }
+  .phase--pilot .phase__label { color: var(--skill); }
+  .phase--later .phase__label { color: var(--text-mute); }
+
+  /* roadmap accordion */
+  .acc-hint { color: var(--text-mute); font-size: .85rem; margin-bottom: 1rem; }
+  .accs { border-top: 1px solid var(--line); }
+  .acc { border-bottom: 1px solid var(--line); }
+  .acc__head { width: 100%; background: none; border: 0; color: inherit; font: inherit;
+    cursor: pointer; display: grid; grid-template-columns: 9.5rem 1fr auto 1.4rem; gap: 1rem;
+    align-items: baseline; padding: .95rem .8rem; text-align: left; }
+  .acc__head:hover { background: rgba(255,255,255,.03); }
+  .acc__when { font-family: var(--font-mono); font-size: .82rem; color: var(--text-mute); }
+  .acc__title { font-weight: 600; font-size: 1.05rem; color: var(--text); }
+  .acc__dep { font-family: var(--font-mono); font-size: .72rem; color: var(--text-mute); white-space: nowrap; }
+  .acc__chev { color: var(--text-mute); justify-self: end; transition: transform .15s ease; }
+  .acc.open .acc__chev { transform: rotate(90deg); color: var(--cur-part, var(--skill)); }
+  .acc__body { display: none; padding: .1rem .8rem 1.1rem; }
+  .acc.open { background: var(--card); border-radius: 8px; }
+  .acc.open .acc__body { display: block; }
+  .acc__body p { color: var(--text-soft); font-size: .95rem; line-height: 1.55; max-width: 110ch; margin: 0; }
+  .acc__body a { color: var(--cur-part, var(--skill)); text-decoration: none; font-weight: 500; }
+  .acc__body a:hover { color: var(--text); }
+  .slink { cursor: pointer; }
+  .acc__opt { font-family: var(--font-mono); font-size: .62rem; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--text-mute); border: 1px solid var(--line); border-radius: 4px; padding: .1rem .38rem; margin-left: .5rem; vertical-align: middle; }
+  @media (max-width: 40rem){ .acc__head { grid-template-columns: 1fr 1.4rem; } .acc__when, .acc__dep { display: none; } }
+
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { text-align: left; padding: .5rem .8rem; border-bottom: 1px solid var(--line);
+    color: var(--text-soft); vertical-align: top; }
+  th { color: var(--text); font-family: var(--font-mono); font-size: .75rem;
+    letter-spacing: .1em; text-transform: uppercase; }
+  td:first-child { color: var(--text); white-space: nowrap; }
+
+  .big { font-size: 1.5rem; color: var(--text); max-width: 30ch; line-height: 1.4; }
+  .metric { font-family: var(--font-mono); color: var(--affirm); }
+  /* unified postmortem fields (Reason 3 cards) */
+  .pm { display: grid; gap: .6rem; margin: 0; }
+  .pm dt { font-family: var(--font-mono); font-size: .64rem; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--text-mute); margin-bottom: .1rem; }
+  .pm dd { margin: 0; color: var(--text-soft); font-size: .95rem; line-height: 1.45; }
+  code { font-family: var(--font-mono); font-size: .92em; color: var(--skill); }
+
+  .backlink { position: fixed; top: 2.2vh; right: 3vw; font-family: var(--font-mono);
+    font-size: .72rem; letter-spacing: .04em; color: var(--text-soft); text-decoration: none; z-index: 20;
+    padding: .32rem .7rem; border: 1px solid var(--line); border-radius: 999px;
+    background: color-mix(in srgb, var(--card) 70%, transparent);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+  .backlink:hover { color: var(--skill); border-color: var(--skill); }
+
+  /* ===== deck navigation: dots ===== */
+  .dots { position: fixed; bottom: 2.6vh; right: 3vw;
+    display: flex; flex-direction: column; align-items: flex-end; gap: .5rem; z-index: 30; }
+  .dot-row { display: flex; gap: .45rem; align-items: center; }
+  .dots button { width: 8px; height: 8px; border-radius: 50%; border: 0; padding: 0;
+    background: var(--text-mute); opacity: .5; cursor: pointer;
+    transition: opacity .2s, background .2s, transform .2s; }
+  .dots button:hover { opacity: .9; }
+  .dots button[aria-current="true"] { background: var(--cur-part, var(--skill)); opacity: 1; transform: scale(1.4); }
+  .dots button.group-start { margin-left: .55rem; }
+
+  @media print {
+    .slide { display: flex !important; page-break-after: always; min-height: 100vh; }
+    .dots, .backlink { display: none; }
+  }
+</style>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzMiAzMiI+PHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iNyIgZmlsbD0iIzRBNTdFMCIvPjxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDQgNCkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxwYXRoIGQ9Ik0xMiA4VjRIOCIvPjxyZWN0IHdpZHRoPSIxNiIgaGVpZ2h0PSIxMiIgeD0iNCIgeT0iOCIgcng9IjIiLz48cGF0aCBkPSJNMiAxNGgyIi8+PHBhdGggZD0iTTIwIDE0aDIiLz48cGF0aCBkPSJNMTUgMTN2MiIvPjxwYXRoIGQ9Ik05IDEzdjIiLz48L2c+PC9zdmc+">
+</head>
+<body>
+
+<div class="dots" id="dots" aria-label="Ir a la diapositiva"><div class="act" id="nav-act"></div><div class="dot-row" id="dot-row"></div></div>
+<a class="backlink" href="index.html">← Presentación</a>
+
+
+<section class="slide active">
+  <div class="kicker">feature/ai-skills-prototype · 2026-07-19</div>
+  <h1>Un agente de IA de diseño, integrado en Penpot</h1>
+  <p class="big" style="margin-top:1.4rem">El enfoque que tomamos al integrarlo en el producto y cómo puede funcionar
+  tanto en nuestros servidores como en los del cliente, incluyendo modelos open source que ellos mismos alojan.</p>
+  <p style="margin-top:2.4rem"><span class="tag" data-tip="Las 58 acciones que la IA puede realizar dentro de Penpot, como crear formas o aplicar tokens.">58 tools nativas</span><span class="tag" data-tip="Comprobaciones automáticas que cubren la función.">cientos de tests</span><span class="tag tag--affirm">sincronizado con upstream develop</span></p>
+</section>
+<section class="slide">
+  <h2>Lo que se ha construido</h2>
+  <div class="cols">
+    <ul>
+      <li><strong>Agent panel</strong>, acoplado de forma nativa al workspace: chat en streaming, botón de parar, selector de modelo, adjuntos de imagen, slash commands (/), medidor de gasto en vivo.</li>
+      <li><strong>Skills y reglas</strong>, la intención de diseño como un objeto dentro del propio producto: cascada built-in → equipo → personal → archivo, CRUD desde el panel, activar/desactivar por ámbito, "promote to team".</li>
+      <li><strong>Foundations / DESIGN.md</strong>, un breve brief de diseño que se guarda con cada archivo, siguiendo la convención DESIGN.md de Google. Una entrevista rápida lo rellena, y se añade a cada conversación con la IA.</li>
+    </ul>
+    <ul>
+      <li><strong>Enforcement</strong>, reglas comprobadas en el write-path: un hex sin token en un archivo solo-tokens es <em>rechazado por la tool</em>, no simplemente desaconsejado por el prompt.</li>
+      <li><strong>Modos de operación</strong>, gobernanza gradual: <em>suggest</em> para auditorías, <em>apply-with-review</em> como opción por defecto para trabajo generativo, <em>auto-fix</em> solo para un conjunto seguro predefinido (hoy, renombrados de capa; el resto del whitelist, como sustituciones de token, reordenar sin cambiar geometría o añadir metadata, está definido pero aún no conectado).</li>
+      <li><strong>Observers</strong>, vigilantes ambientales que marcan infracciones mientras trabajas; "Arreglar por chat" se las pasa al agente. <strong>Audit</strong>, un escaneo del archivo bajo demanda que lista las infracciones de las reglas activas en ese momento.</li>
+      <li><strong>Chats persistentes</strong>, las conversaciones se guardan por archivo y vuelven a aparecer al reabrirlo, junto con lo que costó cada una.</li>
+    </ul>
+  </div>
+</section>
+<section class="slide">
+  <div class="kicker">El enfoque - Punto 1</div>
+  <h2>El agente trabaja dentro del workspace</h2>
+  <p style="margin-bottom:1.4rem">La otra vía ya existe: el propio servidor MCP de Penpot, manejado desde fuera por agentes externos (Claude Code, Cursor, VS Code, Codex).</p>
+  <ul>
+    <li class="explain"><strong>Sin desincronización:</strong> el agente, sus tools y las skills built-in van en el mismo código que Penpot.<span class="detail">Si alguien cambia una parte de Penpot que usan las tools del agente, el fallo aparece al compilar o en los tests del propio repositorio, no cuando alguien intenta usar el agente. Las instrucciones y skills de un agente externo viven fuera de Penpot, así que un cambio en Penpot puede dejarlas desfasadas sin que nadie lo note hasta usarlas.</span></li>
+    <li class="explain"><strong>Skills del equipo, no de cada portátil:</strong> un agente externo carga archivos de skill sin niveles ni forma de hacerlos cumplir.<span class="detail">Aquí las skills viven en Penpot por niveles (built-in, equipo, cuenta personal, archivo) y se activan o desactivan en cada uno, como se explica en el Punto 3. Un agente externo carga archivos de skill desde la máquina de cada persona o, como mucho, desde un repositorio compartido, y son solo texto en el prompt.</span></li>
+    <li class="explain"><strong>Skills reactivas:</strong> los observers vigilan el archivo mientras trabajas; un agente externo solo actúa cuando se le llama.<span class="detail">Los observers necesitan estar presentes en el workspace: revisan cada cambio mientras el panel del agente está abierto y te avisan si algo rompe una regla. Un agente conectado por MCP no ve lo que pasa en el archivo hasta que alguien le pide algo.</span></li>
+    <li class="explain"><strong>Tools concretas:</strong> el agente usa 58 tools con parámetros definidos, así que cada cambio se puede revisar contra las reglas antes de aplicarse.<span class="detail">El servidor MCP de Penpot da a los agentes externos <code>execute_code</code>: el agente escribe JavaScript sobre la API de plugins y Penpot lo ejecuta. Puede hacer cualquier cosa, pero como el agente escribe el código que quiera, no se puede saber de antemano qué colores o capas va a tocar, así que no hay forma de comprobarlo contra las reglas. Con tools como <code>create_shape</code> o <code>modify_shape</code> sabemos qué hace cada llamada y podemos rechazarla si rompe una regla. La contrapartida es que solo pueden hacer lo que hemos construido.</span></li>
+    <li class="explain"><strong>Integración de producto:</strong> el gasto visible en el panel, conversaciones guardadas en cada archivo y formularios para preguntarte.<span class="detail">Un agente conectado por MCP solo ve lo que el servidor MCP expone. Desde dentro, el agente muestra su coste en vivo en el panel, guarda cada conversación con su archivo y puede pararse a hacerte preguntas con un formulario en el chat en lugar de adivinar. También renderiza su propio trabajo para revisarlo; desde fuera se pueden exportar imágenes de las formas, pero no forma parte del mismo bucle.</span></li>
+  </ul>
+</section>
+<section class="slide">
+  <div class="kicker">El enfoque - Punto 2</div>
+  <h2>El software garantiza que se cumplan las reglas</h2>
+  <p style="margin-bottom:1.4rem"><span class="term" data-tip="Agentes externos como Claude Code o Cursor, y la IA de herramientas de diseño como Figma o Motiff.">Otras herramientas de IA</span> ponen tus reglas en el prompt y confían en que el modelo las obedezca. Nosotros las ponemos en el punto donde se guarda un cambio, de modo que un cambio que rompe una regla estricta no puede llegar a escribirse, sea cual sea el modelo.</p>
+  <ul>
+    <li class="explain">El agente edita a través <strong>del mismo pipeline que usa una persona</strong>, así que todo lo que toca sigue siendo reversible, se sincroniza con los colaboradores y es exportable, y solo hay una vía de entrada al archivo.<span class="detail">El agente no tiene una puerta trasera privada al archivo. Cada cambio que hace pasa por el pipeline de cambios normal de Penpot, así que todo lo que hace es reversible, aparece en vivo para los colaboradores, y se exporta con normalidad. Funciona como un usuario real, no rodeando la app, y eso es lo que hace posible el siguiente punto: con un único camino de entrada, se le puede poner una barrera.</span></li>
+    <li class="explain">Un cambio que rompe una regla estricta es <strong>rechazado antes de aplicarse</strong>, con un error que indica cómo corregirlo, de modo que la única forma de avanzar es hacerlo bien, sea cual sea el modelo al mando.<span class="detail">Las reglas que importan se comprueban en el límite de la tool, en el momento en que se aplica un cambio. Pide un color sin token en un archivo solo-tokens y la tool lo rechaza e indica cómo corregirlo («usa un token de color»), así que la única forma de avanzar es hacerlo bien. Como la barrera está por debajo de la IA y no dentro de su prompt, se mantiene con cualquier modelo que traigas, de última generación, económico o open source. A las personas que editan a mano no se les bloquea: si el panel del agente está abierto, los observers les avisan.</span></li>
+    <li class="explain">Lo que se puede comprobar mecánicamente se puede forzar (por ahora, solo que un color venga de un token); <strong>el buen criterio no</strong>, y esas decisiones se quedan como guía que el agente sigue y una persona revisa.<span class="detail">Hoy solo hay una regla que bloquea de verdad: que el color venga de un token. El naming se audita (un modelo lo juzga y <code>audit_file</code> lo señala) pero no se rechaza al crear la forma; el espaciado en grid y los componentes desvinculados todavía no tienen ninguna regla que los fuerce. Las decisiones de criterio (¿es este el color de acento correcto? ¿es bueno este layout?) no se pueden bloquear de forma dura; esas quedan como skills y foundations que el agente sigue y una persona revisa.</span></li>
+  </ul>
+</section>
+<section class="slide">
+  <div class="kicker">El enfoque - Punto 3</div>
+  <h2>Cómo le llega al agente la intención de diseño</h2>
+  <p style="margin-bottom:1.4rem">La intención de diseño del equipo se guarda en Penpot y no en la máquina de cada persona: las reglas, el brief de cada archivo y las instrucciones para cada tipo de tarea. El agente la recibe según el equipo y el archivo en el que trabaja, carga solo lo que necesita para cada tarea y, si el archivo no tiene ninguna dirección, se le pide que fije una antes de construir.</p>
+  <ul>
+    <li class="explain"><strong>Skills en cascada:</strong> built-in, equipo, cuenta personal y archivo, y gana el ajuste más específico.<span class="detail">Cada nivel puede activar o desactivar una skill, y el ajuste más cercano al archivo es el que vale. La idea es que una regla obligatoria no se pueda relajar en un nivel inferior, para que una regla fijada una vez se aplique en todas las conversaciones de su ámbito.</span></li>
+    <li class="explain"><strong>Las foundations viajan con el archivo:</strong> se guardan en su plugin-data, así que copiarlo o exportarlo las lleva consigo.<span class="detail">El brief de diseño forma parte del propio archivo. No hay que configurar nada en cada máquina ni repartir archivos de prompt por los portátiles del equipo.</span></li>
+  </ul>
+</section>
+<section class="slide">
+  <div class="kicker">Qué implica la integración</div>
+  <h2>Construir y mantener</h2>
+  <ul>
+    <li><strong>La gestión del contexto</strong> nos toca construirla a nosotros; Claude Code y Cursor traen la suya propia.
+      <ul style="margin-top:.55rem">
+      <li class="explain"><strong>Prompt caching:</strong> en sesiones reales, entre el <span class="metric">94%</span> y el <span class="metric">96%</span> de lo enviado salió de la caché (medido solo con Anthropic).<span class="detail">Las instrucciones del agente, la lista de tools y el historial de la conversación se repiten en cada mensaje, así que el proveedor los guarda y no los cobra a precio completo otra vez. Lo que cambia, como tu petición o el estado del archivo, va aparte para no romper la caché.</span></li>
+      <li class="explain"><strong>Compaction en tres pasos:</strong> nota breve, resumen estructurado y, como último recurso, recorte.<span class="detail">Primero, los resultados viejos de las tools se sustituyen por una nota breve. Si no basta, la conversación se resume en un esquema fijo: tarea, lo hecho, decisiones, lo aprendido y lo pendiente. Solo si sigue siendo demasiado larga se recorta.</span></li>
+      <li class="explain"><strong>Tareas secundarias en un modelo barato:</strong> explorar el archivo, elegir el playbook, las comprobaciones de los observers y los resúmenes (por ahora solo con Anthropic).<span class="detail">Estas tareas no necesitan el modelo más potente, así que las hace Haiku y no cuestan lo mismo que el trabajo de diseño. Hoy están fijadas a Anthropic en el código, pero podrían funcionar con el modelo barato de cualquier proveedor.</span></li>
+      </ul>
+    </li>
+    <li><strong>Las tools son nuestras:</strong> hay que mantenerlas y corregirlas midiendo sesiones reales.</li>
+    <li><strong>El soporte de cada proveedor también:</strong> dialectos, streaming y catálogos de modelos van en el propio repositorio.</li>
+    <li><strong>En esta línea, queremos probar el harness de DeepSeek</strong> que han publicado como open source.</li>
+  </ul>
+</section>
+<section class="slide">
+  <div class="kicker">Qué implica la integración</div>
+  <h2>Ejemplo de dos sesiones reales</h2>
+  <p style="margin-bottom:1.4rem">Como las tools y la gestión del contexto son nuestras, cada problema que aparece en una sesión real nos toca encontrarlo y arreglarlo. Así fue en estas dos.</p>
+  <div class="cols">
+    <div class="card">
+      <h3>Sesión Kahoot</h3>
+      <dl class="pm">
+        <div><dt>Coste</dt><dd><span class="metric">232 llamadas · $8,84</span> (dos chats)</dd></div>
+        <div><dt>Qué falló</dt><dd>el orden de flujo incorrecto quedó fijado en el archivo.</dd></div>
+        <div><dt>Arreglo</dt><dd>las tools ahora hablan en orden de lectura, validan ids, revelan cascadas y <span class="term" data-tip="El layout mueve las formas después de colocarlas. Si la tool devolviera la posición pedida, el agente trabajaría con una imagen falsa del lienzo y acumularía errores.">devuelven la geometría ya asentada</span>.</dd></div>
+        <div><dt>Lo que se perdía</dt><dd>unas <span class="metric">150</span> de las <span class="metric">223</span> llamadas del segundo chat se fueron en pelearse con las tools en vez de diseñar. Los arreglos van a por ese desperdicio, pero no hemos repetido la sesión para medirlo.</dd></div>
+      </dl>
+    </div>
+    <div class="card">
+      <h3>Sesión NYT</h3>
+      <dl class="pm">
+        <div><dt>Coste</dt><dd><span class="metric">133 rondas · ~$4</span> con Opus para una sola pantalla.</dd></div>
+        <div><dt>Qué falló</dt><dd>casi una llamada a tool por ronda (<span class="metric">1,24</span>), así que una sola pantalla se eternizaba.</dd></div>
+        <div><dt>Arreglo</dt><dd>tools de composición (build_tree, clone_shape, batches), presupuestos de imagen e inyección de playbooks.</dd></div>
+        <div><dt>Después</dt><dd>en las sesiones guardadas desde entonces, una media de <span class="metric">1,68</span> llamadas por ronda (entre 1,0 y 2,63), frente a 1,24. Esta pantalla no la hemos vuelto a medir.</dd></div>
+      </dl>
+    </div>
+  </div>
+  <p style="margin-top:1.4rem">Este trabajo no termina: cada sesión medida puede sacar problemas nuevos que arreglar.</p>
+</section>
+<section class="slide">
+  <div class="kicker">Qué implica la integración</div>
+  <h2>Mantener el agente al día</h2>
+  <p style="margin-bottom:1.4rem">Para que nuestro agente mejore, ayuda adoptar lo que funciona en otros agentes. Por ejemplo, de la <a href="oss-agent-survey.html" target="_blank" rel="noopener">revisión de once agentes open source</a> salieron, entre otras, estas lecciones:</p>
+  <ul>
+    <li class="explain"><strong>Una compaction que conserva lo aprendido</strong> (Kimi, opencode): al resumir un chat largo se guardan las decisiones y los errores que no hay que repetir, no solo los últimos mensajes.<span class="detail">Ya está hecho. Cuando un chat se alarga, la parte antigua se comprime en un resumen. La lección fue conservar lo aprendido, como las decisiones tomadas y los errores que no hay que repetir, y no solo los mensajes más recientes. Nuestro resumen tiene una sección para eso, y cada nuevo resumen parte del anterior en lugar de empezar de cero. Algunos agentes también guardan palabra por palabra los primeros mensajes de la conversación; eso no lo hemos adoptado.</span></li>
+    <li class="explain"><strong>Ceñirse a lo pedido y preguntar antes de suponer</strong> (Kimi, Codex): el agente hace el cambio más pequeño que cumple la petición y solo pregunta lo que no puede deducir.<span class="detail">Ya está hecho. Una IA entusiasta tiende a hacer más de lo que se le pide: pides algo pequeño y rediseña medio archivo, que luego hay que revisar y pagar. Nuestro agente tiene la instrucción de hacer el cambio más pequeño que cumpla la petición y no tocar nada fuera de ella, y solo pregunta lo que no puede resolver con el archivo, las foundations o un valor razonable.</span></li>
+    <li class="explain"><strong>Trabajar en paralelo y evitar lo genérico</strong> (Cline, Zed, Gemini; bolt.diy): hacer a la vez las acciones independientes y darle una lista de clichés que no debe usar.<span class="detail">En parte. Cuando varias acciones son independientes, hacerlas a la vez es más rápido. El agente ya tiene esa instrucción, pero aún no hemos medido si mejora; el hito Harden incluye compararla con un A/B. La otra lección es darle al agente una lista concreta de lo que no debe hacer (cabeceras sosas, layouts genéricos, texto de relleno), que funciona mejor que pedirle que sea original. Esa lista aún no está aplicada.</span></li>
+    <li class="explain"><strong>Un plan visible con un paso en curso</strong> (Codex): una checklist que muestra por dónde va en las tareas largas, sin interrumpir.<span class="detail">Pendiente, previsto en el hito Harden del roadmap. En una tarea larga, el agente mantendría una checklist visible con un solo paso marcado en curso, para que puedas seguir por dónde va sin que te interrumpa.</span></li>
+  </ul>
+</section>
+<section class="slide">
+  <div class="kicker">Dónde se ejecuta la IA</div>
+  <h2>BYOK a través de un proxy dumb-pipe (lo ejecutado)</h2>
+  <p style="margin-bottom:1.4rem">Como las reglas no dependen del modelo, el cliente puede elegir dónde se ejecuta la IA. Estas tres diapositivas van de lo que ya existe a lo que podría venir.</p>
+  <ul>
+    <li class="explain"><strong>Las API keys se guardan solo en el servidor:</strong> nunca llegan al navegador.<span class="detail">Para usar un modelo de IA hace falta una cuenta con el proveedor (Anthropic, OpenAI...) y una clave secreta, la API key, que identifica esa cuenta y a la que se carga el gasto. Aquí cada usuario pega la suya una vez en Ajustes → Integraciones. Se guarda en el servidor de Penpot y nunca se envía a la página, así que ni una web ni una extensión del navegador pueden leerla. Por ahora se guarda sin cifrar; cifrarla está previsto en el hito Harden.</span></li>
+    <li class="explain"><strong>Cambio de proveedor a mitad de conversación</strong>, sin perder el historial.<span class="detail">Cada vez que el agente trabaja, se envía al modelo toda la conversación hasta ese momento. Como Penpot la guarda en su propio formato y no en el de un proveedor concreto, puedes pasar, por ejemplo, de un modelo de Anthropic a uno de OpenAI, y el nuevo modelo recibe todo lo anterior, incluidas las acciones que ya hizo el agente. El proxy solo reenvía la petición y devuelve la respuesta en streaming, a medida que se genera, sin leerla ni cambiarla: eso es lo que significa dumb-pipe.</span></li>
+    <li class="explain"><strong>Dos wire formats:</strong> el de Anthropic y el compatible con OpenAI (OpenAI, Zhipu, Moonshot). Solo el de Anthropic está probado en vivo.<span class="detail">Cada proveedor espera las peticiones con una estructura distinta. Muchos, aunque no sean OpenAI, aceptan la de OpenAI, así que con dos formatos se cubren la mayoría, y añadir un proveedor nuevo es sobre todo traducir al formato que ya espera. El formato compatible con OpenAI está construido y probado con errores reales, como una clave inválida, pero todavía no en una sesión de trabajo real; probarlo está previsto en el hito Harden.</span></li>
+    <li class="explain"><strong>Las conversaciones se guardan en Penpot</strong>, con el contexto de diseño que se envió al modelo.<span class="detail">El proxy no guarda nada, pero el panel sí guarda cada conversación con su archivo para poder retomarla. Esa conversación incluye lo que se le mandó al modelo sobre el diseño, así que parte del contenido del archivo queda también en la base de datos de Penpot, además de en el proveedor que lo procesó.</span></li>
+  </ul>
+</section>
+<section class="slide">
+  <div class="kicker">Dónde se ejecuta la IA</div>
+  <h2>El cliente aloja su propio modelo (el siguiente paso)</h2>
+  <ul>
+    <li class="explain"><strong>Cualquier servidor compatible con OpenAI</strong> (vLLM, Ollama, llama.cpp...) podría usar el proxy que ya existe. Incluso podría ser un modelo alojado en un PC del propio cliente, para instalaciones locales de Penpot. Falta poder indicar su dirección, con la protección de seguridad que eso exige.<span class="detail">Un modelo open source como Qwen, Llama, DeepSeek o GLM se puede ejecutar en las máquinas del propio cliente con programas gratuitos como vLLM, Ollama o llama.cpp, que aceptan peticiones en el mismo formato que OpenAI. Penpot ya habla ese formato, así que no habría que rehacer la conexión. Hoy los proveedores son una lista fija de cuatro, con su dirección escrita en el código. Para esto hay que permitir una base URL propia, protegerla para que nadie pueda apuntar a un servidor interno (SSRF) y resolver dos cosas más: el medidor de gasto solo conoce precios de Claude y las tareas secundarias dependen de Anthropic.</span></li>
+    <li class="explain"><strong>Soberanía de datos:</strong> los diseños no salen de la red del cliente.<span class="detail">La soberanía de datos trata de qué leyes y quién controla tus datos, no solo de dónde se guardan. La mayoría de funciones de IA envían el trabajo de diseño a los servidores de una empresa externa para ejecutar el modelo. Si el modelo corre en las máquinas del cliente, nada de eso sale de su red, y mantiene el control legal y físico de su propiedad intelectual.</span></li>
+  </ul>
+  <div class="cols" style="margin-top:1.2rem">
+    <div class="card">
+      <h3>En lo que hay que trabajar</h3>
+      <ul>
+        <li>Medir cómo funciona el <span class="term" data-tip="Reutilizar la parte de la petición que no cambia para no cobrarla entera cada vez.">caching</span> en cada servidor, porque de él depende el coste por ronda.</li>
+        <li>Probar cada modelo con un <span class="term" data-tip="Una batería de pruebas automáticas que un modelo tiene que pasar antes de ofrecerlo.">eval gate</span> antes de ofrecerlo, porque la calidad de <span class="term" data-tip="La capacidad del modelo de usar tools, como crear o modificar formas, en lugar de solo escribir texto.">tool-calling</span> y de visión varía mucho entre modelos.</li>
+        <li>Probar en vivo el envío de imágenes en el formato compatible con OpenAI, que el agente necesita para revisar su trabajo.</li>
+      </ul>
+    </div>
+    <div class="card card--affirm">
+      <h3>Por qué encaja</h3>
+      <ul>
+        <li>Encaja con la identidad open source de Penpot y con su postura pública sobre <strong>soberanía de datos</strong>, alineada con la UE y el GDPR.</li>
+        <li>Lo que usa el usuario final (skills, reglas, foundations y tools) no depende del modelo, así que seguiría siendo compatible con uno propio.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+<section class="slide">
+  <div class="kicker">Dónde se ejecuta la IA</div>
+  <h2>Penpot ejecuta la IA por ti (modelo futuro a valorar)</h2>
+  <p style="margin-bottom:1.4rem">El paso más lejano, no algo cercano como el self-hosting: un modelo futuro para cuando la demanda y la economía lo demuestren viable.</p>
+  <div class="cols">
+    <div class="card card--affirm">
+      <h3>A favor</h3>
+      <ul>
+        <li class="explain">UX sin configuración: la IA funciona nada más empezar; la facturación va integrada con el producto.<span class="detail">Hoy cada usuario necesita su propia cuenta con un proveedor de IA y pegar su API key antes de usar el agente. Si Penpot ofreciera la IA, el agente funcionaría desde el primer momento y el coste iría incluido en lo que se paga a Penpot, sin cuentas ni facturas aparte.</span></li>
+        <li class="explain">Curación centralizada de modelos, ajuste del prompt-cache, migraciones según nuestro propio calendario.<span class="detail">Penpot elegiría qué modelos se usan y los probaría antes de ofrecerlos, ajustaría el caching para abaratar cada petición y decidiría cuándo pasar a un modelo nuevo, en lugar de depender de lo que cada cliente tenga conectado.</span></li>
+        <li class="explain">Telemetría a nivel de flota → evals y detección de regresiones.<span class="detail">Si todas las sesiones pasan por Penpot, se puede medir cómo funciona el agente en conjunto: qué falla más, qué cuesta más y si una versión nueva del agente o del modelo lo hace peor que la anterior, lo que se llama una regresión. Esos datos alimentarían las evals, las pruebas automáticas de calidad.</span></li>
+      </ul>
+    </div>
+    <div class="card card--tradeoff">
+      <h3>En contra</h3>
+      <ul>
+        <li class="explain">Nos toca a nosotros gestionar márgenes, abuso, cuotas y límites de tasa.<span class="detail">Penpot pagaría el uso del modelo, a un proveedor o en su propio hardware. Tendría que fijar precios que cubran ese coste, evitar que alguien abuse del servicio y limitar cuánto puede usar cada cliente y con qué frecuencia (rate limits).</span></li>
+        <li class="explain">El <strong>coste de soberanía</strong>: el contenido de diseño transita por nuestra ruta de inferencia, así que Penpot se convierte en un procesador de datos y desaparece la garantía de perímetro propio del self-hosting.<span class="detail">Si Penpot ejecuta el modelo, los diseños se procesan en su infraestructura. Penpot pasa a ser responsable de esos datos ante la ley (encargado del tratamiento, en términos del GDPR), y el cliente pierde la garantía del self-hosting de que nada sale de su red.</span></li>
+        <li class="explain">Capacidad de GPU o contratos con revendedores; guardias para una nueva clase de caída de servicio.<span class="detail">Para ejecutar modelos hacen falta servidores con GPU, propios o alquilados, o contratos con un proveedor que revenda su modelo. Y si el servicio de IA falla, la responsabilidad sería de Penpot: habría que tener a alguien de guardia para un tipo de incidencia que hoy no existe.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+<section class="slide">
+  <div class="kicker">El plan para avanzar y reducir el riesgo</div>
+  <h2>El piloto con diseñadores es el camino crítico</h2>
+  <p style="margin-bottom:1.4rem">Cada paso se apoya en lo que aprendamos en el anterior. A partir del piloto, todo depende de los datos que salgan de él.</p>
+  <ul>
+    <li class="explain"><strong>Harden:</strong> dejar el prototipo listo para que lo usen personas reales, trabajando ya con un modelo abierto ejecutado en local.<span class="detail">Desde aquí usamos un modelo abierto que no es de frontera, como el último de GLM: nos cuesta menos, nos obliga a optimizar para equipos con menos recursos y deja a la vista fallos que un modelo de frontera taparía. Para eso hay que poder conectar un modelo propio y que las tareas secundarias y el medidor de gasto funcionen con cualquier proveedor. Además: mejorar el paralelismo, añadir el plan visible, cifrar las API keys, poner límites de gasto y montar las primeras evals.</span></li>
+    <li class="explain"><strong>Piloto con diseñadores:</strong> usarlo en trabajo real, en sesiones organizadas, para aprender dónde falla. Para eso hay que grabar las sesiones en un servidor dedicado, capturar las correcciones que hace el diseñador después del agente y montar un análisis nocturno que las convierta en propuestas de mejora.<span class="detail">Unos diseñadores usan el modelo abierto y otros uno de frontera, y después se alternan. Cada conversación con el agente se guarda en un servidor propio del piloto. Lo nuevo es registrar también lo que el diseñador cambia justo después del trabajo del agente: si recoloca una forma o corrige un color, esa corrección dice exactamente qué hizo mal el agente en trabajo real. Cada noche, un proceso automático revisa esas sesiones y propone mejoras para las tools y las instrucciones del agente. La diapositiva siguiente cuenta cómo se usa todo esto.</span></li>
+    <li class="explain"><strong>Beta privada:</strong> abrirlo a algunos equipos externos para comprobar calidad, estabilidad y coste fuera de nuestro entorno.<span class="detail">Equipos de fuera de Kaleidos usarían el agente con sus propios archivos, sistemas de diseño y formas de trabajar. Así vemos si lo aprendido en el piloto se sostiene en otros contextos y reunimos los datos de calidad, estabilidad y coste que hacen falta antes de publicarlo.</span></li>
+  </ul>
+</section>
+<section class="slide">
+  <div class="kicker">El plan para avanzar y reducir el riesgo</div>
+  <h2>Cómo aprendemos del piloto</h2>
+  <p style="margin-bottom:1.4rem">Cada sesión del piloto deja datos que se pueden convertir en mejoras concretas. Hoy ya hacemos parte de esto a mano; el piloto lo lleva a uso real y lo automatiza.</p>
+  <div class="phase phase--now">
+    <div class="phase__label">Ya funciona</div>
+    <ul>
+      <li class="explain"><strong>Aprender de otros agentes:</strong> revisamos qué hacen otros agentes y adoptamos lo que funciona.<span class="detail">Revisamos cómo trabajan otros agentes, sobre todo open source, y adoptamos las ideas que funcionan: por ejemplo, conservar lo aprendido al resumir un chat largo o ceñirse a lo que se pide. Las últimas están en la <a class="slink" data-goto="8">diapositiva 8</a>.</span></li>
+      <li class="explain"><strong>Analizar sesiones a mano:</strong> los análisis de las sesiones Kahoot y NYT sirvieron para hacer mejoras importantes en las tools.<span class="detail">Revisamos a mano dos sesiones reales para ver dónde perdía tiempo y dinero el agente. De ahí salieron cambios en las tools, como devolver la posición real de las formas o poder construir varias a la vez. Lo cuenta la <a class="slink" data-goto="7">diapositiva 7</a>.</span></li>
+    </ul>
+  </div>
+  <div class="phase phase--pilot">
+    <div class="phase__label">Con el piloto</div>
+    <ul>
+      <li class="explain"><strong>Las correcciones del diseñador como dato:</strong> lo que cambia justo después del agente dice qué hizo mal en trabajo real, algo que ninguna prueba de laboratorio puede sustituir.<span class="detail">Si el agente coloca una forma en el sitio equivocado o la anida donde no toca y el diseñador la corrige, esa corrección señala un fallo concreto en un caso real. Las pruebas automáticas solo cubren los casos que se nos ocurren; esto cubre los que pasan de verdad.</span></li>
+      <li class="explain"><strong>El análisis, automático:</strong> un proceso nocturno hace lo que hicimos a mano con Kahoot y NYT y propone mejoras para las tools y las instrucciones. Las revisamos y las aplicamos nosotros.<span class="detail">Cada noche se revisan las sesiones del día buscando patrones: qué deshace la gente, qué vuelve a anidar, qué reespacia. De ahí salen propuestas de cambio para las tools y las instrucciones del agente, que revisamos antes de aplicarlas.</span></li>
+    </ul>
+  </div>
+</section>
+<section class="slide">
+  <div class="kicker">Roadmap</div>
+  <h2>El camino hacia la publicación</h2>
+  <p class="acc-hint">Haz clic en un hito para ver el detalle.</p>
+  <div class="accs">
+    <div class="acc open">
+      <button class="acc__head" type="button"><span class="acc__when">oct. '26</span><span class="acc__title">Harden</span><span class="acc__dep">necesita: un pequeño presupuesto para pruebas</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
+      <div class="acc__body"><p>Objetivo: que el prototipo aguante el uso de personas reales. Desde aquí trabajamos con un modelo abierto que no es de frontera, como el último de GLM, ejecutado en local: nos cuesta menos, nos obliga a optimizar para equipos con menos recursos y deja a la vista fallos que un modelo de frontera taparía. Para eso hay que poder conectar un modelo propio y que las tareas secundarias y el medidor de gasto funcionen con cualquier proveedor. Además incluye aplicar las mejoras de la <a href="oss-agent-survey.html" target="_blank" rel="noopener">revisión de once agentes open source</a>; medir con un A/B si pedir al agente que haga a la vez los pasos independientes lo hace más rápido; añadir la <a class="slink" data-goto="16">tool de plan</a>; probar el envío de imágenes en el formato compatible con OpenAI; cifrar las API keys, que hoy se guardan sin cifrar; poner límites de gasto, y montar las primeras evals.</p></div>
+    </div>
+    <div class="acc">
+      <button class="acc__head" type="button"><span class="acc__when">nov.–dic. '26</span><span class="acc__title">Piloto con diseñadores</span><span class="acc__dep">necesita: diseñadores, servidor, presupuesto</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
+      <div class="acc__body"><p>Diseñadores de Kaleidos usan el agente en su trabajo real, en sesiones organizadas. Unos usan el modelo abierto y otros uno de frontera, y después se alternan. Se graba la conversación con el agente y lo que el diseñador corrige justo después, que muestra qué hizo mal. Cada noche, un proceso automático analiza esas sesiones y propone mejoras para las tools y las instrucciones, como cuenta <a class="slink" data-goto="13">cómo aprendemos del piloto</a>.</p></div>
+    </div>
+    <div class="acc">
+      <button class="acc__head" type="button"><span class="acc__when">ene.–feb. '27</span><span class="acc__title">Beta privada</span><span class="acc__dep">necesita: resultados del piloto</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
+      <div class="acc__body"><p>Un pequeño grupo de equipos de fuera de Kaleidos usa el agente con sus propios archivos, sistemas de diseño y presupuestos. Sirve para comprobar si lo aprendido en el piloto funciona en otros contextos y para reunir los datos de calidad, estabilidad y coste que hacen falta antes de publicar.</p></div>
+    </div>
+    <div class="acc">
+      <button class="acc__head" type="button"><span class="acc__when">T2 '27</span><span class="acc__title">Publicar</span><span class="acc__dep">necesita: una beta aprobada</span><span class="acc__chev" aria-hidden="true">&rsaquo;</span></button>
+      <div class="acc__body"><p>El agente pasa a estar disponible para todo el mundo, detrás de un feature flag, para poder activarlo poco a poco y desactivarlo si algo falla. Se publica también la documentación para quien quiera usarlo con sus propios <a class="slink" data-goto="10">modelos self-hosted</a>. Que la beta esté aprobada significa que cumple los mínimos de calidad, estabilidad y coste que acordemos.</p></div>
+    </div>
+  </div>
+</section>
+<section class="slide">
+  <div class="kicker">Roadmap</div>
+  <h2>Qué necesitamos</h2>
+  <ul>
+        <li><strong>Tiempo de los diseñadores:</strong> sesiones programadas en las que usen el agente en su trabajo real. Sus correcciones son lo que nos dice qué mejorar.</li>
+        <li><strong>Un servidor dedicado:</strong> una instancia de staging donde grabar las sesiones y ejecutar cada noche el análisis automático.</li>
+        <li class="explain"><strong>Presupuesto de modelo:</strong> unos 1.000 € para Harden, 800 € para el piloto y 250 € para la beta, algo más de 2.000 € en total.<span class="detail">Contamos las sesiones de trabajo con el agente: en Harden, dos desarrolladores con 8 sesiones por semana cada uno; en el piloto, 4 diseñadores con 4 sesiones por semana; y durante todo el desarrollo, una diseñadora del equipo con 2 por semana y los dos desarrolladores con 2 cada uno. En total, unas 296 sesiones. La mitad va con Opus y la otra mitad con el modelo local, que no tiene coste por uso, igual que el análisis nocturno. Basándonos en nuestros datos de referencia, las 148 sesiones con Opus salen por entre $580 y $1.300. Tomamos la parte alta: unos 350 € en Harden, 800 € en el piloto y 250 € en la beta. A Harden le sumamos unos 650 € para otras pruebas y evals, según la estimación del equipo. Los equipos externos de la beta usan sus propias API keys.</span></li>
+        <li><strong>Un PC para ejecutar el modelo abierto en local:</strong> presupuesto por confirmar según el modelo.</li>
+        <li><strong>Un servidor GPU:</strong> para ejecutar modelos open source en las pruebas, las evals y el piloto.</li>
+  </ul>
+</section>
+<section class="slide">
+  <div class="kicker">Más allá del roadmap · a corto plazo</div>
+  <h2>Margen de crecimiento, de dos formas</h2>
+  <div class="cols">
+    <div>
+      <div class="col-head">Más eficiente <span>· más barato de ejecutar</span></div>
+      <ul>
+        <li class="explain"><strong>Renders más ligeros:</strong> revisar la estructura con imágenes en gris y más pequeñas, para que cada revisión cueste menos.<span class="detail">El agente mira renders de su trabajo para revisarlo, y cada imagen se cobra según su tamaño (los modelos cuentan los píxeles como tokens) y tiene un límite de peso. Para comprobar si una forma está bien anidada o alineada no hacen falta el color ni la resolución completa, así que una versión en gris y reducida costaría bastante menos.</span></li>
+        <li class="explain"><strong>Un modelo caro que planifica y uno barato que ejecuta:</strong> el potente solo se usa donde hace falta, así cada tarea cuesta menos.<span class="detail">Hoy un modelo económico ya explora el archivo, elige el playbook y resume la conversación. La idea es ir más allá: el modelo más potente escribe una especificación detallada de lo que hay que hacer y uno más barato ejecuta las llamadas a tools. Así el modelo caro solo se usa para lo que de verdad necesita su capacidad.</span></li>
+        <li class="explain"><strong>Un cookbook de patrones:</strong> recetas para crear elementos básicos y patrones de interfaz, para que el modelo no tenga que explorar cómo hacerlos cada vez.<span class="detail">Hoy, para construir algo tan común como un botón, una tarjeta o una barra de navegación, el modelo tiene que descubrir qué tools usar y en qué orden, y esas llamadas se pagan. Con un cookbook de recetas probadas iría directo a construirlo.</span></li>
+        <li class="explain"><strong>Mejor conexión con sistemas de diseño:</strong> aprovechar los que ya existen en librerías compartidas, o incluso ofrecer unos genéricos para archivos nuevos.<span class="detail">Si el agente encuentra y usa bien los componentes y tokens de una librería compartida, no tiene que recrearlos en cada archivo. Para un archivo nuevo sin librería, podría partir de un sistema de diseño genérico en lugar de empezar de cero.</span></li>
+      </ul>
+    </div>
+    <div>
+      <div class="col-head">Más capaz <span>· hace más que editar el lienzo</span></div>
+      <ul>
+        <li class="explain"><strong>Generar entregables:</strong> guías de estilo, especificaciones de handoff o documentación de componentes a partir del propio archivo, sin redactarlos a mano.<span class="detail">Además de editar el diseño, el agente podría producir documentos a partir de lo que ya sabe del archivo: sus tokens, componentes, reglas y foundations. Por ejemplo, una guía de estilo o la documentación de un componente para entregar a desarrollo.</span></li>
+        <li class="explain"><strong>Un plan visible:</strong> una checklist con el paso en curso, para seguir las tareas largas sin interrupciones y poder retomarlas si se cortan.<span class="detail">En una tarea larga, el agente mostraría una checklist con el paso en el que está, para que puedas seguirlo sin que te interrumpa. Si la sesión se corta, también podría retomarla desde ese plan. En la revisión de agentes open source fue la idea con más respaldo.</span><span class="rmnote">✓ ya está en el roadmap: oct. '26 (Harden)</span></li>
+        <li class="explain"><strong>Sugerencias para el usuario:</strong> si el agente se equivoca siempre en lo mismo en tus archivos, proponerte la skill o la foundation que lo evitaría.<span class="detail">Por ejemplo, si en tus archivos el agente usa una y otra vez colores sin token, el análisis podría sugerirte activar la regla de colores solo con tokens o añadir a tus foundations los que faltan.</span></li>
+      </ul>
+    </div>
+  </div>
+</section>
+<section class="slide">
+  <div class="kicker">Más allá del roadmap · lo más lejano</div>
+  <h2>Revisiones programadas de los archivos del equipo</h2>
+  <p style="margin-bottom:1.4rem">Una idea a más largo plazo: agentes que corren por su cuenta en segundo plano, sin que nadie los observe, para revisar y auditar los archivos de diseño de todo un equipo, como comprobaciones automáticas nocturnas que registran lo que encuentran.</p>
+  <ul>
+    <li class="explain"><strong>Revisiones programadas:</strong> cada noche el agente repasa los archivos del equipo (reglas, accesibilidad, tokens) y deja lo que encuentra como comentarios o informes, sin que nadie lo pida.<span class="detail">Normalmente el agente trabaja dentro de una pestaña de Penpot abierta en tu navegador. Ejecutarlo «headless» significa hacerlo en un servidor, sin ventana y sin nadie presente. Así podría funcionar según un calendario, por ejemplo cada noche, y revisar todos los archivos de un equipo en busca de reglas incumplidas, problemas de accesibilidad (a11y) o valores sin token.</span></li>
+    <li class="explain"><strong>Tareas largas</strong> que no dependen de tener una pestaña abierta.<span class="detail">Hoy una tarea larga depende de que la pestaña siga abierta: si se cierra o se pierde la conexión, el trabajo se corta. En un servidor, el agente podría terminarla solo y avisar cuando acabe.</span></li>
+  </ul>
+</section>
+<section class="slide slide--addon" data-addon>
+  <div class="kicker">Nitrate</div>
+  <h2>Lo que el agente integrado abre para Nitrate</h2>
+  <p style="margin-bottom:1.4rem">Con un agente externo conectado por MCP, una organización apenas puede controlar nada: solo ve lo que expone el servidor MCP. Con el agente dentro de Penpot, la organización puede decidir cómo trabaja el agente y con qué, y eso abre posibilidades para Nitrate.</p>
+  <ul>
+    <li class="explain"><strong>Reglas y skills de la organización:</strong> definirlas una vez para que las hereden todos los equipos y archivos, y marcar como obligatorias las que no se pueden relajar.<span class="detail">Hoy las skills ya se organizan por niveles (built-in, equipo, cuenta personal y archivo). Nitrate añadiría el de la organización por encima de todos. Que una regla obligatoria no se pueda desactivar en un nivel inferior todavía no está construido: el campo existe en la base de datos, pero el agente aún no lo tiene en cuenta.</span></li>
+    <li class="explain"><strong>Guías de la organización:</strong> un tono de voz, convenciones de naming y contexto de empresa que cada equipo y archivo hereda.<span class="detail">Es lo mismo que hoy hacen las foundations de un archivo, pero a nivel de organización, para que el agente trabaje igual en todos los equipos.</span></li>
+    <li class="explain"><strong>Proveedores y modelos:</strong> la organización sabe qué proveedores y modelos configura cada persona, y puede decidir cuáles se permiten y si se usa la API key de cada uno o la de la organización.<span class="detail">Las API keys y los modelos que cada persona activa ya se guardan en Penpot. Eso permite a una organización fijar un límite de cumplimiento normativo, por ejemplo permitir solo modelos alojados en la UE o su propio modelo self-hosted.</span></li>
+  </ul>
+</section>
+
+<script>
+  const slides = [...document.querySelectorAll(".slide")];
+  // groups: name + last slide (1-based) in each
+  const groups = [
+    { name: "Apertura", to: 2, goal: "Introducción", hideGoal: true },
+    { name: "El enfoque", to: 5, goal: "Puntos fuertes del enfoque", hideGoal: true },
+    { name: "Qué implica", to: 8, goal: "Qué implica la integración", hideGoal: true },
+    { name: "Dónde se ejecuta", to: 11, goal: "Dónde se ejecuta la IA", hideGoal: true },
+    { name: "El plan", to: 13, goal: "El plan para avanzar y reducir el riesgo", hideGoal: true },
+    { name: "Roadmap", to: 15, goal: "El roadmap (y lo que pedimos)", hideGoal: true },
+    { name: "Más allá del roadmap", to: 17, goal: "Posibles pasos más allá del roadmap", hideGoal: true },
+  ];
+  const groupFor = (num) => groups.find((g) => num <= g.to) || groups[groups.length - 1];
+  const groupStarts = new Set();
+  { let prev = 0; for (const g of groups) { groupStarts.add(prev); prev = g.to; } }
+
+  // the "Part N of 6 · goal" act line now lives once, above the nav dots (updated in show())
+
+  // glossary: wrap the first occurrence of each jargon term per slide with a hover tooltip
+  const glossary = {
+    "MCP": "Model Context Protocol: una forma estándar para que programas de IA externos (como Claude Code o Cursor) se conecten a una tool.",
+    "write-path": "El punto en el que un cambio se guarda en el archivo. Forzarlo aquí bloquea un cambio malo en el momento de escribirlo, no solo lo desaconseja.",
+    "write path": "El punto en el que un cambio se guarda en el archivo. Forzarlo aquí bloquea un cambio malo en el momento de escribirlo, no solo lo desaconseja.",
+    "pipeline de cambios": "El sistema normal de Penpot para aplicar ediciones, de modo que los cambios son reversibles y se sincronizan con todos en el archivo.",
+    "BYOK": "Trae tu propia clave: aportas tu propia cuenta con una empresa de IA, y pagas directamente a esa empresa.",
+    "SSE": "Server-Sent Events: una forma de transmitir la respuesta de la IA trozo a trozo mientras se escribe.",
+    "proxy": "Un servidor intermediario simple que reenvía peticiones sin cambiarlas.",
+    "inferencia": "Ejecutar el modelo de IA para producir un resultado.",
+    "OSS": "Software open source: código disponible libremente que cualquiera puede ejecutar y alojar por su cuenta.",
+    "prompt caching": "Reutilizar partes de una petición anterior para que la IA no vuelva a cobrar por el mismo contexto.",
+    "compaction": "Recortar o resumir partes antiguas de la conversación para mantenerla pequeña y barata.",
+    "cascada": "Reglas organizadas por ámbito (empresa, equipo, archivo), donde gana la más específica.",
+    "evals": "Evaluaciones: tests automatizados que miden qué tan bien rinde la IA.",
+    "plugin-data": "Datos extra guardados en un archivo de Penpot; aquí, usados para mantener las reglas del diseño junto con el archivo.",
+    "vLLM": "Un programa para ejecutar modelos de IA open source de forma eficiente en tu propio hardware.",
+    "medidor de gasto": "Un indicador en vivo de cuánto ha costado la sesión de IA actual.",
+  };
+  {
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const terms = Object.keys(glossary).sort((a, b) => b.length - a.length);
+    slides.forEach((slide) => {
+      terms.forEach((term) => {
+        const re = new RegExp("(^|[^A-Za-z0-9_])(" + esc(term) + ")(?![A-Za-z0-9_])", "i");
+        const walker = document.createTreeWalker(slide, NodeFilter.SHOW_TEXT, {
+          acceptNode(n) {
+            if (!n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+            if (n.parentElement.closest(".term, .act, .kicker, h1, h2, code, .explain")) return NodeFilter.FILTER_REJECT;
+            return NodeFilter.FILTER_ACCEPT;
+          },
+        });
+        let node;
+        while ((node = walker.nextNode())) {
+          const m = re.exec(node.nodeValue);
+          if (!m) continue;
+          const start = m.index + m[1].length;
+          const matched = m[2];
+          const span = document.createElement("span");
+          span.className = "term";
+          span.setAttribute("data-tip", glossary[term]);
+          span.textContent = matched;
+          const frag = document.createDocumentFragment();
+          const before = node.nodeValue.slice(0, start);
+          const after = node.nodeValue.slice(start + matched.length);
+          if (before) frag.appendChild(document.createTextNode(before));
+          frag.appendChild(span);
+          if (after) frag.appendChild(document.createTextNode(after));
+          node.parentNode.replaceChild(frag, node);
+          break; // first occurrence of this term in this slide only
+        }
+      });
+    });
+  }
+
+  const dotsWrap = document.getElementById("dot-row");
+  const navAct = document.getElementById("nav-act");
+  const dots = slides.map((_, j) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("aria-label", "Diapositiva " + (j + 1) + " · " + groupFor(j + 1).goal);
+    if (j > 0 && groupStarts.has(j)) b.classList.add("group-start");
+    b.addEventListener("click", () => show(j));
+    dotsWrap.appendChild(b);
+    return b;
+  });
+  // the add-on isn't a numbered part: relabel its dot and set it apart from the last group
+  const addonIdx = slides.findIndex((s) => s.hasAttribute("data-addon"));
+  if (addonIdx > -1) {
+    dots[addonIdx].setAttribute("aria-label", "Bola extra · " + slides[addonIdx].querySelector("h2").textContent);
+    dots[addonIdx].classList.add("group-start");
+  }
+  let i = 0;
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, j) => s.classList.toggle("active", j === i));
+    document.querySelectorAll(".explain.open").forEach(closeExplain);
+    dots.forEach((d, j) => d.setAttribute("aria-current", j === i ? "true" : "false"));
+    if (slides[i].hasAttribute("data-addon")) {  // add-on: not a numbered part
+      navAct.innerHTML = '<span class="act__part">Bola extra</span>';
+      document.documentElement.style.setProperty("--cur-part", "var(--addon)");
+    } else {
+      const gi = groups.indexOf(groupFor(i + 1));
+      navAct.innerHTML = '<span class="act__part">Parte ' + (gi + 1) + ' de ' + groups.length +
+        '</span>' + (groups[gi].hideGoal ? '' : '<span class="act__goal">' + groups[gi].goal + '</span>');
+      document.documentElement.style.setProperty("--cur-part", "var(--part-" + (gi + 1) + ")");
+    }
+    window.scrollTo(0, 0);
+  }
+  addEventListener("keydown", (e) => {
+    if (["ArrowRight", "PageDown", " "].includes(e.key)) { e.preventDefault(); show(i + 1); }
+    if (["ArrowLeft", "PageUp"].includes(e.key)) { e.preventDefault(); show(i - 1); }
+    if (e.key === "Home") show(0);
+    if (e.key === "End") show(slides.length - 1);
+  });
+  addEventListener("click", (e) => {
+    if (e.target.closest("a, .dots, .explain, .acc")) return;    // don't hijack links, dots, explain lines, or the accordion
+    if (String(getSelection()).length) return;                 // let the user select/copy text
+    const band = innerWidth * 0.12;                             // only the outer 12% each side navigates
+    if (e.clientX >= innerWidth - band) show(i + 1);
+    else if (e.clientX <= band) show(i - 1);
+  });
+  // click-to-explain: floating plain-language detail (accordion per slide)
+  const closeExplain = (o) => { o.classList.remove("open"); const d = o.querySelector(".detail"); if (d) { d.style.left = ""; d.style.top = ""; d.style.bottom = ""; } };
+  const placeExplain = (li) => {
+    const d = li.querySelector(".detail");
+    d.style.left = ""; d.style.top = ""; d.style.bottom = "";  // reset to CSS default (below-left)
+    const overlap = 200;                                  // px of the text's right end the popover covers
+    const lr = li.getBoundingClientRect();
+    const w = d.getBoundingClientRect().width;
+    const leftInLi = lr.width - overlap;                  // shift right, anchored to the text's right edge (no drift)
+    if (leftInLi > 0 && lr.left + leftInLi + w <= innerWidth - 16) d.style.left = leftInLi + "px";
+    const overRight = d.getBoundingClientRect().right - (innerWidth - 16);  // right-column lines: pull back inside
+    if (overRight > 0) d.style.left = ((parseFloat(d.style.left) || 0) - overRight) + "px";
+    if (d.getBoundingClientRect().bottom > innerHeight - 12) {  // below would run off the bottom → flip above the line
+      d.style.top = "auto"; d.style.bottom = "calc(100% + .4rem)";
+    }
+  };
+  document.querySelectorAll(".explain").forEach((li) => {
+    li.addEventListener("click", (e) => {
+      if (e.target.closest(".detail")) return;            // let them read/select the explanation
+      const open = li.classList.contains("open");
+      li.closest(".slide").querySelectorAll(".explain.open").forEach(closeExplain);
+      if (!open) { li.classList.add("open"); placeExplain(li); }
+    });
+  });
+  // floating popover: click anywhere outside an explain line closes it
+  addEventListener("click", (e) => {
+    if (!e.target.closest(".explain")) document.querySelectorAll(".explain.open").forEach(closeExplain);
+  });
+
+  // roadmap accordion: one milestone open at a time
+  document.querySelectorAll(".acc__head").forEach((h) => {
+    h.addEventListener("click", () => {
+      const item = h.closest(".acc"), wasOpen = item.classList.contains("open");
+      item.closest(".accs").querySelectorAll(".acc.open").forEach((o) => o.classList.remove("open"));
+      if (!wasOpen) item.classList.add("open");
+    });
+  });
+  // cross-slide links jump to the referenced slide
+  document.querySelectorAll(".slink").forEach((a) => {
+    a.addEventListener("click", (e) => { e.preventDefault(); show(parseInt(a.dataset.goto, 10) - 1); });
+  });
+
+  show(0);
+</script>
+</body>
+</html>

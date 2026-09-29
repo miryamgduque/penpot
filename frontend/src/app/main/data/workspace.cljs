@@ -401,6 +401,14 @@
       (-> state
           (assoc :recent-colors (:recent-colors storage/user))
           (assoc :recent-fonts (:recent-fonts storage/user))
+          ;; who is recording is per-file, so a real file switch must drop it or
+          ;; the new file would claim to be recorded. But this event also re-runs
+          ;; for the SAME file (`reload-current-file`, after someone restores a
+          ;; version), and that path never calls `finalize-workspace` — clearing
+          ;; there would blank the indicator while the recording is still
+          ;; capturing, with nothing to re-send it until the resubscribe lands.
+          (cond-> (not= file-id (:current-file-id state))
+            (assoc :workspace-recording #{}))
           (assoc :current-file-id file-id)
           (assoc :workspace-presence {})
           (update :workspace-global dissoc :default-font)
@@ -605,6 +613,7 @@
            :workspace-wasm-editor-styles
            :workspace-media-objects
            :workspace-presence
+           :workspace-recording
            :workspace-tokens
            :workspace-undo
            :workspace-versions)

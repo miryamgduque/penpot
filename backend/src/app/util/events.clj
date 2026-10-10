@@ -38,6 +38,19 @@
       (sp/put! sink [type data]))
     nil))
 
+(defn closed?
+  "True once the consumer has gone away: the listener closes the channel when
+  writing to a broken pipe throws.
+
+  `tap` discards the put result and always returns nil, so a long-running
+  handler has no other way to notice that nobody is listening any more. Poll
+  this and bail out — otherwise the work (and any upstream request behind it)
+  runs to completion for a client that left."
+  []
+  (let [channel *channel*]
+    (or (nil? channel)
+        (sp/closed? channel))))
+
 (defn spawn-listener
   "Consume the events of `channel` on a thread of its own, until it
   closes.

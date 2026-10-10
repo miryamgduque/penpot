@@ -17,6 +17,16 @@ export function createModal(
 
   modal.setTheme(theme);
 
+  // A plugin may ask to be docked into the workspace plugin dock (an
+  // integrated side panel). Only honored when the host page provides the
+  // dock container; otherwise the plugin opens as a floating window.
+  const dockHost = options?.dock
+    ? document.getElementById('plugin-dock')
+    : null;
+  if (dockHost) {
+    modal.setAttribute('docked', 'true');
+  }
+
   const { width } = resizeModal(modal, options?.width, options?.height);
 
   const initialPosition = {
@@ -54,7 +64,13 @@ export function createModal(
     modal.setAttribute('allow-clipboard-write', 'true');
   }
 
-  document.body.appendChild(modal);
+  if (dockHost) {
+    dockHost.appendChild(modal);
+    // the dock column appearing changes the workspace layout
+    window.dispatchEvent(new Event('resize'));
+  } else {
+    document.body.appendChild(modal);
+  }
 
   return modal;
 }

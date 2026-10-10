@@ -197,7 +197,15 @@
     :link-preview
 
     ;; Shows the "link later" option on the files export modal.
-    :export-link-later})
+    :export-link-later
+
+    ;; Design session recording: capture every layout interaction on a file,
+    ;; by any participant, for an agent to critique afterwards.
+    ;;
+    ;; OFF by default, deliberately. A recording captures identifiable activity
+    ;; by people who did not press the button, so switching it on is a decision
+    ;; a deployment makes explicitly rather than inheriting.
+    :design-session-recording})
 
 (def all-flags
   (set/union email login varia))

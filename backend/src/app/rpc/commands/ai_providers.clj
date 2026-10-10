@@ -181,7 +181,7 @@
   [:map {:title "get-ai-providers"}])
 
 (sv/defmethod ::get-ai-providers
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:get-ai-providers}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id]}]
   (->> (db/query pool :profile-ai-provider {:profile-id profile-id})
@@ -196,7 +196,7 @@
    [:provider [::sm/one-of {:format "string"} valid-provider-ids]]])
 
 (sv/defmethod ::get-ai-provider-models
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:get-ai-provider-models}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider]}]
   (let [row (get-provider-row pool profile-id provider)]
@@ -232,7 +232,7 @@
    DO UPDATE SET api_key = ?, updated_at = now()")
 
 (sv/defmethod ::set-ai-provider-key
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:set-ai-provider-key}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id provider api-key]}]
   (let [row  (get-provider-row pool profile-id provider)
@@ -264,7 +264,7 @@
    DO UPDATE SET api_key = ?, enabled_models = ?, updated_at = now()")
 
 (sv/defmethod ::connect-ai-provider
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:connect-ai-provider}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider api-key]}]
   ;; validation doubles as the model fetch: an invalid key stores nothing
@@ -290,7 +290,7 @@
    [:models [:vector [:string {:max 200}]]]])
 
 (sv/defmethod ::set-ai-provider-models
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:set-ai-provider-models}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id provider models]}]
   (let [row (get-provider-row pool profile-id provider)]
@@ -313,7 +313,7 @@
    [:provider [::sm/one-of {:format "string"} valid-provider-ids]]])
 
 (sv/defmethod ::disconnect-ai-provider
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:disconnect-ai-provider}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id provider]}]
   (db/delete! pool :profile-ai-provider {:profile-id profile-id
@@ -351,7 +351,7 @@
                 :provider provider)))
 
 (sv/defmethod ::ai-agent-round
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:ai-agent-round}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider payload]}]
   (let [row      (connected-provider-row pool profile-id provider)
@@ -437,7 +437,7 @@
           (recur events))))))
 
 (sv/defmethod ::ai-agent-round-stream
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sse/stream? true
    ::sm/params schema:ai-agent-round-stream}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider payload]}]

@@ -70,7 +70,10 @@
   (t/is (= "ISO-8859-1" (aweb/charset-of "text/html; charset=ISO-8859-1")))
   (t/is (= "utf-8" (aweb/charset-of "text/html;charset=\"utf-8\"")))
   (t/is (= "UTF-8" (aweb/charset-of "text/html")))
-  (t/is (= "UTF-8" (aweb/charset-of nil))))
+  (t/is (= "UTF-8" (aweb/charset-of nil)))
+  ;; an unknown or malformed charset falls back instead of failing the decode
+  (t/is (= "UTF-8" (aweb/charset-of "text/html; charset=not-a-charset")))
+  (t/is (= "UTF-8" (aweb/charset-of "text/html; charset=%%%"))))
 
 (t/deftest text-is-capped-with-a-truncation-flag
   (let [[text truncated?] (aweb/capped-text (apply str (repeat 150000 "x")))]

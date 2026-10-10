@@ -149,7 +149,7 @@
       AND design_session.stopped_at IS NULL")
 
 (sv/defmethod ::upsert-design-session
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:upsert-design-session}
   [{:keys [::db/pool] :as cfg}
    {:keys [::rpc/profile-id id file-id session-id events raw-dropped stop-reason]}]
@@ -181,14 +181,16 @@
 (def ^:private sql:sessions-for-file
   "SELECT id, file_id, profile_id, session_id, started_at, stopped_at,
           stop_reason, raw_dropped, created_at, updated_at,
-          jsonb_array_length(events) AS event_count,
+          CASE WHEN jsonb_typeof(events) = 'array'
+               THEN jsonb_array_length(events)
+               ELSE 0 END AS event_count,
           (review IS NOT NULL) AS has_review
      FROM design_session
     WHERE file_id = ?
     ORDER BY started_at DESC")
 
 (sv/defmethod ::get-design-sessions
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:get-design-sessions}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id file-id]}]
   (files/check-read-permissions! pool profile-id file-id)
@@ -206,7 +208,7 @@
    [:id ::sm/uuid]])
 
 (sv/defmethod ::get-design-session
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:get-design-session}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id id]}]
   (let [spool (get-sessions-pool cfg)
@@ -236,7 +238,7 @@
   "UPDATE design_session SET review = ?, updated_at = now() WHERE id = ?")
 
 (sv/defmethod ::set-design-session-review
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:set-design-session-review}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id id review]}]
   (let [spool (get-sessions-pool cfg)
@@ -267,8 +269,11 @@
    ;; omit to export every session on the file
    [:ids {:optional true} [:vector ::sm/uuid]]])
 
+(def ^:private sql:full-sessions-for-file
+  "SELECT * FROM design_session WHERE file_id = ? ORDER BY started_at DESC")
+
 (sv/defmethod ::export-design-sessions
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:export-design-sessions}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id file-id ids]}]
   (files/check-read-permissions! pool profile-id file-id)
@@ -277,11 +282,9 @@
 
   (let [spool    (get-sessions-pool cfg)
         wanted   (some-> (seq ids) set)
-        sessions (->> (db/exec! spool [sql:sessions-for-file file-id])
+        sessions (->> (db/exec! spool [sql:full-sessions-for-file file-id])
                       (filter (fn [row] (or (nil? wanted) (contains? wanted (:id row)))))
-                      (mapv (fn [row]
-                              (let [full (db/get* spool :design-session {:id (:id row)})]
-                                (decode-row full)))))]
+                      (mapv decode-row))]
     {:file-id file-id
      :session-count (count sessions)
      :sessions sessions}))

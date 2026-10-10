@@ -29,6 +29,40 @@
   display: none;
 }
 
+/* Docked mode: the modal is an integrated workspace panel, not a floating
+   window — it fills its dock container and loses window chrome. */
+:host([docked]) {
+  position: static;
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+:host([docked]) .wrapper {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  inline-size: 100% !important;
+  block-size: 100% !important;
+  max-inline-size: none !important;
+  max-block-size: none !important;
+  min-inline-size: 0 !important;
+  padding: var(--spacing-4);
+  border-radius: 0 !important;
+  border: none !important;
+  border-inline-start: 1px solid var(--color-background-quaternary) !important;
+  box-shadow: none !important;
+  resize: none !important;
+}
+
+:host([docked]) .wrapper:after {
+  display: none !important;
+}
+
+:host([docked]) .header {
+  cursor: default;
+}
+
 .wrapper {
   position: absolute;
   inset-block-start: var(--modal-block-start);

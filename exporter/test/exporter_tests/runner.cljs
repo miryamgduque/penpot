@@ -7,6 +7,7 @@
 (ns exporter-tests.runner
   (:require
    [app.common.logging :as l]
+   [app.util.netguard-test]
    [cljs.test :as t]
    [clojure.string :as str]
    [clojure.tools.cli :refer [parse-opts]]
@@ -14,6 +15,7 @@
    [exporter-tests.jobs-test]
    [exporter-tests.renderer-svg-test]
    [exporter-tests.scheduler-test]
+   [exporter-tests.screenshot-url-test]
    [exporter-tests.shell-test]
    [exporter-tests.wasm-pool-test]
    [goog.object :as gobj]))
@@ -21,10 +23,12 @@
 (enable-console-print!)
 
 (def test-namespaces
-  ['exporter-tests.export-shapes-test
+  ['app.util.netguard-test
+   'exporter-tests.export-shapes-test
    'exporter-tests.jobs-test
    'exporter-tests.renderer-svg-test
    'exporter-tests.scheduler-test
+   'exporter-tests.screenshot-url-test
    'exporter-tests.shell-test
    'exporter-tests.wasm-pool-test])
 

@@ -102,6 +102,9 @@
         on-webhooks-click
         (mf/use-fn #(do (on-close) (st/emit! (dcm/go-to-dashboard-webhooks))))
 
+        on-skills-click
+        (mf/use-fn #(do (on-close) (st/emit! (dcm/go-to-dashboard-skills))))
+
         on-settings-click
         (mf/use-fn #(do (on-close) (st/emit! (dcm/go-to-dashboard-settings))))
 
@@ -189,6 +192,11 @@
           [:> dropdown-menu-item* {:on-click on-webhooks-click
                                    :class (stl/css :options-item)}
            (tr "labels.webhooks")])
+
+        [:> dropdown-menu-item* {:on-click on-skills-click
+                                 :class (stl/css :options-item)
+                                 :data-testid "team-skills"}
+         (tr "labels.skills")]
 
         [:> dropdown-menu-item* {:on-click on-settings-click
                                  :class (stl/css :options-item)

@@ -199,6 +199,11 @@
     ;; Shows the "link later" option on the files export modal.
     :export-link-later
 
+    ;; The in-app design agent: the workspace agents panel, the dashboard
+    ;; skills pages and the AI providers section in settings. OFF by default;
+    ;; a deployment opts in.
+    :design-agent
+
     ;; Design session recording: capture every layout interaction on a file,
     ;; by any participant, for an agent to critique afterwards.
     ;;

@@ -911,7 +911,10 @@
         (contains? cf/flags :access-tokens)
 
         mcp-enabled?
-        (contains? cf/flags :mcp)]
+        (contains? cf/flags :mcp)
+
+        agent-enabled?
+        (contains? cf/flags :design-agent)]
 
     (mf/with-effect []
       (dom/set-html-title (tr "title.settings.integrations"))
@@ -931,9 +934,10 @@
      (when ^boolean mcp-enabled?
        [:hr {:class (stl/css :separator)}])
 
-     [:> ai-providers-section* {}]
+     (when ^boolean agent-enabled?
+       [:> ai-providers-section* {}])
 
-     (when ^boolean access-tokens-enabled?
+     (when (and ^boolean agent-enabled? ^boolean access-tokens-enabled?)
        [:hr {:class (stl/css :separator)}])
 
      (when ^boolean access-tokens-enabled?

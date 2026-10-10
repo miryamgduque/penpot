@@ -81,6 +81,7 @@
     "gettext-parser": "^9.1.1",
     "highlight.js": "^11.12.0",
     "js-beautify": "^2.0.3",
+    "js-yaml": "^4.2.0",
     "jsdom": "^30.0.1",
     "lodash": "^4.18.1",
     "lodash.debounce": "^4.0.8",

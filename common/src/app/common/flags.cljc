@@ -192,6 +192,11 @@
     ;; that knows the file id.
     :link-preview
 
+    ;; The in-app design agent: the workspace agents panel, the dashboard
+    ;; skills pages and the AI providers section in settings. OFF by default;
+    ;; a deployment opts in.
+    :design-agent
+
     ;; Design session recording: capture every layout interaction on a file,
     ;; by any participant, for an agent to critique afterwards.
     ;;

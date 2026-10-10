@@ -43,8 +43,9 @@
    :promoted-by-name (or (not-empty (:promoted-by-fullname row))
                          (:promoted-by-email row))
    :source-skill-id (:source-profile-skill-id row)
-   ;; US #52: true when this row is a promotion this profile made itself, or
-   ;; one already acknowledged (Dismiss / View skill on the arrival notice).
+   ;; US #52: true while this promotion is new to this profile: someone else
+   ;; promoted it and the profile has not acknowledged it yet (Dismiss / View
+   ;; skill on the arrival notice). Never true for the promoter.
    :arrived (boolean (:arrived row))})
 
 ;; --- Query: a team's promoted skills
@@ -62,7 +63,7 @@
     ORDER BY ts.created_at")
 
 (sv/defmethod ::get-team-skills
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params [:map {:title "get-team-skills"}
                 [:team-id ::sm/uuid]]}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id team-id]}]
@@ -82,7 +83,7 @@
    ON CONFLICT (profile_id, team_skill_id) DO NOTHING")
 
 (sv/defmethod ::mark-team-skill-seen
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:mark-team-skill-seen}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id team-skill-id]}]
   (let [team-skill (db/get pool :team-skill {:id team-skill-id})]
@@ -116,7 +117,7 @@
    [:description {:optional true} [:maybe [:string {:max 4000}]]]])
 
 (sv/defmethod ::promote-skill
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:promote-skill
    ::db/transaction true}
   [{:keys [::db/conn]} {:keys [::rpc/profile-id source-id team-id name description]}]

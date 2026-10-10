@@ -61,7 +61,7 @@
    [:team-id ::sm/uuid]])
 
 (sv/defmethod ::get-design-skills
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:get-design-skills}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id team-id]}]
   (check-read-permissions! pool profile-id team-id)
@@ -83,7 +83,7 @@
    [:body {:optional true} :string]])
 
 (sv/defmethod ::create-design-skill
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:create-design-skill}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id team-id name kind enforcement
                                is-mandatory trigger-on description body]}]
@@ -113,7 +113,7 @@
    [:is-enabled {:optional true} ::sm/boolean]])
 
 (sv/defmethod ::update-design-skill
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:update-design-skill}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id id] :as params}]
   (let [skill (db/get pool :design-skill {:id id})]
@@ -130,7 +130,7 @@
    [:id ::sm/uuid]])
 
 (sv/defmethod ::delete-design-skill
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:delete-design-skill
    ::db/transaction true}
   [{:keys [::db/conn]} {:keys [::rpc/profile-id id]}]
@@ -148,7 +148,7 @@
    [:enabled ::sm/boolean]])
 
 (sv/defmethod ::set-inherited-skill-enabled
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:set-inherited-skill-enabled
    ::db/transaction true}
   [{:keys [::db/conn]} {:keys [::rpc/profile-id team-id skill-name enabled]}]

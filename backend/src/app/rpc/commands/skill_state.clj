@@ -33,7 +33,7 @@
       AND (file_id IS NULL OR file_id = ?)")
 
 (sv/defmethod ::get-skill-states
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:get-skill-states}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id file-id]}]
   (->> (db/exec! pool [sql:get-states profile-id file-id])
@@ -60,7 +60,7 @@
    DO UPDATE SET enabled = ?, updated_at = now()")
 
 (sv/defmethod ::set-skill-enabled
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:set-skill-enabled}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id skill enabled file-id]}]
   (db/exec-one! pool [sql:upsert-enabled profile-id skill file-id enabled enabled])

@@ -259,16 +259,17 @@
      ;; it, so the dot rides the panel toggle — the one recording-related
      ;; control that is always on screen. Someone with the panel closed is
      ;; exactly the person who would otherwise never know.
-     [:div {:class (stl/css :agent-toggle)}
-      [:button {:title (if file-recording?
-                         "A design session is being recorded on this file"
-                         (str "Agent — " (sc/get-tooltip :toggle-ai-panel)))
-                :aria-label "Agent"
-                :class (stl/css-case :comments-btn true :agent-btn true :selected ai-panel-open?)
-                :on-click #(st/emit! (dwaip/toggle-panel))}
-       [:> i/icon* {:icon-id i/bot}]]
-      (when ^boolean file-recording?
-        [:span {:class (stl/css :recording-dot)
-                :role "status"
-                :aria-label "Recording in progress"}])]]))
+     (when (contains? cfg/flags :design-agent)
+       [:div {:class (stl/css :agent-toggle)}
+        [:button {:title (if file-recording?
+                           "A design session is being recorded on this file"
+                           (str "Agent — " (sc/get-tooltip :toggle-ai-panel)))
+                  :aria-label "Agent"
+                  :class (stl/css-case :comments-btn true :agent-btn true :selected ai-panel-open?)
+                  :on-click #(st/emit! (dwaip/toggle-panel))}
+         [:> i/icon* {:icon-id i/bot}]]
+        (when ^boolean file-recording?
+          [:span {:class (stl/css :recording-dot)
+                  :role "status"
+                  :aria-label "Recording in progress"}])])]))
 

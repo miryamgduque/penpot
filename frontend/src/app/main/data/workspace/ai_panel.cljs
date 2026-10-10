@@ -17,6 +17,7 @@
   (:require
    [app.common.data.macros :as dm]
    [app.common.uuid :as uuid]
+   [app.config :as cf]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.session-actor :as sa]
@@ -37,7 +38,10 @@
 (defn- set-open
   [state open?]
   (if-let [file-id (:current-file-id state)]
-    (assoc-in state [:ai-panel file-id :open?] (boolean open?))
+    ;; the panel never opens without the flag, whatever asks for it (header
+    ;; button, shortcut, another event)
+    (assoc-in state [:ai-panel file-id :open?]
+              (and (boolean open?) (contains? cf/flags :design-agent)))
     state))
 
 (declare start-watcher)

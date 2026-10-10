@@ -390,12 +390,13 @@
                      :keyboard-action go-libs-with-key}
            [:span {:class (stl/css :element-title)} (tr "labels.shared-libraries")]]]
          ;; Agent Skills — the team home for promoted skills (US #12)
-         [:li {:class (stl/css-case :current agent-skills?
-                                    :sidebar-nav-item true)}
-          [:> link* {:action go-agent-skills
-                     :data-testid "agent-skills-link-sidebar"
-                     :class (stl/css :sidebar-link)}
-           [:span {:class (stl/css :element-title)} (tr "labels.agent-skills")]]]]]
+         (when (contains? cf/flags :design-agent)
+           [:li {:class (stl/css-case :current agent-skills?
+                                      :sidebar-nav-item true)}
+            [:> link* {:action go-agent-skills
+                       :data-testid "agent-skills-link-sidebar"
+                       :class (stl/css :sidebar-link)}
+             [:span {:class (stl/css :element-title)} (tr "labels.agent-skills")]]])]]
 
 
        [:div {:class (stl/css :sidebar-content-section)

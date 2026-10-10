@@ -126,7 +126,8 @@
           [:span {:class (stl/css :element-title)} (tr "subscription.labels")]])
 
        (when (or (contains? cf/flags :access-tokens)
-                 (contains? cf/flags :mcp))
+                 (contains? cf/flags :mcp)
+                 (contains? cf/flags :design-agent))
          [:li {:class (stl/css-case :current integrations?
                                     :settings-item true)
                :on-click go-settings-integrations

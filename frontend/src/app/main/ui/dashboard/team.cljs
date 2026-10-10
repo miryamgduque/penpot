@@ -139,8 +139,9 @@
        (when (contains? cfg/flags :webhooks)
          [:li {:class (when webhooks-section? (stl/css :active))}
           [:a {:on-click on-nav-webhooks} (tr "labels.webhooks")]])
-       [:li {:class (when skills-section? (stl/css :active))}
-        [:a {:on-click on-nav-skills} (tr "labels.skills")]]
+       (when (contains? cfg/flags :design-agent)
+         [:li {:class (when skills-section? (stl/css :active))}
+          [:a {:on-click on-nav-skills} (tr "labels.skills")]])
        [:li {:class (when settings-section? (stl/css :active))}
         [:a {:on-click on-nav-settings} (tr "labels.settings")]]]]
      [:div {:class (stl/css :dashboard-buttons)}

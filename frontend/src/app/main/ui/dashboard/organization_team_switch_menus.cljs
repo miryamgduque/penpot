@@ -193,10 +193,11 @@
                                    :class (stl/css :options-item)}
            (tr "labels.webhooks")])
 
-        [:> dropdown-menu-item* {:on-click on-skills-click
-                                 :class (stl/css :options-item)
-                                 :data-testid "team-skills"}
-         (tr "labels.skills")]
+        (when (contains? cf/flags :design-agent)
+          [:> dropdown-menu-item* {:on-click on-skills-click
+                                   :class (stl/css :options-item)
+                                   :data-testid "team-skills"}
+           (tr "labels.skills")])
 
         [:> dropdown-menu-item* {:on-click on-settings-click
                                  :class (stl/css :options-item)

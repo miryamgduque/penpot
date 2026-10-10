@@ -51,9 +51,15 @@
 (defn charset-of
   "The charset named by a content-type header, defaulting to UTF-8."
   [content-type]
-  (or (some-> (re-find #"(?i)charset=\"?([^;\s\"]+)" (or content-type ""))
-              (second))
-      "UTF-8"))
+  (let [charset (some-> (re-find #"(?i)charset=\"?([^;\s\"]+)" (or content-type ""))
+                        (second))]
+    ;; an unknown or malformed name must not fail the decode
+    (if (and charset
+             (try
+               (java.nio.charset.Charset/isSupported ^String charset)
+               (catch IllegalArgumentException _ false)))
+      charset
+      "UTF-8")))
 
 (defn capped-text
   "Caps text at `max-text-chars`. Returns [text truncated?]."
@@ -152,6 +158,12 @@
   (let [{:keys [status headers ^InputStream body]} (fetch-response! cfg url)
         ctype (base-content-type headers)]
 
+    ;; the checks below raise before the body is consumed; close it so a
+    ;; rejected response does not keep its connection open
+    (when-not (and (<= 200 status 299)
+                   (contains? allowed-content-types ctype))
+      (when body (.close body)))
+
     (when-not (<= 200 status 299)
       (ex/raise :type :validation
                 :code :unable-to-fetch-page
@@ -186,7 +198,7 @@
    [:url ::sm/uri]])
 
 (sv/defmethod ::fetch-web-page
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:fetch-web-page}
   [cfg {:keys [url]}]
   (fetch-web-page cfg url))

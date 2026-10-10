@@ -45,7 +45,7 @@
     ORDER BY updated_at DESC")
 
 (sv/defmethod ::get-agent-chats
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:get-agent-chats}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id file-id]}]
   (->> (db/exec! pool [sql:get-chats profile-id file-id])
@@ -62,7 +62,7 @@
    [:id ::sm/uuid]])
 
 (sv/defmethod ::get-agent-chat
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:get-agent-chat}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id id]}]
   ;; profile-id in the lookup makes "not yours" and "does not exist"
@@ -108,7 +108,7 @@
       AND profile_agent_chat.file_id = ?")
 
 (sv/defmethod ::upsert-agent-chat
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:upsert-agent-chat}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id id file-id title data]}]
   (let [data     (db/tjson data)
@@ -138,7 +138,7 @@
     WHERE id = ? AND profile_id = ?")
 
 (sv/defmethod ::rename-agent-chat
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:rename-agent-chat}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id id title]}]
   (let [affected (->> (db/exec-one! pool [sql:rename-chat title id profile-id])
@@ -156,7 +156,7 @@
    [:id ::sm/uuid]])
 
 (sv/defmethod ::delete-agent-chat
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:delete-agent-chat}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id id]}]
   (db/delete! pool :profile-agent-chat {:id id :profile-id profile-id})

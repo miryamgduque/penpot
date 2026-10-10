@@ -13,6 +13,7 @@
   skills — `is_enabled` here is only the creation default (on). Contrast
   `design_skill`, which is the app/team registry."
   (:require
+   [app.common.exceptions :as ex]
    [app.common.schema :as sm]
    [app.common.time :as ct]
    [app.db :as db]
@@ -41,7 +42,7 @@
     ORDER BY created_at")
 
 (sv/defmethod ::get-skills
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params [:map {:title "get-skills"}]}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id]}]
   (->> (db/exec! pool [sql:get-skills profile-id])
@@ -77,7 +78,7 @@
             candidate))))))
 
 (sv/defmethod ::create-skill
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:create-skill}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id name label category reactive trigger description body]}]
   (let [uname (unique-name pool profile-id name)]
@@ -108,26 +109,30 @@
    [:body [:string {:min 1 :max 100000}]]])
 
 (sv/defmethod ::update-skill
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params schema:update-skill}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id id label reactive trigger description body]}]
   ;; profile-id in the WHERE is the ownership check: someone else's id
   ;; matches zero rows and updates nothing
-  (-> (db/update! pool :profile-skill
-                  {:label label
-                   :reactive reactive
-                   :trigger-on trigger
-                   :description (or description "")
-                   :body body
-                   :updated-at (ct/now)}
-                  {:id id :profile-id profile-id}
-                  {::db/return-keys true})
-      (row->skill)))
+  (let [row (db/update! pool :profile-skill
+                        {:label label
+                         :reactive reactive
+                         :trigger-on trigger
+                         :description (or description "")
+                         :body body
+                         :updated-at (ct/now)}
+                        {:id id :profile-id profile-id}
+                        {::db/return-keys true})]
+    (when-not (:id row)
+      (ex/raise :type :not-found
+                :code :object-not-found
+                :hint "skill not found"))
+    (row->skill row)))
 
 ;; --- Mutation: delete a skill
 
 (sv/defmethod ::delete-skill
-  {::doc/added "2.13"
+  {::doc/added "2.20"
    ::sm/params [:map {:title "delete-skill"} [:id ::sm/uuid]]}
   [{:keys [::db/pool]} {:keys [::rpc/profile-id id]}]
   (db/delete! pool :profile-skill {:id id :profile-id profile-id})

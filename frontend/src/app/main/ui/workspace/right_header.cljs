@@ -7,11 +7,13 @@
 (ns app.main.ui.workspace.right-header
   (:require-macros [app.main.style :as stl])
   (:require
+   [app.config :as cfg]
    [app.main.data.common :as dcm]
    [app.main.data.event :as ev]
    [app.main.data.shortcuts :as scd]
    [app.main.data.team :as dtm]
    [app.main.data.workspace :as dw]
+   [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.drawing.common :as dwc]
    [app.main.data.workspace.history :as dwh]
    [app.main.data.workspace.shortcuts :as sc]
@@ -120,6 +122,9 @@
         zoom              (mf/deref refs/selected-zoom)
         read-only?        (mf/use-ctx ctx/workspace-read-only?)
         selected-drawtool (mf/deref refs/selected-drawing-tool)
+        ai-panel-open?    (mf/deref refs/ai-panel-open?)
+        file-recording?   (and (contains? cfg/flags :design-session-recording)
+                               (mf/deref refs/file-recording?))
 
         custom-shortcuts  (mf/deref refs/custom-shortcuts)
         get-tt            #(sc/get-effective-tooltip % custom-shortcuts)
@@ -248,5 +253,25 @@
                        :tooltip-placement "bottom-left"
                        :aria-label (tr "workspace.header.viewer" (get-tt :open-viewer))
                        :icon i/play
-                       :on-click nav-to-viewer}]]))
+                       :on-click nav-to-viewer}]
+
+     ;; All-In Penpot (Agent) panel toggle: a single button (Lucide bot icon)
+     ;; to the right of the View mode button, driving the file-bound open state.
+     ;; Same selected treatment as the Comments toggle.
+     ;; A recording captures identifiable activity by people who did not start
+     ;; it, so the dot rides the panel toggle — the one recording-related
+     ;; control that is always on screen. Someone with the panel closed is
+     ;; exactly the person who would otherwise never know.
+     [:div {:class (stl/css :agent-toggle)}
+      [:button {:title (if file-recording?
+                         "A design session is being recorded on this file"
+                         (str "Agent — " (sc/get-tooltip :toggle-ai-panel)))
+                :aria-label "Agent"
+                :class (stl/css-case :comments-btn true :agent-btn true :selected ai-panel-open?)
+                :on-click #(st/emit! (dwaip/toggle-panel))}
+       [:> i/icon* {:icon-id i/bot}]]
+      (when ^boolean file-recording?
+        [:span {:class (stl/css :recording-dot)
+                :role "status"
+                :aria-label "Recording in progress"}])]]))
 

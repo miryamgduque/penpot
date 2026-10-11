@@ -535,7 +535,12 @@
 
 ;; $ per million tokens (standard list price; cache read ≈ 0.1×, write ≈ 1.25×).
 (def ^:private pricing
-  {"claude-sonnet-5" {:input 3 :output 15}
+  {;; 5.5 list prices as published in the pi-ai model catalog. Haiku 5.5 is
+   ;; priced higher above 100k input tokens; the estimate uses the base tier.
+   "claude-opus-5-5" {:input 4 :output 20}
+   "claude-sonnet-5-5" {:input 2 :output 10}
+   "claude-haiku-5-5" {:input 0.1 :output 0.5}
+   "claude-sonnet-5" {:input 3 :output 15}
    "claude-opus-4-8" {:input 5 :output 25}
    "claude-haiku-4-5-20251001" {:input 1 :output 5}})
 

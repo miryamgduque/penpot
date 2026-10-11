@@ -5,7 +5,8 @@ CREATE TABLE profile_skill (
   name text NOT NULL,
   label text NOT NULL,
   category text NOT NULL,
-  mode text NOT NULL,
+  -- reactive behavior: 'on-demand' (acts only when asked) or 'observer'
+  reactive text NOT NULL,
   trigger_on text NULL,
   description text NOT NULL DEFAULT '',
   body text NOT NULL DEFAULT '',

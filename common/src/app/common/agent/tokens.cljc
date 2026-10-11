@@ -8,10 +8,23 @@
   "The design agent's token tools as pure functions; see
   `app.common.agent.write` for what a tool takes and answers."
   (:require
+   [app.common.agent.write :as caw]
+   [app.common.data :as d]
    [app.common.data.macros :as dm]
+   [app.common.files.changes :as cfc]
    [app.common.files.changes-builder :as cb]
+   [app.common.files.helpers :as cfh]
+   [app.common.files.tokens :as cfo]
+   [app.common.logic.tokens :as clt]
+   [app.common.types.fills :as types.fills]
+   [app.common.types.shape.layout :as ctl]
+   [app.common.types.shape.radius :as ctsr]
+   [app.common.types.stroke :as ctss]
+   [app.common.types.text :as txt]
    [app.common.types.token :as cto]
    [app.common.types.tokens-lib :as ctob]
+   [app.common.types.typography :as cty]
+   [clojure.set :as set]
    [cuerdas.core :as str]))
 
 ;; Composite types carry structured values (typography is a map of font
@@ -261,3 +274,472 @@
          :result {:theme name
                   :note (str "theme created — it is not active yet; activate_theme "
                              "switches which of its sets resolve")}}))))
+
+;; --- Which properties a token can bind to
+;;
+;; The workspace keeps this per token type next to its forms
+;; (`app.main.data.workspace.tokens.application/token-properties`); this is the
+;; part of it the tools read: the properties a token of each type binds to by
+;; default, and all of the ones it may bind to.
+
+(def token-type-attrs
+  {:border-radius   {:attributes cto/border-radius-keys}
+   :shadow          {:attributes cto/shadow-keys}
+   :color           {:attributes #{:fill} :all-attributes cto/color-keys}
+   :font-size       {:attributes cto/font-size-keys}
+   :letter-spacing  {:attributes cto/letter-spacing-keys}
+   :font-family     {:attributes cto/font-family-keys}
+   :text-case       {:attributes cto/text-case-keys}
+   :font-weight     {:attributes cto/font-weight-keys}
+   :typography      {:attributes cto/typography-token-keys}
+   :text-decoration {:attributes cto/text-decoration-keys}
+   :stroke-width    {:attributes cto/stroke-width-keys}
+   :sizing          {:attributes #{:width :height} :all-attributes cto/sizing-keys}
+   :dimensions      {:attributes #{:width :height}
+                     :all-attributes (set/union cto/spacing-keys
+                                                cto/sizing-keys
+                                                cto/border-radius-keys
+                                                cto/axis-keys
+                                                cto/stroke-width-keys)}
+   :opacity         {:attributes cto/opacity-keys}
+   :number          {:attributes cto/rotation-keys :all-attributes cto/number-keys}
+   :rotation        {:attributes cto/rotation-keys}
+   :spacing         {:attributes #{:column-gap :row-gap} :all-attributes cto/spacing-keys}})
+
+(def ^:private attr-alias
+  "The plugin API's semantic names for Penpot's positional attr keys, copied
+  deliberately from `app.plugins.tokens`: the skills already speak these names
+  (`applyToken(t, [\"columnGap\"])`), and `:p1` means nothing without this
+  table."
+  {:r1 :border-radius-top-left
+   :r2 :border-radius-top-right
+   :r3 :border-radius-bottom-right
+   :r4 :border-radius-bottom-left
+   :p1 :padding-top
+   :p2 :padding-right
+   :p3 :padding-bottom
+   :p4 :padding-left
+   :m1 :margin-top
+   :m2 :margin-right
+   :m3 :margin-bottom
+   :m4 :margin-left})
+
+(def token-attr-universe
+  "Every shape attribute a token can bind to (`cto/all-keys`)."
+  cto/all-keys)
+
+(defn public-attr-name
+  "The camelCase name the agent uses for an internal attr keyword."
+  [k]
+  (str/camel (name (get attr-alias k k))))
+
+(def ^:private public->attr
+  (into {"stroke" :stroke-color} ;; legacy: the shipped spec offers "stroke"
+        (map (fn [k] [(public-attr-name k) k]))
+        token-attr-universe))
+
+(defn token-attr
+  "The internal attr keyword for a public name, or nil."
+  [name]
+  (get public->attr name))
+
+(defn- type-attrs
+  [token-type]
+  (let [{:keys [attributes all-attributes]} (get token-type-attrs token-type)]
+    (or all-attributes attributes)))
+
+(defn application-problem
+  "Why this token cannot bind to these properties, or nil. Pure."
+  [token properties]
+  (let [valid (type-attrs (:type token))]
+    (some (fn [p]
+            (if-let [k (token-attr p)]
+              (when (and (seq valid) (not (contains? valid k)))
+                (dm/str "apply_tokens: token \"" (:name token) "\" is a "
+                        (some-> (:type token) name) " token and cannot bind to "
+                        p " — it can bind to: "
+                        (str/join ", " (sort (map public-attr-name valid)))))
+              (dm/str "apply_tokens: \"" p "\" is not a property a token can bind"
+                      " to — \"" (:name token) "\" can bind to: "
+                      (str/join ", " (sort (map public-attr-name valid))))))
+          properties)))
+
+(defn attr-set
+  "The internal attrs for the requested public property names, defaulting to the
+  token's own default (fill for a color) when none are given."
+  [token properties]
+  (if (seq properties)
+    (into #{} (keep token-attr) properties)
+    (or (some-> (get token-type-attrs (:type token)) :attributes) #{:fill})))
+
+;; --- What a token is worth
+;;
+;; The workspace resolves tokens with a JavaScript library, which also does
+;; arithmetic and composite values. This covers the plain cases — a literal, or
+;; an alias of one — and says `::unresolved` for the rest, so the caller can
+;; hand the call to a workspace instead of guessing.
+
+(def ^:private number-types
+  #{:border-radius :spacing :sizing :dimensions :stroke-width :rotation :number
+    :font-size :letter-spacing :opacity})
+
+(def ^:private text-cases #{"none" "uppercase" "lowercase" "capitalize"})
+
+(defn- literal-value
+  "The value a token holds once its aliases are followed, or `::unresolved`."
+  [tokens token seen]
+  (let [value (:value token)
+        alias (when (string? value)
+                (second (re-matches #"^\s*\{([^{}]+)\}\s*$" value)))]
+    (cond
+      (nil? alias)
+      value
+
+      (or (contains? seen alias) (nil? (get tokens alias)))
+      ::unresolved
+
+      :else
+      (recur tokens (get tokens alias) (conj seen alias)))))
+
+(defn resolved-value
+  "What `token` resolves to among the active `tokens` — a number, a string or
+  `{:color :opacity}` — or `::unresolved`."
+  [tokens token]
+  (let [value (literal-value tokens token #{(:name token)})
+        kind  (:type token)]
+    (cond
+      (= ::unresolved value)
+      ::unresolved
+
+      (and (string? value) (seq (cto/find-token-value-references value)))
+      ::unresolved
+
+      (= :color kind)
+      (if-let [hex (caw/normalize-hex value)]
+        {:color hex :opacity 1}
+        ::unresolved)
+
+      (contains? number-types kind)
+      (let [{:keys [value unit]} (cfo/parse-token-value value)]
+        (if (and (number? value) (or (nil? unit) (= "px" unit)))
+          value
+          ::unresolved))
+
+      (= :text-case kind)
+      (let [value (when (string? value) (str/lower (str/trim value)))]
+        (if (contains? text-cases value) value ::unresolved))
+
+      (= :text-decoration kind)
+      (or (when (string? value) (cto/valid-text-decoration value)) ::unresolved)
+
+      :else
+      ::unresolved)))
+
+;; --- Giving a shape a token's value
+;;
+;; One function per kind of property, as in the workspace
+;; (`app.main.data.workspace.tokens.application`).
+
+(def ^:private quiet {:ignore-touched true})
+
+(defn- text-node?
+  [node]
+  (or (txt/is-text-node? node) (txt/is-paragraph-node? node)))
+
+(defn- fill-of
+  [{:keys [color opacity]}]
+  (types.fills/check-fill {:fill-color color :fill-opacity opacity}))
+
+(defn- set-fill
+  [changes ids color]
+  (let [fill    (fill-of color)
+        objects (cb/lookup-objects changes)
+        text?   #(cfh/text-shape? (get objects %))]
+    (-> changes
+        (cb/update-shapes (remove text? ids)
+                          #(update % :fills types.fills/assoc 0 fill)
+                          quiet)
+        ;; a text keeps its color in its content, run by run
+        (cb/update-shapes (filter text? ids)
+                          (fn [shape]
+                            (-> shape
+                                (dissoc :fills)
+                                (d/update-when :content
+                                               #(txt/transform-nodes
+                                                 text-node?
+                                                 (fn [node] (update node :fills types.fills/assoc 0 fill))
+                                                 %))))
+                          quiet))))
+
+(defn- stroke-style
+  [stroke]
+  (-> (select-keys stroke [:stroke-style :stroke-alignment :stroke-width
+                           :stroke-cap-start :stroke-cap-end])
+      (update :stroke-width #(or % 1))
+      (update :stroke-style #(or % :solid))
+      (update :stroke-alignment #(or % :inner))
+      (d/without-nils)))
+
+(defn- set-stroke-color
+  [changes ids {:keys [color opacity]}]
+  (cb/update-shapes changes ids
+                    (fn [shape]
+                      (update shape :strokes
+                              (fn [strokes]
+                                (let [stroke (-> (stroke-style (get strokes 0))
+                                                 (assoc :stroke-color color :stroke-opacity opacity))]
+                                  (if (nil? strokes) [stroke] (assoc strokes 0 stroke))))))
+                    quiet))
+
+(defn- set-stroke-width
+  [changes ids value]
+  (cb/update-shapes changes ids
+                    (fn [shape]
+                      (if (seq (:strokes shape))
+                        (assoc-in shape [:strokes 0 :stroke-width] value)
+                        (assoc shape :strokes [(assoc ctss/default-stroke :stroke-width value)])))
+                    quiet))
+
+(defn- set-geometry
+  "Moves, sizes or turns each shape, through the engine."
+  [changes ids attrs value engine]
+  (reduce (fn [changes id]
+            (caw/modify-into changes (into {:shapeId (dm/str id)} (map (fn [k] [k value])) attrs) engine))
+          changes
+          ids))
+
+(defn- set-text-attrs
+  [changes ids attrs resize? engine]
+  (let [objects (cb/lookup-objects changes)
+        ids     (filter #(cfh/text-shape? (get objects %)) ids)
+        changes (cb/update-shapes changes ids
+                                  (fn [shape]
+                                    (txt/update-text-content
+                                     shape text-node?
+                                     (fn [node _] (-> node (d/txt-merge attrs) (cty/remove-typography-from-node)))
+                                     nil))
+                                  quiet)]
+    (if resize?
+      (reduce #(caw/fit-text %1 engine %2) changes ids)
+      changes)))
+
+(defn- number-text
+  "A number as a text attribute holds it: `24`, not `24.0`."
+  [value]
+  #?(:cljs (str value)
+     :clj  (if (== value (long value)) (str (long value)) (str value))))
+
+(defn- write-value
+  "Appends to `changes` what gives shapes `ids` the resolved `value` on the
+  token properties `attrs`."
+  [changes ids attrs value engine]
+  (let [objects  (cb/lookup-objects changes)
+        some-of  (fn [ks] (not-empty (set/intersection attrs ks)))
+        layouts  (filter #(ctl/any-layout? (get objects %)) ids)
+        children (filter #(ctl/any-layout-immediate-child? objects (get objects %)) ids)
+        patch    (fn [changes ids attrs] (cb/update-shapes changes ids (d/patch-object attrs) quiet))
+        number   (when (number? value) value)
+        color    (when (map? value) value)]
+    (cond-> changes
+      (and number (some-of #{:r1 :r2 :r3 :r4}))
+      (cb/update-shapes ids #(ctsr/set-radius-for-corners % (some-of #{:r1 :r2 :r3 :r4}) (max 0 number)) quiet)
+
+      (and color (:fill attrs))
+      (set-fill ids color)
+
+      (and color (:stroke-color attrs))
+      (set-stroke-color ids color)
+
+      (and number (:stroke-width attrs))
+      (set-stroke-width ids number)
+
+      (and number (:opacity attrs) (<= 0 number 1))
+      (cb/update-shapes ids #(assoc % :opacity number) quiet)
+
+      (and number (some-of #{:p1 :p2 :p3 :p4}))
+      (patch layouts {:layout-padding (zipmap (some-of #{:p1 :p2 :p3 :p4}) (repeat number))})
+
+      (and number (some-of #{:m1 :m2 :m3 :m4}))
+      (patch children {:layout-item-margin (zipmap (some-of #{:m1 :m2 :m3 :m4}) (repeat number))})
+
+      (and number (some-of #{:row-gap :column-gap}))
+      (patch layouts {:layout-gap (zipmap (some-of #{:row-gap :column-gap}) (repeat number))})
+
+      (and number (some-of #{:layout-item-min-w :layout-item-min-h :layout-item-max-w :layout-item-max-h}))
+      (patch ids (zipmap (some-of #{:layout-item-min-w :layout-item-min-h :layout-item-max-w :layout-item-max-h})
+                         (repeat number)))
+
+      (and number (:font-size attrs))
+      (set-text-attrs ids {:font-size (number-text number)} true engine)
+
+      (and number (:letter-spacing attrs))
+      (set-text-attrs ids {:letter-spacing (number-text number)} true engine)
+
+      (and (string? value) (:text-case attrs))
+      (set-text-attrs ids {:text-transform value} false engine)
+
+      (and (string? value) (:text-decoration attrs))
+      (set-text-attrs ids {:text-decoration (if (= "strike-through" value) "line-through" value)} false engine)
+
+      (and number (some-of #{:width :height}))
+      (set-geometry ids (some-of #{:width :height}) number engine)
+
+      (and number (some-of #{:x :y}))
+      (set-geometry ids (some-of #{:x :y}) number engine)
+
+      (and number (:rotation attrs))
+      (set-geometry ids #{:rotation} number engine)
+
+      :always
+      (caw/reflow-all (:propagate engine)
+                      (into (vec ids) (keep #(cfh/get-parent-id objects %)) ids)))))
+
+(defn- needs-text-measure?
+  [objects ids attrs]
+  (and (some #(cfh/text-shape? (get objects %)) ids)
+       (some attrs #{:font-size :letter-spacing :width :height})))
+
+(defn- binds?
+  "Whether token properties `attrs` of a `token-type` token apply to `shape`."
+  [objects shape attrs token-type]
+  (or (and (ctl/any-layout-immediate-child? objects shape)
+           (some cto/spacing-margin-keys attrs))
+      (and (cto/any-appliable-attr-for-shape? attrs (:type shape) (:layout shape))
+           (set/subset? attrs (type-attrs token-type)))))
+
+(defn- bind-into
+  "Binds `token` to `attrs` of shape `id`. → the changes, or `{:fallback}`."
+  [changes active token attrs id engine]
+  (let [objects (cb/lookup-objects changes)
+        shape   (get objects id)
+        value   (some->> (get active (:name token)) (resolved-value active))
+        ;; an atomic typography token replaces a composite one, and back
+        unbind  (cond
+                  (contains? cto/typography-token-keys (:type token)) cto/typography-keys
+                  (contains? cto/typography-keys (:type token)) cto/typography-token-keys)]
+    (cond
+      (or (nil? shape) (not (binds? objects shape attrs (:type token))))
+      changes
+
+      (= ::unresolved value)
+      {:fallback "this token's value needs the workspace's resolver"}
+
+      (and (nil? (:measure-text engine)) (needs-text-measure? objects [id] attrs))
+      {:fallback "text cannot be measured on the server without the render engine"}
+
+      :else
+      (-> changes
+          (cb/update-shapes [id] (fn [shape]
+                                   (-> shape
+                                       (update :applied-tokens #(apply dissoc % unbind))
+                                       (update :applied-tokens merge (cfo/attributes-map attrs token)))))
+          ;; a token no active set holds is bound, and worth nothing yet
+          (cond-> (some? value)
+            (write-value [id] attrs value engine))))))
+
+(defn apply-tokens
+  [{:keys [page-id objects data]} {:keys [applications]} engine]
+  (if (empty? applications)
+    {:problem "apply_tokens: no applications given"}
+    (let [lib    (:tokens-lib data)
+          all    (some-> lib ctob/get-all-tokens-map)
+          active (some-> lib ctob/get-tokens-in-active-sets)
+          run    (reduce
+                  (fn [{:keys [changes] :as run} {:keys [shapeId tokenName properties]}]
+                    (let [id      (when (string? shapeId) (parse-uuid shapeId))
+                          token   (get all tokenName)
+                          problem (when token (application-problem token properties))
+                          row     {:shapeId shapeId :token tokenName}]
+                      (if (and id token (nil? problem))
+                        (let [next (bind-into changes active token (attr-set token properties) id engine)]
+                          (if (contains? next :fallback)
+                            (reduced next)
+                            (-> run
+                                (assoc :changes next)
+                                (update :results conj (assoc row :ok true)))))
+                        (update run :results conj
+                                (assoc row :ok false
+                                       :error (cond
+                                                (nil? id) "invalid shapeId"
+                                                (nil? token) (dm/str "no token named \"" tokenName
+                                                                     "\" — create it with create_token")
+                                                :else problem))))))
+                  {:changes (caw/page-changes page-id objects) :results []}
+                  applications)]
+      (if (contains? run :fallback)
+        run
+        {:changes (:redo-changes (:changes run))
+         :result {:results (:results run)
+                  :note "tokens resolve asynchronously — verify with read_design or audit_file"}}))))
+
+;; --- activate_theme
+
+(defn- page-rebind
+  "The changes that give every token-bound shape of a page the value its
+  tokens have now → redo changes, or `{:fallback}`."
+  [page-id objects active engine current?]
+  (reduce
+   (fn [changes [id shape]]
+     (reduce
+      (fn [changes [token-name attrs]]
+        (let [token (get active token-name)
+              value (some->> token (resolved-value active))]
+          (cond
+            (nil? token)
+            changes
+
+            (= ::unresolved value)
+            (reduced (reduced {:fallback "a bound token's value needs the workspace's resolver"}))
+
+            ;; fonts are loaded for the page in view only
+            (and (needs-text-measure? objects [id] attrs)
+                 (or (not current?) (nil? (:measure-text engine))))
+            (reduced (reduced {:fallback "text on another page cannot be measured on the server"}))
+
+            :else
+            (write-value changes [id] attrs value engine))))
+      changes
+      (->> (:applied-tokens shape)
+           (group-by val)
+           (map (fn [[token-name entries]] [token-name (into #{} (map key) entries)])))))
+   (caw/page-changes page-id objects)
+   (filter (fn [[_ shape]] (seq (:applied-tokens shape))) objects)))
+
+(defn activate-theme
+  "Toggles a theme, then gives every shape bound to a token its new value, on
+  every page."
+  [{:keys [page-id data]} {:keys [name]} engine]
+  (let [lib    (:tokens-lib data)
+        themes (some->> lib
+                        (ctob/get-themes)
+                        (remove #(= ctob/hidden-theme-name (ctob/get-name %))))
+        match  (first (filter #(= name (ctob/get-name %)) themes))]
+    (if (nil? match)
+      {:problem (dm/str "activate_theme: no theme named \"" name "\""
+                        (when (seq themes)
+                          (dm/str " — this file has: "
+                                  (str/join ", " (map ctob/get-name themes))))
+                        " (create one with create_token_theme)")}
+      (let [toggle (-> (library-changes data)
+                       (clt/generate-toggle-token-theme lib (ctob/get-id match))
+                       :redo-changes)
+            data   (cfc/process-changes data toggle false)
+            active (ctob/get-tokens-in-active-sets (:tokens-lib data))
+            pages  (reduce
+                    (fn [redo pid]
+                      (let [changes (page-rebind pid (get-in data [:pages-index pid :objects])
+                                                 active engine (= pid page-id))]
+                        (if (contains? changes :fallback)
+                          (reduced changes)
+                          (into redo (:redo-changes changes)))))
+                    []
+                    ;; the page in view last: its text is what the engine
+                    ;; keeps, for the fonts
+                    (concat (remove #(= page-id %) (:pages data)) [page-id]))]
+        (if (map? pages)
+          pages
+          {:changes (into (vec toggle) pages)
+           :result {:theme name
+                    :note (str "theme toggled — shapes bound to a token NAME re-resolve "
+                               "automatically, so nothing needs re-applying. Verify with "
+                               "read_design.")}})))))

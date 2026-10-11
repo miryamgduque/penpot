@@ -10,7 +10,6 @@
    [app.common.agent.read :as car]
    [app.common.agent.tokens :as cato]
    [app.common.data.macros :as dm]
-   [app.common.types.token :as cto]
    [app.common.types.tokens-lib :as ctob]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-tools.common :as atc]
@@ -196,74 +195,11 @@
 ;; `cto/all-keys` — the color-only ceiling was entirely this file's own helper,
 ;; which mapped every request onto :fill or :stroke-color.
 
-(def ^:private attr-alias
-  "The plugin API's semantic names for Penpot's positional attr keys, copied
-  deliberately from `app.plugins.tokens`. This is the one place where taking the
-  plugin's naming is right: we take its translation layer with it, and the skills
-  already speak these names (`applyToken(t, [\"columnGap\"])`). `:p1` means
-  nothing without this table."
-  {:r1 :border-radius-top-left
-   :r2 :border-radius-top-right
-   :r3 :border-radius-bottom-right
-   :r4 :border-radius-bottom-left
-   :p1 :padding-top
-   :p2 :padding-right
-   :p3 :padding-bottom
-   :p4 :padding-left
-   :m1 :margin-top
-   :m2 :margin-right
-   :m3 :margin-bottom
-   :m4 :margin-left})
-
-(def token-attr-universe
-  "Every shape attribute a token can bind to (`cto/all-keys`)."
-  cto/all-keys)
-
-(defn public-attr-name
-  "The camelCase name the agent uses for an internal attr keyword."
-  [k]
-  (str/camel (name (get attr-alias k k))))
-
-(def ^:private public->attr
-  (into {"stroke" :stroke-color} ;; legacy: the shipped spec offers "stroke"
-        (map (fn [k] [(public-attr-name k) k]))
-        token-attr-universe))
-
-(defn token-attr
-  "The internal attr keyword for a public name, or nil."
-  [name]
-  (get public->attr name))
-
-(defn- type-attrs
-  "The attrs a token of this type may bind to — the same source `toggle-token`
-  itself consults (`dwta/token-properties`), so anything we accept, it accepts."
-  [token-type]
-  (let [{:keys [attributes all-attributes]} (get dwta/token-properties token-type)]
-    (or all-attributes attributes)))
-
-(defn application-problem
-  "Why this token cannot bind to these properties, or nil. Pure."
-  [token properties]
-  (let [valid (type-attrs (:type token))]
-    (some (fn [p]
-            (if-let [k (token-attr p)]
-              (when (and (seq valid) (not (contains? valid k)))
-                (dm/str "apply_tokens: token \"" (:name token) "\" is a "
-                        (some-> (:type token) name) " token and cannot bind to "
-                        p " — it can bind to: "
-                        (str/join ", " (sort (map public-attr-name valid)))))
-              (dm/str "apply_tokens: \"" p "\" is not a property a token can bind"
-                      " to — \"" (:name token) "\" can bind to: "
-                      (str/join ", " (sort (map public-attr-name valid))))))
-          properties)))
-
-(defn attr-set
-  "The internal attrs for the requested public property names, defaulting to the
-  token's own default (fill for a color) when none are given."
-  [token properties]
-  (if (seq properties)
-    (into #{} (keep token-attr) properties)
-    (or (some-> (get dwta/token-properties (:type token)) :attributes) #{:fill})))
+(def token-attr-universe cato/token-attr-universe)
+(def public-attr-name cato/public-attr-name)
+(def token-attr cato/token-attr)
+(def application-problem cato/application-problem)
+(def attr-set cato/attr-set)
 
 (defn apply-tokens
   [{:keys [applications]}]

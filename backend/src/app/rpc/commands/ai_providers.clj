@@ -36,10 +36,12 @@
    [app.common.logging :as l]
    [app.common.schema :as sm]
    [app.common.time :as ct]
+   [app.config :as cf]
    [app.db :as db]
    [app.http.client :as http]
    [app.http.sse :as sse]
    [app.rpc :as-alias rpc]
+   [app.rpc.commands.files :as files]
    [app.rpc.doc :as-alias doc]
    [app.setup :as-alias setup]
    [app.setup.keys :as keys]
@@ -510,3 +512,122 @@
         response (provider-req! cfg request provider {:response-type :input-stream})]
     (check-stream-status! provider response)
     (sse/response #(pump-provider-stream! (:body response) provider))))
+
+;; --- Agent service (dsh spike)
+;;
+;; The agent loop can run in a separate service built on DeepSeek Harness
+;; instead of in the browser. The backend stays what it already is for the
+;; browser loop: the place where the credential is attached. The panel sends
+;; a turn, the backend adds the profile's decrypted key and forwards it to the
+;; service, and the service's event stream is re-emitted over ours.
+;;
+;; Tools still execute in the browser: the service emits a `tool-call` event,
+;; the panel runs the tool and posts the result back through
+;; `agent-service-tool-result`. The service never sees a session cookie and
+;; the browser never sees the service.
+
+(defn- agent-service-uri
+  []
+  (or (some-> (cf/get :agent-service-uri) str (str/rtrim "/"))
+      (ex/raise :type :validation
+                :code :agent-service-not-configured
+                :hint "the agent service is not configured")))
+
+(defn- agent-service-req!
+  [cfg path headers body options]
+  (try
+    (http/req cfg
+              {:method :post
+               :uri (str (agent-service-uri) path)
+               :headers (cond-> (merge {"content-type" "application/json"} headers)
+                          (cf/get :agent-service-shared-key)
+                          (assoc "x-penpot-shared-key" (cf/get :agent-service-shared-key)))
+               :body body
+               :timeout (ct/duration "900s")}
+              (merge {:skip-ssrf-check? true} options))
+    (catch Throwable cause
+      (ex/raise :type :validation
+                :code :agent-service-unreachable
+                :hint "could not reach the agent service"
+                :cause cause))))
+
+(defn- check-agent-service-status!
+  [{:keys [status body]}]
+  (when-not (<= 200 status 299)
+    (let [message (try
+                    (some-> (if (string? body) body (slurp body))
+                            (json/decode :key-fn keyword)
+                            :error)
+                    (catch Throwable _ nil))]
+      (ex/raise :type :validation
+                :code :agent-service-error
+                :hint (or message (str "unexpected agent service response (status " status ")"))
+                :status status))))
+
+(defn- pump-agent-service-stream!
+  "Re-emits the service's newline-delimited JSON events, one `event` per line,
+  payload verbatim. Closing the reader on the way out is what tells the
+  service the client is gone, which aborts the turn there."
+  [^InputStream input]
+  (with-open [reader (io/reader input :encoding "UTF-8")]
+    (loop [events 0]
+      (let [line (.readLine ^BufferedReader reader)]
+        (cond
+          (nil? line)
+          {:events events}
+
+          (str/blank? line)
+          (recur events)
+
+          :else
+          (do
+            (events/tap :event line)
+            (if (events/closed?)
+              (do
+                (l/inf :hint "agent service stream aborted, client gone" :events events)
+                {:events events :aborted true})
+              (recur (inc events)))))))))
+
+(def ^:private schema:agent-service-turn
+  [:map {:title "agent-service-turn"}
+   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
+   [:file-id ::sm/uuid]
+   ;; JSON built by the panel and forwarded verbatim: session id, model,
+   ;; system prompt, user message and the tool specs
+   [:payload [:string {:max 4000000}]]])
+
+(sv/defmethod ::agent-service-turn
+  {::doc/added "2.20"
+   ::sse/stream? true
+   ::sm/params schema:agent-service-turn}
+  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider file-id payload]}]
+  (files/check-read-permissions! pool profile-id file-id)
+  (let [row      (connected-provider-row cfg profile-id provider)
+        response (agent-service-req! cfg "/v1/turns"
+                                     {"x-penpot-profile-id" (str profile-id)
+                                      "x-penpot-file-id" (str file-id)
+                                      "x-penpot-provider" provider
+                                      "x-penpot-api-key" (:api-key row)}
+                                     payload
+                                     {:response-type :input-stream})]
+    (check-agent-service-status! response)
+    (sse/response #(pump-agent-service-stream! (:body response)))))
+
+(def ^:private schema:agent-service-tool-result
+  [:map {:title "agent-service-tool-result"}
+   [:turn-id [:string {:max 100}]]
+   ;; JSON built by the panel: call id, content, images, error flag
+   [:payload [:string {:max 4000000}]]])
+
+(sv/defmethod ::agent-service-tool-result
+  {::doc/added "2.20"
+   ::sm/params schema:agent-service-tool-result}
+  [cfg {:keys [::rpc/profile-id turn-id payload]}]
+  (when-not (re-matches #"[A-Za-z0-9_-]+" turn-id)
+    (ex/raise :type :validation :code :invalid-turn-id :hint "invalid turn id"))
+  (let [response (agent-service-req! cfg (str "/v1/turns/" turn-id "/tool-results")
+                                     {"x-penpot-profile-id" (str profile-id)}
+                                     payload
+                                     {})]
+    (check-agent-service-status! response)
+    nil))

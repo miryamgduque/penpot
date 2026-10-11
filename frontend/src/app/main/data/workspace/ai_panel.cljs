@@ -23,6 +23,7 @@
    [app.main.data.session-actor :as sa]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-chats :as agent-chats]
+   [app.main.data.workspace.agent-remote :as agent-remote]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.data.workspace.session-events :as se]
@@ -669,7 +670,9 @@
     (rx/concat
      ;; `take-until` wraps the pipeline, errors included; `set-busy false`
      ;; must stay outside it or a cancel leaves the panel stuck busy
-     (->> (agent/run-turn settings history system seed)
+     (->> (if (:service settings)
+            (agent-remote/run-turn settings history system)
+            (agent/run-turn settings history system seed))
           (rx/mapcat (fn [ev]
                        (case (:kind ev)
                          :assistant       (rx/of (append-message "assistant" (:text ev)))
@@ -758,8 +761,20 @@
              ;; system prompt stays a stable, cacheable prefix built from `state`
              user-msg (cond-> {:role :user :text text :context context}
                         (seq images) (assoc :images images))
-             system   (agent/build-system-prompt state)]
+             system   (agent/build-system-prompt state)
+             ;; with the agent service the loop and the real history live
+             ;; server-side, keyed by the conversation id — so the id has to
+             ;; exist before the first turn, not at the first save
+             service? (contains? cf/flags :design-agent-service)
+             chat-id  (dm/get-in state [:ai-panel file-id :chat-id])
+             session  (or chat-id (uuid/next))
+             settings (cond-> settings
+                        service? (assoc :service {:session-id session
+                                                  :file-id file-id}))]
          (rx/concat
+          (if (and service? (nil? chat-id))
+            (rx/of (agent-chats/chat-id-allocated file-id session))
+            (rx/empty))
           (rx/of (append-message "user" text images)
                  ;; a new message while a checkpoint is pending supersedes it —
                  ;; the stored history already contains the paused turn

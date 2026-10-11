@@ -46,7 +46,7 @@
 ;; history is re-encoded from canonical on every round: baking one provider's
 ;; shape in would break the moment the user switched models mid-conversation.
 
-(defn- user-text
+(defn user-text
   "The text half of a canonical user message: the turn's design context and
   the auto-matched playbook (both when present), then what the user typed.
   The playbook rides HERE — the volatile slot — because the system prompt is
@@ -796,7 +796,7 @@
       (subs content 0 max-displayed-result-chars)
       content)))
 
-(defn- tool-outcome->event
+(defn tool-outcome->event
   [o]
   {:kind :tool
    :name (:name (:call o))

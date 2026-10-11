@@ -197,6 +197,11 @@
     ;; a deployment opts in.
     :design-agent
 
+    ;; Runs the design agent's loop in the agent service (DeepSeek Harness)
+    ;; instead of in the browser. Exploration; needs :design-agent and a
+    ;; backend configured with PENPOT_AGENT_SERVICE_URI. OFF by default.
+    :design-agent-service
+
     ;; Design session recording: capture every layout interaction on a file,
     ;; by any participant, for an agent to critique afterwards.
     ;;

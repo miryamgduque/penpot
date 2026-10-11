@@ -125,6 +125,8 @@
     [:allowed-origins {:optional true} [::sm/set :string]]
 
     [:exporter-shared-key {:optional true} :string]
+    [:agent-service-uri {:optional true} ::sm/uri]
+    [:agent-service-shared-key {:optional true} :string]
     [:admin-console-shared-key {:optional true} :string]
     [:nexus-shared-key {:optional true} :string]
     [:media-processor-shared-key {:optional true} :string]

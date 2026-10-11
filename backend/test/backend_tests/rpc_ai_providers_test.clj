@@ -9,6 +9,7 @@
   the client, with plain-text rows from before the encryption upgraded on
   first read."
   (:require
+   [app.config :as cf]
    [app.db :as db]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.ai-providers :as ai-providers]
@@ -103,3 +104,13 @@
                               :models []})]
         (t/is (= :validation (th/ex-type (:error out))))
         (t/is (= :ai-provider-key-unreadable (th/ex-code (:error out))))))))
+
+(t/deftest a-turn-says-so-when-the-agent-service-is-not-configured
+  ;; the panel shows the hint as it is: it has to name the cause, and must not
+  ;; be reported as a service that is down
+  (binding [cf/config (dissoc cf/config :agent-service-uri)]
+    (let [cause (try
+                  (#'ai-providers/agent-service-req! (system-cfg) "/v1/turns" {} "{}" {})
+                  (catch clojure.lang.ExceptionInfo cause cause))]
+      (t/is (= :agent-service-not-configured (:code (ex-data cause))))
+      (t/is (re-find #"not configured on this Penpot instance" (:hint (ex-data cause)))))))

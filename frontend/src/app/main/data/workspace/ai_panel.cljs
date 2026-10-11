@@ -659,7 +659,7 @@
   events, stores the history when the turn ends or pauses, and closes a
   cancelled turn's history off. `seed` is a resume's cumulative
   `{:rounds :usage}` so the next checkpoint reports whole-turn figures."
-  [settings history system stream seed]
+  [settings history system stream _seed]
   (let [stopper (rx/filter (ptk/type? ::cancel-turn) stream)
         ;; the turn's history as it grows, so a cancel can close it off;
         ;; seeded so it survives an early stop
@@ -670,9 +670,7 @@
     (rx/concat
      ;; `take-until` wraps the pipeline, errors included; `set-busy false`
      ;; must stay outside it or a cancel leaves the panel stuck busy
-     (->> (if (:service settings)
-            (agent-remote/run-turn settings history system)
-            (agent/run-turn settings history system seed))
+     (->> (agent-remote/run-turn settings history system)
           (rx/mapcat (fn [ev]
                        (case (:kind ev)
                          :assistant       (rx/of (append-message "assistant" (:text ev)))
@@ -761,19 +759,17 @@
              ;; system prompt stays a stable, cacheable prefix built from `state`
              user-msg (cond-> {:role :user :text text :context context}
                         (seq images) (assoc :images images))
-             ;; with the agent service the loop and the real history live
-             ;; server-side, keyed by the conversation id — so the id has to
-             ;; exist before the first turn, not at the first save
-             service? (contains? cf/flags :design-agent-service)
-             system   (agent/build-system-prompt state {:harness-skills? service?})
+             ;; the loop and the real history live in the agent service,
+             ;; keyed by the conversation id — so the id has to exist before
+             ;; the first turn, not at the first save
+             system   (agent/build-system-prompt state {:harness-skills? true})
              chat-id  (dm/get-in state [:ai-panel file-id :chat-id])
              session  (or chat-id (uuid/next))
-             settings (cond-> settings
-                        service? (assoc :service {:session-id session
-                                                  :file-id file-id
-                                                  :skills (ask/harness-skills state)}))]
+             settings (assoc settings :service {:session-id session
+                                                :file-id file-id
+                                                :skills (ask/harness-skills state)})]
          (rx/concat
-          (if (and service? (nil? chat-id))
+          (if (nil? chat-id)
             (rx/of (agent-chats/chat-id-allocated file-id session))
             (rx/empty))
           (rx/of (append-message "user" text images)
@@ -844,8 +840,7 @@
            (rx/of (set-checkpoint nil)
                   (set-busy true))
            (turn-stream (:settings cp) (:history cp)
-                        (agent/build-system-prompt
-                         state {:harness-skills? (some? (:service (:settings cp)))})
+                        (agent/build-system-prompt state {:harness-skills? true})
                         stream
                         (select-keys cp [:rounds :usage]))))))))
 

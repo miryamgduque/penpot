@@ -522,8 +522,7 @@
     :description
     (str "Deletes shapes and their children. The counterpart to create_shape — "
          "use it to clean up your own mistakes rather than leaving them in the "
-         "file, and to remove what the user asks you to remove. Undoable by the "
-         "user with ⌘Z as a single step.")
+         "file, and to remove what the user asks you to remove.")
     :input-schema {:type "object"
                    :properties {:shapeIds {:type "array" :items {:type "string"}}}
                    :required ["shapeIds"]}}

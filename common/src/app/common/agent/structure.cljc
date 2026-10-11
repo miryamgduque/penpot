@@ -264,7 +264,7 @@
                                 (caw/page-changes page-id objects)
                                 updates))
          :result {:updated (count updates)
-                  :note (str "updated — one undo step. Geometry settles "
+                  :note (str "updated. Geometry settles "
                              "asynchronously; verify with read_design.")}})))
 
 ;; --- nest_shape
@@ -391,8 +391,7 @@
                                      (when (pos? children)
                                        (str " — INCLUDING " children " nested "
                                             (if (= 1 children) "child" "children")
-                                            " that lived inside"))
-                                     " — undo with ⌘Z (it is one undo step)")}
+                                            " that lived inside")))}
                    (pos? children) (assoc :childrenDeleted children))}))))
 
 ;; --- duplicate_shape

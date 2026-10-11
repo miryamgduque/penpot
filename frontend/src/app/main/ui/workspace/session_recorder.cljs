@@ -50,6 +50,7 @@
    [app.main.ui.ds.foundations.assets.icon :as i]
    [app.util.clipboard :as clipboard]
    [app.util.dom :as dom]
+   [app.util.i18n :as i18n :refer [tr]]
    [rumext.v2 :as mf]))
 
 (defn- two-digits
@@ -73,11 +74,11 @@
   [reason]
   (case (some-> reason name)
     "manual"      nil
-    "file-closed" "ended when the file closed"
-    "event-cap"   "stopped early: event limit reached"
-    "time-cap"    "stopped early: time limit reached"
-    "raw-cap"     "stopped early: buffer limit reached"
-    (when reason (str "stopped: " (name reason)))))
+    "file-closed" (tr "workspace.session-recorder.reason.file-closed")
+    "event-cap"   (tr "workspace.session-recorder.reason.event-cap")
+    "time-cap"    (tr "workspace.session-recorder.reason.time-cap")
+    "raw-cap"     (tr "workspace.session-recorder.reason.raw-cap")
+    (when reason (tr "workspace.session-recorder.reason.other" (name reason)))))
 
 ;; NOTE: the session list deliberately shows no participant count. The list
 ;; endpoint returns metadata only — deriving "2 people, agent" needs the events,
@@ -124,19 +125,17 @@
            (duration-label (- now (:started-at session 0)))]
           [:span {:class (stl/css :timer-meta)}
            (let [n (count (:events session []))]
-             (str "Recording this session · " n (if (= 1 n) " event" " events")))]]
+             (tr "workspace.session-recorder.recording" (i18n/c n)))]]
 
          (when (:local-only? session)
            [:span {:class (stl/css :status-warning)
-                   :title (str "The last " spersist/max-flush-failures
-                               " saves failed. Recording continues in this browser "
-                               "but is no longer being stored.")}
-            "not saving"])
+                   :title (tr "workspace.session-recorder.not-saving-title" spersist/max-flush-failures)}
+            (tr "workspace.session-recorder.not-saving")])
 
          [:button {:type "button"
                    :class (stl/css :timer-stop)
                    :on-click on-stop}
-          "Stop"]]]])))
+          (tr "workspace.session-recorder.stop-short")]]]])))
 
 (mf/defc session-row*
   {::mf/private true}
@@ -149,7 +148,7 @@
     [:li {:class (stl/css :session-row)}
      [:div {:class (stl/css :session-main)}
       [:span {:class (stl/css :session-when)}
-       (if started (ct/timeago started) "just now")]
+       (if started (ct/timeago started) (tr "workspace.session-recorder.just-now"))]
       [:span {:class (stl/css :session-meta)}
        (str events (if (= 1 events) " event" " events")
             (when (and started stopped)
@@ -163,24 +162,23 @@
 
      (when (pos? dropped)
        [:span {:class (stl/css :session-reason)
-               :title "The raw buffer rolled during this recording, so its raw
-                       history is incomplete. The timeline itself is intact."}
-        (str dropped " raw dropped")])
+               :title (tr "workspace.session-recorder.raw-dropped-title")}
+        (tr "workspace.session-recorder.raw-dropped" dropped)])
 
      ;; only a finished session can be reviewed: critiquing a recording that is
      ;; still running would judge an unfinished process
      (when stopped
        [:> icon-button* {:variant (if (:has-review session) "primary" "ghost")
-                         :aria-label "Review this session"
+                         :aria-label (tr "workspace.session-recorder.review")
                          :title (if (:has-review session)
-                                  "Already reviewed — run it again"
-                                  "Ask the agent to critique this session")
+                                  (tr "workspace.session-recorder.review-again")
+                                  (tr "workspace.session-recorder.review-title"))
                          :on-click #(on-review (:id session))
                          :icon i/feedback}])
 
      [:> icon-button* {:variant "ghost"
-                       :aria-label "Export this session"
-                       :title "Copy this session as JSON"
+                       :aria-label (tr "workspace.session-recorder.export")
+                       :title (tr "workspace.session-recorder.export-title")
                        :on-click #(on-export (:id session))
                        :icon i/download}]]))
 
@@ -189,16 +187,16 @@
   [{:keys [sessions on-export on-export-all on-review]}]
   [:div {:class (stl/css :popover)}
    [:div {:class (stl/css :popover-head)}
-    [:span "Recorded sessions"]
+    [:span (tr "workspace.session-recorder.sessions")]
     (when (seq sessions)
       [:button {:type "button"
                 :class (stl/css :export-all)
                 :on-click #(on-export-all)}
-       "Export all"])]
+       (tr "workspace.session-recorder.export-all")])]
 
    (if (empty? sessions)
      [:p {:class (stl/css :empty)}
-      "No recordings yet. Press record to capture a design session."]
+      (tr "workspace.session-recorder.empty")]
      [:ul {:class (stl/css :session-list)}
       (for [s sessions]
         [:> session-row* {:key (dm/str (:id s))
@@ -240,14 +238,14 @@
              (fn [json & [err]]
                (if json
                  (-> (clipboard/to-clipboard json)
-                     (.then #(reset! note* "Copied to clipboard"))
+                     (.then #(reset! note* (tr "workspace.session-recorder.copied")))
                      ;; the Clipboard API is unavailable on an insecure origin;
                      ;; say so rather than appearing to have copied
-                     (.catch #(reset! note* "Could not copy — clipboard unavailable")))
+                     (.catch #(reset! note* (tr "workspace.session-recorder.copy-failed"))))
                  (reset! note* (case err
-                                 :not-authorized "Only team admins can export"
-                                 :sessions-database-unavailable "Recording storage is unavailable"
-                                 "Export failed"))))
+                                 :not-authorized (tr "workspace.session-recorder.export-admins-only")
+                                 :sessions-database-unavailable (tr "workspace.session-recorder.storage-unavailable")
+                                 (tr "workspace.session-recorder.export-failed")))))
              (when id [id])))))
 
         on-export-all (mf/use-fn (fn [] (on-export nil)))
@@ -255,7 +253,7 @@
         on-review
         (mf/use-fn
          (fn [id]
-           (reset! note* "Reviewing…")
+           (reset! note* (tr "workspace.session-recorder.reviewing"))
            (st/emit!
             (spersist/load-session-for-review
              id
@@ -270,14 +268,15 @@
                        ;; reply from the agent about this file, and that is
                        ;; where the user already reads those
                        :review (do (st/emit! (dwaip/append-message "assistant" payload))
-                                   (reset! note* "Review added to the chat")
+                                   (reset! note* (tr "workspace.session-recorder.review-added"))
                                    (st/emit! (spersist/fetch-sessions)))
                        :note   (st/emit! (dwaip/append-message "note" payload))
                        :usage  (st/emit! (dwaip/accumulate-review-usage payload))
-                       :error  (reset! note* (str "Review failed: " (name payload)))
+                       :error  (reset! note* (tr "workspace.session-recorder.review-failed" (name payload)))
                        nil))))
-                 (reset! note* (str "Could not load that session"
-                                    (when err (str " (" (name err) ")"))))))))))
+                 (reset! note* (if err
+                                 (tr "workspace.session-recorder.load-failed-reason" (name err))
+                                 (tr "workspace.session-recorder.load-failed")))))))))
 
         on-toggle-list
         (mf/use-fn
@@ -319,18 +318,18 @@
      ;; the top of the panel body, not here.
      [:> icon-button* {:variant "ghost"
                        :class (stl/css-case :rec-button true :rec-button-live recording?)
-                       :aria-label (if recording? "Stop recording" "Record this design session")
+                       :aria-label (if recording? (tr "workspace.session-recorder.stop") (tr "workspace.session-recorder.record"))
                        :title (if recording?
-                                "Stop recording this design session"
-                                "Record this design session")
+                                (tr "workspace.session-recorder.stop-title")
+                                (tr "workspace.session-recorder.record"))
                        :on-click on-toggle-rec
                        :icon i/stroke-circle}]
 
      ;; `clock` rather than `history`: the chat's own History button sits right
      ;; beside this one and two identical glyphs are indistinguishable.
      [:> icon-button* {:variant "ghost"
-                       :aria-label "Recorded sessions"
-                       :title "Recorded sessions"
+                       :aria-label (tr "workspace.session-recorder.sessions")
+                       :title (tr "workspace.session-recorder.sessions")
                        :on-click on-toggle-list
                        :icon i/clock}]
 

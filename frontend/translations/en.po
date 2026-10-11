@@ -9824,3 +9824,849 @@ msgstr "Delete skill"
 #: src/app/main/ui/dashboard/skills.cljs
 msgid "modals.delete-design-skill.message"
 msgstr "This removes the skill for everyone it applies to. Files keep their own file-level skills."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.attached-image"
+msgstr "Attached image %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.selection.none"
+msgstr "No selection"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.thinking"
+msgstr "Thinking…"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.thought-process"
+msgstr "Thought process"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.optional"
+msgstr " (optional)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.answer-placeholder"
+msgstr "Your answer…"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.other"
+msgstr "Other…"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.decide-for-me"
+msgstr "Decide for me"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.own-words-placeholder"
+msgstr "Tell me in your words…"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.attach-reference-images"
+msgstr "Attach reference images"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.image-limit-reached"
+msgstr "Image limit reached"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.add-reference"
+msgstr "Add reference"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.send-answers"
+msgstr "Send answers"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.answer-required"
+msgstr "Answer the required questions to continue"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.checkpoint.continue"
+msgstr "Continue"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.checkpoint.stop"
+msgstr "Stop here"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.jump-to-latest"
+msgstr "Jump to latest message"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.dismiss"
+msgstr "Dismiss"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.observer.fix"
+msgstr "Fix"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.observer.fix-all-title"
+msgstr "Ask the agent to fix everything listed, in this conversation"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.observer.fix-all"
+msgstr "Fix all"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.attach.only-images"
+msgstr "Only images can be attached (PNG, JPEG or WebP)."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.attach.some-skipped"
+msgstr "Some files were skipped — only images can be attached."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.attach.unreadable"
+msgstr "That image could not be read."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skills.new-pill"
+msgstr "New"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.usage.title"
+msgstr "Session token usage across all API calls from this panel. Cost is an estimate at standard list prices."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.usage.restored"
+msgstr "Restored conversation"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.chat.new-title"
+msgstr "Start a new chat — this conversation is kept in History"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.chat.new"
+msgstr "New chat"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.handoff.notice"
+msgstr "This conversation is getting long — replies re-read all of it."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.handoff.dismiss"
+msgstr "Dismiss this suggestion"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.handoff.summarize-title"
+msgstr "Summarize this conversation and continue in a fresh chat — this one is kept in History"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.handoff.summarize"
+msgstr "Summarize into a new chat"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.pending.cancel"
+msgstr "Cancel the queued fix"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.commands-and-skills"
+msgstr "Commands and skills"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.placeholder"
+msgstr "Ask the agent…"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.stop"
+msgstr "Stop generating"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.send"
+msgstr "Send message"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.attach-images"
+msgstr "Attach images"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.model-cannot-read-images"
+msgstr "This model can't read images"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.no-model"
+msgstr "No model"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.manage-models"
+msgstr "Manage your models"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.name"
+msgstr "Name"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.trigger-phrase"
+msgstr "Trigger phrase"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.behavior"
+msgstr "Behavior"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.on-demand-emoji"
+msgstr "💬 On-demand"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.observer-emoji"
+msgstr "👁 Observer"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.playbook-hint"
+msgstr "Playbook (what the agent follows)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.save"
+msgstr "Save"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.cancel"
+msgstr "Cancel"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.team"
+msgstr "Team"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.example-trigger"
+msgstr "Example trigger phrase"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.what-it-does"
+msgstr "What it does"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.playbook"
+msgstr "Playbook"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.edit"
+msgstr "Edit"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.promote"
+msgstr "Promote to team"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.really-delete"
+msgstr "Really delete?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.delete"
+msgstr "Delete"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skills.off"
+msgstr "Off"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.disable"
+msgstr "Disable"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.enable"
+msgstr "Enable"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.fork"
+msgstr "Fork"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundations.intro"
+msgstr "Standing design context for this file: vibes, tone of voice, naming rules, and more. Skills and the agent read them on every task."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundations.example.vibes"
+msgstr "Vibes"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundations.example.vibes-summary"
+msgstr "Playful, bold, high-contrast"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundations.example.tone"
+msgstr "Tone of voice"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundations.example.tone-summary"
+msgstr "Friendly, concise, active voice"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.token-name-placeholder"
+msgstr "name (sm, md…)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.token-value-placeholder"
+msgstr "value (8px)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.name"
+msgstr "Name"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.name-placeholder"
+msgstr "the design system's name"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.description"
+msgstr "Description"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.description-placeholder"
+msgstr "identity in one line"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.colors"
+msgstr "Colors"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.color-name-placeholder"
+msgstr "name (primary…)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.color-value-placeholder"
+msgstr "#rrggbb or any CSS color"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.remove-color"
+msgstr "Remove color"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.add-color"
+msgstr "+ Add color"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.typography"
+msgstr "Typography"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.role-placeholder"
+msgstr "role (heading, body…)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.remove-role"
+msgstr "Remove typography role"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.family-placeholder"
+msgstr "family (Inter)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.size-placeholder"
+msgstr "size (14px)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.weight-placeholder"
+msgstr "weight (600)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.line-height-placeholder"
+msgstr "line height (1.5)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.add-role"
+msgstr "+ Add role"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.rounded"
+msgstr "Rounded"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.add-radius"
+msgstr "+ Add radius"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.spacing"
+msgstr "Spacing"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.add-step"
+msgstr "+ Add step"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.components-note"
+msgstr "components tokens are kept as-is — edit them through the agent for now"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.add-tokens"
+msgstr "+ Add design tokens"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.body"
+msgstr "Body (markdown)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundation.ask-placeholder"
+msgstr "Ask the agent for a change — \"allow emoji\", \"more formal\"…"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundation.ask"
+msgstr "Ask"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundation.rerun-interview"
+msgstr "Re-run interview"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundation.really-delete"
+msgstr "Really delete? (undoable)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.empty-title"
+msgstr "No vibes set yet"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.empty-desc"
+msgstr "A short interview pins down this project's design direction — vibe, audience, platform, do/don't — as a design.md on this file. The agent then designs against it, and collaborators share it."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.set"
+msgstr "Set the vibes"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundation.gone"
+msgstr "This foundation is gone — someone may have removed it just now."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skills.no-match"
+msgstr "No skills match these filters."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.connect.title"
+msgstr "Ready when you are!"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.connect.desc"
+msgstr "Works with Claude, ChatGPT, and others. Bring your own key, no subscription through Penpot."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.connect.action"
+msgstr "Connect a provider"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.connect-first"
+msgstr "Connect an AI model to create skills."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.intro"
+msgstr "Describe the skill in your words — the agent writes the playbook."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.what"
+msgstr "What should it do?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.what-placeholder"
+msgstr "e.g. Check all the copy on a screen against a tone of voice I describe, and flag anything that doesn't match."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.when"
+msgstr "When should it trigger? An example phrase."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.when-placeholder"
+msgstr "e.g. Check the tone of voice on this screen."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.behavior-question"
+msgstr "Should it only respond when asked, or keep an eye on things and let you know?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.suggested"
+msgstr " · suggested"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.error"
+msgstr "Couldn't generate that skill — try rephrasing and create again."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.generating"
+msgstr "Generating…"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.create.action"
+msgstr "Create skill"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.promote.needs-team-file"
+msgstr "Open a team file to promote a skill."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.promote.intro"
+msgstr "Teammates will see this in Agent Skills. Review before publishing."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.promote.description"
+msgstr "Description"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.promote.error"
+msgstr "Couldn't publish that skill — try again."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.promote.publishing"
+msgstr "Publishing…"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.promote.publish"
+msgstr "Publish"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.chat.history"
+msgstr "Chat history"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.chat.untitled"
+msgstr "Untitled chat"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.chat.rename"
+msgstr "Rename conversation"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.chat.delete"
+msgstr "Delete conversation"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.back"
+msgstr "Back"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundations.title"
+msgstr "Foundations"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.header.new-skill"
+msgstr "New skill"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.header.skill-info"
+msgstr "Skill info"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skills.title"
+msgstr "Skills"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.title"
+msgstr "Agent"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.filters.title"
+msgstr "Filters"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.filters.only-enabled"
+msgstr "Show only enabled skills"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.on-demand"
+msgstr "On-demand"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.observer"
+msgstr "Observer"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.filters.source"
+msgstr "Source"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.filters.personal"
+msgstr "Personal"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.foundations.add"
+msgstr "Add a foundation"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.more-actions"
+msgstr "More actions"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.recording.stop"
+msgstr "Stop recording session"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.recording.start"
+msgstr "Record design session"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.text-size"
+msgstr "Text size"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.text-size.decrease"
+msgstr "Decrease text size"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.text-size.increase"
+msgstr "Increase text size"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.selection.one"
+msgstr "1 layer: %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.selection.many"
+msgstr "%s layers selected"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.usage.summary"
+msgstr "%s calls · %s in (%s cached) · %s out"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.tools.ran"
+msgstr "Ran %s tools"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.reference-image"
+msgstr "Reference image %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.form.remove-reference-image"
+msgstr "Remove reference image %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.checkpoint"
+msgstr "Still working — %s tool rounds this turn. Keep going?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.checkpoint.with-cost"
+msgstr "Still working — %s tool rounds and ~$%s this turn. Keep going?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.rule.layer-naming"
+msgstr "Layer naming"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.rule.token-only-colors"
+msgstr "Token-only colors"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.observer.layers"
+msgid_plural "workspace.agent.observer.layers"
+msgstr[0] "1 layer needs attention"
+msgstr[1] "%s layers need attention"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.observer.rules"
+msgid_plural "workspace.agent.observer.rules"
+msgstr[0] "1 rule"
+msgstr[1] "%s rules"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.observer.fix-group-title"
+msgstr "Fix only the %s findings"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.observer.show-more"
+msgstr "Show %s more"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.attach.too-many"
+msgstr "Only %s images can be attached at once."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.arrival.promoted-by"
+msgstr "Promoted by %s."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.arrival.promoted-by-teammate"
+msgstr "Promoted by a teammate."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.arrival.dismiss"
+msgstr "Dismiss arrival notice for %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.pending.queued"
+msgstr "Queued — sends when the current turn ends"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.pending.via"
+msgstr "via %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.images-not-sent"
+msgstr "%s can't read images — they won't be sent."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.attach-images-up-to"
+msgstr "Attach images (up to %s)"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.named-model-cannot-read-images"
+msgstr "%s can't read images"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.composer.remove-attached-image"
+msgstr "Remove attached image %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.disable-named"
+msgstr "Disable %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.enable-named"
+msgstr "Enable %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skill.actions-for"
+msgstr "Actions for %s"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.vibes.remove-token"
+msgstr "Remove %s token"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.promote.reads-foundations"
+msgstr "reads file foundations"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.not-saving"
+msgstr "not saving"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.just-now"
+msgstr "just now"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.review"
+msgstr "Review this session"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.review-again"
+msgstr "Already reviewed — run it again"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.review-title"
+msgstr "Ask the agent to critique this session"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.export"
+msgstr "Export this session"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.export-title"
+msgstr "Copy this session as JSON"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.sessions"
+msgstr "Recorded sessions"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.export-all"
+msgstr "Export all"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.empty"
+msgstr "No recordings yet. Press record to capture a design session."
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.copied"
+msgstr "Copied to clipboard"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.copy-failed"
+msgstr "Could not copy — clipboard unavailable"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.export-admins-only"
+msgstr "Only team admins can export"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.storage-unavailable"
+msgstr "Recording storage is unavailable"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.export-failed"
+msgstr "Export failed"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.review-added"
+msgstr "Review added to the chat"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.stop"
+msgstr "Stop recording"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.record"
+msgstr "Record this design session"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.stop-title"
+msgstr "Stop recording this design session"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.reason.file-closed"
+msgstr "ended when the file closed"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.reason.event-cap"
+msgstr "stopped early: event limit reached"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.reason.time-cap"
+msgstr "stopped early: time limit reached"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.reason.raw-cap"
+msgstr "stopped early: buffer limit reached"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.reason.other"
+msgstr "stopped: %s"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.recording"
+msgid_plural "workspace.session-recorder.recording"
+msgstr[0] "Recording this session · 1 event"
+msgstr[1] "Recording this session · %s events"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.not-saving-title"
+msgstr "The last %s saves failed. Recording continues in this browser but is no longer being stored."
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.raw-dropped-title"
+msgstr "The raw buffer rolled during this recording, so its raw history is incomplete. The timeline itself is intact."
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.raw-dropped"
+msgstr "%s raw dropped"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.reviewing"
+msgstr "Reviewing…"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.review-failed"
+msgstr "Review failed: %s"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.load-failed"
+msgstr "Could not load that session"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.load-failed-reason"
+msgstr "Could not load that session (%s)"
+
+#: src/app/main/ui/workspace/right_header.cljs
+msgid "workspace.header.agent.recording-title"
+msgstr "A design session is being recorded on this file"
+
+#: src/app/main/ui/workspace/right_header.cljs
+msgid "workspace.header.agent.title"
+msgstr "Agent — %s"
+
+#: src/app/main/ui/workspace/right_header.cljs
+msgid "workspace.header.agent.recording"
+msgstr "Recording in progress"
+
+#: src/app/main/ui/workspace/session_recorder.cljs
+msgid "workspace.session-recorder.stop-short"
+msgstr "Stop"

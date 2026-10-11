@@ -254,6 +254,20 @@ test("a Penpot skill is listed to the model and loaded through the harness skill
   }
 });
 
+test("a skill the registry will not take does not cost the others", async () => {
+  const skills = [
+    { name: "Not Kebab--case", description: "Refused.", body: "NEVER" },
+    { name: "penpot-build-screen", description: "How to build a screen.", body: "STEP ONE" },
+  ];
+  const t = await setup((_req, n) => (n === 0 ? { tool: { name: "skill", input: { name: "penpot-build-screen" } } } : { text: "Loaded." }));
+  try {
+    await t.harness.runTurn(turn({ skills }), { emit: () => {}, callTool: async () => ({}) });
+    assert.match(JSON.stringify(t.fake.requests[1].body.messages), /STEP ONE/);
+  } finally {
+    await t.close();
+  }
+});
+
 test("a long conversation is condensed, with the owner's key", async () => {
   const fake = await startFakeAnthropic(() => ({ text: "noted. ".repeat(400), countTokens: true }));
   const harness = await createHarness({

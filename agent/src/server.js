@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createHarness } from "./harness.js";
+import { runScoutTool, scoutTools } from "./scout.js";
 
 const MAX_BODY_BYTES = 6 * 1024 * 1024;
 const HEARTBEAT_MS = 2000;
@@ -128,6 +129,8 @@ async function runEngineTool(exporterUri, token, call, context, signal) {
     // the design rule that refused the call, when one did
     rule: typeof body.rule === "string" ? body.rule : undefined,
     revn: body.revn,
+    // what the tool shows the model, beside what it says
+    images: Array.isArray(body.images) ? body.images : undefined,
   };
 }
 
@@ -157,7 +160,9 @@ export async function createAgentServer(options = {}) {
     // tools the backend runs, and tools the exporter runs on the render engine
     const backendTools = new Set(namedIn("x-penpot-server-tools"));
     const engineTools = new Set(namedIn("x-penpot-engine-tools"));
-    const serverTools = new Set([...backendTools, ...engineTools]);
+    // tools this service runs itself, on a side conversation
+    const ownTools = scoutTools(backendTools);
+    const serverTools = new Set([...backendTools, ...engineTools, ...ownTools]);
     // An edit made on the server reaches the workspace as another
     // collaborator's would: it is not in the user's undo stack. Undoing there
     // would take back the user's own last edit, so those tools are not offered.
@@ -233,18 +238,50 @@ export async function createAgentServer(options = {}) {
       return callTool(call, signal);
     };
 
+    // Runs a tool on the server without telling the panel: → its result, or
+    // `{fallback}` when the server does not handle this call.
+    const runServerTool = async (call, signal) => {
+      const synced = await syncWorkspace(signal);
+      if (synced.isError) return { content: synced.content, isError: true };
+      if (engineTools.has(call.name)) {
+        const result = await runEngineTool(exporterUri, turnToken, call, synced.content, signal);
+        if (result.revn !== undefined) serverRevn = result.revn;
+        return result;
+      }
+      return runBackendTool(backendUri, turnToken, call, synced.content, signal);
+    };
+
+    // A side conversation reads the file with the server's tools. Its tool
+    // calls are its own business: the panel shows the one call that asked.
+    const side = (request) =>
+      harness.runSideTurn(
+        { profileId, provider, apiKey, ...request },
+        {
+          serverTools,
+          signal: controller.signal,
+          onUsage: (usage) => emit({ type: "usage", usage }),
+          callServerTool: async (call, signal) => {
+            if (ownTools.has(call.name)) return { content: "a scout cannot call a scout", isError: true };
+            const result = await runServerTool(call, signal);
+            return result.fallback !== undefined
+              ? { content: `${call.name} is not available here`, isError: true }
+              : result;
+          },
+        },
+      );
+
     const callServerTool = async (call, signal) => {
       const startedAt = performance.now();
-      const synced = await syncWorkspace(signal);
-      let result;
-      if (synced.isError) {
-        result = { content: synced.content, isError: true };
-      } else if (engineTools.has(call.name)) {
-        result = await runEngineTool(exporterUri, turnToken, call, synced.content, signal);
-        if (result.revn !== undefined) serverRevn = result.revn;
-      } else {
-        result = await runBackendTool(backendUri, turnToken, call, synced.content, signal);
-      }
+      const result = ownTools.has(call.name)
+        ? await runScoutTool(call, {
+            provider,
+            model,
+            declared,
+            side,
+            fetchPage: (url) =>
+              runBackendTool(backendUri, turnToken, { name: "fetch_web_page", input: { url } }, "{}", signal),
+          })
+        : await runServerTool(call, signal);
       // not handled on the server yet: the workspace runs it, as before
       if (result.fallback !== undefined) return callWorkspaceTool(call, signal);
       toolTimings.push({ name: call.name, ms: Math.round(performance.now() - startedAt), server: true });

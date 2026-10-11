@@ -602,3 +602,51 @@
                         (str "- `" (:name s) "` — **" (:label s) "** (" (:category s) " · "
                              (get reactive-label (:reactive s) (:reactive s)) "): " (:blurb s)))
                       skills))))))
+
+;; --- Skills through the agent service
+;;
+;; With the agent service, skills are the harness's: it lists them to the
+;; model and loads one through its own `skill` tool. So the prompt carries no
+;; index of its own and `get_design_skills` is not offered — only the rule for
+;; when to load one stays here.
+
+(defn harness-skills-section
+  "What the prompt says about skills when the harness serves them."
+  [state]
+  (when (seq (enabled-skills state))
+    (str/join "\n"
+              ["## Skills available for this file"
+               "The skills listed to you are your playbooks. When a task matches one, load it with the `skill` tool BEFORE your first mutating call, read the playbook, and follow it — do not guess its content. This holds when the user asks for quick, sloppy or rough work (that changes the polish, not the method), and when continuing work a previous conversation started. Wherever your instructions say get_design_skills, use the `skill` tool."])))
+
+(defn- reference-skill-name
+  "The harness takes kebab-case names only."
+  [skill reference]
+  (-> (str skill "-ref-" reference)
+      (str/lower)
+      (str/replace #"[^a-z0-9]+" "-")
+      (str/replace #"(^-+|-+$)" "")))
+
+(defn harness-skills
+  "The enabled skills as the agent service registers them: `{:name
+  :description :body}`. A skill's reference documents are skills of their own,
+  named after it, so a playbook can cite one and the model can load just that."
+  [state]
+  (vec
+   (mapcat
+    (fn [{:keys [name label category reactive blurb]}]
+      (let [refs (skill-references name)]
+        (cons
+         {:name name
+          :description (str label " (" category " · " (get reactive-label reactive reactive) "): " blurb)
+          :body (str (or (skill-body state name)
+                         "No playbook text is bundled for this skill; use the description above.")
+                     (when (seq refs)
+                       (str "\n\nReferences — each is a skill of its own, load the ones the step "
+                            "you are on cites: "
+                            (str/join ", " (map #(reference-skill-name name %) (sort (keys refs)))))))}
+         (for [reference (sort (keys refs))]
+           {:name (reference-skill-name name reference)
+            :description (str "Reference \"" reference "\" of the skill " name
+                              " — load it when that playbook cites it")
+            :body (skill-reference name reference)}))))
+    (enabled-skills state))))

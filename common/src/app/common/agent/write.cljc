@@ -434,13 +434,13 @@
                           (gsh/apply-transform shape (get transforms (:id shape))))
                         {:ignore-touched true}))))
 
-(defn- propagate-into
+(defn propagate-into
   "Runs `entries` through the engine on the builder's current objects and
   appends the resulting moves."
   [changes propagate entries]
   (apply-transforms changes (propagate (cb/lookup-objects changes) entries)))
 
-(defn- seat-in-grid
+(defn seat-in-grid
   "Gives a grid's new child a cell: the grid assigns one, adding a track when
   it has to, and puts its children back in cell order."
   [changes grid-id]
@@ -563,13 +563,3 @@
                                "parent), auto-width text re-measures itself. Do "
                                "not re-send the same x/y.")
                           "modified — settled at the requested geometry")}))})))))
-
-;; --- The tools the engine runs
-
-(def tools
-  "Tool name → `(fn [view input options])`. `view` is what the tool works on:
-  `:file-id`, the file `:data`, its `:libraries` (file id → file), and the
-  `:page-id` and `:objects` of the page in view. `options` carries the `:guard`
-  and the `:propagate` engine. Whatever is listed here runs on the server."
-  {"create_shape" create-shape
-   "modify_shape" modify-shape})

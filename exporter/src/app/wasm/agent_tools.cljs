@@ -16,6 +16,7 @@
   the profile and the file it names, and for nothing else."
   (:require
    ["undici" :as http]
+   [app.common.agent.tools :as cat]
    [app.common.agent.write :as caw]
    [app.common.transit :as t]
    [app.common.uri :as u]
@@ -72,7 +73,7 @@
           (fn [[_ {:keys [file-id page-id data libraries revn vern allowed-colors]}]]
             (let [guard  {:enforced? (boolean (some #{caw/color-rule} (:enforcedRules ctx)))
                           :allowed allowed-colors}
-                  run    (get caw/tools tool)
+                  run    (get cat/tools tool)
                   answer (run {:file-id file-id
                                :data data
                                :libraries (assoc libraries file-id {:id file-id :data data})

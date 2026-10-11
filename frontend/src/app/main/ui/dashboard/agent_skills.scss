@@ -125,24 +125,6 @@
   align-items: center;
 }
 
-.detail-back {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  padding: $s-4;
-  border: none;
-  border-radius: $br-8;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    color: var(--color-foreground-primary);
-    background-color: var(--color-background-tertiary);
-  }
-}
-
 .detail-name {
   @include t.use-typography("title-medium");
 

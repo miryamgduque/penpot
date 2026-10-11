@@ -173,6 +173,11 @@
    :cache-write-tokens (or cacheWrite 0)
    :requests 1})
 
+(def last-turn-ref*
+  "The backend's id for the last turn: `get-agent-changes` lists what the
+  turn changed by it."
+  (atom nil))
+
 (def last-tool-timings*
   "Per-tool round-trip times of the last finished turn, as the service
   measured them. A measurement aid for comparing the bridge with the
@@ -206,6 +211,10 @@
                 (case (:type ev)
                   "turn"
                   (do (reset! turn-id* (:turnId ev)) (rx/empty))
+
+                  ;; the id the backend records this turn's changes under
+                  "turn-ref"
+                  (do (reset! last-turn-ref* (:turnRef ev)) (rx/empty))
 
                   "text-delta"
                   (do (swap! text* str (:text ev))

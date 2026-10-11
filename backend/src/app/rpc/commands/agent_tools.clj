@@ -40,6 +40,7 @@
    [app.rpc.permissions :as perms]
    [app.storage :as sto]
    [app.tokens :as tokens]
+   [app.util.blob :as blob]
    [app.util.services :as sv]
    [cuerdas.core :as str]))
 
@@ -75,12 +76,23 @@
 
 (defn turn-token
   "A claim that `profile-id` started an agent turn on `file-id`. Outlives the
-  longest turn we expect; a tool call after that fails and the turn ends."
-  [cfg profile-id file-id]
-  (tokens/generate cfg {:iss turn-token-iss
-                        :exp (ct/in-future {:hours 2})
-                        :profile-id profile-id
-                        :file-id file-id}))
+  longest turn we expect; a tool call after that fails and the turn ends.
+
+  `turn` says which turn of which conversation it is — `{:turn-id
+  :conversation-id}` — so what the agent changes can be told apart later. A
+  token made without it still works; its changes are not recorded."
+  ([cfg profile-id file-id]
+   (turn-token cfg profile-id file-id nil))
+  ([cfg profile-id file-id {:keys [turn-id conversation-id]}]
+   (tokens/generate cfg (cond-> {:iss turn-token-iss
+                                 :exp (ct/in-future {:hours 2})
+                                 :profile-id profile-id
+                                 :file-id file-id}
+                          (uuid? turn-id)
+                          (assoc :turn-id turn-id)
+
+                          (string? conversation-id)
+                          (assoc :conversation-id conversation-id)))))
 
 (defn- verify-turn-token
   [cfg token]
@@ -532,6 +544,8 @@
    [:token [:string {:max 5000}]]
    [:revn {:min 0} ::sm/int]
    [:vern {:min 0} ::sm/int]
+   ;; the tool that made the changes, for the record of what the agent did
+   [:tool {:optional true} [:string {:max 100}]]
    [:changes [:vector {:max 5000} cpc/schema:change]]])
 
 (sv/defmethod ::commit-agent-tool-changes
@@ -541,8 +555,8 @@
   {::rpc/auth false
    ::doc/added "2.20"
    ::sm/params schema:commit-agent-tool-changes}
-  [cfg {:keys [token revn vern changes]}]
-  (let [{:keys [profile-id file-id]} (verify-turn-token cfg token)]
+  [cfg {:keys [token revn vern tool changes]}]
+  (let [{:keys [profile-id file-id turn-id conversation-id]} (verify-turn-token cfg token)]
     (db/tx-run! cfg
                 (fn [cfg]
                   (@update-file-fn cfg {::rpc/profile-id profile-id
@@ -556,5 +570,56 @@
                                         :changes changes})))
     ;; the revision the file is at now, so a workspace can tell when it has
     ;; caught up with this commit
-    {:file-id file-id
-     :revn (:revn (bfc/get-file cfg file-id :read-only? true :load-data? false))}))
+    (let [revn (:revn (bfc/get-file cfg file-id :read-only? true :load-data? false))]
+      ;; and the record of it: an edit the agent made, in which turn of which
+      ;; conversation, with which tool
+      (when (and (uuid? turn-id) (string? conversation-id))
+        (db/insert! cfg :file-agent-change
+                    {:file-id file-id
+                     :profile-id profile-id
+                     :conversation-id conversation-id
+                     :turn-id turn-id
+                     :tool (or tool "unknown")
+                     :revn revn
+                     :changes (blob/encode changes)}
+                    {::db/return-keys false}))
+      {:file-id file-id
+       :revn revn})))
+
+;; --- What the agent changed
+
+(def ^:private sql:agent-changes
+  "SELECT c.id, c.profile_id, c.conversation_id, c.turn_id, c.tool, c.revn,
+          c.changes, c.created_at
+     FROM file_agent_change AS c
+    WHERE c.file_id = ?
+      AND (?::uuid IS NULL OR c.turn_id = ?::uuid)
+      AND (?::text IS NULL OR c.conversation_id = ?::text)
+    ORDER BY c.created_at ASC
+    LIMIT 2000")
+
+(def ^:private schema:get-agent-changes
+  [:and
+   [:map {:title "get-agent-changes"}
+    [:file-id ::sm/uuid]
+    [:turn-id {:optional true} ::sm/uuid]
+    [:conversation-id {:optional true} [:string {:max 100}]]
+    ;; the changes themselves, not only what and when
+    [:with-changes {:optional true} ::sm/boolean]]
+   [::sm/contains-any #{:turn-id :conversation-id}]])
+
+(sv/defmethod ::get-agent-changes
+  "The commits the design agent made to a file in one turn, or in every turn
+  of one conversation, oldest first. For whoever can read the file."
+  {::doc/added "2.20"
+   ::sm/params schema:get-agent-changes}
+  [cfg {:keys [::rpc/profile-id file-id turn-id conversation-id with-changes]}]
+  (files/check-read-permissions! cfg profile-id file-id)
+  (->> (db/exec! cfg [sql:agent-changes file-id turn-id turn-id conversation-id conversation-id])
+       (mapv (fn [{:keys [changes] :as row}]
+               (let [changes (blob/decode changes)]
+                 (cond-> (-> (dissoc row :changes)
+                             (assoc :change-count (count changes))
+                             ;; the shapes it touched, to find them on the canvas
+                             (assoc :shape-ids (into [] (comp (keep :id) (distinct) (take 200)) changes)))
+                   with-changes (assoc :changes changes)))))))

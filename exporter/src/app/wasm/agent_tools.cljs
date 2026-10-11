@@ -274,7 +274,7 @@
                         :else
                         (->> (if (seq (:changes answer))
                                (command! "commit-agent-tool-changes"
-                                         {:token token :revn revn :vern vern :changes (:changes answer)})
+                                         {:token token :revn revn :vern vern :tool tool :changes (:changes answer)})
                                (p/resolved nil))
                              (p/fmap (fn [committed]
                                        (cond-> {:content (js/JSON.stringify (clj->js (:result answer)))

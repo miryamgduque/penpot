@@ -22,7 +22,7 @@
 (t/use-fixtures :each th/database-reset)
 
 (defn- add-rect!
-  [profile file name]
+  [profile file name & {:as attrs}]
   (let [page-id  (first (get-in file [:data :pages]))
         shape-id (uuid/random)
         out      (th/command! {::th/type :update-file
@@ -39,11 +39,12 @@
                                           :frame-id uuid/zero
                                           :components-v2 true
                                           :obj (cts/setup-shape
-                                                {:id shape-id
-                                                 :name name
-                                                 :frame-id uuid/zero
-                                                 :parent-id uuid/zero
-                                                 :type :rect})}]})]
+                                                (merge {:id shape-id
+                                                        :name name
+                                                        :frame-id uuid/zero
+                                                        :parent-id uuid/zero
+                                                        :type :rect}
+                                                       attrs))}]})]
     (t/is (nil? (:error out)))
     shape-id))
 
@@ -200,3 +201,33 @@
                               :vern 0
                               :changes []})]
         (t/is (th/ex-of-code? (:error out) :invalid-turn-token))))))
+
+(t/deftest comments-and-versions-are-written-as-the-turn-profile
+  (let [profile (th/create-profile* 1 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        ;; a board under the comment: it is the frame the thread hangs from
+        board   (add-rect! profile file "board" :type :frame :x 0 :y 0 :width 100 :height 100)
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file))]
+
+    (t/testing "a comment lands on the page in view, and can be listed"
+      (t/is (re-find #"content is required"
+                     (get-in (run-tool! token "leave_comment" :input {:content "  "}) [:result :content])))
+      (let [out (run-tool! token "leave_comment" :input {:content "agent: check this" :x 10 :y 20})]
+        (t/is (nil? (:error out)))
+        (t/is (false? (get-in out [:result :is-error])))
+        (t/is (= [board] (map :frame-id (th/db-query :comment-thread {:file-id (:id file)})))))
+      (let [listed (content (run-tool! token "list_comments"))]
+        (t/is (= ["agent: check this"] (mapv :content (:comments listed))))
+        (t/is (= [10 20] (mapv #(int (get (first (:comments listed)) %)) [:x :y])))))
+
+    (t/testing "a version is saved under an agent label"
+      (t/is (re-find #"label is required"
+                     (get-in (run-tool! token "save_version" :input {}) [:result :content])))
+      (let [saved (content (run-tool! token "save_version" :input {:label "before surgery"}))]
+        (t/is (= "agent: before surgery" (:label saved)))
+        (t/is (= ["agent: before surgery"]
+                 (->> (th/db-query :file-change {:file-id (:id file)})
+                      (keep :label)
+                      (filter #(re-find #"^agent:" %)))))))))

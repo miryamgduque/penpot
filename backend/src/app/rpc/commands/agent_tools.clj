@@ -24,23 +24,27 @@
    [app.common.exceptions :as ex]
    [app.common.features :as cfeat]
    [app.common.files.changes :as cpc]
+   [app.common.geom.point :as gpt]
    [app.common.json :as json]
    [app.common.schema :as sm]
    [app.common.time :as ct]
+   [app.common.types.shape-tree :as ctst]
    [app.common.uri :as u]
    [app.common.uuid :as uuid]
    [app.db :as db]
    [app.features.fdata :as feat.fdata]
+   [app.features.file-snapshots :as fsnap]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.files :as files]
    [app.rpc.doc :as-alias doc]
    [app.tokens :as tokens]
-   [app.util.services :as sv]))
+   [app.util.services :as sv]
+   [cuerdas.core :as str]))
 
 (def server-tools
   "The tools the backend runs itself. The agent service asks a connected
   workspace to run every other tool."
-  #{"read_design" "find_shapes"})
+  #{"read_design" "find_shapes" "leave_comment" "list_comments" "save_version"})
 
 (def engine-tools
   "The tools that change a file. They need the render engine to lay things
@@ -137,6 +141,98 @@
       (ex/raise :type :agent-tool :hint problem))
     (car/find-shapes (get-in data [:pages-index page-id :objects]) query)))
 
+;; --- Comments and versions
+;;
+;; Not file changes: they go through the commands the workspace itself calls,
+;; run for the profile that started the turn, so permissions, quotas and
+;; notifications are the ones every comment and version gets.
+
+(defn- command-fn
+  "A command as declared, before the RPC layer wraps it."
+  [ns-sym command]
+  (->> (sv/scan-ns ns-sym)
+       (some (fn [[f mdata]]
+               (when (= command (::sv/name mdata)) f)))))
+
+(def ^:private create-comment-thread-fn
+  (delay (command-fn 'app.rpc.commands.comments "create-comment-thread")))
+
+(def ^:private get-comment-threads-fn
+  (delay (command-fn 'app.rpc.commands.comments "get-comment-threads")))
+
+(def ^:private create-file-snapshot-fn
+  (delay (command-fn 'app.rpc.commands.files-snapshot "create-file-snapshot")))
+
+(defmethod run-tool "leave_comment"
+  [_ {:keys [file-id page-id data]} {:keys [content x y]} {:keys [::cfg ::profile-id]}]
+  (let [clean (str/trim (str content))]
+    (when (str/blank? clean)
+      (ex/raise :type :agent-tool :hint "leave_comment: content is required"))
+    (let [position (gpt/point (or x 0) (or y 0))
+          objects  (get-in data [:pages-index page-id :objects])]
+      (@create-comment-thread-fn cfg {::rpc/profile-id profile-id
+                                      ::rpc/request-at (ct/now)
+                                      :file-id file-id
+                                      :page-id page-id
+                                      :position position
+                                      ;; the default validator of this lookup
+                                      ;; takes no argument, which only
+                                      ;; JavaScript lets through
+                                      :frame-id (ctst/get-frame-id-by-position
+                                                 objects position {:validator (constantly true)})
+                                      :content clean})
+      {:note (str "comment posted at (" (or x 0) ", " (or y 0) ") — it is written "
+                  "as the current user and notifies collaborators. Make sure the "
+                  "content says it is from the design agent. Verify in the Comments "
+                  "panel.")})))
+
+(defmethod run-tool "list_comments"
+  [_ {:keys [file-id]} _ {:keys [::cfg ::profile-id]}]
+  {:comments (mapv (fn [thread]
+                     (cond-> {:seqn (:seqn thread)
+                              :content (:content thread)}
+                       (:position thread)
+                       (assoc :x (:x (:position thread)) :y (:y (:position thread)))
+
+                       (:count-comments thread)
+                       (assoc :replies (dec (:count-comments thread)))))
+                   (@get-comment-threads-fn cfg {::rpc/profile-id profile-id :file-id file-id}))})
+
+;; A turn token lasts two hours; that is the window "this session" means here.
+(def ^:private max-agent-versions 10)
+
+(defn- recent-agent-versions
+  [cfg profile-id file-id]
+  (let [since (ct/in-past {:hours 2})]
+    (->> (fsnap/get-visible-snapshots cfg file-id)
+         (filter #(and (= profile-id (:profile-id %))
+                       (str/starts-with? (str (:label %)) "agent:")
+                       (ct/is-after? (:created-at %) since)))
+         (count))))
+
+(defmethod run-tool "save_version"
+  [_ {:keys [file-id]} {:keys [label]} {:keys [::cfg ::profile-id]}]
+  (let [clean (str/trim (str label))
+        full  (if (str/starts-with? clean "agent:") clean (str "agent: " clean))]
+    (cond
+      (str/blank? clean)
+      (ex/raise :type :agent-tool
+                :hint (str "save_version: label is required — say what the snapshot is for,"
+                           " e.g. \"before variant surgery\""))
+
+      (>= (recent-agent-versions cfg profile-id file-id) max-agent-versions)
+      (ex/raise :type :agent-tool
+                :hint (str "save_version: already saved " max-agent-versions " snapshots this"
+                           " session — that is plenty of checkpoints. Prune or restore in the"
+                           " History panel."))
+
+      :else
+      (do
+        (@create-file-snapshot-fn cfg {::rpc/profile-id profile-id :file-id file-id :label full})
+        {:label full
+         :note (str "snapshot saved — it is in the History panel › versions. "
+                    "Restoring a version is the user's move there, not mine.")}))))
+
 (defn- result->content
   [result]
   (let [s (json/encode result)]
@@ -179,7 +275,8 @@
     ;; the token says who started the turn; whether they may still read the
     ;; file is checked now, on every call
     (files/check-read-permissions! cfg profile-id file-id)
-    (let [context (decode-json context)
+    (let [context (-> (decode-json context)
+                      (assoc ::cfg cfg ::profile-id profile-id))
           view    (load-view cfg file-id context)]
       (try
         {:content (result->content (run-tool tool view (decode-json input) context))

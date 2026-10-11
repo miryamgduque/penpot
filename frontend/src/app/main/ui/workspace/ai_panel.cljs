@@ -431,7 +431,7 @@
                      :on-click #(on-remove-image id i)}
             [:span {:aria-hidden true} "✕"]]])
         [:> button* {:variant "secondary"
-                     :class (stl/css :sentence-case)
+                     :class (stl/css :compact-label)
                      :icon i/img
                      :disabled (zero? room)
                      :title (if (pos? room)
@@ -532,7 +532,7 @@
                                   :on-remove-image on-remove-image}])
      [:div {:class (stl/css :eform-actions)}
       [:> button* {:variant "primary"
-                   :class (stl/css :sentence-case)
+                   :class (stl/css :compact-label)
                    :disabled (not ready?)
                    :on-click on-submit}
        (tr "workspace.agent.form.send-answers")]
@@ -686,11 +686,11 @@
               (tr "workspace.agent.checkpoint" rounds))]
            [:div {:class (stl/css :checkpoint-actions)}
             [:> button* {:variant "primary"
-                         :class (stl/css :sentence-case)
+                         :class (stl/css :compact-label)
                          :on-click on-continue}
              (tr "workspace.agent.checkpoint.continue")]
             [:> button* {:variant "secondary"
-                         :class (stl/css :sentence-case)
+                         :class (stl/css :compact-label)
                          :on-click on-stop-here}
              (tr "workspace.agent.checkpoint.stop")]]]))
       ;; the way back: what the agent changes is not in the user's undo
@@ -857,7 +857,7 @@
               [:span {:class (stl/css :observer-group-label)} label]
               [:span {:class (stl/css :observer-group-count)} (dm/str "· " n)]
               [:> button* {:variant "ghost"
-                           :class (stl/css :sentence-case :observer-group-fix)
+                           :class (stl/css :compact-label :observer-group-fix)
                            :title (tr "workspace.agent.observer.fix-group-title" label)
                            ;; render-time closure, deliberately: hooks cannot live
                            ;; inside `for`, and the group list is tiny
@@ -883,18 +883,18 @@
               (when (and (not open?) (> n max-row-shapes))
                 [:li
                  [:> button* {:variant "ghost"
-                              :class (stl/css :sentence-case)
+                              :class (stl/css :compact-label)
                               :on-click (fn [_] (swap! open-rules* conj rule))}
                   (tr "workspace.agent.observer.show-more" (- n max-row-shapes))]])]]))])
 
      (when expanded?
        [:div {:class (stl/css :observer-footer)}
         [:> button* {:variant "ghost"
-                     :class (stl/css :sentence-case)
+                     :class (stl/css :compact-label)
                      :on-click on-dismiss}
          (tr "workspace.agent.dismiss")]
         [:> button* {:variant "primary"
-                     :class (stl/css :sentence-case)
+                     :class (stl/css :compact-label)
                      :title (tr "workspace.agent.observer.fix-all-title")
                      :on-click (fn [_] (on-fix shapes))}
          (tr "workspace.agent.observer.fix-all")]])]))
@@ -1328,7 +1328,7 @@
         ;; the glyph is decorative — kept out of the accessible name, which
         ;; would otherwise read "plus sign new chat"
         [:> button* {:variant "ghost"
-                     :class (stl/css :sentence-case :chat-clear)
+                     :class (stl/css :compact-label :chat-clear)
                      :disabled busy?
                      :title (tr "workspace.agent.chat.new-title")
                      :on-click on-clear}
@@ -1352,7 +1352,7 @@
                    :on-click on-handoff-dismiss}
           [:span {:aria-hidden true} "✕"]]]
         [:> button* {:variant "secondary"
-                     :class (stl/css :sentence-case :handoff-action)
+                     :class (stl/css :compact-label :handoff-action)
                      :title (tr "workspace.agent.handoff.summarize-title")
                      :on-click on-handoff}
          [:span {:aria-hidden true} "✦ "]
@@ -1582,12 +1582,12 @@
 
      [:div {:class (stl/css :vibes-actions)}
       [:> button* {:variant "primary"
-                   :class (stl/css :sentence-case)
+                   :class (stl/css :compact-label)
                    :disabled (not ready?)
                    :on-click on-save}
        (tr "workspace.agent.save")]
       [:> button* {:variant "secondary"
-                   :class (stl/css :sentence-case)
+                   :class (stl/css :compact-label)
                    :on-click on-cancel}
        (tr "workspace.agent.cancel")]]]))
 
@@ -1642,14 +1642,14 @@
           [:div {:class (stl/css :detail-section-label)} (tr "workspace.agent.skill.playbook")]
           [:pre {:class (stl/css :detail-body)} body]
           [:div {:class (stl/css :vibes-actions)}
-           [:> button* {:variant "secondary" :class (stl/css :sentence-case) :on-click on-edit}
+           [:> button* {:variant "secondary" :class (stl/css :compact-label) :on-click on-edit}
             (tr "workspace.agent.edit")]
            (when on-promote
-             [:> button* {:variant "secondary" :class (stl/css :sentence-case) :on-click on-promote}
+             [:> button* {:variant "secondary" :class (stl/css :compact-label) :on-click on-promote}
               (tr "workspace.agent.skill.promote")])
            ;; destructive in both steps: the label carries the confirm
            [:> button* {:variant "destructive"
-                        :class (stl/css :sentence-case)
+                        :class (stl/css :compact-label)
                         :on-click on-delete}
             (if confirm? (tr "workspace.agent.really-delete") (tr "workspace.agent.delete"))]]])])))
 
@@ -1881,7 +1881,7 @@
                          :on-click (rm-row k i)}
                 "×"]])
             [:> button* {:variant "ghost"
-                         :class (stl/css :sentence-case :vibes-form-add)
+                         :class (stl/css :compact-label :vibes-form-add)
                          :on-click (add-row k {:name "" :value ""})}
              add-label]]))]
 
@@ -1918,7 +1918,7 @@
                   :on-click (rm-row :colors i)}
          "×"]])
      [:> button* {:variant "ghost"
-                  :class (stl/css :sentence-case :vibes-form-add)
+                  :class (stl/css :compact-label :vibes-form-add)
                   :on-click (add-row :colors {:name "" :value ""})}
       (tr "workspace.agent.vibes.add-color")]
 
@@ -1953,7 +1953,7 @@
                   :value (:line-height row)
                   :on-change (set-in [:typography i :line-height])}]]])
      [:> button* {:variant "ghost"
-                  :class (stl/css :sentence-case :vibes-form-add)
+                  :class (stl/css :compact-label :vibes-form-add)
                   :on-click (add-row :typography {:name "" :family "" :size ""
                                                   :weight "" :line-height ""
                                                   :extra {}})}
@@ -2067,7 +2067,7 @@
                       :rows 18
                       :on-change on-raw-change}]
           [:> button* {:variant "ghost"
-                       :class (stl/css :sentence-case :vibes-form-add)
+                       :class (stl/css :compact-label :vibes-form-add)
                        :on-click on-add-tokens}
            (tr "workspace.agent.vibes.add-tokens")]]
          [:*
@@ -2084,12 +2084,12 @@
          [:p {:class (stl/css :vibes-problem)} problem])
        [:div {:class (stl/css :vibes-actions)}
         [:> button* {:variant "primary"
-                     :class (stl/css :sentence-case)
+                     :class (stl/css :compact-label)
                      :disabled (some? problem)
                      :on-click on-save}
          (tr "workspace.agent.save")]
         [:> button* {:variant "secondary"
-                     :class (stl/css :sentence-case)
+                     :class (stl/css :compact-label)
                      :on-click on-cancel}
          (tr "workspace.agent.cancel")]]]
 
@@ -2104,19 +2104,19 @@
                  :on-change on-ask-change
                  :on-key-down on-ask-key}]
         [:> button* {:variant "primary"
-                     :class (stl/css :sentence-case)
+                     :class (stl/css :compact-label)
                      :disabled (str/blank? ask)
                      :on-click on-ask-submit}
          (tr "workspace.agent.foundation.ask")]]
        [:div {:class (stl/css :vibes-actions)}
-        [:> button* {:variant "secondary" :class (stl/css :sentence-case) :on-click on-edit}
+        [:> button* {:variant "secondary" :class (stl/css :compact-label) :on-click on-edit}
          (tr "workspace.agent.edit")]
         (when vibes?
-          [:> button* {:variant "secondary" :class (stl/css :sentence-case) :on-click on-interview}
+          [:> button* {:variant "secondary" :class (stl/css :compact-label) :on-click on-interview}
            (tr "workspace.agent.foundation.rerun-interview")])
         ;; destructive in both steps: the label carries the confirm
         [:> button* {:variant "destructive"
-                     :class (stl/css :sentence-case)
+                     :class (stl/css :compact-label)
                      :on-click on-delete}
          (if confirm? (tr "workspace.agent.foundation.really-delete") (tr "workspace.agent.delete"))]]]
 
@@ -2126,7 +2126,7 @@
        [:p {:class (stl/css :vibes-empty-text)}
         (tr "workspace.agent.vibes.empty-desc")]
        [:> button* {:variant "primary"
-                    :class (stl/css :sentence-case)
+                    :class (stl/css :compact-label)
                     :on-click on-interview}
         (tr "workspace.agent.vibes.set")]]
 
@@ -2263,7 +2263,7 @@
        [:p {:class (stl/css :create-guard)}
         (tr "workspace.agent.create.connect-first")]
        [:> button* {:variant "primary"
-                    :class (stl/css :sentence-case :create-connect)
+                    :class (stl/css :compact-label :create-connect)
                     :to "#/settings/integrations"}
         (tr "workspace.agent.connect.action")]]
 
@@ -2303,7 +2303,7 @@
           (tr "workspace.agent.create.error")])
 
        [:> button* {:variant "primary"
-                    :class (stl/css :sentence-case :create-submit)
+                    :class (stl/css :compact-label :create-submit)
                     :disabled (not ready?)
                     :on-click submit}
         (if busy? (tr "workspace.agent.create.generating") (tr "workspace.agent.create.action"))]])))
@@ -2369,10 +2369,10 @@
           (tr "workspace.agent.promote.error")])
 
        [:div {:class (stl/css :promote-actions)}
-        [:> button* {:variant "secondary" :class (stl/css :sentence-case)
+        [:> button* {:variant "secondary" :class (stl/css :compact-label)
                      :disabled busy? :on-click on-done}
          (tr "workspace.agent.cancel")]
-        [:> button* {:variant "primary" :class (stl/css :sentence-case)
+        [:> button* {:variant "primary" :class (stl/css :compact-label)
                      :disabled (not ready?) :on-click publish}
          (if busy? (tr "workspace.agent.promote.publishing") (tr "workspace.agent.promote.publish"))]]])))
 

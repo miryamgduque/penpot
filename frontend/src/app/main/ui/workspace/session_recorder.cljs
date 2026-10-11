@@ -134,7 +134,7 @@
             (tr "workspace.session-recorder.not-saving")])
 
          [:> button* {:variant "secondary"
-                      :class (stl/css :sentence-case :timer-stop)
+                      :class (stl/css :compact-label :timer-stop)
                       :on-click on-stop}
           (tr "workspace.session-recorder.stop-short")]]]])))
 
@@ -191,7 +191,7 @@
     [:span (tr "workspace.session-recorder.sessions")]
     (when (seq sessions)
       [:> button* {:variant "ghost"
-                   :class (stl/css :sentence-case)
+                   :class (stl/css :compact-label)
                    :on-click #(on-export-all)}
        (tr "workspace.session-recorder.export-all")])]
 

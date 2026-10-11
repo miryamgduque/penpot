@@ -45,6 +45,7 @@
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
    [app.main.ui.components.markdown :as md]
+   [app.main.ui.ds.buttons.button :refer [button*]]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
@@ -426,14 +427,14 @@
                      :aria-label (tr "workspace.agent.form.remove-reference-image" (inc i))
                      :on-click #(on-remove-image id i)}
             [:span {:aria-hidden true} "✕"]]])
-        [:button {:type "button"
-                  :class (stl/css :eform-attach-btn)
-                  :disabled (zero? room)
-                  :title (if (pos? room)
-                           (tr "workspace.agent.form.attach-reference-images")
-                           (tr "workspace.agent.form.image-limit-reached"))
-                  :on-click on-attach-click}
-         [:> i/icon* {:icon-id i/img}]
+        [:> button* {:variant "secondary"
+                     :class (stl/css :sentence-case)
+                     :icon i/img
+                     :disabled (zero? room)
+                     :title (if (pos? room)
+                              (tr "workspace.agent.form.attach-reference-images")
+                              (tr "workspace.agent.form.image-limit-reached"))
+                     :on-click on-attach-click}
          (tr "workspace.agent.form.add-reference")]])]))
 
 (mf/defc elicitation-form*
@@ -527,10 +528,10 @@
                                   :on-add-images on-add-images
                                   :on-remove-image on-remove-image}])
      [:div {:class (stl/css :eform-actions)}
-      [:button {:type "button"
-                :class (stl/css :eform-submit)
-                :disabled (not ready?)
-                :on-click on-submit}
+      [:> button* {:variant "primary"
+                   :class (stl/css :sentence-case)
+                   :disabled (not ready?)
+                   :on-click on-submit}
        (tr "workspace.agent.form.send-answers")]
       (when-not ready?
         [:span {:class (stl/css :eform-pending-hint)}
@@ -677,13 +678,13 @@
               (tr "workspace.agent.checkpoint.with-cost" rounds (.toFixed cost 2))
               (tr "workspace.agent.checkpoint" rounds))]
            [:div {:class (stl/css :checkpoint-actions)}
-            [:button {:type "button"
-                      :class (stl/css :checkpoint-continue)
-                      :on-click on-continue}
+            [:> button* {:variant "primary"
+                         :class (stl/css :sentence-case)
+                         :on-click on-continue}
              (tr "workspace.agent.checkpoint.continue")]
-            [:button {:type "button"
-                      :class (stl/css :checkpoint-stop)
-                      :on-click on-stop-here}
+            [:> button* {:variant "secondary"
+                         :class (stl/css :sentence-case)
+                         :on-click on-stop-here}
              (tr "workspace.agent.checkpoint.stop")]]]))
       ;; …and no placeholder under a thinking row that is itself still
       ;; streaming — its own summary already reads "Thinking…"
@@ -807,12 +808,12 @@
              [:div {:class (stl/css :observer-group-head)}
               [:span {:class (stl/css :observer-group-label)} label]
               [:span {:class (stl/css :observer-group-count)} (dm/str "· " n)]
-              [:button {:type "button"
-                        :class (stl/css :observer-group-fix)
-                        :title (tr "workspace.agent.observer.fix-group-title" label)
-                        ;; render-time closure, deliberately: hooks cannot live
-                        ;; inside `for`, and the group list is tiny
-                        :on-click (fn [_] (on-fix g-shapes))}
+              [:> button* {:variant "ghost"
+                           :class (stl/css :sentence-case :observer-group-fix)
+                           :title (tr "workspace.agent.observer.fix-group-title" label)
+                           ;; render-time closure, deliberately: hooks cannot live
+                           ;; inside `for`, and the group list is tiny
+                           :on-click (fn [_] (on-fix g-shapes))}
                (tr "workspace.agent.observer.fix")]]
              [:ul {:class (stl/css :observer-rows)}
               (for [v shown]
@@ -833,21 +834,21 @@
                      (:shapeName v)]]]))
               (when (and (not open?) (> n max-row-shapes))
                 [:li
-                 [:button {:type "button"
-                           :class (stl/css :observer-showmore)
-                           :on-click (fn [_] (swap! open-rules* conj rule))}
+                 [:> button* {:variant "ghost"
+                              :class (stl/css :sentence-case)
+                              :on-click (fn [_] (swap! open-rules* conj rule))}
                   (tr "workspace.agent.observer.show-more" (- n max-row-shapes))]])]]))])
 
      (when expanded?
        [:div {:class (stl/css :observer-footer)}
-        [:button {:type "button"
-                  :class (stl/css :observer-dismiss)
-                  :on-click on-dismiss}
+        [:> button* {:variant "ghost"
+                     :class (stl/css :sentence-case)
+                     :on-click on-dismiss}
          (tr "workspace.agent.dismiss")]
-        [:button {:type "button"
-                  :class (stl/css :observer-fixall)
-                  :title (tr "workspace.agent.observer.fix-all-title")
-                  :on-click (fn [_] (on-fix shapes))}
+        [:> button* {:variant "primary"
+                     :class (stl/css :sentence-case)
+                     :title (tr "workspace.agent.observer.fix-all-title")
+                     :on-click (fn [_] (on-fix shapes))}
          (tr "workspace.agent.observer.fix-all")]])]))
 
 (mf/defc observer-notifications*
@@ -1277,11 +1278,11 @@
            (tr "workspace.agent.usage.restored"))]
         ;; the glyph is decorative — kept out of the accessible name, which
         ;; would otherwise read "plus sign new chat"
-        [:button {:class (stl/css :chat-clear)
-                  :type "button"
-                  :disabled busy?
-                  :title (tr "workspace.agent.chat.new-title")
-                  :on-click on-clear}
+        [:> button* {:variant "ghost"
+                     :class (stl/css :sentence-case :chat-clear)
+                     :disabled busy?
+                     :title (tr "workspace.agent.chat.new-title")
+                     :on-click on-clear}
          [:span {:aria-hidden true} "+"]
          (tr "workspace.agent.chat.new")]])
 
@@ -1301,10 +1302,10 @@
                    :aria-label (tr "workspace.agent.handoff.dismiss")
                    :on-click on-handoff-dismiss}
           [:span {:aria-hidden true} "✕"]]]
-        [:button {:type "button"
-                  :class (stl/css :handoff-action)
-                  :title (tr "workspace.agent.handoff.summarize-title")
-                  :on-click on-handoff}
+        [:> button* {:variant "secondary"
+                     :class (stl/css :sentence-case :handoff-action)
+                     :title (tr "workspace.agent.handoff.summarize-title")
+                     :on-click on-handoff}
          [:span {:aria-hidden true} "✦ "]
          (tr "workspace.agent.handoff.summarize")]])
 
@@ -1531,14 +1532,14 @@
                  :on-change #(reset! body* (dom/get-value (dom/get-target %)))}]
 
      [:div {:class (stl/css :vibes-actions)}
-      [:button {:type "button"
-                :class (stl/css :vibes-button-primary)
-                :disabled (not ready?)
-                :on-click on-save}
+      [:> button* {:variant "primary"
+                   :class (stl/css :sentence-case)
+                   :disabled (not ready?)
+                   :on-click on-save}
        (tr "workspace.agent.save")]
-      [:button {:type "button"
-                :class (stl/css :vibes-button)
-                :on-click on-cancel}
+      [:> button* {:variant "secondary"
+                   :class (stl/css :sentence-case)
+                   :on-click on-cancel}
        (tr "workspace.agent.cancel")]]]))
 
 (mf/defc skill-detail*
@@ -1592,16 +1593,15 @@
           [:div {:class (stl/css :detail-section-label)} (tr "workspace.agent.skill.playbook")]
           [:pre {:class (stl/css :detail-body)} body]
           [:div {:class (stl/css :vibes-actions)}
-           [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
+           [:> button* {:variant "secondary" :class (stl/css :sentence-case) :on-click on-edit}
             (tr "workspace.agent.edit")]
            (when on-promote
-             [:button {:type "button" :class (stl/css :vibes-button) :on-click on-promote}
+             [:> button* {:variant "secondary" :class (stl/css :sentence-case) :on-click on-promote}
               (tr "workspace.agent.skill.promote")])
-           [:button {:type "button"
-                     :class (stl/css-case :vibes-button true
-                                          :vibes-button-danger true
-                                          :vibes-button-confirm confirm?)
-                     :on-click on-delete}
+           ;; destructive in both steps: the label carries the confirm
+           [:> button* {:variant "destructive"
+                        :class (stl/css :sentence-case)
+                        :on-click on-delete}
             (if confirm? (tr "workspace.agent.really-delete") (tr "workspace.agent.delete"))]]])])))
 
 (mf/defc skill-row*
@@ -1831,9 +1831,9 @@
                          :aria-label (tr "workspace.agent.vibes.remove-token" title)
                          :on-click (rm-row k i)}
                 "×"]])
-            [:button {:type "button"
-                      :class (stl/css :vibes-form-add)
-                      :on-click (add-row k {:name "" :value ""})}
+            [:> button* {:variant "ghost"
+                         :class (stl/css :sentence-case :vibes-form-add)
+                         :on-click (add-row k {:name "" :value ""})}
              add-label]]))]
 
     [:div {:class (stl/css :vibes-form)}
@@ -1868,9 +1868,9 @@
                   :aria-label (tr "workspace.agent.vibes.remove-color")
                   :on-click (rm-row :colors i)}
          "×"]])
-     [:button {:type "button"
-               :class (stl/css :vibes-form-add)
-               :on-click (add-row :colors {:name "" :value ""})}
+     [:> button* {:variant "ghost"
+                  :class (stl/css :sentence-case :vibes-form-add)
+                  :on-click (add-row :colors {:name "" :value ""})}
       (tr "workspace.agent.vibes.add-color")]
 
      [:div {:class (stl/css :vibes-form-section-title)} (tr "workspace.agent.vibes.typography")]
@@ -1903,11 +1903,11 @@
                   :placeholder (tr "workspace.agent.vibes.line-height-placeholder")
                   :value (:line-height row)
                   :on-change (set-in [:typography i :line-height])}]]])
-     [:button {:type "button"
-               :class (stl/css :vibes-form-add)
-               :on-click (add-row :typography {:name "" :family "" :size ""
-                                               :weight "" :line-height ""
-                                               :extra {}})}
+     [:> button* {:variant "ghost"
+                  :class (stl/css :sentence-case :vibes-form-add)
+                  :on-click (add-row :typography {:name "" :family "" :size ""
+                                                  :weight "" :line-height ""
+                                                  :extra {}})}
       (tr "workspace.agent.vibes.add-role")]
 
      (scale-section :rounded (tr "workspace.agent.vibes.rounded") (tr "workspace.agent.vibes.add-radius"))
@@ -2017,9 +2017,9 @@
                       :value (:text edit)
                       :rows 18
                       :on-change on-raw-change}]
-          [:button {:type "button"
-                    :class (stl/css :vibes-form-add)
-                    :on-click on-add-tokens}
+          [:> button* {:variant "ghost"
+                       :class (stl/css :sentence-case :vibes-form-add)
+                       :on-click on-add-tokens}
            (tr "workspace.agent.vibes.add-tokens")]]
          [:*
           [:> vibes-token-form* {:state edit*}]
@@ -2034,14 +2034,14 @@
        (when problem
          [:p {:class (stl/css :vibes-problem)} problem])
        [:div {:class (stl/css :vibes-actions)}
-        [:button {:type "button"
-                  :class (stl/css :vibes-button-primary)
-                  :disabled (some? problem)
-                  :on-click on-save}
+        [:> button* {:variant "primary"
+                     :class (stl/css :sentence-case)
+                     :disabled (some? problem)
+                     :on-click on-save}
          (tr "workspace.agent.save")]
-        [:button {:type "button"
-                  :class (stl/css :vibes-button)
-                  :on-click on-cancel}
+        [:> button* {:variant "secondary"
+                     :class (stl/css :sentence-case)
+                     :on-click on-cancel}
          (tr "workspace.agent.cancel")]]]
 
       (some? doc)
@@ -2054,22 +2054,21 @@
                  :value ask
                  :on-change on-ask-change
                  :on-key-down on-ask-key}]
-        [:button {:type "button"
-                  :class (stl/css :vibes-button-primary)
-                  :disabled (str/blank? ask)
-                  :on-click on-ask-submit}
+        [:> button* {:variant "primary"
+                     :class (stl/css :sentence-case)
+                     :disabled (str/blank? ask)
+                     :on-click on-ask-submit}
          (tr "workspace.agent.foundation.ask")]]
        [:div {:class (stl/css :vibes-actions)}
-        [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
+        [:> button* {:variant "secondary" :class (stl/css :sentence-case) :on-click on-edit}
          (tr "workspace.agent.edit")]
         (when vibes?
-          [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
+          [:> button* {:variant "secondary" :class (stl/css :sentence-case) :on-click on-interview}
            (tr "workspace.agent.foundation.rerun-interview")])
-        [:button {:type "button"
-                  :class (stl/css-case :vibes-button true
-                                       :vibes-button-danger true
-                                       :vibes-button-confirm confirm?)
-                  :on-click on-delete}
+        ;; destructive in both steps: the label carries the confirm
+        [:> button* {:variant "destructive"
+                     :class (stl/css :sentence-case)
+                     :on-click on-delete}
          (if confirm? (tr "workspace.agent.foundation.really-delete") (tr "workspace.agent.delete"))]]]
 
       vibes?
@@ -2077,9 +2076,9 @@
        [:div {:class (stl/css :vibes-empty-title)} (tr "workspace.agent.vibes.empty-title")]
        [:p {:class (stl/css :vibes-empty-text)}
         (tr "workspace.agent.vibes.empty-desc")]
-       [:button {:type "button"
-                 :class (stl/css :vibes-button-primary)
-                 :on-click on-interview}
+       [:> button* {:variant "primary"
+                    :class (stl/css :sentence-case)
+                    :on-click on-interview}
         (tr "workspace.agent.vibes.set")]]
 
       :else
@@ -2214,7 +2213,9 @@
       [:div {:class (stl/css :skill-create)}
        [:p {:class (stl/css :create-guard)}
         (tr "workspace.agent.create.connect-first")]
-       [:a {:class (stl/css :connect-button) :href "#/settings/integrations"}
+       [:> button* {:variant "primary"
+                    :class (stl/css :sentence-case :create-connect)
+                    :to "#/settings/integrations"}
         (tr "workspace.agent.connect.action")]]
 
       [:div {:class (stl/css :skill-create)}
@@ -2252,10 +2253,10 @@
          [:p {:class (stl/css :create-error)}
           (tr "workspace.agent.create.error")])
 
-       [:button {:class (stl/css :create-submit)
-                 :type "button"
-                 :disabled (not ready?)
-                 :on-click submit}
+       [:> button* {:variant "primary"
+                    :class (stl/css :sentence-case :create-submit)
+                    :disabled (not ready?)
+                    :on-click submit}
         (if busy? (tr "workspace.agent.create.generating") (tr "workspace.agent.create.action"))]])))
 
 (mf/defc skill-promote*
@@ -2319,11 +2320,11 @@
           (tr "workspace.agent.promote.error")])
 
        [:div {:class (stl/css :promote-actions)}
-        [:button {:type "button" :class (stl/css :promote-cancel)
-                  :disabled busy? :on-click on-done}
+        [:> button* {:variant "secondary" :class (stl/css :sentence-case)
+                     :disabled busy? :on-click on-done}
          (tr "workspace.agent.cancel")]
-        [:button {:type "button" :class (stl/css :create-submit)
-                  :disabled (not ready?) :on-click publish}
+        [:> button* {:variant "primary" :class (stl/css :sentence-case)
+                     :disabled (not ready?) :on-click publish}
          (if busy? (tr "workspace.agent.promote.publishing") (tr "workspace.agent.promote.publish"))]]])))
 
 ;; --- Panel resize

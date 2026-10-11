@@ -1,0 +1,21 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) KALEIDOS INC Sucursal en España SL
+
+// Sentence case for DS buttons in the agent UI.
+//
+// A deliberate deviation from the DS: `button*` sets its label in uppercase
+// (headline-small). The agent UI keeps sentence case, and a sentence-case
+// option for `button*` has been proposed to the DS team (#83). Only
+// `text-transform` changes; the DS weight, size, line height and 32px height
+// stay as they are. If the DS adopts the option, delete this mixin and every
+// `.sentence-case` rule that includes it.
+//
+// The including rule has the same specificity as the DS `.button` rule and
+// wins on order: the style build emits the DS stylesheets before the app ones
+// (see `compileSassAll` in frontend/scripts/_helpers.js).
+@mixin sentence-case {
+  text-transform: none;
+}

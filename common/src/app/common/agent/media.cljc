@@ -378,11 +378,7 @@
       (nil? font)
       {:problem (str "set_font: no font matches "
                      (or fontId (str "family \"" family "\""))
-                     " — find the exact name with search_fonts")}
-
-      ;; a team's own font can only be downloaded with the user's session
-      (= :custom (:backend font))
-      {:fallback "a team font can only be measured in the workspace"})))
+                     " — find the exact name with search_fonts")})))
 
 (defn set-font
   [{:keys [page-id objects fonts]} {:keys [shapeIds family fontId variantId] :as input}

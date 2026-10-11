@@ -259,7 +259,10 @@
           variant   (find-variant variants font-uuid weight style)]
       (cond
         (:ttf-file-id variant)
-        (fetch-asset-bytes (:ttf-file-id variant) params)
+        (if-let [fetch-asset (:fetch-asset params)]
+          ;; a caller with no session brings its own way to the file
+          (fetch-asset (:ttf-file-id variant))
+          (fetch-asset-bytes (:ttf-file-id variant) params))
 
         (= uuid/zero font-uuid)
         (fetch-builtin-font-bytes (cfnt/resolve-ttf-file weight style))
@@ -400,13 +403,15 @@
 (defn provision-scenes-fonts!
   "Loads into the engine the fonts the text of each of `scenes` uses → promise
   of true when every font was found. Each scene is a page's objects; they are
-  loaded one after another, so the engine is left holding the last one. For
-  callers that hold no session: built-in and Google fonts only. A team's own
-  uploaded fonts need the user's session to download, so a scene that uses
-  one answers false."
-  [scenes load-scene!]
+  loaded one after another, so the engine is left holding the last one.
+
+  For callers that hold no session. Built-in and Google fonts need none. A
+  team's uploaded fonts do: `variants` are the team's font variants and
+  `fetch-asset` gets the bytes of one's file by id; without them a scene that
+  uses such a font answers false."
+  [scenes load-scene! {:keys [variants fetch-asset]}]
   (let [missing? (volatile! false)
-        resolve  (make-resolve-font nil nil)]
+        resolve  (make-resolve-font variants {:fetch-asset fetch-asset})]
     (wasm/clear-fonts!)
     (->> (p/run
           (fn [scene]
@@ -426,8 +431,8 @@
 
 (defn provision-scene-fonts!
   "`provision-scenes-fonts!` for one scene the engine already holds."
-  [scene]
-  (provision-scenes-fonts! [scene] (fn [_] nil)))
+  [scene fonts]
+  (provision-scenes-fonts! [scene] (fn [_] nil) fonts))
 
 (defn- relayout-text!
   "Recomputes layout for every text shape, once the real fonts are provisioned

@@ -128,7 +128,8 @@
     (t/is (re-find #"no font matches" (:problem (run {:shapeIds [(str text-id)] :family "Nope"}))))
     (t/is (re-find #"not a text shape" (:problem (run {:shapeIds [(str a-id)] :family "Inter"}))))
     (t/is (re-find #"does not exist for Inter" (:problem (run {:shapeIds [(str text-id)] :family "inter" :variantId "900"}))))
-    (t/is (some? (:fallback (run {:shapeIds [(str text-id)] :family "House Sans"}))))))
+    ;; a font the team uploaded is a font like any other: the host loads it
+    (t/is (= "House Sans" (-> (run {:shapeIds [(str text-id)] :family "house sans"}) :result :family)))))
 
 (t/deftest set-font-rewrites-the-text-and-measures-it
   (let [answer (cam/set-font view {:shapeIds [(str text-id)] :family "inter" :variantId "600"}

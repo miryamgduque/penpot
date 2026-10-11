@@ -15,6 +15,7 @@
    [app.common.uuid :as uuid]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.agent-tools :as agent-tools]
+   [app.storage :as sto]
    [backend-tests.helpers :as th]
    [clojure.test :as t]))
 
@@ -347,3 +348,42 @@
 
     (t/testing "only for someone who can read the file"
       (t/is (= :not-found (-> (listed other :turn-id turn-id) :error ex-data :type))))))
+
+(t/deftest a-team-font-is-handed-over-only-to-a-turn-on-that-team
+  (let [profile (th/create-profile* 1 {:is-active true})
+        other   (th/create-profile* 2 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        theirs  (th/create-file* 2 {:profile-id (:id other)
+                                    :project-id (:default-project-id other)
+                                    :is-shared false})
+        storage (:app.storage/storage th/*system*)
+        object  (sto/put-object! storage {::sto/content (sto/content (.getBytes "not really a font" "UTF-8"))
+                                          :content-type "font/ttf"
+                                          :bucket "team-font-variant"})
+        font-id (uuid/random)
+        _       (th/db-insert! :team-font-variant {:id (uuid/random)
+                                                   :team-id (:default-team-id profile)
+                                                   :profile-id (:id profile)
+                                                   :font-id font-id
+                                                   :font-family "House Sans"
+                                                   :font-weight 400
+                                                   :font-style "normal"
+                                                   :ttf-file-id (:id object)})
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file))
+        font!   (fn [token id]
+                  (:result (th/command! {::th/type :get-agent-tool-font :token token :id id})))]
+
+    (t/testing "the page says which fonts the team has, with the file to ask for"
+      (t/is (= [{:font-id font-id :font-family "House Sans" :font-weight 400 :font-style "normal" :ttf-file-id (:id object)}]
+               (-> (th/command! {::th/type :get-agent-tool-page :token token}) :result :team-fonts))))
+
+    (t/testing "the font's bytes, for a turn on a file of that team"
+      (t/is (= "not really a font"
+               (String. (.decode (java.util.Base64/getDecoder) ^String (:data (font! token (:id object)))) "UTF-8"))))
+
+    (t/testing "not for a turn on another team's file, nor for a file that is not a font"
+      (t/is (= {:data nil}
+               (font! (agent-tools/turn-token th/*system* (:id other) (:id theirs)) (:id object))))
+      (t/is (= {:data nil} (font! token (uuid/random)))))))

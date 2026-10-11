@@ -16,6 +16,7 @@
   the profile and the file it names, and for nothing else."
   (:require
    ["undici" :as http]
+   [app.common.agent.design-md :as dmd]
    [app.common.agent.read :as car]
    [app.common.agent.tools :as cat]
    [app.common.agent.write :as caw]
@@ -31,6 +32,7 @@
    [app.wasm.render :as render]
    [app.wasm.serialize :as serialize]
    [app.wasm.svg-parse :as svg-parse]
+   [cuerdas.core :as str]
    [promesa.core :as p]))
 
 (defn- command!
@@ -96,6 +98,26 @@
                    (zipmap (map :url requests) answers))))))
 
 ;; --- Fonts
+
+(defn- font-files
+  "How the engine gets a team's uploaded fonts with no session: the team's
+  variants, and the backend command that hands a font file over for the turn."
+  [token team-fonts]
+  {:variants team-fonts
+   :fetch-asset (fn [id]
+                  (->> (command! "get-agent-tool-font" {:token token :id id})
+                       (p/fmap (fn [{:keys [data]}]
+                                 (when (string? data)
+                                   (.-buffer (js/Uint8Array. (js/Buffer.from data "base64"))))))
+                       (p/merr (fn [_] (p/resolved nil)))))})
+
+(defn- design-doc-problem
+  "Why a document that opens with DESIGN.md frontmatter cannot be stored, or
+  nil."
+  [doc]
+  (let [{:keys [error] :as parsed} (dmd/parse doc)]
+    (or error
+        (some->> (dmd/problems parsed) (str/join "; ")))))
 
 (def ^:private stock-fonts
   "The fonts every file can use, as the workspace registers them."
@@ -183,7 +205,7 @@
                                    (attempt (inc runs) fonts?)))))
 
                   (and (not fonts?) (seq @(:measured engine)))
-                  (->> (render/provision-scenes-fonts! (measured-scenes @(:measured engine)) layout/load-page!)
+                  (->> (render/provision-scenes-fonts! (measured-scenes @(:measured engine)) layout/load-page! (:font-files options))
                        (p/mcat (fn [found?]
                                  (if found?
                                    (attempt (inc runs) true)
@@ -244,7 +266,7 @@
     (->> (p/all [(render/ensure-module!)
                  (command! "get-agent-tool-page" {:token token :context context})])
          (p/mcat
-          (fn [[_ {:keys [data page-id]}]]
+          (fn [[_ {:keys [data page-id team-fonts]}]]
             (let [objects (get-in data [:pages-index page-id :objects])
                   targets (car/render-targets objects (:names input) (:selectedIds ctx))]
               (if (empty? targets)
@@ -252,7 +274,7 @@
                 (do
                   (serialize/serialize-scene! objects)
                   (->> (provision-images! token objects)
-                       (p/mcat (fn [_] (render/provision-scene-fonts! objects)))
+                       (p/mcat (fn [_] (render/provision-scene-fonts! objects (font-files token team-fonts))))
                        (p/fmap
                         (fn [_]
                           (let [results (mapv #(render-target % scale) targets)
@@ -293,7 +315,10 @@
                           :fonts (fonts-db team-fonts)
                           ;; what the user has selected, when a workspace said
                           :selected (into [] (keep #(when (string? %) (parse-uuid %))) (:selectedIds ctx))}]
-              (->> (answer-of tool view input {:guard guard :resources resources})
+              (->> (answer-of tool view input {:guard guard
+                                               :resources resources
+                                               :font-files (font-files token team-fonts)
+                                               :check-design-doc design-doc-problem})
                    (p/mcat
                     (fn [answer]
                       (cond

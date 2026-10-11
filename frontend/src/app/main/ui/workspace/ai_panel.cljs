@@ -17,6 +17,7 @@
   owned by its own story."
   (:require-macros [app.main.style :as stl])
   (:require
+   [app.common.agent.design-md :as dmd]
    [app.common.data :as d]
    [app.common.data.macros :as dm]
    [app.common.exceptions :as ex]
@@ -31,7 +32,6 @@
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.design-doc :as dd]
-   [app.main.data.workspace.design-md :as dmd]
    [app.main.data.workspace.elicitation :as el]
    [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.selection :as dws]

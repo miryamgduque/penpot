@@ -141,27 +141,7 @@
 ;; authoring row-reverse layouts to compensate — semantically backwards files
 ;; (the Kahoot session, 2026-07-16).
 
-(defn nest-vector-index
-  "The relocate index for nesting `id` into `parent` at flow position
-  `flow-index` (0 = first in reading order; nil = end of the flow). For a
-  parent without a layout the position is z-order from the back instead.
-
-  Two Penpot facts meet here: flex lays children out in REVERSE vector order
-  (so a flow position maps to `count - position`), and `d/insert-at-index`
-  applies the index BEFORE removing the moved shape — a same-parent reorder
-  toward the end would land one slot short without the `(inc d)`. Public for
-  tests."
-  [parent id flow-index]
-  (let [shapes  (vec (:shapes parent))
-        same?   (some #(= id %) shapes)
-        o       (when same? (count (take-while #(not= id %) shapes)))
-        final-n (if same? (count shapes) (inc (count shapes)))
-        f       (-> (or flow-index (dec final-n)) (max 0) (min (dec final-n)))
-        ;; d = the desired index in the FINAL vector
-        d       (if (and (ctl/any-layout? parent) (not (ctl/reverse? parent)))
-                  (- (dec final-n) f)
-                  f)]
-    (if (and same? (< o d)) (inc d) d)))
+(def nest-vector-index caw/nest-vector-index)
 
 (defn create-shape
   [{:keys [type fill] :as input}]

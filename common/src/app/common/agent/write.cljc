@@ -29,6 +29,7 @@
    [app.common.geom.rect :as grc]
    [app.common.geom.shapes :as gsh]
    [app.common.math :as mth]
+   [app.common.types.component :as ctc]
    [app.common.types.container :as ctn]
    [app.common.types.modifiers :as ctm]
    [app.common.types.shape :as cts]
@@ -493,73 +494,140 @@
 
 (defn- unsupported
   "Why this update is not handled on the server yet, or nil."
-  [shape {:keys [width height rotation flipH flipV]}]
-  (cond
-    (or (some? rotation) flipH flipV)
-    "rotation and flips are not applied on the server yet"
-
-    ;; resizing a text re-measures it, which needs its fonts in the engine
-    (and (or (some? width) (some? height)) (cfh/text-shape? shape))
+  [shape {:keys [width height]}]
+  ;; resizing a text re-measures it, which needs its fonts in the engine
+  (when (and (or (some? width) (some? height)) (cfh/text-shape? shape))
     "text is not resized on the server yet"))
+
+(defn- flip-modifiers
+  "Mirrors `shape` around its own center, on one axis."
+  [shape scale]
+  (ctm/resize-modifiers scale (grc/rect->center (gsh/shapes->rect [shape]))))
+
+(defn propagate-modifiers
+  "Runs `modifiers` on shape `id` through the engine and appends the result.
+  What the engine answers is geometry; what the modifiers say about the shape
+  beyond geometry (its `:rotation`, for one) is written on the shape as well."
+  [changes propagate id modifiers]
+  (-> changes
+      (propagate-into propagate [(entry id modifiers)])
+      (cond-> (ctm/has-structure? modifiers)
+        (cb/update-shapes [id] #(ctm/apply-structure-modifiers % modifiers)))))
+
+(defn modify-fallback
+  "Why one modify_shape-style update is not handled on the server yet, or nil.
+  Call after `modify-problem`."
+  [objects input]
+  (unsupported (get objects (parse-uuid (:shapeId input))) input))
+
+(defn modify-into
+  "Appends one already-validated modify_shape-style update to `changes`."
+  [changes {:keys [shapeId x y width height hidden locked rotation flipH flipV] :as input} propagate]
+  (let [id      (parse-uuid shapeId)
+        shape   (get (cb/lookup-objects changes) id)
+        attr-fn (attr-update-fn input)
+        step    (fn [changes modifiers-of]
+                  ;; each geometry write sees the result of the last
+                  (let [objects (cb/lookup-objects changes)]
+                    (propagate-modifiers changes propagate id
+                                         (modifiers-of objects (get objects id)))))]
+    (-> changes
+        (cond-> (some? attr-fn)
+          (cb/update-shapes [id] attr-fn))
+        ;; hiding touches the shape alone; locking also locks what is inside it
+        (cond-> (some? hidden)
+          (cb/update-shapes [id] #(assoc % :hidden hidden)))
+        (cond-> (some? locked)
+          (cb/update-shapes (into [id] (cfh/get-children-ids (cb/lookup-objects changes) id))
+                            #(assoc % :blocked locked)))
+        ;; absolute: the delta comes from the shape's own angle
+        (cond-> (some? rotation)
+          (step (fn [_ shape]
+                  (ctm/rotation-modifiers shape (gsh/shape->center shape)
+                                          (- rotation (or (:rotation shape) 0))))))
+        (cond-> (and flipH (not (ctc/is-variant-container? shape)))
+          (step (fn [_ shape] (flip-modifiers shape (gpt/point -1.0 1.0)))))
+        (cond-> (and flipV (not (ctc/is-variant-container? shape)))
+          (step (fn [_ shape] (flip-modifiers shape (gpt/point 1.0 -1.0)))))
+        (cond-> (or (some? x) (some? y))
+          (step (fn [objects shape]
+                  (ctm/move-modifiers (position-delta objects shape input)))))
+        (cond-> (some? width)
+          (step (fn [_ shape] (ctm/change-dimensions-modifiers shape :width width))))
+        (cond-> (some? height)
+          (step (fn [_ shape] (ctm/change-dimensions-modifiers shape :height height)))))))
+
+(defn page-changes
+  "An empty change set for a page, tracking `objects` as changes are added."
+  [page-id objects]
+  (-> (cb/empty-changes)
+      (cb/with-page-id page-id)
+      (cb/with-objects objects)))
+
+(defn reflow-all
+  "Asks the engine to lay out again every board in `ids` that is still there."
+  [changes propagate ids]
+  (let [changes (cb/apply-changes-local changes)
+        objects (cb/lookup-objects changes)
+        ids     (into [] (comp (remove #(= uuid/zero %))
+                               (filter #(contains? objects %))
+                               (distinct))
+                      ids)]
+    (cond-> changes
+      (seq ids) (propagate-into propagate (mapv reflow-entry ids)))))
+
+(defn nest-vector-index
+  "The relocate index for nesting `id` into `parent` at flow position
+  `flow-index` (0 = first in reading order; nil = end of the flow). For a
+  parent without a layout the position is z-order from the back instead.
+
+  Two Penpot facts meet here: flex lays children out in REVERSE vector order
+  (so a flow position maps to `count - position`), and `d/insert-at-index`
+  applies the index BEFORE removing the moved shape — a same-parent reorder
+  toward the end would land one slot short without the `(inc d)`."
+  [parent id flow-index]
+  (let [shapes  (vec (:shapes parent))
+        same?   (some #(= id %) shapes)
+        o       (when same? (count (take-while #(not= id %) shapes)))
+        final-n (if same? (count shapes) (inc (count shapes)))
+        f       (-> (or flow-index (dec final-n)) (max 0) (min (dec final-n)))
+        ;; d = the desired index in the FINAL vector
+        d       (if (and (ctl/any-layout? parent) (not (ctl/reverse? parent)))
+                  (- (dec final-n) f)
+                  f)]
+    (if (and same? (< o d)) (inc d) d)))
 
 (defn modify-shape
   "→ `{:changes :result}`, `{:problem}` or `{:fallback}`; arguments as in
   `create-shape`."
-  [{:keys [page-id objects]} {:keys [shapeId x y width height hidden locked] :as input}
-   {:keys [guard propagate]}]
+  [{:keys [page-id objects]} {:keys [shapeId x y width height] :as input} {:keys [guard propagate]}]
   (or (modify-problem "modify_shape" objects input guard)
-      (let [id    (parse-uuid shapeId)
-            shape (get objects id)]
-        (if-let [why (unsupported shape input)]
-          {:fallback why}
-          (let [attr-fn (attr-update-fn input)
-                step    (fn [changes modifiers-of]
-                          ;; each geometry write sees the result of the last
-                          (let [shape (get (cb/lookup-objects changes) id)]
-                            (propagate-into changes propagate [(entry id (modifiers-of (cb/lookup-objects changes) shape))])))
-                changes
-                (-> (cb/empty-changes)
-                    (cb/with-page-id page-id)
-                    (cb/with-objects objects)
-                    (cond-> (some? attr-fn)
-                      (cb/update-shapes [id] attr-fn))
-                    ;; hiding touches the shape alone; locking also locks what
-                    ;; is inside it
-                    (cond-> (some? hidden)
-                      (cb/update-shapes [id] #(assoc % :hidden hidden)))
-                    (cond-> (some? locked)
-                      (cb/update-shapes (into [id] (cfh/get-children-ids objects id))
-                                        #(assoc % :blocked locked)))
-                    (cond-> (or (some? x) (some? y))
-                      (step (fn [objects shape]
-                              (ctm/move-modifiers (position-delta objects shape input)))))
-                    (cond-> (some? width)
-                      (step (fn [_ shape] (ctm/change-dimensions-modifiers shape :width width))))
-                    (cond-> (some? height)
-                      (step (fn [_ shape] (ctm/change-dimensions-modifiers shape :height height)))))]
-            {:changes (:redo-changes changes)
-             :result
-             (if-not (or (some? x) (some? y) (some? width) (some? height))
-               {:id shapeId :note "modified — verify with read_design"}
-               ;; geometry writes can be constrained — a parent layout owns
-               ;; the position — so report where the shape actually SETTLED
-               ;; instead of claiming the numbers took
-               (let [s      (get (cb/lookup-objects changes) id)
-                     off?   (fn [want got]
-                              (and (some? want) (some? got)
-                                   (> (mth/abs (- want got)) 0.5)))
-                     ;; compared as the workspace tool compares them
-                     drift? (or (off? x (:x s))
-                                (off? y (:y s))
-                                (off? width (:width s))
-                                (off? height (:height s)))]
-                 {:id shapeId
-                  :settled {:x (:x s) :y (:y s) :width (:width s) :height (:height s)}
-                  :note (if drift?
-                          (str "modified — but the shape SETTLED at a different "
-                               "geometry than requested (see settled). Something "
-                               "owns it: a parent layout positions its children "
-                               "(use set_layout/set_layout_child or move the "
-                               "parent), auto-width text re-measures itself. Do "
-                               "not re-send the same x/y.")
-                          "modified — settled at the requested geometry")}))})))))
+      (some->> (modify-fallback objects input) (hash-map :fallback))
+      (let [id      (parse-uuid shapeId)
+            changes (modify-into (page-changes page-id objects) input propagate)]
+        {:changes (:redo-changes changes)
+         :result
+         (if-not (or (some? x) (some? y) (some? width) (some? height))
+           {:id shapeId :note "modified — verify with read_design"}
+           ;; geometry writes can be constrained — a parent layout owns the
+           ;; position — so report where the shape actually SETTLED instead
+           ;; of claiming the numbers took
+           (let [s      (get (cb/lookup-objects changes) id)
+                 off?   (fn [want got]
+                          (and (some? want) (some? got)
+                               (> (mth/abs (- want got)) 0.5)))
+                 ;; compared as the workspace tool compares them
+                 drift? (or (off? x (:x s))
+                            (off? y (:y s))
+                            (off? width (:width s))
+                            (off? height (:height s)))]
+             {:id shapeId
+              :settled {:x (:x s) :y (:y s) :width (:width s) :height (:height s)}
+              :note (if drift?
+                      (str "modified — but the shape SETTLED at a different "
+                           "geometry than requested (see settled). Something "
+                           "owns it: a parent layout positions its children "
+                           "(use set_layout/set_layout_child or move the "
+                           "parent), auto-width text re-measures itself. Do "
+                           "not re-send the same x/y.")
+                      "modified — settled at the requested geometry")}))})))

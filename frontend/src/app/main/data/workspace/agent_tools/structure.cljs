@@ -8,6 +8,7 @@
   "Structural tools: create/modify/nest shapes, text, components,
   masks, SVG import, booleans, delete/duplicate and group/ungroup."
   (:require
+   [app.common.agent.write :as caw]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
@@ -132,141 +133,39 @@
                          "token-only-colors — that is deliberate for icons, but "
                          "audit_file still flags raw colors. Verify with read_design.")}))))
 
-(defn shadow->shape
-  "A shadow as Penpot stores it. `:color` is a *map* (`schema:color`), not a hex
-  string — a bare string fails the schema."
-  [{:keys [style offsetX offsetY blur spread color opacity]}]
-  {:id (uuid/next)
-   :style (if (= style "inner-shadow") :inner-shadow :drop-shadow)
-   :offset-x (or offsetX 0)
-   :offset-y (or offsetY 0)
-   :blur (or blur 4)
-   :spread (or spread 0)
-   :hidden false
-   :color (cond-> {:color (or color "#000000")}
-            (some? opacity) (assoc :opacity opacity))})
+(def shadow->shape caw/shadow->shape)
 
-(defn style-attrs
-  "The plain shape attrs for the styling params. Only keys given are emitted, and
-  presence is `some?` — `opacity 0` is a real instruction."
-  [{:keys [radius opacity]}]
-  (cond-> {}
-    (some? radius) (assoc :r1 radius :r2 radius :r3 radius :r4 radius)
-    (some? opacity) (assoc :opacity opacity)))
+(def style-attrs caw/style-attrs)
 
-(def ^:private stroke-styles #{"solid" "dotted" "dashed" "mixed"})
+(def ^:private stroke-styles caw/stroke-styles)
 
-;; Line/path end caps (`:stroke-cap-start` / `:stroke-cap-end` on the stroke).
-;; The exact Penpot tokens the model should use, plus "none" to clear a cap and
-;; a couple of forgiving aliases ("circle" → the circle-marker dot).
-(def ^:private stroke-cap-values
-  #{"round" "square" "line-arrow" "triangle-arrow" "square-marker"
-    "circle-marker" "diamond-marker" "none"})
+(def ^:private stroke-cap-inputs caw/stroke-cap-inputs)
 
-(def ^:private stroke-cap-aliases
-  {"circle" "circle-marker" "diamond" "diamond-marker" "arrow" "triangle-arrow"})
+(def ^:private ->stroke-cap caw/->stroke-cap)
 
-(def ^:private stroke-cap-inputs (into stroke-cap-values (keys stroke-cap-aliases)))
-
-(defn- ->stroke-cap
-  "A validated cap string → the stored keyword, or nil for \"none\" (clears it)."
-  [v]
-  (let [v (get stroke-cap-aliases v v)]
-    (when-not (= v "none") (keyword v))))
-
-(defn locked-problem
-  "Refuses mutating a locked (`:blocked`) shape, unless the call is unlocking it.
-  A user locks a layer to mean hands-off; the agent should respect that and say
-  how to override. Pure."
-  [shape {:keys [locked] :as _input}]
-  (when (and (:blocked shape) (not (false? locked)))
-    (dm/str "modify_shape: " (atc/shape-label shape) " is locked. A user locks a layer"
-            " to keep it as-is — ask before changing it, or unlock it deliberately"
-            " with modify_shape locked:false.")))
+(def locked-problem caw/locked-problem)
 
 (defn- modify-throwable
   "The rejection (an ex-info, carrying :rule for guard hits) for ONE
   modify_shape-style update, or nil. Shared by modify_shape and the
   update_shapes batch; `tool` names whichever surfaced it."
-  [tool state objects {:keys [shapeId fill strokeStyle strokeCapStart strokeCapEnd] :as input}]
-  (let [id    (some-> shapeId parse-uuid)
-        shape (when id (get objects id))]
-    (cond
-      (nil? id)
-      (ex-info (dm/str tool ": missing or invalid shapeId") {})
-
-      (nil? shape)
-      (ex-info (dm/str tool ": no shape with id " shapeId " on this page") {})
-
-      (some? (locked-problem shape input))
-      (ex-info (locked-problem shape input) {})
-
-      (some? (atc/fill-problem fill))
-      (ex-info (dm/str tool ": " (atc/fill-problem fill)) {})
-
-      (some? (atc/enum-problem tool "strokeStyle" strokeStyle stroke-styles))
-      (ex-info (atc/enum-problem tool "strokeStyle" strokeStyle stroke-styles) {})
-
-      (some? (atc/enum-problem tool "strokeCapStart" strokeCapStart stroke-cap-inputs))
-      (ex-info (atc/enum-problem tool "strokeCapStart" strokeCapStart stroke-cap-inputs) {})
-
-      (some? (atc/enum-problem tool "strokeCapEnd" strokeCapEnd stroke-cap-inputs))
-      (ex-info (atc/enum-problem tool "strokeCapEnd" strokeCapEnd stroke-cap-inputs) {})
-
-      ;; the guard runs last: a rejection naming the rule is the most useful
-      ;; message, so it should not mask a plain input error
-      :else
-      (some #(atc/color-violation state %) (atc/input-colors input)))))
+  [tool state objects input]
+  (when-let [{:keys [problem rule]} (caw/modify-problem tool objects input (atc/color-guard state))]
+    (ex-info problem (if rule {:rule rule} {}))))
 
 (defn- emit-shape-update!
   "Emits one already-validated modify_shape-style update for `id`. No undo
   transaction of its own — the caller brackets one around the whole call (or
   the whole batch)."
-  [{:keys [x y width height fill stroke shadow strokeWidth strokeStyle
-           strokeCapStart strokeCapEnd strokeDash strokeGap hidden locked rotation flipH flipV] :as input} id]
-  (let [nm     (:name input)
-        styles (style-attrs input)
-        ;; Every plain attribute write (name, styles, shadow, fill, stroke) is a
-        ;; pure `(assoc/merge shape …)` on a distinct key, so compose them into
-        ;; ONE update-shapes pass instead of one full changes-build+commit per
-        ;; attribute. The batch tool runs this per shape, so a 50-shape batch
-        ;; used to fire hundreds of commit passes. The specialized transform
-        ;; events (flags, rotation, flips, position, dimensions) stay separate —
-        ;; they are not plain assocs and each computes its own modifiers.
-        attr-fns
-        (cond-> []
-          nm           (conj #(assoc % :name nm))
-          (seq styles) (conj #(merge % styles))
-          shadow       (conj #(assoc % :shadow [(shadow->shape shadow)]))
-          fill         (conj #(assoc % :fills (atc/fill->shape fill)))
-          stroke       (conj #(assoc % :strokes [(cond-> {:stroke-color stroke
-                                                          :stroke-opacity 1
-                                                          :stroke-width (or strokeWidth 1)
-                                                          :stroke-style (keyword (or strokeStyle "solid"))
-                                                          :stroke-alignment :center}
-                                                   (some? strokeCapStart) (assoc :stroke-cap-start (->stroke-cap strokeCapStart))
-                                                   (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd))
-                                                   (some? strokeDash)     (assoc :stroke-dash strokeDash)
-                                                   (some? strokeGap)      (assoc :stroke-gap strokeGap))]))
-          ;; stroke width/style/caps/dash change with no new color: patch existing stroke
-          (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)
-                                 (some? strokeCapStart) (some? strokeCapEnd)
-                                 (some? strokeDash) (some? strokeGap)))
-          (conj (fn [s]
-                  (update s :strokes
-                          (fn [strokes]
-                            (let [st0 (or (first strokes)
-                                          {:stroke-color "#000000" :stroke-opacity 1
-                                           :stroke-alignment :center})]
-                              [(cond-> st0
-                                 (some? strokeWidth)    (assoc :stroke-width strokeWidth)
-                                 (some? strokeStyle)    (assoc :stroke-style (keyword strokeStyle))
-                                 (some? strokeCapStart) (assoc :stroke-cap-start (->stroke-cap strokeCapStart))
-                                 (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd))
-                                 (some? strokeDash)     (assoc :stroke-dash strokeDash)
-                                 (some? strokeGap)      (assoc :stroke-gap strokeGap))]))))))]
-    (when (seq attr-fns)
-      (st/emit! (dwsh/update-shapes [id] (apply comp attr-fns))))
+  [{:keys [x y width height hidden locked rotation flipH flipV] :as input} id]
+  (let [;; Every plain attribute write (name, styles, shadow, fill, stroke) is
+        ;; composed into ONE update-shapes pass instead of one full
+        ;; changes-build+commit per attribute. The specialized transform events
+        ;; (flags, rotation, flips, position, dimensions) stay separate — they
+        ;; are not plain assocs and each computes its own modifiers.
+        attr-fn (caw/attr-update-fn input)]
+    (when (some? attr-fn)
+      (st/emit! (dwsh/update-shapes [id] attr-fn)))
     ;; hide/lock — some? so `false` genuinely unhides/unlocks
     (when (or (some? hidden) (some? locked))
       (st/emit! (dwsh/update-shape-flags [id]

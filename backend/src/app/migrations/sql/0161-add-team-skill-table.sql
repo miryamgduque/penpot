@@ -25,3 +25,9 @@ ALTER TABLE team_skill
 
 CREATE UNIQUE INDEX team_skill__team_id__name__idx ON team_skill (team_id, name);
 CREATE INDEX team_skill__team_id__idx ON team_skill (team_id);
+
+-- The light link back from a personal skill to the team skill it became. Added
+-- here rather than in the profile_skill table because the two tables reference
+-- each other and team_skill is created second.
+ALTER TABLE profile_skill
+  ADD COLUMN promoted_to uuid NULL REFERENCES team_skill(id) ON DELETE SET NULL DEFERRABLE;

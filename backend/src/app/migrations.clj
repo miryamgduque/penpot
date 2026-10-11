@@ -11,7 +11,7 @@
    [app.db :as db]
    [app.migrations.clj.migration-0023 :as mg0023]
    [app.migrations.clj.migration-0145 :as mg0145]
-   [app.migrations.clj.migration-0153 :as mg0153]
+   [app.migrations.clj.migration-0156 :as mg0156]
    [app.util.migrations :as mg]
    [integrant.core :as ig]))
 
@@ -526,35 +526,26 @@
    {:name "0154-del-legacy-file-object-thumbnail-table"
     :fn (mg/resource "app/migrations/sql/0154-del-legacy-file-object-thumbnail-table.sql")}
 
-   {:name "0152-add-design-skill-tables"
-    :fn (mg/resource "app/migrations/sql/0152-add-design-skill-tables.sql")}
+   {:name "0155-add-design-skill-tables"
+    :fn (mg/resource "app/migrations/sql/0155-add-design-skill-tables.sql")}
 
-   {:name "0153-seed-design-skills"
-    :fn mg0153/migrate}
+   {:name "0156-seed-design-skills"
+    :fn mg0156/migrate}
 
-   {:name "0154-add-profile-ai-provider-table"
-    :fn (mg/resource "app/migrations/sql/0154-add-profile-ai-provider-table.sql")}
+   {:name "0157-add-profile-ai-provider-table"
+    :fn (mg/resource "app/migrations/sql/0157-add-profile-ai-provider-table.sql")}
 
-   {:name "0155-add-profile-skill-state-table"
-    :fn (mg/resource "app/migrations/sql/0155-add-profile-skill-state-table.sql")}
+   {:name "0158-add-profile-skill-state-table"
+    :fn (mg/resource "app/migrations/sql/0158-add-profile-skill-state-table.sql")}
 
-   {:name "0156-add-profile-skill-table"
-    :fn (mg/resource "app/migrations/sql/0156-add-profile-skill-table.sql")}
+   {:name "0159-add-profile-skill-table"
+    :fn (mg/resource "app/migrations/sql/0159-add-profile-skill-table.sql")}
 
-   {:name "0157-profile-skill-reactive"
-    :fn (mg/resource "app/migrations/sql/0157-profile-skill-reactive.sql")}
+   {:name "0160-add-profile-agent-chat-table"
+    :fn (mg/resource "app/migrations/sql/0160-add-profile-agent-chat-table.sql")}
 
-   {:name "0158-add-profile-agent-chat-table"
-    :fn (mg/resource "app/migrations/sql/0158-add-profile-agent-chat-table.sql")}
-
-   {:name "0159-profile-skill-on-demand"
-    :fn (mg/resource "app/migrations/sql/0159-profile-skill-on-demand.sql")}
-
-   {:name "0160-add-team-skill-table"
-    :fn (mg/resource "app/migrations/sql/0160-add-team-skill-table.sql")}
-
-   {:name "0161-add-profile-skill-promoted-to"
-    :fn (mg/resource "app/migrations/sql/0161-add-profile-skill-promoted-to.sql")}
+   {:name "0161-add-team-skill-table"
+    :fn (mg/resource "app/migrations/sql/0161-add-team-skill-table.sql")}
 
    {:name "0162-add-team-skill-seen-table"
     :fn (mg/resource "app/migrations/sql/0162-add-team-skill-seen-table.sql")}])

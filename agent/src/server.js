@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createHarness } from "./harness.js";
+import { turnMcpServers } from "./mcp.js";
 import { runScoutTool, scoutTools } from "./scout.js";
 
 const MAX_BODY_BYTES = 6 * 1024 * 1024;
@@ -180,6 +181,10 @@ export async function createAgentServer(options = {}) {
     const tools =
       engineTools.size > 0 ? declared.filter((tool) => !WORKSPACE_UNDO_TOOLS.has(tool?.name)) : declared;
     const images = Array.isArray(body.images) ? body.images : [];
+    // the MCP servers the user connected, as the backend handed them over
+    const mcp = await turnMcpServers(req.headers["x-penpot-mcp-servers"], {
+      allowPrivate: options.mcpAllowPrivate === true,
+    });
 
     const turnId = randomUUID();
     const turn = { profileId, pending: new Map() };
@@ -199,6 +204,10 @@ export async function createAgentServer(options = {}) {
       if (!res.writableEnded && !res.destroyed) res.write(`${JSON.stringify(event)}\n`);
     };
     emit({ type: "turn", turnId });
+    // said once, so the panel can show which connected services are in play
+    if (mcp.servers.length > 0 || mcp.refused.length > 0) {
+      emit({ type: "mcp", servers: mcp.servers.map((server) => server.name), refused: mcp.refused });
+    }
     // A quiet stream hides a client that has gone: the backend relaying this
     // only notices on a write. The heartbeat is what lets a cancel during a
     // long model pause or a slow tool reach us.
@@ -319,7 +328,7 @@ export async function createAgentServer(options = {}) {
 
     try {
       const result = await harness.runTurn(
-        { sessionId, profileId, provider, apiKey, model, system, text, images, tools, skills },
+        { sessionId, profileId, provider, apiKey, model, system, text, images, tools, skills, mcpServers: mcp.servers },
         { emit, callTool: callWorkspaceTool, callServerTool, serverTools, signal: controller.signal },
       );
       emit({ type: "done", reason: result.reason, resumed: result.resumed, toolTimings });
@@ -392,6 +401,8 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const anthropicBaseURL = process.env.PENPOT_AGENT_SERVICE_ANTHROPIC_BASE_URL;
   const app = await createAgentServer({
     sharedKey: process.env.PENPOT_AGENT_SERVICE_SHARED_KEY,
+    // development only: lets a user's MCP server be plain http or on a private address
+    mcpAllowPrivate: process.env.PENPOT_AGENT_SERVICE_MCP_ALLOW_PRIVATE === "true",
     backendUri: process.env.PENPOT_BACKEND_URI,
     exporterUri: process.env.PENPOT_EXPORTER_URI,
     sessionsRoot: process.env.PENPOT_AGENT_SERVICE_SESSIONS_DIR ?? join(dataDir, "sessions"),

@@ -153,3 +153,47 @@
     (watch [_ _ _]
       (->> (rp/cmd! :disconnect-ai-provider params)
            (rx/map (fn [_] (fetch-ai-providers)))))))
+
+;; --- External MCP servers
+;;
+;; The MCP servers this profile connected to the agent (see
+;; app.rpc.commands.ai-providers). State holds them as a vector under
+;; `:agent-mcp-servers`; a server's token is write-only from the client.
+
+(defn- agent-mcp-servers-fetched
+  [servers]
+  (ptk/reify ::agent-mcp-servers-fetched
+    ptk/UpdateEvent
+    (update [_ state]
+      (assoc state :agent-mcp-servers (vec servers)))))
+
+(defn fetch-agent-mcp-servers
+  []
+  (ptk/reify ::fetch-agent-mcp-servers
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :get-agent-mcp-servers {})
+           (rx/map agent-mcp-servers-fetched)))))
+
+(defn set-agent-mcp-server
+  "Connects a server or changes one. on-success/on-error via params metadata."
+  [params]
+  (ptk/reify ::set-agent-mcp-server
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (let [{:keys [on-success on-error]
+             :or {on-success identity
+                  on-error rx/throw}}
+            (meta params)]
+        (->> (rp/cmd! :set-agent-mcp-server params)
+             (rx/tap on-success)
+             (rx/map (fn [_] (fetch-agent-mcp-servers)))
+             (rx/catch on-error))))))
+
+(defn delete-agent-mcp-server
+  [params]
+  (ptk/reify ::delete-agent-mcp-server
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :delete-agent-mcp-server params)
+           (rx/map (fn [_] (fetch-agent-mcp-servers)))))))

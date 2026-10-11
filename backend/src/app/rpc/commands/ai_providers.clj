@@ -32,6 +32,7 @@
   no longer be decrypted (the instance secret changed) reads as
   `:ai-provider-key-unreadable` and the user reconnects the provider."
   (:require
+   [app.common.data :as d]
    [app.common.exceptions :as ex]
    [app.common.json :as json]
    [app.common.logging :as l]
@@ -50,6 +51,7 @@
    [app.setup.keys :as keys]
    [app.util.events :as events]
    [app.util.services :as sv]
+   [app.util.ssrf :as ssrf]
    [buddy.core.codecs :as bc]
    [buddy.sign.jwe :as jwe]
    [clojure.java.io :as io]
@@ -430,6 +432,136 @@
      :status (:status response)
      :body (:body response)}))
 
+;; --- External MCP servers
+;;
+;; A profile can connect MCP servers of other services to the agent: their
+;; tools become the agent's for that user's turns. The server is called by the
+;; agent service, never by the browser, so its address is held to the same
+;; rule as any address a user gives the backend to fetch, and its token is
+;; kept like a provider key: encrypted, and never returned.
+
+(def ^:private max-mcp-servers 8)
+
+(def ^:private mcp-server-name-re #"^[A-Za-z0-9_-]{1,32}$")
+
+(defn- check-mcp-enabled!
+  []
+  (when-not (contains? cf/flags :design-agent-mcp)
+    (ex/raise :type :restriction
+              :code :mcp-servers-not-enabled
+              :hint "connecting external MCP servers is not enabled on this Penpot instance")))
+
+(defn- check-mcp-url!
+  "A server has to be reached over https, at a public address."
+  [url]
+  (let [uri (try (java.net.URI. url) (catch Throwable _ nil))]
+    (when-not (= "https" (some-> uri .getScheme str/lower))
+      (ex/raise :type :validation
+                :code :mcp-server-url-not-https
+                :hint "the server address must start with https://"))
+    (ssrf/validate-uri uri)))
+
+(defn- mcp-server-row->entry
+  "What a client may know of a registered server."
+  [row]
+  {:id (:id row)
+   :name (:name row)
+   :url (:url row)
+   :has-token (some? (:token row))
+   :is-enabled (:is-enabled row)})
+
+(defn- get-mcp-server-rows
+  [cfg profile-id]
+  (db/query cfg :profile-mcp-server {:profile-id profile-id} {:order-by [[:name :asc]]}))
+
+(def ^:private schema:get-agent-mcp-servers
+  [:map {:title "get-agent-mcp-servers"}])
+
+(sv/defmethod ::get-agent-mcp-servers
+  "The MCP servers this profile connected to the agent, without their tokens."
+  {::doc/added "2.20"
+   ::sm/params schema:get-agent-mcp-servers}
+  [cfg {:keys [::rpc/profile-id]}]
+  (mapv mcp-server-row->entry (get-mcp-server-rows cfg profile-id)))
+
+(def ^:private schema:set-agent-mcp-server
+  [:map {:title "set-agent-mcp-server"}
+   [:name [:string {:min 1 :max 32}]]
+   [:url [:string {:min 1 :max 2048}]]
+   ;; left out: the stored token is kept; empty: it is removed
+   [:token {:optional true} [:string {:max 4096}]]
+   [:is-enabled {:optional true} ::sm/boolean]])
+
+(sv/defmethod ::set-agent-mcp-server
+  "Connects an MCP server under `name`, or changes the one that has it."
+  {::doc/added "2.20"
+   ::sm/params schema:set-agent-mcp-server
+   ::db/transaction true}
+  [cfg {:keys [::rpc/profile-id name url token is-enabled] :as params}]
+  (check-mcp-enabled!)
+  (when-not (re-matches mcp-server-name-re name)
+    (ex/raise :type :validation
+              :code :mcp-server-name-invalid
+              :hint "the name can have letters, digits, - and _, up to 32 of them"))
+  (check-mcp-url! url)
+  (let [rows     (get-mcp-server-rows cfg profile-id)
+        existing (d/seek #(= name (:name %)) rows)
+        token    (cond
+                   (not (contains? params :token)) (:token existing)
+                   (str/blank? token)              nil
+                   :else                           (encrypt-key cfg token))]
+    (when (and (nil? existing) (>= (count rows) max-mcp-servers))
+      (ex/raise :type :restriction
+                :code :mcp-servers-limit-reached
+                :hint (str "at most " max-mcp-servers " MCP servers can be connected")))
+    (-> (if existing
+          (db/update! cfg :profile-mcp-server
+                      {:url url
+                       :token token
+                       :is-enabled (if (some? is-enabled) is-enabled (:is-enabled existing))
+                       :updated-at (ct/now)}
+                      {:id (:id existing)}
+                      {::db/return-keys true})
+          (db/insert! cfg :profile-mcp-server
+                      {:profile-id profile-id
+                       :name name
+                       :url url
+                       :token token
+                       :is-enabled (if (some? is-enabled) is-enabled true)}))
+        (mcp-server-row->entry))))
+
+(def ^:private schema:delete-agent-mcp-server
+  [:map {:title "delete-agent-mcp-server"}
+   [:name [:string {:min 1 :max 32}]]])
+
+(sv/defmethod ::delete-agent-mcp-server
+  {::doc/added "2.20"
+   ::sm/params schema:delete-agent-mcp-server}
+  [cfg {:keys [::rpc/profile-id name]}]
+  (db/delete! cfg :profile-mcp-server {:profile-id profile-id :name name})
+  nil)
+
+(defn- turn-mcp-servers
+  "The profile's enabled servers as the agent service takes them, in one
+  header value, or nil when there are none or the feature is off. The address
+  is checked again here: what was public when it was registered may not be
+  now."
+  [cfg profile-id]
+  (when (contains? cf/flags :design-agent-mcp)
+    (let [servers (into []
+                        (comp (filter :is-enabled)
+                              (keep (fn [{:keys [name url token]}]
+                                      (when (try (check-mcp-url! url) true
+                                                 (catch Throwable _ false))
+                                        (cond-> {:name name :url url}
+                                          (some? token)
+                                          (assoc :headers {"Authorization"
+                                                           (str "Bearer " (decrypt-key cfg name token))}))))))
+                        (get-mcp-server-rows cfg profile-id))]
+      (when (seq servers)
+        (.encodeToString (java.util.Base64/getEncoder)
+                         (.getBytes ^String (json/encode servers) "UTF-8"))))))
+
 ;; --- Agent service
 ;;
 ;; The agent's loop runs in a separate service built on DeepSeek Harness. The
@@ -531,6 +663,7 @@
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider file-id payload]}]
   (files/check-read-permissions! pool profile-id file-id)
   (let [row      (connected-provider-row cfg profile-id provider)
+        mcp-servers (turn-mcp-servers cfg profile-id)
         ;; what this turn changes is recorded under these two
         turn     {:turn-id (uuid/next)
                   :conversation-id (conversation-of payload)}
@@ -542,6 +675,10 @@
                                        ;; with server tools on, the service
                                        ;; runs these itself, as this profile
                                        ;; on this file and nothing else
+                                       ;; the MCP servers this profile connected
+                                       (some? mcp-servers)
+                                       (assoc "x-penpot-mcp-servers" mcp-servers)
+
                                        (contains? cf/flags :design-agent-server-tools)
                                        (assoc "x-penpot-turn-token" (agent-tools/turn-token cfg profile-id file-id turn)
                                               "x-penpot-server-tools" (str/join "," (sort agent-tools/server-tools))

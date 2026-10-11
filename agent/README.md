@@ -29,6 +29,7 @@ Without it the panel says the service is not configured.
 | `PENPOT_AGENT_SERVICE_SHARED_KEY` | unset | When set, callers must send it as `x-penpot-shared-key` |
 | `PENPOT_AGENT_SERVICE_DATA_DIR` | `.data` | Stored conversations and images |
 | `PENPOT_AGENT_SERVICE_ANTHROPIC_BASE_URL` | unset | Development only: a stand-in for the Anthropic API |
+| `PENPOT_AGENT_SERVICE_MCP_ALLOW_PRIVATE` | unset | Development only: `true` lets a user's MCP server be plain http or on a private address |
 
 ## Where tools run
 
@@ -64,6 +65,29 @@ Without the flag there is no turn token and every tool runs in the workspace.
 `PENPOT_BACKEND_URI` (default `http://localhost:6060`) and
 `PENPOT_EXPORTER_URI` (default `http://localhost:6061`) are where the service
 reaches them. The exporter needs the same flag to start its engine workers.
+
+## External MCP servers
+
+With the backend flag `design-agent-mcp`, a user can connect MCP servers of
+other services in Settings › Integrations. The backend keeps them (a token
+encrypted like a provider key) and hands the enabled ones over with each
+turn, in the `x-penpot-mcp-servers` header: neither the list nor the tokens
+pass through the browser.
+
+The harness's MCP client connects them on that conversation only, over
+Streamable HTTP; their tools appear to the model as `mcp__<name>__<tool>` and
+are called from this service. Before connecting, each address is checked
+again here: https only, and every address the host resolves to must be public
+(`src/netguard.js`). A server that fails the check, or does not answer, is
+left out and reported in the turn's `mcp` event; the turn goes on without it.
+Side conversations get none of them.
+
+What such a tool returns is somebody else's text reaching a model that can
+edit the file. The prompt says so, and tells the model to treat it as data.
+That lowers the risk; it does not remove it.
+
+`PENPOT_AGENT_SERVICE_MCP_ALLOW_PRIVATE=true` lifts both address rules, for a
+server on a developer's own machine. Never in a deployment.
 
 ## Try it without a provider key
 

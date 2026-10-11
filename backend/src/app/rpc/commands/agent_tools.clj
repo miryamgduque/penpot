@@ -19,6 +19,7 @@
   (:require
    [app.binfile.common :as bfc]
    [app.common.agent.read :as car]
+   [app.common.agent.tools :as cat]
    [app.common.agent.write :as caw]
    [app.common.exceptions :as ex]
    [app.common.features :as cfeat]
@@ -45,7 +46,7 @@
   out, which the backend cannot run, so they run in the exporter: it reads the
   file and commits its changes through the two commands at the end of this
   namespace, with the same turn token."
-  (set (keys caw/tools)))
+  (set (keys cat/tools)))
 
 ;; A tool result is capped like the workspace caps it: an oversized result is
 ;; replaced by a small, valid object saying so, never cut mid-token.

@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { createHarness } from "../src/harness.js";
 import { startFakeAnthropic } from "./fake-anthropic.js";
+import { startFakeMcp } from "./fake-mcp.js";
 
 const MODEL = "claude-sonnet-4-5";
 
@@ -321,6 +322,48 @@ test("without an image store, images are reported in words, not dropped silently
   try {
     await t.harness.runTurn(turn({ images: [{ mediaType: "image/png", data: PNG }] }), { emit: () => {}, callTool: async () => ({}) });
     assert.match(JSON.stringify(t.fake.requests[0].body.messages), /1 image\(s\) attached to this message were not delivered/);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a user's MCP server: its tools are the conversation's, called with the headers it was given", async () => {
+  const mcp = await startFakeMcp();
+  const t = await setup((_req, n) =>
+    n === 0 ? { tool: { name: "mcp__notes__echo", input: { text: "hi there" } } } : { text: "Done." },
+  );
+  try {
+    const mcpServers = [{ name: "notes", url: mcp.url, headers: { Authorization: "Bearer token-one" } }];
+    const delegated = [];
+    await t.harness.runTurn(turn({ mcpServers }), { emit: () => {}, callTool: async (call) => (delegated.push(call), {}) });
+    const first = t.fake.requests[0].body;
+    assert.ok(first.tools.some((tool) => tool.name === "mcp__notes__echo"), "the server's tool is listed to the model");
+    assert.match(JSON.stringify(first.system), /belong to services the user connected/);
+    // the harness called the server itself: nothing was asked of a workspace
+    assert.equal(delegated.length, 0);
+    assert.match(JSON.stringify(t.fake.requests[1].body.messages), /echo: hi there/);
+    const call = mcp.seen.find((request) => request.method === "tools/call");
+    assert.deepEqual(call.params.arguments, { text: "hi there" });
+    assert.equal(call.authorization, "Bearer token-one");
+
+    // another conversation, with no servers, has none of it
+    await t.harness.runTurn(turn({ sessionId: "s2", text: "hi" }), { emit: () => {}, callTool: async () => ({}) });
+    const other = t.fake.requests[2].body;
+    assert.ok(!(other.tools ?? []).some((tool) => tool.name.startsWith("mcp__")));
+    assert.doesNotMatch(JSON.stringify(other.system), /services the user connected/);
+  } finally {
+    await t.close();
+    await mcp.close();
+  }
+});
+
+test("an MCP server that does not answer costs the turn nothing but its tools", async () => {
+  const t = await setup(() => ({ text: "Still here." }));
+  try {
+    const mcpServers = [{ name: "gone", url: "http://127.0.0.1:9/mcp", headers: {} }];
+    const result = await t.harness.runTurn(turn({ mcpServers }), { emit: () => {}, callTool: async () => ({}) });
+    assert.equal(result.reason, "completed");
+    assert.ok(!(t.fake.requests[0].body.tools ?? []).some((tool) => tool.name.startsWith("mcp__")));
   } finally {
     await t.close();
   }

@@ -843,6 +843,9 @@
 (def ai-providers
   (l/derived :ai-providers st/state))
 
+(def agent-mcp-servers
+  (l/derived :agent-mcp-servers st/state))
+
 (def resolved-skills-enabled
   "Map of skill-name → effective on/off for the current file, resolving the user's
   per-account + per-file overrides over the catalog defaults. Backs the Skills-tab

@@ -2675,6 +2675,64 @@ msgstr "Resolved value:"
 msgid "inspect.tabs.styles.variants-panel"
 msgstr "Variant Properties"
 
+msgid "integrations.agent-mcp.title"
+msgstr "Connected services"
+
+msgid "integrations.agent-mcp.description"
+msgstr ""
+"Connect MCP servers of other services so the Penpot Agent can use their "
+"tools. They are called from Penpot's server, over https; a token is stored "
+"encrypted and never shown again. What a connected service returns reaches "
+"an agent that can edit your files: connect only services you trust."
+
+msgid "integrations.agent-mcp.name.label"
+msgstr "Name"
+
+msgid "integrations.agent-mcp.name.placeholder"
+msgstr "Name, e.g. tracker"
+
+msgid "integrations.agent-mcp.url.label"
+msgstr "Server address"
+
+msgid "integrations.agent-mcp.url.placeholder"
+msgstr "https://example.com/mcp"
+
+msgid "integrations.agent-mcp.token.label"
+msgstr "Token"
+
+msgid "integrations.agent-mcp.token.placeholder"
+msgstr "Token (optional)"
+
+msgid "integrations.agent-mcp.connect"
+msgstr "Connect"
+
+msgid "integrations.agent-mcp.enabled"
+msgstr "Enabled"
+
+msgid "integrations.agent-mcp.remove"
+msgstr "Remove service"
+
+msgid "integrations.agent-mcp.token-saved"
+msgstr "Token saved"
+
+msgid "integrations.agent-mcp.notification.connected"
+msgstr "%s connected"
+
+msgid "integrations.agent-mcp.error.name"
+msgstr "The name can have letters, digits, - and _, up to 32 of them."
+
+msgid "integrations.agent-mcp.error.https"
+msgstr "The server address must start with https://"
+
+msgid "integrations.agent-mcp.error.private"
+msgstr "That address is private or blocked by this Penpot instance."
+
+msgid "integrations.agent-mcp.error.limit"
+msgstr "No more services can be connected. Remove one first."
+
+msgid "integrations.agent-mcp.error.generic"
+msgstr "The service could not be connected."
+
 msgid "integrations.ai-provider.title"
 msgstr "Penpot Agent"
 

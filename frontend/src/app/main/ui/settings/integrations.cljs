@@ -852,6 +852,127 @@
                               :models-hint models-hint
                               :status (get statuses id)}])]))
 
+(def ^:private agent-mcp-error-keys
+  {:mcp-server-name-invalid   "integrations.agent-mcp.error.name"
+   :mcp-server-url-not-https  "integrations.agent-mcp.error.https"
+   :ssrf-blocked-target       "integrations.agent-mcp.error.private"
+   :mcp-servers-limit-reached "integrations.agent-mcp.error.limit"})
+
+(mf/defc agent-mcp-servers-section*
+  "The external MCP servers this user connected to the agent: a list, and a
+  short form to add one. A server's token is typed here and never shown again."
+  {::mf/private true}
+  []
+  (let [servers (mf/deref refs/agent-mcp-servers)
+        name*   (mf/use-state "")
+        url*    (mf/use-state "")
+        token*  (mf/use-state "")
+        name    (deref name*)
+        url     (deref url*)
+        token   (deref token*)
+        ready?  (and (not (str/blank? name)) (not (str/blank? url)))
+
+        on-add
+        (mf/use-fn
+         (mf/deps name url token)
+         (fn [event]
+           (dom/prevent-default event)
+           (let [params (cond-> {:name (str/trim name) :url (str/trim url)}
+                          (not (str/blank? token)) (assoc :token (str/trim token)))]
+             (st/emit!
+              (dai/set-agent-mcp-server
+               (with-meta params
+                 {:on-success
+                  (fn [_]
+                    (reset! name* "")
+                    (reset! url* "")
+                    (reset! token* "")
+                    (st/emit! (ntf/success (tr "integrations.agent-mcp.notification.connected" (:name params)))))
+                  :on-error
+                  (fn [cause]
+                    (let [code (:code (ex-data cause))]
+                      (st/emit! (ntf/error (tr (get agent-mcp-error-keys code "integrations.agent-mcp.error.generic")))))
+                    (rx/empty))}))))))]
+
+    (mf/with-effect []
+      (st/emit! (dai/fetch-agent-mcp-servers)))
+
+    [:section {:class (stl/css :ai-provider-section)
+               :data-testid "agent-mcp-servers"}
+     [:div
+      [:div {:class (stl/css :title)}
+       [:> heading* {:level 2
+                     :typography t/title-medium
+                     :class (stl/css :color-primary :ai-provider-title)}
+        (tr "integrations.agent-mcp.title")]
+       [:> text* {:as "span"
+                  :typography t/body-small
+                  :class (stl/css :beta)}
+        (tr "integrations.mcp-server.title.beta")]]
+
+      [:> text* {:as "div"
+                 :typography t/body-medium
+                 :class (stl/css :color-secondary :ai-provider-description)}
+       (tr "integrations.agent-mcp.description")]]
+
+     (for [{:keys [name url has-token is-enabled]} servers]
+       [:div {:key name
+              :class (stl/css :provider-card)
+              :data-testid (dm/str "agent-mcp-server-" name)}
+        [:div {:class (stl/css :provider-card-header)}
+         [:div {:class (stl/css :provider-card-title)}
+          [:div {:class (stl/css :provider-card-name)}
+           [:> text* {:as "h3"
+                      :typography t/headline-small
+                      :class (stl/css :color-primary)}
+            name]
+           [:> text* {:as "span"
+                      :typography t/body-small
+                      :class (stl/css :color-secondary :provider-models-hint)}
+            url]]
+          [:div {:class (stl/css :provider-connected)}
+           (when ^boolean has-token
+             [:> text* {:as "span"
+                        :typography t/body-small
+                        :class (stl/css :provider-connected-tag)}
+              (tr "integrations.agent-mcp.token-saved")])
+           [:> switch* {:label (tr "integrations.agent-mcp.enabled")
+                        :default-checked is-enabled
+                        :on-change (fn [checked]
+                                     (st/emit! (dai/set-agent-mcp-server
+                                                {:name name :url url :is-enabled (boolean checked)})))}]
+           [:> icon-button* {:variant "ghost"
+                             :icon-size "s"
+                             :aria-label (tr "integrations.agent-mcp.remove")
+                             :icon i/delete
+                             :on-click (fn [_] (st/emit! (dai/delete-agent-mcp-server {:name name})))}]]]]])
+
+     [:form {:class (stl/css :provider-card)
+             :on-submit on-add}
+      [:div {:class (stl/css :provider-key-form)}
+       [:div {:class (stl/css :provider-key-row)}
+        [:> input* {:type "text"
+                    :value name
+                    :aria-label (tr "integrations.agent-mcp.name.label")
+                    :placeholder (tr "integrations.agent-mcp.name.placeholder")
+                    :on-change #(reset! name* (dom/get-target-val %))}]]
+       [:div {:class (stl/css :provider-key-row)}
+        [:> input* {:type "text"
+                    :value url
+                    :aria-label (tr "integrations.agent-mcp.url.label")
+                    :placeholder (tr "integrations.agent-mcp.url.placeholder")
+                    :on-change #(reset! url* (dom/get-target-val %))}]]
+       [:div {:class (stl/css :provider-key-row)}
+        [:> input* {:type "password"
+                    :value token
+                    :aria-label (tr "integrations.agent-mcp.token.label")
+                    :placeholder (tr "integrations.agent-mcp.token.placeholder")
+                    :on-change #(reset! token* (dom/get-target-val %))}]]
+       [:> button* {:variant "primary"
+                    :type "submit"
+                    :disabled (not ready?)}
+        (tr "integrations.agent-mcp.connect")]]]]))
+
 (mf/defc access-tokens-section*
   {::mf/private true}
   [{:keys [access-tokens]}]
@@ -914,7 +1035,10 @@
         (contains? cf/flags :mcp)
 
         agent-enabled?
-        (contains? cf/flags :design-agent)]
+        (contains? cf/flags :design-agent)
+
+        agent-mcp-enabled?
+        (and agent-enabled? (contains? cf/flags :design-agent-mcp))]
 
     (mf/with-effect []
       (dom/set-html-title (tr "title.settings.integrations"))
@@ -936,6 +1060,12 @@
 
      (when ^boolean agent-enabled?
        [:> ai-providers-section* {}])
+
+     (when ^boolean agent-mcp-enabled?
+       [:hr {:class (stl/css :separator)}])
+
+     (when ^boolean agent-mcp-enabled?
+       [:> agent-mcp-servers-section* {}])
 
      (when (and ^boolean agent-enabled? ^boolean access-tokens-enabled?)
        [:hr {:class (stl/css :separator)}])

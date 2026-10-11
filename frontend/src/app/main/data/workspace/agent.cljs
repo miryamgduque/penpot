@@ -569,6 +569,7 @@
   ;; so it rides on the user message instead (US #26).
   ([state] (build-system-prompt state nil))
   ([state {:keys [harness-skills?]}]
+   ;; `harness-skills?` says the turn runs on the agent service
    (str/join "\n"
              ["You are the design agent embedded in Penpot (the open-source design tool), working on the user's current file."
               ""
@@ -591,6 +592,13 @@
               ""
               "Each turn opens with the current design context (file, page, selection). Treat it as orientation only — call read_design when you need ground truth."
               ""
+              ;; with the agent service an edit reaches the workspace as
+              ;; another collaborator's would, outside the user's undo
+              (if harness-skills?
+                (str "Your changes are applied on the server: they are NOT in the user's undo history, so ⌘Z does not take them back, "
+                     "whatever your other instructions say. Be deliberate with deletions and with edits to work the user made, "
+                     "and call save_version before risky or sweeping changes — restoring a version is how the user gets back.\n")
+                "")
               "Keep replies short — you live in a narrow side panel. Work in small steps and reference shapes by name."])))
 
 ;; --- Turn runner

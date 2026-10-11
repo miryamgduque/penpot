@@ -165,7 +165,7 @@
   border-radius: deprecated.$br-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
-  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 0.3);
+  box-shadow: var(--el-shadow-dark);
 }
 
 .chat-history-row {
@@ -254,7 +254,7 @@
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
   background-color: var(--color-background-primary);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
+  box-shadow: var(--el-shadow-dark);
 }
 
 // A navigation row in the menu: icon + label, opens a destination (US #38 moved
@@ -668,7 +668,7 @@
   padding: deprecated.$s-12;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-4;
-  background-color: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+  background-color: var(--color-accent-select);
   text-align: start;
   cursor: pointer;
 
@@ -1208,7 +1208,7 @@
 .bot-icon {
   transform-origin: center;
   transform: scale(1.5);
-  color: color-mix(in srgb, var(--color-accent-primary-muted), var(--color-accent-primary) 30%);
+  color: var(--color-accent-tertiary);
   animation: bot-greet 2.5s ease-in-out infinite;
 
   @media (prefers-reduced-motion: reduce) {
@@ -1310,7 +1310,7 @@
   border-radius: deprecated.$br-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
-  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 0.3);
+  box-shadow: var(--el-shadow-dark);
 }
 
 .model-picker-group-label {
@@ -1382,7 +1382,7 @@
   height: deprecated.$s-64;
   margin-block-end: deprecated.$s-4;
   border-radius: 50%;
-  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+  background-color: var(--color-accent-select);
 
   svg {
     stroke: var(--color-accent-primary);
@@ -1452,7 +1452,7 @@
   border-radius: deprecated.$br-8;
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
-  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 0.3);
+  box-shadow: var(--el-shadow-dark);
 }
 
 .slash-option {
@@ -2065,7 +2065,7 @@
   cursor: pointer;
 
   &:hover {
-    color: var(--color-accent-error, #ff3277);
+    color: var(--color-accent-error);
   }
 }
 
@@ -2113,13 +2113,13 @@
 }
 
 .vibes-counter-over {
-  color: var(--color-accent-error, #ff3277);
+  color: var(--color-accent-error);
 }
 
 .vibes-problem {
   @include deprecated.body-small-typography;
 
-  color: var(--color-accent-error, #ff3277);
+  color: var(--color-accent-error);
 }
 
 .vibes-actions {
@@ -2157,11 +2157,11 @@
 }
 
 .vibes-button-danger {
-  color: var(--color-accent-error, #ff3277);
+  color: var(--color-accent-error);
 }
 
 .vibes-button-confirm {
-  border-color: var(--color-accent-error, #ff3277);
+  border-color: var(--color-accent-error);
 }
 
 .vibes-empty {
@@ -2740,7 +2740,7 @@ textarea.create-input {
 // skill-row*'s docstring for why the fade is purely cosmetic (20s, client-only)
 // and unrelated to the arrival notice's own seen-marking.
 .catalog-card-new {
-  background-color: color-mix(in srgb, var(--color-accent-primary) 8%, transparent);
+  background-color: var(--color-accent-select);
 }
 
 .catalog-new-pill {
@@ -2793,7 +2793,7 @@ textarea.create-input {
   flex-shrink: 0;
   padding: 0 deprecated.$s-6;
   border-radius: deprecated.$br-8;
-  background-color: color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
+  background-color: var(--color-accent-select);
   color: var(--color-accent-primary);
   white-space: nowrap;
 }
@@ -2846,7 +2846,7 @@ textarea.create-input {
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
   background-color: var(--color-background-primary);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);
+  box-shadow: var(--el-shadow-dark);
 }
 
 .menu-option {

@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (c) KALEIDOS INC Sucursal en España SL
 
-(ns app.migrations.clj.migration-0153
+(ns app.migrations.clj.migration-0156
   "Seeds the app-level (instance-wide) design skills from the official
   penpot-ai-kit set. The seed resource was generated from the committed kit
   import (the generator script lived in the prototype `ai-skills/` app,

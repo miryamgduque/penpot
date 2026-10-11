@@ -1,0 +1,5 @@
+# Install scripts of transitive provider SDKs are not needed and are not run.
+allowBuilds:
+  "@google/genai": false
+  koffi: false
+  protobufjs: false

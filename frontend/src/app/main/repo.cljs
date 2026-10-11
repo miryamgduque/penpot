@@ -198,6 +198,9 @@
    ::sse/ai-agent-round-stream
    {:stream? true}
 
+   ::sse/agent-service-turn
+   {:stream? true}
+
    ::sse/export-binfile
    {:stream? true}
 

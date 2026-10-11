@@ -21,6 +21,7 @@
    [app.common.agent.write :as caw]
    [app.common.data :as d]
    [app.common.fonts :as cfnt]
+   [app.common.tokens.resolver :as ctr]
    [app.common.transit :as t]
    [app.common.types.shape.images :as images]
    [app.common.uri :as u]
@@ -124,40 +125,73 @@
                   @stock-fonts)))
 
 (defn- make-engine
-  "The render engine as the shared tools take it, plus what it was last shown
-  and whether it was asked to measure text."
+  "The render engine as the shared tools take it, plus the pages it was asked
+  to measure text on."
   []
-  (let [scene     (volatile! nil)
-        measured? (volatile! false)
-        load!     (fn [objects]
-                    (vreset! scene objects)
-                    (layout/load-page! objects))]
-    {:scene scene
-     :measured? measured?
+  (let [measured (volatile! [])
+        load!    (fn [objects] (layout/load-page! objects))]
+    {:measured measured
      :parse-svg svg-parse/parse
      :propagate (fn [objects entries]
                   (load! objects)
                   (layout/propagate entries))
      :measure-text (fn [objects id]
-                     (vreset! measured? true)
+                     (vswap! measured conj [id objects])
                      (load! objects)
                      (layout/measure-text id))}))
 
+(defn- measured-scenes
+  "The pages whose text was measured, each as it stood the last time: as few
+  scenes as hold every measured text."
+  [measured]
+  (first
+   (reduce (fn [[scenes covered] [id objects]]
+             (if (contains? covered id)
+               [scenes covered]
+               [(conj scenes objects)
+                (into covered (comp (filter #(= :text (:type %))) (map :id)) (vals objects))]))
+           [[] #{}]
+           (reverse measured))))
+
+;; A tool is a plain function, and two things it may need are not there when
+;; it first runs: what the file's tokens are worth, which the resolver library
+;; answers asynchronously, and the fonts of the text it measures, which have
+;; to be downloaded. So a tool is run until it has both: it says which tokens
+;; it needs resolved, or measures with whatever fonts are loaded, and is run
+;; again once they are in.
+(def ^:private max-runs 5)
+
 (defn- answer-of
-  "Runs `tool` → promise of its answer. A tool that measures text is run
-  twice: the first run shows the engine the text it will measure, the fonts
-  that text uses are then loaded, and the second run measures with them."
+  "Runs `tool` → promise of its answer."
   [tool view input options]
-  (let [run    (partial cat/run tool)
-        engine (make-engine)
-        first  (run view input (merge options (select-keys engine [:propagate :measure-text :parse-svg])))]
-    (if-not @(:measured? engine)
-      (p/resolved first)
-      (->> (render/provision-scene-fonts! @(:scene engine))
-           (p/fmap (fn [found?]
-                     (if found?
-                       (run view input (merge options (select-keys (make-engine) [:propagate :measure-text :parse-svg])))
-                       {:fallback "a font this text uses is not available to the server"})))))))
+  (let [resolved (volatile! {})]
+    (letfn [(attempt [runs fonts?]
+              (let [engine (make-engine)
+                    answer (cat/run tool view input
+                                    (merge options
+                                           (select-keys engine [:propagate :measure-text :parse-svg])
+                                           {:resolve-tokens (fn [tokens] (get @resolved tokens))}))]
+                (cond
+                  (>= runs max-runs)
+                  (p/resolved {:fallback "the tool did not settle on the server"})
+
+                  (some? (:pending answer))
+                  (let [tokens (-> answer :pending :tokens)]
+                    (->> (ctr/resolve-tokens tokens)
+                         (p/mcat (fn [worth]
+                                   (vswap! resolved assoc tokens worth)
+                                   (attempt (inc runs) fonts?)))))
+
+                  (and (not fonts?) (seq @(:measured engine)))
+                  (->> (render/provision-scenes-fonts! (measured-scenes @(:measured engine)) layout/load-page!)
+                       (p/mcat (fn [found?]
+                                 (if found?
+                                   (attempt (inc runs) true)
+                                   (p/resolved {:fallback "a font this text uses is not available to the server"})))))
+
+                  :else
+                  (p/resolved answer))))]
+      (attempt 0 false))))
 
 ;; --- render_board
 ;;

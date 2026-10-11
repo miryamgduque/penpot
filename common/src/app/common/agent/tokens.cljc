@@ -8,6 +8,8 @@
   "The design agent's token tools as pure functions; see
   `app.common.agent.write` for what a tool takes and answers."
   (:require
+   #?(:cljs [app.common.fonts :as cfnt])
+   [app.common.agent.media :as cam]
    [app.common.agent.write :as caw]
    [app.common.data :as d]
    [app.common.data.macros :as dm]
@@ -24,6 +26,7 @@
    [app.common.types.token :as cto]
    [app.common.types.tokens-lib :as ctob]
    [app.common.types.typography :as cty]
+   [app.common.uuid :as uuid]
    [clojure.set :as set]
    [cuerdas.core :as str]))
 
@@ -175,9 +178,21 @@
          (cb/set-active-token-themes #{ctob/hidden-theme-path}))
      (ctob/get-id token-set)]))
 
+(defn stored-value
+  "The value as the token forms store it. A font family is a list of families:
+  kept as the one string the model wrote, the workspace reads it as no font at
+  all. A reference to another token stays a string."
+  [kind value]
+  (if (and (= :font-family kind)
+           (string? value)
+           (empty? (cto/find-token-value-references value)))
+    (cto/split-font-family value)
+    value))
+
 (defn- add-token
   [changes set-id {:keys [type name value]}]
-  (let [token (ctob/make-token {:type (token-type type) :name name :value value})]
+  (let [kind  (token-type type)
+        token (ctob/make-token {:type kind :name name :value (stored-value kind value)})]
     (cb/set-token changes set-id (:id token) token)))
 
 ;; --- create_token / create_tokens
@@ -374,10 +389,17 @@
 
 ;; --- What a token is worth
 ;;
-;; The workspace resolves tokens with a JavaScript library, which also does
-;; arithmetic and composite values. This covers the plain cases — a literal, or
-;; an alias of one — and says `::unresolved` for the rest, so the caller can
-;; hand the call to a workspace instead of guessing.
+;; The workspace resolves tokens with a JavaScript library that follows
+;; references, does arithmetic and takes composite values apart. A host that
+;; has it hands it over as `:resolve-tokens` in the options: `(fn [tokens])` →
+;; token name → `{:resolved-value …}` (with `:color` for a color, `:error` in
+;; place of the value when the token does not resolve), or nil when it has not
+;; resolved those tokens yet. Resolving is asynchronous and a tool is not, so
+;; on nil the tool answers `{:pending {:tokens tokens}}`: the host resolves
+;; them and runs the tool again.
+;;
+;; A host without it gets the plain cases — a literal, or an alias of one —
+;; and a `{:fallback}` for the rest.
 
 (def ^:private number-types
   #{:border-radius :spacing :sizing :dimensions :stroke-width :rotation :number
@@ -402,8 +424,8 @@
       (recur tokens (get tokens alias) (conj seen alias)))))
 
 (defn resolved-value
-  "What `token` resolves to among the active `tokens` — a number, a string or
-  `{:color :opacity}` — or `::unresolved`."
+  "What `token` resolves to among the active `tokens` without the resolver
+  library — a number, a string or `{:color :opacity}` — or `::unresolved`."
   [tokens token]
   (let [value (literal-value tokens token #{(:name token)})
         kind  (:type token)]
@@ -434,6 +456,39 @@
 
       :else
       ::unresolved)))
+
+(defn- plain-worth
+  [active]
+  (into {}
+        (map (fn [[token-name token]]
+               (let [value (resolved-value active token)]
+                 [token-name (cond
+                               (= ::unresolved value) {:unresolved true}
+                               (map? value)           {:resolved-value (:color value) :color value}
+                               :else                  {:resolved-value value})])))
+        active))
+
+(defn- worth
+  "What the `active` tokens are worth → `{:resolved map}`, or `{:pending}`
+  when the host has to resolve them first."
+  [active {:keys [resolve-tokens]}]
+  (if (nil? resolve-tokens)
+    {:resolved (plain-worth active)}
+    (if-let [resolved (resolve-tokens active)]
+      {:resolved resolved}
+      {:pending {:tokens active}})))
+
+(defn- token-value
+  "The value to write for `token`: nil when it is not active or does not
+  resolve, `::unresolved` when this host cannot tell."
+  [resolved token]
+  (let [entry (get resolved (:name token))]
+    (cond
+      (nil? entry)             nil
+      (:unresolved entry)      ::unresolved
+      (some? (:error entry))   nil
+      (= :color (:type token)) (:color entry)
+      :else                    (:resolved-value entry))))
 
 ;; --- Giving a shape a token's value
 ;;
@@ -509,16 +564,19 @@
           ids))
 
 (defn- set-text-attrs
+  "Merges text attributes into every run and paragraph of the texts among
+  `ids`. `attrs` is a map, or a function of the run that gives one."
   [changes ids attrs resize? engine]
-  (let [objects (cb/lookup-objects changes)
-        ids     (filter #(cfh/text-shape? (get objects %)) ids)
-        changes (cb/update-shapes changes ids
-                                  (fn [shape]
-                                    (txt/update-text-content
-                                     shape text-node?
-                                     (fn [node _] (-> node (d/txt-merge attrs) (cty/remove-typography-from-node)))
-                                     nil))
-                                  quiet)]
+  (let [objects  (cb/lookup-objects changes)
+        ids      (filter #(cfh/text-shape? (get objects %)) ids)
+        attrs-of (if (fn? attrs) attrs (constantly attrs))
+        changes  (cb/update-shapes changes ids
+                                   (fn [shape]
+                                     (txt/update-text-content
+                                      shape text-node?
+                                      (fn [node _] (-> node (d/txt-merge (attrs-of node)) (cty/remove-typography-from-node)))
+                                      nil))
+                                   quiet)]
     (if resize?
       (reduce #(caw/fit-text %1 engine %2) changes ids)
       changes)))
@@ -528,6 +586,91 @@
   [value]
   #?(:cljs (str value)
      :clj  (if (== value (long value)) (str (long value)) (str value))))
+
+(defn- font-family-attrs
+  "The text attributes for a font family token's value: the font of that
+  family when the file can use one, the bare family name otherwise."
+  [fonts value]
+  (when-let [family (some-> (first value) (str/replace #"^[\s\"']+|[\s\"']+$" ""))]
+    (if-let [font (cam/find-font-family fonts family)]
+      {:font-id (:id font) :font-family (:family font)}
+      {:font-id (dm/str uuid/zero) :font-family family})))
+
+(defn- closest-variant
+  "The variant of `font` nearest to a weight and style. The matching lives
+  with the font catalog, which is JavaScript."
+  [font weight style]
+  #?(:cljs (cfnt/closest-variant (:variants font []) weight style)
+     :clj  (do font weight style nil)))
+
+(defn- font-weight-attrs
+  "A function of a text run → the attributes that give it the weight a font
+  weight token's value names, in the variant of the run's own font that is
+  nearest to it."
+  [fonts value]
+  (when-let [variant (cto/valid-font-weight-variant value)]
+    (let [attrs (assoc variant
+                       :font-weight (:weight variant)
+                       :font-style (:style variant))]
+      (fn [node]
+        (let [found (closest-variant (get fonts (:font-id node)) (:weight variant) (:style variant))]
+          (cond-> attrs
+            (:id found) (assoc :font-variant-id (:id found))))))))
+
+(defn- shadows-of
+  [value]
+  (mapv (fn [{:keys [offset-x offset-y blur spread color inset]}]
+          {:id (uuid/next)
+           :hidden false
+           :offset-x offset-x
+           :offset-y offset-y
+           :blur blur
+           :color color
+           :spread spread
+           :style (if (true? inset) :inner-shadow :drop-shadow)})
+        value))
+
+(defn- write-text-value
+  "One text property, by the kind of token that carries it."
+  [changes ids kind value {:keys [fonts] :as engine}]
+  (case kind
+    :font-size
+    (cond-> changes
+      (number? value) (set-text-attrs ids {:font-size (number-text value)} true engine))
+
+    :letter-spacing
+    (cond-> changes
+      (number? value) (set-text-attrs ids {:letter-spacing (number-text value)} true engine))
+
+    :line-height
+    (cond-> changes
+      (number? value) (set-text-attrs ids {:line-height value} true engine))
+
+    :font-family
+    (if-let [attrs (when (sequential? value) (font-family-attrs fonts value))]
+      (set-text-attrs changes ids attrs true engine)
+      changes)
+
+    :font-weight
+    (if-let [attrs-of (when (some? value) (font-weight-attrs fonts value))]
+      (set-text-attrs changes ids attrs-of true engine)
+      changes)
+
+    :text-case
+    (cond-> changes
+      (string? value) (set-text-attrs ids {:text-transform value} false engine))
+
+    :text-decoration
+    (if-let [valid (when (string? value) (cto/valid-text-decoration value))]
+      (set-text-attrs changes ids
+                      {:text-decoration (if (= "strike-through" valid) "line-through" valid)}
+                      false engine)
+      changes)
+
+    changes))
+
+(def ^:private typography-order
+  [:font-size :font-family :font-weight :letter-spacing :text-case :text-decoration :line-height])
 
 (defn- write-value
   "Appends to `changes` what gives shapes `ids` the resolved `value` on the
@@ -539,7 +682,8 @@
         children (filter #(ctl/any-layout-immediate-child? objects (get objects %)) ids)
         patch    (fn [changes ids attrs] (cb/update-shapes changes ids (d/patch-object attrs) quiet))
         number   (when (number? value) value)
-        color    (when (map? value) value)]
+        color    (when (and (map? value) (contains? value :color)) value)
+        text     (fn [changes kind] (write-text-value changes ids kind value engine))]
     (cond-> changes
       (and number (some-of #{:r1 :r2 :r3 :r4}))
       (cb/update-shapes ids #(ctsr/set-radius-for-corners % (some-of #{:r1 :r2 :r3 :r4}) (max 0 number)) quiet)
@@ -556,6 +700,9 @@
       (and number (:opacity attrs) (<= 0 number 1))
       (cb/update-shapes ids #(assoc % :opacity number) quiet)
 
+      (and (sequential? value) (:shadow attrs))
+      (cb/update-shapes ids #(assoc % :shadow (shadows-of value)) quiet)
+
       (and number (some-of #{:p1 :p2 :p3 :p4}))
       (patch layouts {:layout-padding (zipmap (some-of #{:p1 :p2 :p3 :p4}) (repeat number))})
 
@@ -569,17 +716,23 @@
       (patch ids (zipmap (some-of #{:layout-item-min-w :layout-item-min-h :layout-item-max-w :layout-item-max-h})
                          (repeat number)))
 
-      (and number (:font-size attrs))
-      (set-text-attrs ids {:font-size (number-text number)} true engine)
+      (:font-size attrs)       (text :font-size)
+      (:letter-spacing attrs)  (text :letter-spacing)
+      (:line-height attrs)     (text :line-height)
+      (:font-family attrs)     (text :font-family)
+      (:font-weight attrs)     (text :font-weight)
+      (:text-case attrs)       (text :text-case)
+      (:text-decoration attrs) (text :text-decoration)
 
-      (and number (:letter-spacing attrs))
-      (set-text-attrs ids {:letter-spacing (number-text number)} true engine)
-
-      (and (string? value) (:text-case attrs))
-      (set-text-attrs ids {:text-transform value} false engine)
-
-      (and (string? value) (:text-decoration attrs))
-      (set-text-attrs ids {:text-decoration (if (= "strike-through" value) "line-through" value)} false engine)
+      ;; a composite: each of its parts, as the token of that part would
+      (and (map? value) (:typography attrs))
+      (as-> changes
+            (reduce (fn [changes kind]
+                      (if-some [part (get value kind)]
+                        (write-text-value changes ids kind part engine)
+                        changes))
+                    changes
+                    typography-order))
 
       (and number (some-of #{:width :height}))
       (set-geometry ids (some-of #{:width :height}) number engine)
@@ -594,10 +747,26 @@
       (caw/reflow-all (:propagate engine)
                       (into (vec ids) (keep #(cfh/get-parent-id objects %)) ids)))))
 
+(def ^:private text-measuring-attrs
+  #{:font-size :letter-spacing :line-height :font-family :font-weight :typography :width :height})
+
 (defn- needs-text-measure?
   [objects ids attrs]
   (and (some #(cfh/text-shape? (get objects %)) ids)
-       (some attrs #{:font-size :letter-spacing :width :height})))
+       (some attrs text-measuring-attrs)))
+
+(defn- write-fallback
+  "Why this host cannot write `attrs` on shapes `ids` → `{:fallback}`, or nil."
+  [objects ids attrs engine]
+  (cond
+    (and (nil? (:measure-text engine)) (needs-text-measure? objects ids attrs))
+    {:fallback "text cannot be measured on the server without the render engine"}
+
+    (and (nil? (:fonts engine)) (some attrs #{:font-family :font-weight :typography}))
+    {:fallback "the font list is not available on the server here"}
+
+    #?@(:clj [(some attrs #{:font-weight :typography})
+              {:fallback "font weights are matched to a font's variants in JavaScript only"}])))
 
 (defn- binds?
   "Whether token properties `attrs` of a `token-type` token apply to `shape`."
@@ -609,10 +778,10 @@
 
 (defn- bind-into
   "Binds `token` to `attrs` of shape `id`. → the changes, or `{:fallback}`."
-  [changes active token attrs id engine]
+  [changes resolved token attrs id engine]
   (let [objects (cb/lookup-objects changes)
         shape   (get objects id)
-        value   (some->> (get active (:name token)) (resolved-value active))
+        value   (token-value resolved token)
         ;; an atomic typography token replaces a composite one, and back
         unbind  (cond
                   (contains? cto/typography-token-keys (:type token)) cto/typography-keys
@@ -624,80 +793,80 @@
       (= ::unresolved value)
       {:fallback "this token's value needs the workspace's resolver"}
 
-      (and (nil? (:measure-text engine)) (needs-text-measure? objects [id] attrs))
-      {:fallback "text cannot be measured on the server without the render engine"}
-
       :else
-      (-> changes
-          (cb/update-shapes [id] (fn [shape]
-                                   (-> shape
-                                       (update :applied-tokens #(apply dissoc % unbind))
-                                       (update :applied-tokens merge (cfo/attributes-map attrs token)))))
-          ;; a token no active set holds is bound, and worth nothing yet
-          (cond-> (some? value)
-            (write-value [id] attrs value engine))))))
+      (or (when (some? value) (write-fallback objects [id] attrs engine))
+          (-> changes
+              (cb/update-shapes [id] (fn [shape]
+                                       (-> shape
+                                           (update :applied-tokens #(apply dissoc % unbind))
+                                           (update :applied-tokens merge (cfo/attributes-map attrs token)))))
+              ;; a token no active set holds, or one that does not resolve,
+              ;; is bound and worth nothing yet
+              (cond-> (some? value)
+                (write-value [id] attrs value engine)))))))
 
 (defn apply-tokens
-  [{:keys [page-id objects data]} {:keys [applications]} engine]
+  [{:keys [page-id objects data fonts]} {:keys [applications]} engine]
   (if (empty? applications)
     {:problem "apply_tokens: no applications given"}
     (let [lib    (:tokens-lib data)
           all    (some-> lib ctob/get-all-tokens-map)
           active (some-> lib ctob/get-tokens-in-active-sets)
-          run    (reduce
-                  (fn [{:keys [changes] :as run} {:keys [shapeId tokenName properties]}]
-                    (let [id      (when (string? shapeId) (parse-uuid shapeId))
-                          token   (get all tokenName)
-                          problem (when token (application-problem token properties))
-                          row     {:shapeId shapeId :token tokenName}]
-                      (if (and id token (nil? problem))
-                        (let [next (bind-into changes active token (attr-set token properties) id engine)]
-                          (if (contains? next :fallback)
-                            (reduced next)
-                            (-> run
-                                (assoc :changes next)
-                                (update :results conj (assoc row :ok true)))))
-                        (update run :results conj
-                                (assoc row :ok false
-                                       :error (cond
-                                                (nil? id) "invalid shapeId"
-                                                (nil? token) (dm/str "no token named \"" tokenName
-                                                                     "\" — create it with create_token")
-                                                :else problem))))))
-                  {:changes (caw/page-changes page-id objects) :results []}
-                  applications)]
-      (if (contains? run :fallback)
-        run
-        {:changes (:redo-changes (:changes run))
-         :result {:results (:results run)
-                  :note "tokens resolve asynchronously — verify with read_design or audit_file"}}))))
+          engine (assoc engine :fonts fonts)
+          {:keys [resolved pending]} (worth active engine)]
+      (if (some? pending)
+        {:pending pending}
+        (let [run (reduce
+                   (fn [{:keys [changes] :as run} {:keys [shapeId tokenName properties]}]
+                     (let [id      (when (string? shapeId) (parse-uuid shapeId))
+                           token   (get all tokenName)
+                           problem (when token (application-problem token properties))
+                           row     {:shapeId shapeId :token tokenName}]
+                       (if (and id token (nil? problem))
+                         (let [next (bind-into changes resolved token (attr-set token properties) id engine)]
+                           (if (contains? next :fallback)
+                             (reduced next)
+                             (-> run
+                                 (assoc :changes next)
+                                 (update :results conj (assoc row :ok true)))))
+                         (update run :results conj
+                                 (assoc row :ok false
+                                        :error (cond
+                                                 (nil? id) "invalid shapeId"
+                                                 (nil? token) (dm/str "no token named \"" tokenName
+                                                                      "\" — create it with create_token")
+                                                 :else problem))))))
+                   {:changes (caw/page-changes page-id objects) :results []}
+                   applications)]
+          (if (contains? run :fallback)
+            run
+            {:changes (:redo-changes (:changes run))
+             :result {:results (:results run)
+                      :note "tokens resolve asynchronously — verify with read_design or audit_file"}}))))))
 
 ;; --- activate_theme
 
 (defn- page-rebind
   "The changes that give every token-bound shape of a page the value its
-  tokens have now → redo changes, or `{:fallback}`."
-  [page-id objects active engine current?]
+  tokens have now → the changes, or `{:fallback}`."
+  [page-id objects active resolved engine]
   (reduce
    (fn [changes [id shape]]
      (reduce
       (fn [changes [token-name attrs]]
         (let [token (get active token-name)
-              value (some->> token (resolved-value active))]
+              value (some->> token (token-value resolved))]
           (cond
-            (nil? token)
+            (nil? value)
             changes
 
             (= ::unresolved value)
             (reduced (reduced {:fallback "a bound token's value needs the workspace's resolver"}))
 
-            ;; fonts are loaded for the page in view only
-            (and (needs-text-measure? objects [id] attrs)
-                 (or (not current?) (nil? (:measure-text engine))))
-            (reduced (reduced {:fallback "text on another page cannot be measured on the server"}))
-
             :else
-            (write-value changes [id] attrs value engine))))
+            (if-let [fallback (write-fallback objects [id] attrs engine)]
+              (reduced (reduced fallback))
+              (write-value changes [id] attrs value engine)))))
       changes
       (->> (:applied-tokens shape)
            (group-by val)
@@ -708,7 +877,7 @@
 (defn activate-theme
   "Toggles a theme, then gives every shape bound to a token its new value, on
   every page."
-  [{:keys [page-id data]} {:keys [name]} engine]
+  [{:keys [data fonts]} {:keys [name]} engine]
   (let [lib    (:tokens-lib data)
         themes (some->> lib
                         (ctob/get-themes)
@@ -725,21 +894,23 @@
                        :redo-changes)
             data   (cfc/process-changes data toggle false)
             active (ctob/get-tokens-in-active-sets (:tokens-lib data))
-            pages  (reduce
-                    (fn [redo pid]
-                      (let [changes (page-rebind pid (get-in data [:pages-index pid :objects])
-                                                 active engine (= pid page-id))]
-                        (if (contains? changes :fallback)
-                          (reduced changes)
-                          (into redo (:redo-changes changes)))))
-                    []
-                    ;; the page in view last: its text is what the engine
-                    ;; keeps, for the fonts
-                    (concat (remove #(= page-id %) (:pages data)) [page-id]))]
-        (if (map? pages)
-          pages
-          {:changes (into (vec toggle) pages)
-           :result {:theme name
-                    :note (str "theme toggled — shapes bound to a token NAME re-resolve "
-                               "automatically, so nothing needs re-applying. Verify with "
-                               "read_design.")}})))))
+            engine (assoc engine :fonts fonts)
+            {:keys [resolved pending]} (worth active engine)]
+        (if (some? pending)
+          {:pending pending}
+          (let [pages (reduce
+                       (fn [redo pid]
+                         (let [changes (page-rebind pid (get-in data [:pages-index pid :objects])
+                                                    active resolved engine)]
+                           (if (contains? changes :fallback)
+                             (reduced changes)
+                             (into redo (:redo-changes changes)))))
+                       []
+                       (:pages data))]
+            (if (map? pages)
+              pages
+              {:changes (into (vec toggle) pages)
+               :result {:theme name
+                        :note (str "theme toggled — shapes bound to a token NAME re-resolve "
+                                   "automatically, so nothing needs re-applying. Verify with "
+                                   "read_design.")}})))))))

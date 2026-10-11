@@ -84,7 +84,8 @@
       (let [set-id (if target-set
                      (set-id-by-name state target-set)
                      (existing-token-set-id state))
-            token  (ctob/make-token {:type (token-type type) :name name :value value})]
+            kind   (token-type type)
+            token  (ctob/make-token {:type kind :name name :value (cato/stored-value kind value)})]
         (st/emit! (if set-id
                     (dwtl/create-token set-id token)
                     ;; no sets at all: this is the branch that legitimately makes one
@@ -124,8 +125,10 @@
                     (let [set-id (if target-set
                                    (set-id-by-name state target-set)
                                    (existing-token-set-id state))
-                          token  (ctob/make-token {:type (token-type type)
-                                                   :name name :value value})]
+                          kind   (token-type type)
+                          token  (ctob/make-token {:type kind
+                                                   :name name
+                                                   :value (cato/stored-value kind value)})]
                       (st/emit! (if set-id
                                   (dwtl/create-token set-id token)
                                   (dwtl/create-token token)))))

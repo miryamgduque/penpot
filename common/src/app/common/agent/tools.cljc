@@ -75,3 +75,40 @@
    "insert_icon"  cam/insert-icon-needs
    "clone_shape"  cap/clone-shape-needs
    "build_tree"   cap/build-tree-needs})
+
+
+;; --- Design rules
+;;
+;; The one place a tool call is held against the file's design rules, before
+;; the tool runs. A rule is about what the model asks for: under
+;; token-only-colors it may not ask for a color that is not a token. Which
+;; inputs of which tool carry a color is said here, tool by tool, so a tool
+;; cannot forget to ask.
+
+(def ^:private colors-asked
+  {"create_shape"  caw/input-colors
+   "modify_shape"  caw/input-colors
+   "update_shapes" (fn [{:keys [updates]}]
+                     (when (sequential? updates)
+                       (mapcat #(when (map? %) (caw/input-colors %)) updates)))
+   "build_tree"    (fn [{:keys [tree]}]
+                     (when (map? tree)
+                       (->> (tree-seq map? #(filter map? (:children %)) tree)
+                            ;; a text's own color is not held to the rule, as
+                            ;; with create_text
+                            (remove #(= "text" (:type %)))
+                            (mapcat caw/input-colors))))})
+
+(defn rule-problem
+  "Why the design rules refuse this call → `{:problem :rule}`, or nil. `guard`
+  is the token-only-colors state: whether it is enforced, and what it allows."
+  [tool input guard]
+  (when-let [colors (get colors-asked tool)]
+    (when-let [message (some #(caw/color-problem guard %) (colors input))]
+      {:problem message :rule caw/color-rule})))
+
+(defn run
+  "Runs `tool`, unless a design rule refuses the call."
+  [tool view input options]
+  (or (rule-problem tool input (:guard options))
+      ((get tools tool) view input options)))

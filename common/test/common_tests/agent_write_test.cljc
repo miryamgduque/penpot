@@ -9,6 +9,7 @@
   the engine, and what they commit. Where shapes really land is the engine's
   business and is pinned where the engine runs."
   (:require
+   [app.common.agent.tools :as cat]
    [app.common.agent.write :as caw]
    [app.common.files.changes :as cfc]
    [app.common.geom.matrix :as gmt]
@@ -184,3 +185,25 @@
                                 {:guard no-guard :propagate (engine calls)})]
     (t/is (= 2 (count @calls)))
     (t/is (some? (:changes out)))))
+
+;; --- The design rules, checked before any tool runs
+
+(t/deftest every-call-that-asks-for-a-color-is-held-to-the-rule
+  (let [guard   {:enforced? true :allowed #{"#0f766e"}}
+        refused (fn [tool input] (cat/rule-problem tool input guard))]
+    (t/is (= "token-only-colors" (:rule (refused "create_shape" {:type "rect" :fill "#ff0000"}))))
+    (t/is (re-find #"raw color #ff0000 is not a design token" (:problem (refused "modify_shape" {:stroke "#ff0000"}))))
+    (t/is (some? (refused "update_shapes" {:updates [{:shapeId "x" :fill "#0f766e"} {:shapeId "y" :shadow {:color "#ff0000"}}]})))
+    (t/is (some? (refused "build_tree" {:tree {:type "board" :children [{:type "rect" :fill "#ff0000"}]}})))
+    ;; allowed colors, a text's own color, and tools that carry no color pass
+    (t/is (nil? (refused "create_shape" {:type "rect" :fill "#0F766E"})))
+    (t/is (nil? (refused "build_tree" {:tree {:type "board" :children [{:type "text" :text "x" :fill "#ff0000"}]}})))
+    (t/is (nil? (refused "delete_shape" {:shapeIds ["x"]})))
+    ;; not enforced, nothing is refused
+    (t/is (nil? (cat/rule-problem "create_shape" {:fill "#ff0000"} {:enforced? false})))))
+
+(t/deftest a-refused-call-never-reaches-its-tool
+  (let [out (cat/run "create_shape" {} {:type "rect" :fill "#ff0000"}
+                     {:guard {:enforced? true :allowed #{}}})]
+    (t/is (= "token-only-colors" (:rule out)))
+    (t/is (nil? (:changes out)))))

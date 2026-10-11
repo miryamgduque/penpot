@@ -17,6 +17,7 @@
    [exporter-tests.scheduler-test]
    [exporter-tests.screenshot-url-test]
    [exporter-tests.shell-test]
+   [exporter-tests.wasm-layout-test]
    [exporter-tests.wasm-pool-test]
    [goog.object :as gobj]))
 
@@ -30,6 +31,7 @@
    'exporter-tests.scheduler-test
    'exporter-tests.screenshot-url-test
    'exporter-tests.shell-test
+   'exporter-tests.wasm-layout-test
    'exporter-tests.wasm-pool-test])
 
 (assert (every? find-ns-obj test-namespaces)

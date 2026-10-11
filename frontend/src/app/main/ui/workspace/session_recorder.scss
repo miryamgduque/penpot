@@ -5,6 +5,7 @@
 // Copyright (c) KALEIDOS INC Sucursal en España SL
 
 @use "refactor/common-refactor.scss" as deprecated;
+@use "./agent_button" as agent-button;
 
 // Design session recording controls, in the agent panel header.
 //
@@ -12,6 +13,11 @@
 // without a second set of rules. The recording red is the DS error foreground
 // token: "we are recording" must not blend into the surrounding chrome, and the
 // DS keeps that red the same in both themes on purpose.
+
+// DS text buttons keep sentence case: see _agent_button.scss.
+.sentence-case {
+  @include agent-button.sentence-case;
+}
 
 .record-controls {
   position: relative;
@@ -88,20 +94,7 @@
 }
 
 .timer-stop {
-  @include deprecated.body-small-typography;
-
   flex-shrink: 0;
-  padding: deprecated.$s-4 deprecated.$s-12;
-  border: deprecated.$s-1 solid var(--color-accent-error);
-  border-radius: deprecated.$br-4;
-  background: none;
-  color: var(--color-accent-error);
-  cursor: pointer;
-
-  &:hover {
-    background-color: var(--color-accent-error);
-    color: var(--color-background-primary);
-  }
 }
 
 .rec-dot {
@@ -178,19 +171,6 @@
   gap: deprecated.$s-8;
   padding: deprecated.$s-4 deprecated.$s-4 deprecated.$s-8;
   color: var(--color-foreground-secondary);
-}
-
-.export-all {
-  @include deprecated.body-small-typography;
-
-  border: none;
-  background: none;
-  color: var(--color-accent-primary);
-  cursor: pointer;
-
-  &:hover {
-    text-decoration: underline;
-  }
 }
 
 .empty {

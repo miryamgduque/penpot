@@ -41,11 +41,11 @@
   #{"read_design" "find_shapes"})
 
 (def engine-tools
-  "The tools that change a page. They need the render engine to lay things
+  "The tools that change a file. They need the render engine to lay things
   out, which the backend cannot run, so they run in the exporter: it reads the
-  page and commits its changes through the two commands at the end of this
+  file and commits its changes through the two commands at the end of this
   namespace, with the same turn token."
-  #{"create_shape" "modify_shape"})
+  (set (keys caw/tools)))
 
 ;; A tool result is capped like the workspace caps it: an oversized result is
 ;; replaced by a small, valid object saying so, never cut mid-token.
@@ -207,13 +207,19 @@
   (let [{:keys [profile-id file-id]} (verify-turn-token cfg token)]
     (files/check-edition-permissions! cfg profile-id file-id)
     (let [context (decode-json context)
-          {:keys [data page-id]} (load-view cfg file-id context)
+          {:keys [data page-id libraries]} (load-view cfg file-id context)
           file    (bfc/get-file cfg file-id :read-only? true :load-data? false)]
       {:file-id file-id
        :page-id page-id
        :revn (:revn file)
        :vern (:vern file)
-       :objects (into {} (get-in data [:pages-index page-id :objects]))
+       :data data
+       ;; the linked libraries, for the tools that use their components
+       :libraries (into {}
+                        (keep (fn [[id library]]
+                                (when (not= id file-id)
+                                  [id (select-keys library [:id :name :data])])))
+                        libraries)
        ;; what token-only-colors would let through, were it enforced
        :allowed-colors (caw/allowed-colors data)})))
 

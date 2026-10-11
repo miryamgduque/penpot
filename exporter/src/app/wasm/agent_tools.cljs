@@ -61,12 +61,6 @@
   (layout/load-page! objects)
   (layout/propagate entries))
 
-(defn- run-tool
-  [tool view input options]
-  (case tool
-    "create_shape" (caw/create-shape view input options)
-    "modify_shape" (caw/modify-shape view input options)))
-
 (defn run
   "→ promise of `{:content json :isError bool}`, or `{:fallback why}` when the
   call is one this side does not handle yet."
@@ -75,13 +69,17 @@
     (->> (p/all [(render/ensure-module!)
                  (command! "get-agent-tool-page" {:token token :context context})])
          (p/mcat
-          (fn [[_ {:keys [page-id objects revn vern allowed-colors]}]]
+          (fn [[_ {:keys [file-id page-id data libraries revn vern allowed-colors]}]]
             (let [guard  {:enforced? (boolean (some #{caw/color-rule} (:enforcedRules ctx)))
                           :allowed allowed-colors}
-                  answer (run-tool tool
-                                   {:page-id page-id :objects objects}
-                                   (parse-json input)
-                                   {:guard guard :propagate engine})]
+                  run    (get caw/tools tool)
+                  answer (run {:file-id file-id
+                               :data data
+                               :libraries (assoc libraries file-id {:id file-id :data data})
+                               :page-id page-id
+                               :objects (get-in data [:pages-index page-id :objects])}
+                              (parse-json input)
+                              {:guard guard :propagate engine})]
               (cond
                 (some? (:fallback answer))
                 (p/resolved {:fallback (:fallback answer)})

@@ -440,17 +440,15 @@
   [changes propagate entries]
   (apply-transforms changes (propagate (cb/lookup-objects changes) entries)))
 
-(defn- uses-grid?
-  "Whether laying `shape` out involves a grid — its own, its parent's, or one
-  somewhere below it."
-  [objects shape]
-  (or (ctl/grid-layout? shape)
-      (ctl/grid-layout? (get objects (:parent-id shape)))
-      (some #(ctl/grid-layout? (get objects %))
-            (cfh/get-children-ids objects (:id shape)))))
-
-(def ^:private grid-fallback
-  "grid layouts are not laid out on the server yet")
+(defn- seat-in-grid
+  "Gives a grid's new child a cell: the grid assigns one, adding a track when
+  it has to, and puts its children back in cell order."
+  [changes grid-id]
+  (cb/update-shapes changes [grid-id]
+                    (fn [grid objects]
+                      (-> (ctl/assign-cells grid objects)
+                          (ctl/reorder-grid-children)))
+                    {:with-objects? true}))
 
 ;; --- create_shape
 
@@ -463,22 +461,23 @@
                        (when-let [message (some #(color-problem guard %) (input-colors input))]
                          {:problem message :rule color-rule}))]
     refusal
-    (let [{:keys [shape parent index]} (new-shape objects input)]
-      (if (ctl/grid-layout? parent)
-        {:fallback grid-fallback}
-        (let [changes (-> (cb/empty-changes)
-                          (cb/with-page-id page-id)
-                          (cb/with-objects objects)
-                          (cb/add-object shape (when (some? index) {:index index}))
-                          ;; a child added to a laid-out board must flow into
-                          ;; it, or it lands at its raw x/y outside the layout
-                          (cond-> (ctl/flex-layout? parent)
-                            (propagate-into propagate [(reflow-entry (:id parent))])))]
-          {:changes (:redo-changes changes)
-           :result {:id (dm/str (:id shape))
-                    :type type
-                    :parentId (when parent (dm/str (:id parent)))
-                    :note "created — verify geometry with read_design"}})))))
+    (let [{:keys [shape parent index]} (new-shape objects input)
+          changes (-> (cb/empty-changes)
+                      (cb/with-page-id page-id)
+                      (cb/with-objects objects)
+                      (cb/add-object shape (when (some? index) {:index index}))
+                      ;; a child added to a laid-out board must flow into it,
+                      ;; or it lands at its raw x/y outside the layout. A
+                      ;; grid has to give it a cell first.
+                      (cond-> (ctl/grid-layout? parent)
+                        (seat-in-grid (:id parent)))
+                      (cond-> (ctl/any-layout? parent)
+                        (propagate-into propagate [(reflow-entry (:id parent))])))]
+      {:changes (:redo-changes changes)
+       :result {:id (dm/str (:id shape))
+                :type type
+                :parentId (when parent (dm/str (:id parent)))
+                :note "created — verify geometry with read_design"}})))
 
 ;; --- modify_shape
 
@@ -494,18 +493,14 @@
 
 (defn- unsupported
   "Why this update is not handled on the server yet, or nil."
-  [objects shape {:keys [x y width height rotation flipH flipV]}]
-  (let [geometry? (or (some? x) (some? y) (some? width) (some? height))]
-    (cond
-      (or (some? rotation) flipH flipV)
-      "rotation and flips are not applied on the server yet"
+  [shape {:keys [width height rotation flipH flipV]}]
+  (cond
+    (or (some? rotation) flipH flipV)
+    "rotation and flips are not applied on the server yet"
 
-      (and geometry? (uses-grid? objects shape))
-      grid-fallback
-
-      ;; resizing a text re-measures it, which needs its fonts in the engine
-      (and (or (some? width) (some? height)) (cfh/text-shape? shape))
-      "text is not resized on the server yet")))
+    ;; resizing a text re-measures it, which needs its fonts in the engine
+    (and (or (some? width) (some? height)) (cfh/text-shape? shape))
+    "text is not resized on the server yet"))
 
 (defn modify-shape
   "→ `{:changes :result}`, `{:problem}` or `{:fallback}`; arguments as in
@@ -515,7 +510,7 @@
   (or (modify-problem "modify_shape" objects input guard)
       (let [id    (parse-uuid shapeId)
             shape (get objects id)]
-        (if-let [why (unsupported objects shape input)]
+        (if-let [why (unsupported shape input)]
           {:fallback why}
           (let [attr-fn (attr-update-fn input)
                 step    (fn [changes modifiers-of]
@@ -568,3 +563,13 @@
                                "parent), auto-width text re-measures itself. Do "
                                "not re-send the same x/y.")
                           "modified — settled at the requested geometry")}))})))))
+
+;; --- The tools the engine runs
+
+(def tools
+  "Tool name → `(fn [view input options])`. `view` is what the tool works on:
+  `:file-id`, the file `:data`, its `:libraries` (file id → file), and the
+  `:page-id` and `:objects` of the page in view. `options` carries the `:guard`
+  and the `:propagate` engine. Whatever is listed here runs on the server."
+  {"create_shape" create-shape
+   "modify_shape" modify-shape})

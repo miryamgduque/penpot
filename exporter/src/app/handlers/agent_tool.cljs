@@ -12,16 +12,16 @@
   hands it to the backend, which answers only for the profile and file the
   token names."
   (:require
+   [app.common.agent.write :as caw]
    [app.common.exceptions :as ex]
    [app.wasm.pool :as pool]
    [promesa.core :as p]))
 
-(def ^:private tools #{"create_shape" "modify_shape"})
 
 (defn handler
   [{:keys [:request/params] :as exchange}]
   (let [{:keys [token tool input context]} params]
-    (when-not (and (string? token) (contains? tools tool))
+    (when-not (and (string? token) (contains? caw/tools tool))
       (ex/raise :type :validation
                 :code :invalid-agent-tool-request
                 :hint "expected a turn token and a tool this service runs"))

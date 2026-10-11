@@ -15,6 +15,7 @@
    [app.common.geom.shapes :as gsh]
    [app.common.types.modifiers :as ctm]
    [app.common.types.shape :as cts]
+   [app.common.types.shape.layout :as ctl]
    [app.common.uuid :as uuid]
    [app.wasm :as wasm]
    [app.wasm.layout :as layout]
@@ -129,3 +130,64 @@
             (is (= [120 200] (get (placed after {}) "c")))
             (is (= [180 200] (get (placed after {}) "b")))
             (is (= [280 200] (get (placed after {}) "a")))))))))
+
+;; --- Grid
+
+(def ^:private grid-id (uuid/next))
+(def ^:private g1 (uuid/next))
+(def ^:private g2 (uuid/next))
+(def ^:private g3 (uuid/next))
+
+(defn- cell-rect
+  [id name]
+  (cts/setup-shape {:id id :type :rect :name name
+                    :x 900 :y 900 :width 40 :height 40
+                    :parent-id grid-id :frame-id grid-id
+                    :layout-item-h-sizing :fix
+                    :layout-item-v-sizing :fix}))
+
+;; Two 100px columns and 60px rows; three 40px squares stored far away.
+(def ^:private grid-objects
+  (let [objects {uuid/zero (cts/setup-shape {:id uuid/zero :type :frame :name "Root Frame"
+                                             :x 0 :y 0 :width 0.01 :height 0.01
+                                             :shapes [grid-id]})
+                 grid-id   (cts/setup-shape {:id grid-id :type :frame :name "Grid"
+                                             :x 100 :y 200 :width 200 :height 120
+                                             :parent-id uuid/zero :frame-id uuid/zero
+                                             :shapes [g1 g2 g3]
+                                             :layout :grid
+                                             :layout-grid-dir :row
+                                             :layout-grid-columns [{:type :fixed :value 100}
+                                                                   {:type :fixed :value 100}]
+                                             :layout-grid-rows [{:type :fixed :value 60}
+                                                                {:type :fixed :value 60}]
+                                             :layout-grid-cells {}
+                                             :layout-align-items :start
+                                             :layout-align-content :start
+                                             :layout-justify-items :start
+                                             :layout-justify-content :start
+                                             :layout-gap {:row-gap 0 :column-gap 0}
+                                             :layout-padding {:p1 0 :p2 0 :p3 0 :p4 0}
+                                             :layout-item-h-sizing :fix
+                                             :layout-item-v-sizing :fix})
+                 g1        (cell-rect g1 "g1")
+                 g2        (cell-rect g2 "g2")
+                 g3        (cell-rect g3 "g3")}]
+    ;; seat the children in cells, as the workspace does when one is added
+    (update objects grid-id #(-> (ctl/create-cells % [1 1 2 2])
+                                 (ctl/assign-cells objects)))))
+
+(deftest reflow-places-children-in-their-grid-cells
+  (async done
+    (with-engine done
+      (fn []
+        (layout/load-page! grid-objects)
+        (let [out    (layout/reflow [grid-id])
+              at     (fn [id]
+                       (let [shape (cond-> (get grid-objects id)
+                                     (contains? out id) (gsh/apply-transform (get out id)))]
+                         [(js/Math.round (:x shape)) (js/Math.round (:y shape))]))
+              places (set (map at [g1 g2 g3]))]
+          ;; one square per cell, each at its cell's top-left corner
+          (is (= 3 (count places)))
+          (is (every? #{[100 200] [200 200] [100 260] [200 260]} places)))))))

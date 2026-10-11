@@ -4,6 +4,7 @@
 //
 // Copyright (c) KALEIDOS INC Sucursal en España SL
 
+import { randomUUID } from "node:crypto";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { AgentRegistry } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
@@ -200,13 +201,19 @@ export async function createHarness(options = {}) {
         } else {
           agentCtx.inject(["skills"], (skillCtx) => {
             for (const skill of skills) {
-              skillCtx.skills.register({
-                name: skill.name,
-                description: skill.description,
-                content: skill.body,
-                source: "custom",
-                invocation: { modelInvocable: true, userInvocable: false },
-              });
+              // one skill the registry will not take must not cost the
+              // conversation all of the others
+              try {
+                skillCtx.skills.register({
+                  name: skill.name,
+                  description: skill.description,
+                  content: skill.body,
+                  source: "custom",
+                  invocation: { modelInvocable: true, userInvocable: false },
+                });
+              } catch {
+                continue;
+              }
             }
           });
         }
@@ -297,10 +304,40 @@ export async function createHarness(options = {}) {
     }
   }
 
+  /**
+   * Runs a question through a short conversation of its own and resolves with
+   * the text of its last answer. It shares nothing with the conversation that
+   * asked: its own prompt, its own tools, and it is gone when it ends.
+   * `callServerTool` runs its tools; `onUsage` hears what it spent.
+   */
+  async function runSideTurn(request, { callServerTool, serverTools, signal, onUsage }) {
+    const sessionId = `side-${randomUUID()}`;
+    let text = "";
+    const emit = (event) => {
+      if (event.type === "text-delta") text += event.text;
+      else if (event.type === "usage") onUsage?.(event.usage);
+    };
+    // what it said before calling a tool was a step, not the answer
+    const callTool = (call, toolSignal) => {
+      text = "";
+      return callServerTool(call, toolSignal);
+    };
+    try {
+      await runTurn(
+        { ...request, sessionId, images: [], skills: [] },
+        { emit, callTool, callServerTool: callTool, serverTools, signal },
+      );
+      return text;
+    } finally {
+      const conversation = conversations.get(sessionIdOf(request.profileId, sessionId));
+      if (conversation !== undefined) await closeConversation(conversation).catch(() => {});
+    }
+  }
+
   async function dispose() {
     for (const conversation of [...conversations.values()]) await closeConversation(conversation);
     await ctx.fiber.dispose();
   }
 
-  return { ctx, runTurn, dispose, conversations };
+  return { ctx, runTurn, runSideTurn, dispose, conversations };
 }

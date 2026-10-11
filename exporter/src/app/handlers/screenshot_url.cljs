@@ -150,18 +150,28 @@
                                            (p/mcat (fn [_] (p/rejected cause)))))))))
        (p/mcat scheduler/submit!)))
 
-(defn handler
-  [{:keys [:request/auth-token] :as exchange} {:keys [url full-page]}]
+(defn screenshot!
+  "The PNG of the page at `url`, taken for `profile-id` → promise of its
+  bytes. For a caller that has already established who is asking."
+  [profile-id url full-page]
   (let [{:keys [scheme host]} (u/uri url)]
     (when-not (contains? #{"http" "https"} scheme)
       (ex/raise :type :validation
                 :code :invalid-url
                 :hint "url must be absolute http(s)"))
+    (p/do! (ng/assert-public-host! host)
+           (run-tracked! profile-id host
+                         (fn [_job] (capture! url full-page))))))
+
+(defn handler
+  [{:keys [:request/auth-token] :as exchange} {:keys [url full-page]}]
+  (let [{:keys [scheme]} (u/uri url)]
+    (when-not (contains? #{"http" "https"} scheme)
+      (ex/raise :type :validation
+                :code :invalid-url
+                :hint "url must be absolute http(s)"))
     (->> (auth/require-profile-id auth-token)
-         (p/mcat (fn [profile-id]
-                   (p/do! (ng/assert-public-host! host)
-                          (run-tracked! profile-id host
-                                        (fn [_job] (capture! url full-page))))))
+         (p/mcat (fn [profile-id] (screenshot! profile-id url full-page)))
          (p/fmap (fn [buffer]
                    (-> exchange
                        (assoc :response/status 200)

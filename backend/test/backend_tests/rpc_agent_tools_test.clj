@@ -231,3 +231,20 @@
                  (->> (th/db-query :file-change {:file-id (:id file)})
                       (keep :label)
                       (filter #(re-find #"^agent:" %)))))))))
+
+(t/deftest audit-file-checks-the-rules-the-workspace-says-are-active
+  (let [profile (th/create-profile* 1 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        _       (add-rect! profile file "Rectangle 3")
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file))]
+    ;; no active rule, nothing to report
+    (t/is (= 0 (:count (content (run-tool! token "audit_file")))))
+    (let [audit (content (run-tool! token "audit_file" :context {:enforcedRules ["layer-naming"]}))]
+      (t/is (= 1 (:count audit)))
+      (t/is (= ["layer-naming"] (mapv :rule (:violations audit))))
+      (t/is (= "Rectangle 3" (-> audit :violations first :shapeName))))
+    (t/testing "a web tool refuses a url that is not one, without touching the file"
+      (t/is (re-find #"get_page_meta: url must be an absolute"
+                     (get-in (run-tool! token "get_page_meta" :input {:url "nope"}) [:result :content]))))))

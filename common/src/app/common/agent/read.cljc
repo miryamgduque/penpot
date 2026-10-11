@@ -385,3 +385,68 @@
       ;; only when something was actually held back — an always-present "nothing
       ;; omitted" key is payload for nothing
       (seq omitted) (assoc :omitted omitted))))
+
+;; --- audit_file
+;;
+;; A fresh scan of one page for the violations of the rules that are active.
+;; A rule that is not active is not checked, so a file with no active rules
+;; audits clean.
+
+(def ^:private max-audit-shapes 1000)
+
+(def ^:private default-name-re
+  #"(?i)^(rectangle|ellipse|circle|board|frame|group|path|text|image|bool|curve|line|arc)(\s+\d+)?$")
+
+(defn- default-name?
+  [shape]
+  (boolean (some->> (:name shape) (re-matches default-name-re))))
+
+(defn- raw-colors
+  "The fill and stroke colors of a shape that are neither bound to a library
+  color nor among the `allowed` ones. `normalize` is the canonical form of a
+  color, as `allowed` holds them."
+  [shape allowed normalize]
+  (concat
+   (keep (fn [fill]
+           (let [color (:fill-color fill)]
+             (when (and color
+                        (nil? (:fill-color-ref-id fill))
+                        (not (contains? allowed (normalize color))))
+               color)))
+         (:fills shape))
+   (keep (fn [stroke]
+           (let [color (:stroke-color stroke)]
+             (when (and color
+                        (nil? (:stroke-color-ref-id stroke))
+                        (not (contains? allowed (normalize color))))
+               color)))
+         (:strokes shape))))
+
+(defn audit-violations
+  "`enforced` is the set of active rule names; `allowed` the colors
+  token-only-colors lets through."
+  [objects {:keys [enforced allowed normalize]}]
+  (let [colors? (contains? enforced "token-only-colors")
+        names?  (contains? enforced "layer-naming")
+        shapes  (->> (dissoc objects uuid/zero) vals (take max-audit-shapes))]
+    (vec
+     (concat
+      (when colors?
+        (for [shape shapes
+              :let  [bad (seq (raw-colors shape allowed normalize))]
+              :when bad]
+          {:rule "token-only-colors" :shapeId (dm/str (:id shape)) :shapeName (:name shape)
+           :reason (dm/str "raw colors not bound to a token: " (str/join ", " bad))}))
+      (when names?
+        (for [shape shapes
+              :when (default-name? shape)]
+          {:rule "layer-naming" :shapeId (dm/str (:id shape)) :shapeName (:name shape)
+           :reason "uses a default/auto-generated layer name"}))))))
+
+(defn audit-result
+  [violations]
+  {:violations violations
+   :count (count violations)
+   :note (if (seq violations)
+           "fix shape by shape, then run audit_file again to confirm"
+           "no open violations for the active rules")})

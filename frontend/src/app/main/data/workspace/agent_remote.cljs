@@ -34,9 +34,13 @@
     (js->clj (js/JSON.parse s) :keywordize-keys true)
     (catch :default _ nil)))
 
+;; The harness serves the skills itself, through its own tool.
+(def ^:private harness-owned-tools #{"get_design_skills"})
+
 (defn turn-payload
   "The JSON body of a turn: the conversation the service should continue, the
-  model, the system prompt, the user's message and the tool declarations."
+  model, the system prompt, the user's message, the tool declarations and the
+  skills enabled on the file."
   [settings user-msg system]
   (js/JSON.stringify
    (clj->js {:sessionId (str (:session-id (:service settings)))
@@ -45,9 +49,12 @@
              :text (agent/user-text user-msg)
              :images (mapv (fn [{:keys [mtype data]}] {:mediaType mtype :data data})
                            (:images user-msg))
-             :tools (mapv (fn [t] {:name (:name t)
-                                   :description (:description t)
-                                   :inputSchema (:input-schema t)})
+             :skills (vec (:skills (:service settings)))
+             :tools (into []
+                          (comp (remove #(contains? harness-owned-tools (:name %)))
+                                (map (fn [t] {:name (:name t)
+                                              :description (:description t)
+                                              :inputSchema (:input-schema t)})))
                           at/tool-specs)})))
 
 (defn- run-tool

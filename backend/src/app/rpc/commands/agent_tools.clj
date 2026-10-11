@@ -44,14 +44,24 @@
 (def server-tools
   "The tools the backend runs itself. The agent service asks a connected
   workspace to run every other tool."
-  #{"read_design" "find_shapes" "leave_comment" "list_comments" "save_version"})
+  #{"read_design" "find_shapes" "audit_file" "get_page_meta"
+    "leave_comment" "list_comments" "save_version"})
+
+(def ^:private fileless-tools
+  #{"get_page_meta" "fetch_web_page" "turn_profile"})
+
+(def ^:private service-tools
+  "What the agent service asks for on its own account, to build a tool it
+  runs itself. Not offered to the model."
+  #{"fetch_web_page" "turn_profile"})
 
 (def engine-tools
   "The tools that change a file. They need the render engine to lay things
   out, which the backend cannot run, so they run in the exporter: it reads the
   file and commits its changes through the two commands at the end of this
   namespace, with the same turn token."
-  (set (keys cat/tools)))
+  ;; and the one that shows the model a web page: the exporter's browser
+  (conj (set (keys cat/tools)) "screenshot_page"))
 
 ;; A tool result is capped like the workspace caps it: an oversized result is
 ;; replaced by a small, valid object saying so, never cut mid-token.
@@ -140,6 +150,75 @@
     (when-let [problem (car/find-shapes-problem query)]
       (ex/raise :type :agent-tool :hint problem))
     (car/find-shapes (get-in data [:pages-index page-id :objects]) query)))
+
+(defmethod run-tool "audit_file"
+  [_ {:keys [data page-id]} _ {:keys [enforcedRules]}]
+  (let [enforced (into #{} (filter string?) enforcedRules)]
+    (car/audit-result
+     (car/audit-violations (get-in data [:pages-index page-id :objects])
+                           {:enforced enforced
+                            :allowed (when (contains? enforced caw/color-rule)
+                                       (caw/allowed-colors data))
+                            :normalize caw/normalize-hex}))))
+
+;; --- The web
+;;
+;; A page is fetched by the backend, under its own network rules. Its text is
+;; written by whoever owns the page, so it never goes to the model that holds
+;; the design tools: `get_page_meta` returns the parsed fields only, and the
+;; text is handed to the agent service, which digests it with a model that has
+;; no tools.
+
+(def ^:private http-url-re #"(?i)^https?://\S+$")
+
+(def ^:private fetch-web-page-fn
+  (delay
+    (->> (sv/scan-ns 'app.rpc.commands.agent-web)
+         (some (fn [[f mdata]]
+                 (when (= "fetch-web-page" (::sv/name mdata)) f))))))
+
+(def ^:private fetch-error-hints
+  {:ssrf-blocked-target
+   "the host is private or blocked by this Penpot instance"
+   :unable-to-fetch-page
+   "the page could not be fetched (unreachable host, timeout, or error status)"
+   :content-type-not-allowed
+   "the url is not an html or plain-text page"})
+
+(defn- fetch-web-page
+  "→ the fetched page. A failure is raised as the message the model reads,
+  under the name of the `tool` it called."
+  [cfg tool url]
+  (when-not (and (string? url) (re-matches http-url-re url))
+    (ex/raise :type :agent-tool
+              :hint (str tool ": url must be an absolute http(s) URL, e.g. https://example.com")))
+  (try
+    (@fetch-web-page-fn cfg {:url (u/uri url)})
+    (catch clojure.lang.ExceptionInfo cause
+      (let [{:keys [type code]} (ex-data cause)]
+        (if (contains? #{:validation :restriction} type)
+          (ex/raise :type :agent-tool
+                    :hint (str tool ": "
+                               (or (get fetch-error-hints code)
+                                   (str "the fetch failed" (when code (str " (" (name code) ")"))))
+                               "."))
+          (throw cause))))))
+
+(defmethod run-tool "get_page_meta"
+  [_ _ {:keys [url]} {:keys [::cfg]}]
+  (let [{:keys [title meta]} (fetch-web-page cfg "get_page_meta" url)]
+    {:title title
+     :meta meta
+     :note (str "metadata only — fetch_page answers content "
+                "questions, screenshot_page shows the visual")}))
+
+(defmethod run-tool "turn_profile"
+  [_ _ _ {:keys [::profile-id]}]
+  {:profileId (str profile-id)})
+
+(defmethod run-tool "fetch_web_page"
+  [_ _ {:keys [url]} {:keys [::cfg]}]
+  (fetch-web-page cfg "fetch_page" url))
 
 ;; --- Comments and versions
 ;;
@@ -259,7 +338,7 @@
 (def ^:private schema:run-agent-tool
   [:map {:title "run-agent-tool"}
    [:token [:string {:max 5000}]]
-   [:tool [::sm/one-of {:format "string"} server-tools]]
+   [:tool [::sm/one-of {:format "string"} (into server-tools service-tools)]]
    ;; JSON, as the model wrote it
    [:input {:optional true} [:string {:max 100000}]]
    ;; JSON: what a connected workspace reported about the page in view
@@ -277,9 +356,15 @@
     (files/check-read-permissions! cfg profile-id file-id)
     (let [context (-> (decode-json context)
                       (assoc ::cfg cfg ::profile-id profile-id))
-          view    (load-view cfg file-id context)]
+          ;; the web tools and the service's own questions are not about
+          ;; the file: nothing to load
+          view    (when-not (contains? fileless-tools tool)
+                    (load-view cfg file-id context))]
       (try
-        {:content (result->content (run-tool tool view (decode-json input) context))
+        {:content (let [result (run-tool tool view (decode-json input) context)]
+                    (if (contains? service-tools tool)
+                      (json/encode result)
+                      (result->content result)))
          :is-error false}
         (catch clojure.lang.ExceptionInfo cause
           (if (= :agent-tool (:type (ex-data cause)))

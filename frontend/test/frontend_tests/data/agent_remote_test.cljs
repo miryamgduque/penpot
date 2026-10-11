@@ -33,7 +33,8 @@
 (t/deftest turn-payload-declares-every-tool-with-its-own-name-and-schema
   (let [p     (payload {:service {:session-id (uuid/next)}} {:role :user :text "hi"} "S")
         tools (:tools p)]
-    (t/is (= (mapv :name at/tool-specs) (mapv :name tools)))
+    ;; all but the skills tool: the harness serves the skills itself
+    (t/is (= (remove #{"get_design_skills"} (map :name at/tool-specs)) (map :name tools)))
     (t/is (every? #(= "object" (get-in % [:inputSchema :type])) tools))
     (t/is (= (get-in (first at/tool-specs) [:input-schema :required])
              (get-in (first tools) [:inputSchema :required])))))
@@ -43,3 +44,9 @@
                    {:role :user :text "look" :images [{:mtype "image/png" :data "AAAA"}]}
                    "S")]
     (t/is (= [{:mediaType "image/png" :data "AAAA"}] (:images p)))))
+
+(t/deftest turn-payload-carries-the-enabled-skills
+  (let [skills [{:name "penpot-build-screen" :description "Build a screen" :body "STEP ONE"}]
+        p      (payload {:service {:session-id (uuid/next) :skills skills}} {:role :user :text "hi"} "S")]
+    (t/is (= skills (:skills p)))
+    (t/is (= [] (:skills (payload {:service {:session-id (uuid/next)}} {:role :user :text "hi"} "S"))))))

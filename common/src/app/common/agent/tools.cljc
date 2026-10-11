@@ -62,6 +62,7 @@
    "search_fonts"  cam/search-fonts
    "set_font"      cam/set-font
    "create_page"   cad/create-page
+   "set_foundation" cad/set-foundation
    "clone_shape"   cap/clone-shape
    "build_tree"    (fn [view input options]
                      (cap/build-tree view input (assoc options :apply-tokens cato/apply-tokens)))})

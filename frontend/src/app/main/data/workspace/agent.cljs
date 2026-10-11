@@ -567,26 +567,31 @@
   ;; `state` for the per-user enabled-skills index (US #8); `context` is
   ;; deliberately NOT here — it is volatile and would break the cached prefix,
   ;; so it rides on the user message instead (US #26).
-  [state]
-  (str/join "\n"
-            ["You are the design agent embedded in Penpot (the open-source design tool), working on the user's current file."
-             ""
-             ;; Always-on: governance, naming, native-tool behaviour. Not
-             ;; user-toggleable — see agent-skills/inner-knowledge.
-             ask/inner-knowledge
-             ""
-             ;; Enabled built-in skills (routing index); details on demand via
-             ;; get_design_skills. Empty string when none are enabled.
-             (or (ask/system-prompt-section state) "")
-             ""
-             ;; The project vibes doc (design.md), when the file has one. Also
-             ;; always-on: vibes shape every response, and the doc is stable
-             ;; per file, so it lives in the cached prefix like the rest.
-             (or (dd/system-prompt-section state) "")
-             ""
-             "Each turn opens with the current design context (file, page, selection). Treat it as orientation only — call read_design when you need ground truth."
-             ""
-             "Keep replies short — you live in a narrow side panel. Work in small steps and reference shapes by name."]))
+  ([state] (build-system-prompt state nil))
+  ([state {:keys [harness-skills?]}]
+   (str/join "\n"
+             ["You are the design agent embedded in Penpot (the open-source design tool), working on the user's current file."
+              ""
+              ;; Always-on: governance, naming, native-tool behaviour. Not
+              ;; user-toggleable — see agent-skills/inner-knowledge.
+              ask/inner-knowledge
+              ""
+              ;; Enabled built-in skills (routing index); details on demand via
+              ;; get_design_skills. Empty string when none are enabled.
+              ;; with the agent service the harness lists them instead
+              (or (if harness-skills?
+                    (ask/harness-skills-section state)
+                    (ask/system-prompt-section state))
+                  "")
+              ""
+              ;; The project vibes doc (design.md), when the file has one. Also
+              ;; always-on: vibes shape every response, and the doc is stable
+              ;; per file, so it lives in the cached prefix like the rest.
+              (or (dd/system-prompt-section state) "")
+              ""
+              "Each turn opens with the current design context (file, page, selection). Treat it as orientation only — call read_design when you need ground truth."
+              ""
+              "Keep replies short — you live in a narrow side panel. Work in small steps and reference shapes by name."])))
 
 ;; --- Turn runner
 ;;

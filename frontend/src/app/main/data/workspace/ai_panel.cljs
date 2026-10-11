@@ -761,16 +761,17 @@
              ;; system prompt stays a stable, cacheable prefix built from `state`
              user-msg (cond-> {:role :user :text text :context context}
                         (seq images) (assoc :images images))
-             system   (agent/build-system-prompt state)
              ;; with the agent service the loop and the real history live
              ;; server-side, keyed by the conversation id — so the id has to
              ;; exist before the first turn, not at the first save
              service? (contains? cf/flags :design-agent-service)
+             system   (agent/build-system-prompt state {:harness-skills? service?})
              chat-id  (dm/get-in state [:ai-panel file-id :chat-id])
              session  (or chat-id (uuid/next))
              settings (cond-> settings
                         service? (assoc :service {:session-id session
-                                                  :file-id file-id}))]
+                                                  :file-id file-id
+                                                  :skills (ask/harness-skills state)}))]
          (rx/concat
           (if (and service? (nil? chat-id))
             (rx/of (agent-chats/chat-id-allocated file-id session))
@@ -843,7 +844,9 @@
            (rx/of (set-checkpoint nil)
                   (set-busy true))
            (turn-stream (:settings cp) (:history cp)
-                        (agent/build-system-prompt state) stream
+                        (agent/build-system-prompt
+                         state {:harness-skills? (some? (:service (:settings cp)))})
+                        stream
                         (select-keys cp [:rounds :usage]))))))))
 
 (defn dismiss-checkpoint

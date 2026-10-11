@@ -78,7 +78,9 @@ The harness's MCP client connects them on that conversation only, over
 Streamable HTTP; their tools appear to the model as `mcp__<name>__<tool>` and
 are called from this service. Before connecting, each address is checked
 again here: https only, and every address the host resolves to must be public
-(`src/netguard.js`). A server that fails the check, or does not answer, is
+(`src/netguard.js`). Every later request to it is held to the same rule: no
+redirect is followed, and the address is checked once more when the socket
+connects, so neither a redirect nor a changed DNS answer leads inside. A server that fails the check, or does not answer, is
 left out and reported in the turn's `mcp` event; the turn goes on without it.
 Side conversations get none of them.
 

@@ -15,6 +15,7 @@
   Changing a page does."
   (:require
    [app.common.data :as d]
+   [app.common.files.helpers :as cfh]
    [app.common.geom.matrix :as gmt]
    [app.common.render-wasm.api.layout :as wasm.layout]
    [app.common.render-wasm.api.props :as props]
@@ -24,6 +25,8 @@
    [app.common.render-wasm.mem.heap32 :as mem.h32]
    [app.common.render-wasm.serializers :as sr]
    [app.common.render-wasm.wasm :as wasm]
+   [app.common.types.path :as path]
+   [app.common.types.path.impl :as path.impl]
    [app.common.types.shape.layout :as ctl]
    [app.common.uuid :as uuid]
    [app.wasm.text :as text]))
@@ -133,3 +136,54 @@
               height  (aget heapf32 (+ offset 1))]
           (mem/free)
           {:width width :height height})))))
+
+;; --- Booleans
+;;
+;; The outline of a boolean shape is computed by the engine, in the workspace
+;; and here: the same `_calculate_bool`, so a boolean made on the server has
+;; the path the editor would give it.
+
+(def ^:private UUID-U8-SIZE 16)
+
+(defn- calculate-bool*
+  [bool-type ids]
+  (let [ids    (vec ids)
+        size   (mem/get-alloc-size ids UUID-U8-SIZE)
+        heap   (mem/get-heap-u32)
+        offset (mem/alloc->offset-32 size)]
+    (reduce (fn [offset id] (mem.h32/write-uuid offset heap id))
+            offset
+            (rseq ids))
+    (try
+      (let [offset  (-> (h/call wasm/internal-module "_calculate_bool" (sr/translate-bool-type bool-type))
+                        (mem/->offset-32))
+            heap    (mem/get-heap-u32)
+            length  (aget heap offset)
+            data    (mem/slice heap (+ offset 1) (* length path.impl/SEGMENT-U32-SIZE))
+            content (path/from-bytes data)]
+        (mem/free)
+        content)
+      (catch :default cause
+        (mem/free)
+        (throw cause)))))
+
+(defn calculate-bool
+  "The engine's implementation of `path/calc-bool-content`. The operands are
+  loaded into a temporary shape pool, so whatever page is loaded stays as it
+  is."
+  [shape objects]
+  (h/call wasm/internal-module "_start_temp_objects")
+  (try
+    (let [ids      (get shape :shapes)
+          children (mapcat #(cfh/get-children-with-self objects %) ids)]
+      (h/call wasm/internal-module "_init_shapes_pool" (count children))
+      (run! set-shape! children)
+      (-> (calculate-bool* (get shape :bool-type) ids)
+          (path.impl/path-data)))
+    (finally
+      (h/call wasm/internal-module "_end_temp_objects"))))
+
+(defn install-bool-engine!
+  "Makes the shared path code compute booleans with the engine."
+  []
+  (set! path/wasm:calc-bool-content calculate-bool))

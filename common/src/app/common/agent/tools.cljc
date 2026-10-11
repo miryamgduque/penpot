@@ -32,5 +32,8 @@
    "ungroup_shapes"   cas/ungroup-shapes
    "mask_shapes"      cas/mask-shapes
    "unmask_shapes"    cas/unmask-shapes
+   "create_boolean"   cas/create-boolean
+   "create_from_svg"  cas/create-from-svg
+   "create_component" cas/create-component
    "create_text"      catx/create-text
    "set_text"         catx/set-text})

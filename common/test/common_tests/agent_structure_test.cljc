@@ -165,3 +165,40 @@
                                               {:shapeId "nope" :name "second"}]})]
     (t/is (re-find #"^updates\[1\]: update_shapes: missing or invalid shapeId" (:problem out)))
     (t/is (nil? (:changes out)))))
+
+(t/deftest create-boolean-wraps-its-operands
+  (let [out  (run cas/create-boolean {:operation "union" :shapeIds [(str a-id) (str b-id)]})
+        tree (after (:changes out))
+        bool (get tree (uuid/parse (get-in out [:result :shapeId])))]
+    (t/is (= :bool (:type bool)))
+    (t/is (= :union (:bool-type bool)))
+    (t/is (= #{a-id b-id} (set (:shapes bool))))
+    (t/is (= "Union" (:name bool))))
+  (t/is (re-find #"needs at least 2 shapes" (:problem (run cas/create-boolean {:operation "union" :shapeIds [(str a-id)]}))))
+  (t/is (re-find #"operation \"merge\" is not valid" (:problem (run cas/create-boolean {:operation "merge" :shapeIds [(str a-id) (str b-id)]})))))
+
+(def ^:private svg-tree
+  {:tag :svg
+   :attrs {:width "24" :height "24" :viewBox "0 0 24 24"}
+   :content [{:tag :rect :attrs {:x "2" :y "2" :width "20" :height "20" :fill "#ff0000"} :content []}]})
+
+(t/deftest create-from-svg-builds-shapes-from-the-parsed-tree
+  (let [parse (fn [text] (when (= "<svg/>" text) svg-tree))
+        go    #(cas/create-from-svg view % {:propagate (engine (atom [])) :parse-svg parse})
+        out   (go {:svg "<svg/>" :x 900 :y 900})
+        tree  (after (:changes out))]
+    (t/is (some? (get tree (uuid/parse (get-in out [:result :id])))))
+    (t/is (> (count tree) (count objects)))
+    (t/is (re-find #"not valid SVG" (:problem (go {:svg "nope"}))))
+    (t/is (string? (:fallback (run cas/create-from-svg {:svg "<svg/>"}))))))
+
+(t/deftest create-component-needs-shapes-or-a-selection
+  (t/is (= "create_component: no shapes given and nothing selected"
+           (:problem (run cas/create-component {}))))
+  (let [out (run cas/create-component {:shapeIds [(str box-id)]})]
+    (t/is (string? (get-in out [:result :componentId])))
+    (t/is (seq (:changes out))))
+  (t/testing "the selection stands in for shapeIds"
+    (let [out (cas/create-component (assoc view :selected [box-id]) {}
+                                    {:propagate (engine (atom []))})]
+      (t/is (string? (get-in out [:result :componentId]))))))

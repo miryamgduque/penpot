@@ -23,6 +23,7 @@
    [app.config :as cf]
    [app.wasm.layout :as layout]
    [app.wasm.render :as render]
+   [app.wasm.svg-parse :as svg-parse]
    [promesa.core :as p]))
 
 (defn- command!
@@ -66,6 +67,7 @@
                     (layout/load-page! objects))]
     {:scene scene
      :measured? measured?
+     :parse-svg svg-parse/parse
      :propagate (fn [objects entries]
                   (load! objects)
                   (layout/propagate entries))
@@ -81,13 +83,13 @@
   [tool view input guard]
   (let [run    (get cat/tools tool)
         engine (make-engine)
-        first  (run view input (assoc (select-keys engine [:propagate :measure-text]) :guard guard))]
+        first  (run view input (assoc (select-keys engine [:propagate :measure-text :parse-svg]) :guard guard))]
     (if-not @(:measured? engine)
       (p/resolved first)
       (->> (render/provision-scene-fonts! @(:scene engine))
            (p/fmap (fn [found?]
                      (if found?
-                       (run view input (assoc (select-keys (make-engine) [:propagate :measure-text]) :guard guard))
+                       (run view input (assoc (select-keys (make-engine) [:propagate :measure-text :parse-svg]) :guard guard))
                        {:fallback "a font this text uses is not available to the server"})))))))
 
 (defn run
@@ -99,13 +101,16 @@
                  (command! "get-agent-tool-page" {:token token :context context})])
          (p/mcat
           (fn [[_ {:keys [file-id page-id data libraries revn vern allowed-colors]}]]
+            (layout/install-bool-engine!)
             (let [guard  {:enforced? (boolean (some #{caw/color-rule} (:enforcedRules ctx)))
                           :allowed allowed-colors}
                   view   {:file-id file-id
                           :data data
                           :libraries (assoc libraries file-id {:id file-id :data data})
                           :page-id page-id
-                          :objects (get-in data [:pages-index page-id :objects])}]
+                          :objects (get-in data [:pages-index page-id :objects])
+                          ;; what the user has selected, when a workspace said
+                          :selected (into [] (keep #(when (string? %) (parse-uuid %))) (:selectedIds ctx))}]
               (->> (answer-of tool view (parse-json input) guard)
                    (p/mcat
                     (fn [answer]

@@ -12,6 +12,7 @@
   on the remainder after that prefix."
   (:require
    [app.common.exceptions :as ex]
+   [app.handlers.agent-tool :as agent-tool]
    [app.handlers.jobs :as jobs.handlers]
    [cuerdas.core :as str]))
 
@@ -41,6 +42,9 @@
       (cond
         (and (= "post" method) (= "/" path))
         (legacy-handler exchange)
+
+        (and (= "post" method) (= "/agent-tool" path))
+        (agent-tool/handler exchange)
 
         (and (= "post" method) (= "/jobs" path))
         (jobs.handlers/create exchange)

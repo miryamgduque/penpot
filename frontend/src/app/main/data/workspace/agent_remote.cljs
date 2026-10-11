@@ -105,15 +105,36 @@
   [state]
   {:pageId (str (:current-page-id state))
    :selectedIds (mapv str (dsh/get-selected-ids state))
+   ;; which rules the file enforces is workspace state for now
+   :enforcedRules (vec (get-in state [:ai-panel (:current-file-id state) :enforced-rules]))
    :extras (select-keys (atr/workspace-extras state) [:skills :openViolations])})
 
+(def ^:private catch-up-timeout-ms 8000)
+
+(defn- caught-up
+  "→ observable that emits once this workspace has the file at `revn` or
+  later: a change the server committed reaches it a moment after the commit.
+  Gives up quietly after a while — the tool that follows then says what it
+  could not find, which the agent can act on."
+  [revn]
+  (let [at-revn? (fn [] (let [state @st/state]
+                          (>= (or (get-in state [:files (:current-file-id state) :revn]) 0) revn)))]
+    (if (or (nil? revn) (at-revn?))
+      (rx/of true)
+      (->> (rx/interval 40)
+           (rx/filter at-revn?)
+           (rx/take 1)
+           (rx/timeout catch-up-timeout-ms (rx/of false))))))
+
 (defn- sync-workspace
-  "Saves pending changes, then → observable of one outcome carrying the
-  workspace context as its content."
+  "Saves pending changes, waits for the server's own last change when asked,
+  then → observable of one outcome carrying the workspace context as its
+  content."
   [call]
   (st/emit! ::dps/force-persist)
   (->> (rx/timer settle-ms)
        (rx/mapcat (fn [_] (dps/wait-persisted-or-error save-timeout-ms)))
+       (rx/mapcat (fn [_] (caught-up (:minRevn (:input call)))))
        (rx/map (fn [_]
                  {:call call
                   :status :ok
@@ -126,11 +147,13 @@
                                          (or (ex-message cause) "unknown error"))})))))
 
 (defn- server-tool-event
-  "A tool the server ran, as the transcript shows any other tool."
-  [{:keys [name input content isError]}]
+  "A tool the server ran, as the transcript shows any other tool: refused by
+  a design rule, failed, or done."
+  [{:keys [name input content isError rule]}]
   (agent/tool-outcome->event
    {:call {:name name :input (or input {})}
-    :status (if isError :error :ok)
+    :status (cond (some? rule) :rejected isError :error :else :ok)
+    :rule rule
     :detail (when isError content)
     :content content
     :error? (boolean isError)}))
@@ -187,7 +210,7 @@
                   "tool-call"
                   (if (= sync-call (:name ev))
                     ;; plumbing, not a tool: nothing is shown in the transcript
-                    (->> (sync-workspace {:id (:callId ev)})
+                    (->> (sync-workspace {:id (:callId ev) :input (:input ev)})
                          (rx/mapcat #(post-result @turn-id* %))
                          (rx/ignore))
                     (->> (run-tool settings {:id (:callId ev)

@@ -107,7 +107,9 @@
   scheduler may admit. Zero exactly when headless export is off, which is also
   when no job is headless, so a headless job always has a worker to wait for."
   []
-  (if (contains? cf/flags :wasm-export)
+  ;; the agent's page-changing tools lay pages out on the same workers
+  (if (or (contains? cf/flags :wasm-export)
+          (contains? cf/flags :design-agent-server-tools))
     ;; Clamped rather than rejected: a bad value should not stop the exporter
     ;; from booting, and a headless render has no other backend to fall back to.
     (max 1 (cf/get :wasm-worker-pool-max 2))
@@ -238,6 +240,45 @@
                           :code :job-cancelled
                           :hint "export job was cancelled"))
     (run-on-worker worker params cancel-buffer on-object)))
+
+(defn- request-tool
+  "Sends one agent tool call to `worker` and settles with its answer. A tool
+  is a single request and a single reply, so none of the render path's
+  per-object bookkeeping applies."
+  [^js worker params]
+  (p/create
+   (fn [resolve reject]
+     (letfn [(cleanup []
+               (.off worker "message" on-message)
+               (.off worker "error" on-error)
+               (.off worker "exit" on-exit))
+             (on-error [cause]
+               (cleanup)
+               (reject cause))
+             (on-exit [code]
+               (cleanup)
+               (reject (ex/error :type :internal
+                                 :code :worker-exited
+                                 :hint (str "render worker exited with code " code))))
+             (on-message [data]
+               (case (unchecked-get data "type")
+                 "tool-result" (do (cleanup)
+                                   (resolve (t/decode-str (unchecked-get data "payload"))))
+                 "error"       (do (cleanup)
+                                   (reject (ex/error :type :internal
+                                                     :code (or (some-> (unchecked-get data "code") keyword)
+                                                               :agent-tool-error)
+                                                     :hint (unchecked-get data "message"))))
+                 nil))]
+       (.on worker "message" on-message)
+       (.once worker "error" on-error)
+       (.once worker "exit" on-exit)
+       (.postMessage worker #js {:type "tool" :params (t/encode-str params)})))))
+
+(defn run-tool
+  "Runs one agent tool call on a pooled worker → promise of its answer."
+  [params]
+  (with-worker (fn [worker] (request-tool worker params))))
 
 (defn terminate!
   [^js worker]

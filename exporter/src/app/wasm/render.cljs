@@ -52,7 +52,9 @@
 
 (defonce ^:private module* (atom nil))
 
-(defn- ensure-module!
+(defn ensure-module!
+  "The worker's one render-wasm module, loaded on first use. Public: the agent
+  tools lay pages out on the same instance the renders use."
   []
   (or @module*
       (reset! module* (wasm/init!))))

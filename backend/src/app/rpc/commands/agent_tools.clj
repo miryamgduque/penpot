@@ -19,11 +19,15 @@
   (:require
    [app.binfile.common :as bfc]
    [app.common.agent.read :as car]
+   [app.common.agent.write :as caw]
    [app.common.exceptions :as ex]
+   [app.common.features :as cfeat]
+   [app.common.files.changes :as cpc]
    [app.common.json :as json]
    [app.common.schema :as sm]
    [app.common.time :as ct]
    [app.common.uuid :as uuid]
+   [app.db :as db]
    [app.features.fdata :as feat.fdata]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.files :as files]
@@ -35,6 +39,13 @@
   "The tools the backend runs itself. The agent service asks a connected
   workspace to run every other tool."
   #{"read_design" "find_shapes"})
+
+(def engine-tools
+  "The tools that change a page. They need the render engine to lay things
+  out, which the backend cannot run, so they run in the exporter: it reads the
+  page and commits its changes through the two commands at the end of this
+  namespace, with the same turn token."
+  #{"create_shape" "modify_shape"})
 
 ;; A tool result is capped like the workspace caps it: an oversized result is
 ;; replaced by a small, valid object saying so, never cut mid-token.
@@ -175,3 +186,73 @@
           (if (= :agent-tool (:type (ex-data cause)))
             {:content (:hint (ex-data cause)) :is-error true}
             (throw cause)))))))
+
+;; --- For the engine tools: a page out, changes in
+;;
+;; The exporter holds the render engine but no session. These two commands are
+;; all it can do with a turn token: read the page the turn is about, and
+;; commit changes to that file as the profile that started the turn.
+
+(def ^:private schema:get-agent-tool-page
+  [:map {:title "get-agent-tool-page"}
+   [:token [:string {:max 5000}]]
+   [:context {:optional true} [:string {:max 200000}]]])
+
+(sv/defmethod ::get-agent-tool-page
+  "The page an engine tool works on, with what it needs to commit against it."
+  {::rpc/auth false
+   ::doc/added "2.20"
+   ::sm/params schema:get-agent-tool-page}
+  [cfg {:keys [token context]}]
+  (let [{:keys [profile-id file-id]} (verify-turn-token cfg token)]
+    (files/check-edition-permissions! cfg profile-id file-id)
+    (let [context (decode-json context)
+          {:keys [data page-id]} (load-view cfg file-id context)
+          file    (bfc/get-file cfg file-id :read-only? true :load-data? false)]
+      {:file-id file-id
+       :page-id page-id
+       :revn (:revn file)
+       :vern (:vern file)
+       :objects (into {} (get-in data [:pages-index page-id :objects]))
+       ;; what token-only-colors would let through, were it enforced
+       :allowed-colors (caw/allowed-colors data)})))
+
+;; The file-update command as declared, before the RPC layer wraps it: the
+;; exporter's commit runs it for the profile the turn token names.
+(def ^:private update-file-fn
+  (delay
+    (->> (sv/scan-ns 'app.rpc.commands.files-update)
+         (some (fn [[f mdata]]
+                 (when (= "update-file" (::sv/name mdata)) f))))))
+
+(def ^:private schema:commit-agent-tool-changes
+  [:map {:title "commit-agent-tool-changes"}
+   [:token [:string {:max 5000}]]
+   [:revn {:min 0} ::sm/int]
+   [:vern {:min 0} ::sm/int]
+   [:changes [:vector {:max 5000} cpc/schema:change]]])
+
+(sv/defmethod ::commit-agent-tool-changes
+  "Commits an engine tool's changes to the turn's file, as the turn's profile.
+  It goes through the file-update command, so edit permission, validation and
+  the notification to open workspaces are the ones every edit gets."
+  {::rpc/auth false
+   ::doc/added "2.20"
+   ::sm/params schema:commit-agent-tool-changes}
+  [cfg {:keys [token revn vern changes]}]
+  (let [{:keys [profile-id file-id]} (verify-turn-token cfg token)]
+    (db/tx-run! cfg
+                (fn [cfg]
+                  (@update-file-fn cfg {::rpc/profile-id profile-id
+                                        :id file-id
+                                        ;; a session of its own, so every open
+                                        ;; workspace applies the change
+                                        :session-id (uuid/next)
+                                        :revn revn
+                                        :vern vern
+                                        :features cfeat/supported-features
+                                        :changes changes})))
+    ;; the revision the file is at now, so a workspace can tell when it has
+    ;; caught up with this commit
+    {:file-id file-id
+     :revn (:revn (bfc/get-file cfg file-id :read-only? true :load-data? false))}))

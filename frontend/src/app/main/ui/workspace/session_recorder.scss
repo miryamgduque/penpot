@@ -14,9 +14,9 @@
 // token: "we are recording" must not blend into the surrounding chrome, and the
 // DS keeps that red the same in both themes on purpose.
 
-// DS text buttons keep sentence case: see _agent_button.scss.
-.sentence-case {
-  @include agent-button.sentence-case;
+// DS text buttons use a compact label: see _agent_button.scss.
+.compact-label {
+  @include agent-button.compact-label;
 }
 
 .record-controls {

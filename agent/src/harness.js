@@ -23,6 +23,7 @@ import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 
 import { TurnCredentials, keyRef } from "./credentials.js";
+import { guardOrigin } from "./netguard.js";
 
 /**
  * Penpot provider id → the harness provider route that serves it.
@@ -187,6 +188,9 @@ export async function createHarness(options = {}) {
     const conversation = { id, provider, model, turn: undefined, idleTimer: undefined };
     // the connections to the user's MCP servers, settled or not
     const connecting = [];
+    // what to undo when the conversation closes
+    const releases = [];
+    conversation.releases = releases;
     const resumed = await isStored(id);
     const agentOptions = {
       provider: PROVIDER_ROUTES[provider],
@@ -237,6 +241,10 @@ export async function createHarness(options = {}) {
         // the headers the backend attached. One that does not answer costs
         // the conversation that server's tools, nothing else.
         for (const server of mcpServers) {
+          // Its address was checked before it got here. This holds every
+          // request to it to the same rule: no redirects, public addresses
+          // only, for as long as the conversation is open.
+          if (options.mcpAllowPrivate !== true) releases.push(guardOrigin(server.url));
           connecting.push(
             Promise.resolve(
               agentCtx.plugin(McpClient, {
@@ -285,6 +293,7 @@ export async function createHarness(options = {}) {
     clearTimeout(conversation.idleTimer);
     conversations.delete(conversation.id);
     await conversation.handle.dispose();
+    for (const release of conversation.releases ?? []) release();
   }
 
   /**

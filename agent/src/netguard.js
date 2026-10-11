@@ -10,12 +10,19 @@
  * An MCP server URL is typed by a user, and this service sits inside the
  * deployment's network. So the URL has to be https and every address its host
  * resolves to has to be a public one: no loopback, no private or link-local
- * range, no metadata endpoint. Known residual risk: the name is resolved here
- * and again when the connection is made, so a DNS answer that changes in
- * between is not caught.
+ * range, no metadata endpoint.
+ *
+ * Checking the URL once is not enough: the server can answer with a redirect
+ * to an inside address, and the name can resolve differently when the
+ * connection is made. So requests to a user's server also go through
+ * `guardOrigin`: redirects are refused, and the address is checked again at
+ * the moment the socket connects.
  */
+import { lookup as lookupCallback } from "node:dns";
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
+
+import { Agent } from "undici";
 
 const blocked = new BlockList();
 for (const [network, prefix] of [
@@ -84,4 +91,70 @@ export async function assertPublicUrl(raw, { allowPrivate = false, resolve = loo
     throw new Error("the host is private or blocked by this Penpot instance");
   }
   return url;
+}
+
+// --- Every request to a user's server
+//
+// The MCP client makes its requests with the global `fetch` and offers no way
+// to hand it another. So the global `fetch` is wrapped once, and the wrapper
+// acts by destination: a request to an origin a user registered is made
+// without following redirects, on connections that only open to public
+// addresses. Requests to anywhere else pass through untouched.
+
+/** origin → how many open conversations use a server there */
+const guardedOrigins = new Map();
+
+function publicOnlyLookup(allowAddress) {
+  return (hostname, options, callback) => {
+    lookupCallback(hostname, { ...options, all: true }, (error, addresses) => {
+      if (error) return callback(error);
+      if (addresses.length === 0 || !addresses.every(({ address }) => allowAddress(address))) {
+        return callback(new Error("the host is private or blocked by this Penpot instance"));
+      }
+      if (options?.all) return callback(null, addresses);
+      callback(null, addresses[0].address, addresses[0].family);
+    });
+  };
+}
+
+/**
+ * `fetch`, guarded for the origins in `origins`: no redirect is followed and
+ * the socket only connects to an address `allowAddress` accepts.
+ */
+export function guardedFetch(original, { origins = guardedOrigins, allowAddress = isPublicAddress } = {}) {
+  const dispatcher = new Agent({ connect: { lookup: publicOnlyLookup(allowAddress) } });
+  return (input, init) => {
+    let origin;
+    try {
+      origin = new URL(typeof input === "string" || input instanceof URL ? input : input.url).origin;
+    } catch {
+      return original(input, init);
+    }
+    if (!origins.has(origin)) return original(input, init);
+    return original(input, { ...init, redirect: "error", dispatcher });
+  };
+}
+
+let installed = false;
+
+/**
+ * From now until the returned function is called, requests to the origin of
+ * `url` are guarded. Installs the wrapper over the global `fetch` on first
+ * use.
+ */
+export function guardOrigin(url) {
+  if (!installed) {
+    globalThis.fetch = guardedFetch(globalThis.fetch);
+    installed = true;
+  }
+  const { origin } = new URL(url);
+  guardedOrigins.set(origin, (guardedOrigins.get(origin) ?? 0) + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const left = (guardedOrigins.get(origin) ?? 1) - 1;
+    if (left <= 0) guardedOrigins.delete(origin);
+    else guardedOrigins.set(origin, left);
+  };
 }

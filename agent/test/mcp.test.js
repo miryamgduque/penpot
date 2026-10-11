@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { MAX_MCP_SERVERS, turnMcpServers } from "../src/mcp.js";
-import { assertPublicUrl, isPublicAddress } from "../src/netguard.js";
+import { createServer } from "node:http";
+
+import { assertPublicUrl, guardOrigin, guardedFetch, isPublicAddress } from "../src/netguard.js";
 import { createAgentServer } from "../src/server.js";
 import { startFakeAnthropic } from "./fake-anthropic.js";
 import { startFakeMcp } from "./fake-mcp.js";
@@ -145,5 +147,70 @@ test("without the developer switch, a server on this machine is refused", async 
     await app.close();
     await fake.close();
     await mcp.close();
+  }
+});
+
+async function httpServer(handler) {
+  const server = createServer(handler);
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return { origin: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((resolve) => server.close(resolve)) };
+}
+
+test("a guarded server cannot send the service somewhere else with a redirect", async () => {
+  let reached = 0;
+  const inside = await httpServer((_req, res) => {
+    reached += 1;
+    res.end("secret");
+  });
+  const outside = await httpServer((req, res) => {
+    if (req.url === "/ok") return res.end("fine");
+    res.writeHead(302, { location: `${inside.origin}/admin` }).end();
+  });
+  try {
+    // addresses allowed, to look at redirects alone
+    const guarded = guardedFetch(fetch, { origins: new Map([[outside.origin, 1]]), allowAddress: () => true });
+    assert.equal(await (await guarded(`${outside.origin}/ok`)).text(), "fine");
+    await assert.rejects(guarded(`${outside.origin}/mcp`, { method: "POST", body: "{}" }));
+    assert.equal(reached, 0, "the redirect was not followed");
+    // an origin nobody registered is not this guard's business
+    assert.equal(await (await guarded(`${inside.origin}/x`)).text(), "secret");
+  } finally {
+    await inside.close();
+    await outside.close();
+  }
+});
+
+test("a guarded server is refused when its name resolves to an inside address at connect time", async () => {
+  let reached = 0;
+  const inside = await httpServer((_req, res) => {
+    reached += 1;
+    res.end("secret");
+  });
+  try {
+    // the URL was public when it was checked; by the time of the request the
+    // name answers with this machine
+    const origin = inside.origin.replace("127.0.0.1", "localhost");
+    const guarded = guardedFetch(fetch, { origins: new Map([[origin, 1]]) });
+    await assert.rejects(guarded(`${origin}/mcp`));
+    assert.equal(reached, 0);
+  } finally {
+    await inside.close();
+  }
+});
+
+test("an origin is guarded while a conversation uses it, and not after", async () => {
+  const server = await httpServer((_req, res) => res.end("here"));
+  try {
+    const url = `${server.origin.replace("127.0.0.1", "localhost")}/mcp`;
+    assert.equal(await (await fetch(url)).text(), "here");
+    const release = guardOrigin(url);
+    const again = guardOrigin(url);
+    await assert.rejects(fetch(url));
+    release();
+    await assert.rejects(fetch(url), "still in use by another conversation");
+    again();
+    assert.equal(await (await fetch(url)).text(), "here");
+  } finally {
+    await server.close();
   }
 });

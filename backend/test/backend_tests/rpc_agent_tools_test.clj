@@ -290,3 +290,60 @@
     (t/is (= #{"token-only-colors"} (rules nil)))
     (t/is (= #{"token-only-colors"} (rules {:enforcedRules []})))
     (t/is (= #{"token-only-colors" "layer-naming"} (rules {:enforcedRules ["layer-naming"]})))))
+
+(t/deftest what-a-turn-changes-is-recorded-and-can-be-listed
+  (let [profile  (th/create-profile* 1 {:is-active true})
+        other    (th/create-profile* 2 {:is-active true})
+        file     (th/create-file* 1 {:profile-id (:id profile)
+                                     :project-id (:default-project-id profile)
+                                     :is-shared false})
+        page-id  (first (get-in file [:data :pages]))
+        turn-id  (uuid/random)
+        token    (agent-tools/turn-token th/*system* (:id profile) (:id file)
+                                         {:turn-id turn-id :conversation-id "chat-1"})
+        commit!  (fn [token tool name]
+                   (let [id   (uuid/random)
+                         page (:result (th/command! {::th/type :get-agent-tool-page :token token}))]
+                     (th/command! {::th/type :commit-agent-tool-changes
+                                   :token token
+                                   :revn (:revn page)
+                                   :vern (:vern page)
+                                   :tool tool
+                                   :changes [{:type :add-obj
+                                              :page-id page-id
+                                              :id id
+                                              :parent-id uuid/zero
+                                              :frame-id uuid/zero
+                                              :obj (cts/setup-shape {:id id :name name :type :rect
+                                                                     :frame-id uuid/zero :parent-id uuid/zero})}]})
+                     id))
+        listed   (fn [profile & {:as params}]
+                   (th/command! (merge {::th/type :get-agent-changes
+                                        ::rpc/profile-id (:id profile)
+                                        :file-id (:id file)}
+                                       params)))
+        a        (commit! token "create_shape" "a")
+        b        (commit! token "create_shape" "b")
+        ;; a later turn of the same conversation
+        token-2  (agent-tools/turn-token th/*system* (:id profile) (:id file)
+                                         {:turn-id (uuid/random) :conversation-id "chat-1"})
+        c        (commit! token-2 "create_line" "c")
+        ;; a token that names no turn commits, and leaves no record
+        _        (commit! (agent-tools/turn-token th/*system* (:id profile) (:id file)) "create_shape" "d")]
+
+    (t/testing "a turn's changes, in order, with the tool and the shapes"
+      (let [rows (:result (listed profile :turn-id turn-id))]
+        (t/is (= ["create_shape" "create_shape"] (mapv :tool rows)))
+        (t/is (= [[a] [b]] (mapv :shape-ids rows)))
+        (t/is (= #{"chat-1"} (set (map :conversation-id rows))))
+        (t/is (= #{(:id profile)} (set (map :profile-id rows))))
+        (t/is (apply < (map :revn rows)))
+        (t/is (every? #(nil? (:changes %)) rows))))
+
+    (t/testing "a conversation's changes span its turns"
+      (let [rows (:result (listed profile :conversation-id "chat-1" :with-changes true))]
+        (t/is (= [[a] [b] [c]] (mapv :shape-ids rows)))
+        (t/is (= :add-obj (-> rows last :changes first :type)))))
+
+    (t/testing "only for someone who can read the file"
+      (t/is (= :not-found (-> (listed other :turn-id turn-id) :error ex-data :type))))))

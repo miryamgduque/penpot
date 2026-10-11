@@ -36,6 +36,7 @@
    [app.common.logging :as l]
    [app.common.schema :as sm]
    [app.common.time :as ct]
+   [app.common.uuid :as uuid]
    [app.config :as cf]
    [app.db :as db]
    [app.http.client :as http]
@@ -589,6 +590,15 @@
                 {:events events :aborted true})
               (recur (inc events)))))))))
 
+(defn- conversation-of
+  "The conversation a turn payload names, or nil."
+  [payload]
+  (try
+    (let [id (:sessionId (json/decode payload :key-fn keyword))]
+      (when (and (string? id) (<= 1 (count id) 100))
+        id))
+    (catch Throwable _ nil)))
+
 (def ^:private schema:agent-service-turn
   [:map {:title "agent-service-turn"}
    [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
@@ -604,6 +614,9 @@
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider file-id payload]}]
   (files/check-read-permissions! pool profile-id file-id)
   (let [row      (connected-provider-row cfg profile-id provider)
+        ;; what this turn changes is recorded under these two
+        turn     {:turn-id (uuid/next)
+                  :conversation-id (conversation-of payload)}
         response (agent-service-req! cfg "/v1/turns"
                                      (cond-> {"x-penpot-profile-id" (str profile-id)
                                               "x-penpot-file-id" (str file-id)
@@ -613,13 +626,17 @@
                                        ;; runs these itself, as this profile
                                        ;; on this file and nothing else
                                        (contains? cf/flags :design-agent-server-tools)
-                                       (assoc "x-penpot-turn-token" (agent-tools/turn-token cfg profile-id file-id)
+                                       (assoc "x-penpot-turn-token" (agent-tools/turn-token cfg profile-id file-id turn)
                                               "x-penpot-server-tools" (str/join "," (sort agent-tools/server-tools))
                                               "x-penpot-engine-tools" (str/join "," (sort agent-tools/engine-tools))))
                                      payload
                                      {:response-type :input-stream})]
     (check-agent-service-status! response)
-    (sse/response #(pump-agent-service-stream! (:body response)))))
+    (sse/response (fn []
+                    ;; tells the panel which turn this is, so it can ask later
+                    ;; what the turn changed
+                    (events/tap :event (json/encode {:type "turn-ref" :turnRef (str (:turn-id turn))}))
+                    (pump-agent-service-stream! (:body response))))))
 
 (def ^:private schema:agent-service-tool-result
   [:map {:title "agent-service-tool-result"}

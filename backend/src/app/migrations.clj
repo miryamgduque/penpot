@@ -530,7 +530,10 @@
     :fn (mg/resource "app/migrations/sql/0161-add-team-skill-table.sql")}
 
    {:name "0162-add-team-skill-seen-table"
-    :fn (mg/resource "app/migrations/sql/0162-add-team-skill-seen-table.sql")}])
+    :fn (mg/resource "app/migrations/sql/0162-add-team-skill-seen-table.sql")}
+
+   {:name "0163-add-file-agent-change-table"
+    :fn (mg/resource "app/migrations/sql/0163-add-file-agent-change-table.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]

@@ -8,6 +8,7 @@
   "Design-token tools: create/apply tokens, sets and themes."
   (:require
    [app.common.agent.read :as car]
+   [app.common.agent.tokens :as cato]
    [app.common.data.macros :as dm]
    [app.common.types.token :as cto]
    [app.common.types.tokens-lib :as ctob]
@@ -19,115 +20,24 @@
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
 
-;; Composite types carry structured values (typography is a map of font
-;; attributes, shadow a vector of shadow maps). `:value` is `::sm/any`, so
-;; `make-token` would accept a plain string for one and author something
-;; malformed without complaint — better to not offer them than to offer a lie.
-(def ^:private composite-token-types #{:typography :shadow})
-
-(def token-type-names
-  "The DTCG type names `create_token` offers, derived from
-  `cto/token-type->dtcg-token-type` rather than retyped — a hand-copied list
-  drifts the next time Penpot adds a type. Public because the tool
-  declarations read it for their enum."
-  (->> cto/token-type->dtcg-token-type
-       (remove (fn [[k _]] (contains? composite-token-types k)))
-       (map second)
-       (sort)
-       (vec)))
-
-;; --- Token tools (the safe coloring path)
-
-(defn token-type
-  "The internal token type for a public DTCG name, or nil. Accepts the
-  back-compat singular aliases (`fontSize`, `fontWeight`, …) that
-  `cto/dtcg-token-type->token-type` already knows."
-  [name]
-  (get cto/dtcg-token-type->token-type name))
-
-(defn token-problem
-  "Why `create_token` cannot author this token, or nil. Pure."
-  [{:keys [type name value]}]
-  (let [t (token-type type)]
-    (cond
-      (or (not (string? name)) (str/blank? name))
-      "create_token: name is required, e.g. \"spacing.md\" or \"color.brand.primary\""
-
-      ;; not `blank?`: "0" is a legitimate spacing value
-      (or (nil? value) (and (string? value) (empty? value)))
-      "create_token: value is required, e.g. \"16\", \"#6366f1\" or \"{color.blue.500}\""
-
-      (nil? t)
-      (dm/str "create_token: \"" type "\" is not a token type — use one of: "
-              (str/join ", " token-type-names))
-
-      (contains? composite-token-types t)
-      (dm/str "create_token: " type " tokens need a structured value, which this"
-              " tool cannot express yet — author it in the tokens panel")
-
-      :else nil)))
-
-;; --- Token sets and themes
+;; --- Shared with the server
 ;;
-;; `penpot-foundations`' whole method: primitives in one set, semantics duplicated
-;; across `modes/light` / `modes/dark`, and a theme per mode toggling the matching
-;; set. "/" is the group separator, which is what makes `modes/*` a group.
+;; The pure halves of the token tools live in `app.common.agent.tokens`,
+;; shared with the server-side tools. They keep their names here.
 
-(defn normalize-set
-  "A set name as the library stores it — `\"modes / dark\"` → `\"modes/dark\"`."
-  [name]
-  (ctob/normalize-set-name (str name)))
+(def token-type-names cato/token-type-names)
 
-(defn token-set-problem
-  "Why a token cannot target this set, or nil. `nil` means Phase 08's default
-  (the library's existing set), which stays untouched.
+(def token-type cato/token-type)
 
-  Note the param is `set-name`, not `set`: naming it `set` shadows
-  `clojure.core/set`, and `(set set-names)` then calls a string."
-  [set-names set-name]
-  (when (some? set-name)
-    (let [want (normalize-set set-name)]
-      (cond
-        (empty? set-names)
-        (dm/str "set \"" want "\" does not exist — this file has no token sets yet;"
-                " create one with create_token_set")
+(def token-problem cato/token-problem)
 
-        (not (contains? (into #{} set-names) want))
-        (dm/str "set \"" want "\" does not exist — this file has: "
-                (str/join ", " (sort set-names))
-                " (create another with create_token_set)")))))
+(def normalize-set cato/normalize-set)
 
-(defn new-set-problem
-  "Why `create_token_set` cannot make this set, or nil."
-  [set-names name]
-  (let [want (normalize-set name)]
-    (cond
-      (or (not (string? name)) (str/blank? name))
-      "create_token_set: name is required, e.g. \"modes/dark\" (\"/\" groups sets)"
+(def token-set-problem cato/token-set-problem)
 
-      ;; create-token-set commits over an existing set — which is exactly how the
-      ;; library got wiped in Phase 08. Never silently replace one.
-      (contains? (into #{} set-names) want)
-      (dm/str "create_token_set: a set named \"" want "\" already exists"
-              " — name a token's set with create_token's `set` param instead"))))
+(def new-set-problem cato/new-set-problem)
 
-(defn theme-problem
-  "Why `create_token_theme` cannot make this theme, or nil."
-  [set-names {:keys [name sets]}]
-  (let [known (into #{} set-names)
-        want  (mapv normalize-set sets)
-        gone  (remove known want)]
-    (cond
-      (or (not (string? name)) (str/blank? name))
-      "create_token_theme: name is required, e.g. \"Dark\""
-
-      (empty? sets)
-      (dm/str "create_token_theme: a theme needs at least one set to enable"
-              " — a theme that enables nothing would activate and change nothing")
-
-      (seq gone)
-      (dm/str "create_token_theme: no set named " (str/join ", " (map #(dm/str "\"" % "\"") gone))
-              " — this file has: " (str/join ", " (sort set-names))))))
+(def theme-problem cato/theme-problem)
 
 (defn existing-token-set-id
   "The id of a set already in the library, or nil when it genuinely has none.

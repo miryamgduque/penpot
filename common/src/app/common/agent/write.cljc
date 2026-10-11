@@ -22,6 +22,7 @@
    [app.common.colors :as cc]
    [app.common.data :as d]
    [app.common.data.macros :as dm]
+   [app.common.files.changes :as cfc]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
    [app.common.geom.matrix :as gmt]
@@ -482,7 +483,7 @@
 
 ;; --- modify_shape
 
-(defn- position-delta
+(defn position-delta
   "How far to move `shape` so it sits at the requested x/y, which are relative
   to its parent frame, as in the sidebar."
   [objects shape {:keys [x y]}]
@@ -699,3 +700,34 @@
                            "parent), auto-width text re-measures itself. Do "
                            "not re-send the same x/y.")
                       "modified — settled at the requested geometry")}))})))
+
+;; --- Several commits in one call
+;;
+;; Some workspace actions are a string of edits, each reading the file as the
+;; previous one left it — the page AND the library. A session replays that: it
+;; keeps the file data current and collects the changes of every step.
+
+(defn session
+  [data page-id]
+  {:data data :page-id page-id :redo []})
+
+(defn session-objects
+  [{:keys [data page-id]}]
+  (get-in data [:pages-index page-id :objects]))
+
+(defn step
+  "Runs one edit. `f` gets a change set for the page as it is now, the page's
+  objects and the file data, and answers the change set with its changes."
+  [{:keys [data page-id] :as session} f]
+  (let [objects (session-objects session)
+        changes (f (-> (cb/empty-changes nil page-id)
+                       (cb/with-objects objects)
+                       (cb/with-library-data data))
+                   objects
+                   data)
+        redo    (:redo-changes changes)]
+    (if (empty? redo)
+      session
+      (-> session
+          (update :redo into redo)
+          (assoc :data (cfc/process-changes data redo false))))))

@@ -13,9 +13,11 @@
   (the token-only-colors state) and the `:propagate` engine. A tool answers as
   described in `app.common.agent.write`."
   (:require
+   [app.common.agent.components :as cac]
    [app.common.agent.layout :as cal]
    [app.common.agent.structure :as cas]
    [app.common.agent.text :as catx]
+   [app.common.agent.tokens :as cato]
    [app.common.agent.write :as caw]))
 
 (def tools
@@ -36,4 +38,16 @@
    "create_from_svg"  cas/create-from-svg
    "create_component" cas/create-component
    "create_text"      catx/create-text
-   "set_text"         catx/set-text})
+   "set_text"         catx/set-text
+   "create_token"       cato/create-token
+   "create_tokens"      cato/create-tokens
+   "create_token_set"   cato/create-token-set
+   "create_token_theme" cato/create-token-theme
+   "create_variant"       cac/create-variant
+   "create_instance"      cac/create-instance
+   "detach_instance"      cac/detach-instance
+   "reset_overrides"      cac/reset-overrides
+   "swap_component"       cac/swap-component
+   "switch_variant"       cac/switch-variant
+   "add_variant"          cac/add-variant
+   "set_variant_property" cac/set-variant-property})

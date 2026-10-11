@@ -19,6 +19,8 @@
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
+   [app.common.files.shapes-builder :as sb]
+   [app.common.files.shapes-helpers :as cfsh]
    [app.common.geom.point :as gpt]
    [app.common.geom.rect :as grc]
    [app.common.geom.shapes :as gsh]
@@ -29,6 +31,7 @@
    [app.common.types.container :as ctn]
    [app.common.types.path :as path]
    [app.common.types.shape :as cts]
+   [app.common.types.shape-tree :as ctst]
    [app.common.types.shape.layout :as ctl]
    [app.common.uuid :as uuid]
    [cuerdas.core :as str]))
@@ -610,3 +613,114 @@
                               (caw/page-changes page-id objects)
                               ids))
        :result {:note "unmasked — the group's children are no longer clipped. Verify with read_design."}})))
+
+;; --- create_boolean
+
+(defn- boolean-shape
+  "→ `[shape index]`: the boolean of `shapes` and where it goes among its
+  siblings. It takes its look from the head operand — the first for a
+  difference, the last otherwise — as the workspace does."
+  [id operation shapes objects]
+  (let [head  (if (= operation :difference) (first shapes) (last shapes))
+        head  (cond-> head
+                (and (contains? head :svg-attrs) (empty? (:fills head)))
+                (assoc :fills (path/get-default-bool-fills)))
+        shape (-> {:id id
+                   :type :bool
+                   :bool-type operation
+                   :frame-id (:frame-id head)
+                   :parent-id (:parent-id head)
+                   :name (str/capital (name operation))
+                   :shapes (into [] (map :id) shapes)}
+                  (merge (select-keys head path/bool-style-properties))
+                  (cts/setup-shape)
+                  (path/update-bool-shape objects))]
+    [shape (cfh/get-position-on-parent objects (:id head))]))
+
+(defn create-boolean
+  [{:keys [page-id objects]} {:keys [operation shapeIds]} {:keys [propagate]}]
+  (let [ids (parse-ids shapeIds)]
+    (if-let [problem (or (unparsable-problem "create_boolean" shapeIds)
+                         (boolean-problem objects operation ids))]
+      {:problem problem}
+      (let [bool-id (uuid/next)
+            shapes  (->> (cfh/clean-loops objects (set ids))
+                         (cfh/order-by-indexed-shapes objects)
+                         (map #(get objects %))
+                         (remove cfh/frame-shape?)
+                         (remove ctc/is-variant?)
+                         (remove #(ctn/has-any-copy-parent? objects %))
+                         (vec))
+            [shape index] (boolean-shape bool-id (keyword operation) (reverse shapes) objects)]
+        {:changes (-> (caw/page-changes page-id objects)
+                      (cb/add-object shape {:index (inc index)})
+                      (cb/update-shapes (map :id shapes) ctl/remove-layout-item-data)
+                      (cb/change-parent bool-id shapes)
+                      (caw/reflow-all propagate [(:parent-id shape)])
+                      (redo))
+         :result {:shapeId (dm/str bool-id)
+                  :note (str "created a " operation " of the shapes — a single editable "
+                             "boolean shape; the operands are now its children. Dissolve "
+                             "it with ungroup_shapes. Verify with read_design.")}}))))
+
+;; --- create_from_svg
+
+(defn create-from-svg
+  "Imports an SVG as real shapes. `parse-svg` turns the markup into the tree
+  the shape builder reads, or nil when it is not SVG; parsing XML is the
+  host's job."
+  [{:keys [page-id objects]} {:keys [svg x y]} {:keys [propagate parse-svg]}]
+  (if (nil? parse-svg)
+    {:fallback "SVG cannot be parsed on the server here"}
+    (let [svg-data (when (and (string? svg) (not (str/blank? svg))) (parse-svg svg))]
+      (if (nil? svg-data)
+        {:problem (str "create_from_svg: not valid SVG — pass a complete <svg>…</svg> "
+                       "string. Good for icons and small illustrations; for a "
+                       "rectangle/ellipse/board use create_shape.")}
+        (let [id       (uuid/next)
+              position (gpt/point (or x 0) (or y 0))
+              frame-id (ctst/top-nested-frame objects position)
+              [shape children]
+              (sb/create-svg-shapes id (assoc svg-data :name "svg") position objects frame-id frame-id #{} true)
+              changes  (reduce cb/add-object
+                               (-> (caw/page-changes page-id objects)
+                                   (cb/add-object shape))
+                               children)
+              added    (->> (:redo-changes changes)
+                            (filter #(= :add-obj (:type %)))
+                            (map :id)
+                            (reverse)
+                            (vec))]
+          {:changes (-> changes
+                        (cb/resize-parents added)
+                        (caw/reflow-all propagate [(:id shape)])
+                        (redo))
+           :result {:id (dm/str id)
+                    :note (str "SVG imported as real shapes (a group when it has several "
+                               "elements). Its own fills are NOT checked against "
+                               "token-only-colors — that is deliberate for icons, but "
+                               "audit_file still flags raw colors. Verify with read_design.")}})))))
+
+;; --- create_component
+
+(defn create-component
+  "Turns shapes into a main component. With no `shapeIds` it takes what the
+  user has selected, when a workspace reported a selection."
+  [{:keys [file-id page-id objects selected]} {:keys [shapeIds]} {:keys [propagate]}]
+  (let [ids (if (seq shapeIds)
+              (into #{} (keep #(when (string? %) (parse-uuid %))) shapeIds)
+              (into #{} (filter #(contains? objects %)) selected))]
+    (if (empty? ids)
+      {:problem "create_component: no shapes given and nothing selected"}
+      (let [shapes  (shapes-for-grouping objects (filter #(contains? objects %) ids))
+            parents (into #{} (map :parent-id) shapes)
+            [_ component-id changes]
+            (when (seq shapes)
+              (cll/generate-add-component (cb/empty-changes) shapes objects page-id file-id
+                                          cfsh/prepare-create-artboard-from-selection))]
+        (if (or (nil? component-id) (empty? (:redo-changes changes)))
+          {:problem "create_component: shapes are not eligible for a component"}
+          {:changes (-> changes
+                        (caw/reflow-all propagate parents)
+                        (redo))
+           :result {:componentId (dm/str component-id) :note "component created"}})))))

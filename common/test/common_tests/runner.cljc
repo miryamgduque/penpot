@@ -14,6 +14,7 @@
    [clojure.test :as t]
    [common-tests.agent-components-test]
    [common-tests.agent-compose-test]
+   [common-tests.agent-document-test]
    [common-tests.agent-layout-test]
    [common-tests.agent-media-test]
    [common-tests.agent-read-test]
@@ -103,6 +104,7 @@
   [#?(:clj 'common-tests.fressian-test)
    'common-tests.agent-components-test
    'common-tests.agent-compose-test
+   'common-tests.agent-document-test
    'common-tests.agent-layout-test
    'common-tests.agent-media-test
    'common-tests.agent-read-test

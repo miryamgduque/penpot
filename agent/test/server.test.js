@@ -302,3 +302,19 @@ test("a refusal by a design rule keeps the rule's name", async () => {
     await exporter.close();
   }
 });
+
+test("with the tools on the server the workspace's undo is not offered to the model", async () => {
+  const exporter = await fakeJsonServer(() => ({ content: "{}", isError: false }));
+  const t = await setup(() => ({ text: "Done." }), { exporterUri: exporter.uri });
+  try {
+    const body = { ...BODY, tools: [tool("create_shape"), tool("undo_change"), tool("redo_change")] };
+    await drive(t.base, body, ENGINE_HEADERS);
+    assert.deepEqual(t.fake.requests[0].body.tools.map((x) => x.name), ["create_shape"]);
+    // without them, the workspace runs every tool and its undo stack holds the agent's edits
+    await drive(t.base, { ...body, sessionId: "undo-kept" }, HEADERS);
+    assert.deepEqual(t.fake.requests[1].body.tools.map((x) => x.name).sort(), ["create_shape", "redo_change", "undo_change"]);
+  } finally {
+    await t.close();
+    await exporter.close();
+  }
+});

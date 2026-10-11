@@ -58,6 +58,8 @@ function requireString(value, name) {
 
 const SYNC_CALL = "__sync";
 
+const WORKSPACE_UNDO_TOOLS = new Set(["undo_change", "redo_change"]);
+
 /**
  * Runs a tool on the Penpot backend for the turn the token names. The token
  * was issued by the backend for one profile on one file; this service only
@@ -147,7 +149,7 @@ export async function createAgentServer(options = {}) {
     const model = requireString(body.model, "model");
     const system = requireString(body.system, "system");
     const text = requireString(body.text, "text");
-    const tools = Array.isArray(body.tools) ? body.tools : [];
+    const declared = Array.isArray(body.tools) ? body.tools : [];
     const skills = Array.isArray(body.skills) ? body.skills : [];
     const turnToken = req.headers["x-penpot-turn-token"];
     const namedIn = (header) =>
@@ -156,6 +158,11 @@ export async function createAgentServer(options = {}) {
     const backendTools = new Set(namedIn("x-penpot-server-tools"));
     const engineTools = new Set(namedIn("x-penpot-engine-tools"));
     const serverTools = new Set([...backendTools, ...engineTools]);
+    // An edit made on the server reaches the workspace as another
+    // collaborator's would: it is not in the user's undo stack. Undoing there
+    // would take back the user's own last edit, so those tools are not offered.
+    const tools =
+      engineTools.size > 0 ? declared.filter((tool) => !WORKSPACE_UNDO_TOOLS.has(tool?.name)) : declared;
     const images = Array.isArray(body.images) ? body.images : [];
 
     const turnId = randomUUID();

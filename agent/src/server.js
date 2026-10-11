@@ -82,10 +82,58 @@ async function runBackendTool(backendUri, token, call, context, signal) {
   return { content: String(body.content ?? ""), isError: body.isError === true };
 }
 
+/** Transit-JSON for a flat map of string values, which is all we send. */
+function transitMap(entries) {
+  const out = ["^ "];
+  for (const [key, value] of Object.entries(entries)) {
+    // a leading ~ or ^ is transit's escape; none of our values start with one
+    out.push(`~:${key}`, /^[~^`]/.test(value) ? `~${value}` : value);
+  }
+  return JSON.stringify(out);
+}
+
+/**
+ * Runs a page-changing tool in the exporter, which holds the render engine.
+ * Answers `{fallback}` when the exporter does not handle this call yet.
+ */
+async function runEngineTool(exporterUri, token, call, context, signal) {
+  const response = await fetch(`${exporterUri}/agent-tool`, {
+    method: "POST",
+    headers: { "content-type": "application/transit+json" },
+    body: transitMap({
+      token,
+      tool: call.name,
+      input: JSON.stringify(call.input ?? {}),
+      context: context ?? "{}",
+    }),
+    signal,
+  });
+  const text = await response.text();
+  let body = {};
+  try {
+    body = JSON.parse(text);
+  } catch {
+    // an error from the exporter arrives as transit, not as our JSON
+  }
+  if (!response.ok) {
+    const hint = /"~:hint","((?:[^"\\]|\\.)*)"/.exec(text)?.[1];
+    return { content: hint ?? `the engine could not run ${call.name} (status ${response.status})`, isError: true };
+  }
+  if (typeof body.fallback === "string") return { fallback: body.fallback };
+  return {
+    content: String(body.content ?? ""),
+    isError: body.isError === true,
+    // the design rule that refused the call, when one did
+    rule: typeof body.rule === "string" ? body.rule : undefined,
+    revn: body.revn,
+  };
+}
+
 export async function createAgentServer(options = {}) {
   const harness = options.harness ?? (await createHarness(options));
   const sharedKey = options.sharedKey;
   const backendUri = (options.backendUri ?? "http://localhost:6060").replace(/\/$/, "");
+  const exporterUri = (options.exporterUri ?? "http://localhost:6061").replace(/\/$/, "");
 
   /** turnId → { profileId, pending: Map<callId, {resolve}> } */
   const turns = new Map();
@@ -102,9 +150,12 @@ export async function createAgentServer(options = {}) {
     const tools = Array.isArray(body.tools) ? body.tools : [];
     const skills = Array.isArray(body.skills) ? body.skills : [];
     const turnToken = req.headers["x-penpot-turn-token"];
-    const serverTools = new Set(
-      typeof turnToken === "string" ? String(req.headers["x-penpot-server-tools"] ?? "").split(",").filter(Boolean) : [],
-    );
+    const namedIn = (header) =>
+      typeof turnToken === "string" ? String(req.headers[header] ?? "").split(",").filter(Boolean) : [];
+    // tools the backend runs, and tools the exporter runs on the render engine
+    const backendTools = new Set(namedIn("x-penpot-server-tools"));
+    const engineTools = new Set(namedIn("x-penpot-engine-tools"));
+    const serverTools = new Set([...backendTools, ...engineTools]);
     const images = Array.isArray(body.images) ? body.images : [];
 
     const turnId = randomUUID();
@@ -152,25 +203,59 @@ export async function createAgentServer(options = {}) {
         emit({ type: "tool-call", ...call });
       });
 
-    // A server-side tool reads the stored file. The connected workspace is
+    // A server-side tool works on the stored file. The connected workspace is
     // first asked to save what it has not saved yet — or the tool would miss
     // the agent's own last change — and to say what the user is looking at.
+    // It is also told the revision the server last wrote, so it answers only
+    // once it has received that change.
+    let serverRevn;
+    const syncWorkspace = (signal) =>
+      callTool(
+        { callId: randomUUID(), name: SYNC_CALL, input: serverRevn === undefined ? {} : { minRevn: serverRevn } },
+        signal,
+      ).finally(() => toolTimings.pop());
+
+    // The other direction: a tool in the workspace must not run before the
+    // workspace has caught up with what the server wrote.
+    const callWorkspaceTool = async (call, signal) => {
+      if (serverRevn !== undefined) {
+        const synced = await syncWorkspace(signal);
+        if (synced.isError) return synced;
+        serverRevn = undefined;
+      }
+      return callTool(call, signal);
+    };
+
     const callServerTool = async (call, signal) => {
       const startedAt = performance.now();
-      const synced = await callTool({ callId: randomUUID(), name: SYNC_CALL, input: {} }, signal);
-      toolTimings.pop();
-      const result = synced.isError
-        ? { content: synced.content, isError: true }
-        : await runBackendTool(backendUri, turnToken, call, synced.content, signal);
+      const synced = await syncWorkspace(signal);
+      let result;
+      if (synced.isError) {
+        result = { content: synced.content, isError: true };
+      } else if (engineTools.has(call.name)) {
+        result = await runEngineTool(exporterUri, turnToken, call, synced.content, signal);
+        if (result.revn !== undefined) serverRevn = result.revn;
+      } else {
+        result = await runBackendTool(backendUri, turnToken, call, synced.content, signal);
+      }
+      // not handled on the server yet: the workspace runs it, as before
+      if (result.fallback !== undefined) return callWorkspaceTool(call, signal);
       toolTimings.push({ name: call.name, ms: Math.round(performance.now() - startedAt), server: true });
-      emit({ type: "server-tool", name: call.name, input: call.input, content: result.content, isError: result.isError });
+      emit({
+        type: "server-tool",
+        name: call.name,
+        input: call.input,
+        content: result.content,
+        isError: result.isError,
+        rule: result.rule,
+      });
       return result;
     };
 
     try {
       const result = await harness.runTurn(
         { sessionId, profileId, provider, apiKey, model, system, text, images, tools, skills },
-        { emit, callTool, callServerTool, serverTools, signal: controller.signal },
+        { emit, callTool: callWorkspaceTool, callServerTool, serverTools, signal: controller.signal },
       );
       emit({ type: "done", reason: result.reason, resumed: result.resumed, toolTimings });
     } catch (cause) {
@@ -243,6 +328,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const app = await createAgentServer({
     sharedKey: process.env.PENPOT_AGENT_SERVICE_SHARED_KEY,
     backendUri: process.env.PENPOT_BACKEND_URI,
+    exporterUri: process.env.PENPOT_EXPORTER_URI,
     sessionsRoot: process.env.PENPOT_AGENT_SERVICE_SESSIONS_DIR ?? join(dataDir, "sessions"),
     attachmentsHome: process.env.PENPOT_AGENT_SERVICE_ATTACHMENTS_DIR ?? join(dataDir, "attachments"),
     providers: anthropicBaseURL ? { anthropic: { baseURL: anthropicBaseURL } } : undefined,

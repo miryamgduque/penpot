@@ -134,3 +134,68 @@
     (t/testing "a tool the server does not run"
       (let [out (run-tool! token "delete_shape")]
         (t/is (th/ex-of-type? (:error out) :validation))))))
+
+(defn- rect-change
+  [page-id shape-id name]
+  {:type :add-obj
+   :page-id page-id
+   :id shape-id
+   :parent-id uuid/zero
+   :frame-id uuid/zero
+   :components-v2 true
+   :obj (cts/setup-shape {:id shape-id
+                          :name name
+                          :frame-id uuid/zero
+                          :parent-id uuid/zero
+                          :type :rect})})
+
+(t/deftest the-engine-tools-read-a-page-and-commit-to-it
+  (let [{:keys [owner file token]} (setup)
+        first-id (add-rect! owner file "hero-card")
+        page     (th/command! {::th/type :get-agent-tool-page :token token})
+        result   (:result page)]
+
+    (t/testing "the page comes with what a commit needs"
+      (t/is (nil? (:error page)))
+      (t/is (= (:id file) (:file-id result)))
+      (t/is (= (first (get-in file [:data :pages])) (:page-id result)))
+      (t/is (= 1 (:revn result)))
+      (t/is (= "hero-card" (get-in result [:objects first-id :name])))
+      (t/is (set? (:allowed-colors result))))
+
+    (t/testing "a commit lands in the file, as the profile of the turn"
+      (let [shape-id (uuid/random)
+            out      (th/command! {::th/type :commit-agent-tool-changes
+                                   :token token
+                                   :revn (:revn result)
+                                   :vern (:vern result)
+                                   :changes [(rect-change (:page-id result) shape-id "from-the-engine")]})
+            names    (->> (content (run-tool! token "read_design")) :shapes (map :name) set)]
+        (t/is (nil? (:error out)))
+        (t/is (= #{"hero-card" "from-the-engine"} names))))))
+
+(t/deftest the-engine-tools-need-edit-permission
+  (let [{:keys [file]} (setup)
+        stranger (th/create-profile* 2 {:is-active true})
+        token    (agent-tools/turn-token th/*system* (:id stranger) (:id file))
+        page-id  (first (get-in file [:data :pages]))]
+
+    (t/testing "a profile that cannot edit the file gets no page"
+      (let [out (th/command! {::th/type :get-agent-tool-page :token token})]
+        (t/is (th/ex-of-type? (:error out) :not-found))))
+
+    (t/testing "and cannot commit to it"
+      (let [out (th/command! {::th/type :commit-agent-tool-changes
+                              :token token
+                              :revn 0
+                              :vern 0
+                              :changes [(rect-change page-id (uuid/random) "intruder")]})]
+        (t/is (th/ex-of-type? (:error out) :not-found))))
+
+    (t/testing "a made-up token commits nothing"
+      (let [out (th/command! {::th/type :commit-agent-tool-changes
+                              :token "not-a-token"
+                              :revn 0
+                              :vern 0
+                              :changes []})]
+        (t/is (th/ex-of-code? (:error out) :invalid-turn-token))))))

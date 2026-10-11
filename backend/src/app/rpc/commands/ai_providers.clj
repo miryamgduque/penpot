@@ -614,7 +614,8 @@
                                        ;; on this file and nothing else
                                        (contains? cf/flags :design-agent-server-tools)
                                        (assoc "x-penpot-turn-token" (agent-tools/turn-token cfg profile-id file-id)
-                                              "x-penpot-server-tools" (str/join "," (sort agent-tools/server-tools))))
+                                              "x-penpot-server-tools" (str/join "," (sort agent-tools/server-tools))
+                                              "x-penpot-engine-tools" (str/join "," (sort agent-tools/engine-tools))))
                                      payload
                                      {:response-type :input-stream})]
     (check-agent-service-status! response)

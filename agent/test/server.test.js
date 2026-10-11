@@ -190,3 +190,115 @@ test("without a turn token every tool goes to the workspace", async () => {
     await t.close();
   }
 });
+
+async function fakeJsonServer(reply) {
+  const { createServer } = await import("node:http");
+  const seen = [];
+  const server = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      seen.push({ url: req.url, type: req.headers["content-type"], raw });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(reply(seen.length - 1)));
+    });
+  });
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  return { seen, uri: `http://127.0.0.1:${server.address().port}`, close: () => new Promise((r) => server.close(r)) };
+}
+
+const ENGINE_HEADERS = {
+  ...HEADERS,
+  "x-penpot-turn-token": "turn-token-1",
+  "x-penpot-server-tools": "read_design",
+  "x-penpot-engine-tools": "create_shape,modify_shape",
+};
+
+const tool = (name) => ({ name, description: name, inputSchema: { type: "object", properties: {} } });
+
+/** Drives a turn, answering every workspace call; returns what was asked, in order. */
+async function drive(base, body, headers) {
+  const response = await fetch(`${base}/v1/turns`, { method: "POST", headers, body: JSON.stringify(body) });
+  const asked = [];
+  let turnId;
+  for await (const event of events(response)) {
+    if (event.type === "turn") turnId = event.turnId;
+    if (event.type === "server-tool") asked.push({ server: event.name, rule: event.rule });
+    if (event.type === "tool-call") {
+      asked.push({ workspace: event.name, input: event.input });
+      await fetch(`${base}/v1/turns/${turnId}/tool-results`, {
+        method: "POST",
+        headers: HEADERS,
+        body: JSON.stringify({ callId: event.callId, content: '{"pageId":"page-1"}' }),
+      });
+    }
+  }
+  return asked;
+}
+
+test("an engine tool runs in the exporter, and the workspace catches up before its next tool", async () => {
+  const exporter = await fakeJsonServer(() => ({ content: '{"id":"new"}', isError: false, revn: 7 }));
+  const t = await setup(
+    (_req, n) =>
+      n === 0
+        ? { tool: { name: "create_shape", input: { type: "rect" } } }
+        : n === 1
+          ? { tool: { name: "set_layout", input: {} } }
+          : { text: "Done." },
+    { exporterUri: exporter.uri },
+  );
+  try {
+    const asked = await drive(t.base, { ...BODY, tools: [tool("create_shape"), tool("set_layout")] }, ENGINE_HEADERS);
+    assert.deepEqual(asked, [
+      { workspace: "__sync", input: {} },
+      { server: "create_shape", rule: undefined },
+      // the workspace is told which revision the server wrote, and only then runs its own tool
+      { workspace: "__sync", input: { minRevn: 7 } },
+      { workspace: "set_layout", input: {} },
+    ]);
+    assert.equal(exporter.seen[0].url, "/agent-tool");
+    assert.equal(exporter.seen[0].type, "application/transit+json");
+    const sent = JSON.parse(exporter.seen[0].raw);
+    assert.equal(sent[0], "^ ");
+    assert.equal(sent[sent.indexOf("~:token") + 1], "turn-token-1");
+    assert.equal(sent[sent.indexOf("~:tool") + 1], "create_shape");
+    assert.deepEqual(JSON.parse(sent[sent.indexOf("~:input") + 1]), { type: "rect" });
+  } finally {
+    await t.close();
+    await exporter.close();
+  }
+});
+
+test("what the exporter does not handle yet is run by the workspace", async () => {
+  const exporter = await fakeJsonServer(() => ({ fallback: "rotation is not applied on the server yet" }));
+  const t = await setup(
+    (_req, n) => (n === 0 ? { tool: { name: "modify_shape", input: { rotation: 15 } } } : { text: "Done." }),
+    { exporterUri: exporter.uri },
+  );
+  try {
+    const asked = await drive(t.base, { ...BODY, tools: [tool("modify_shape")] }, ENGINE_HEADERS);
+    assert.deepEqual(asked, [
+      { workspace: "__sync", input: {} },
+      { workspace: "modify_shape", input: { rotation: 15 } },
+    ]);
+  } finally {
+    await t.close();
+    await exporter.close();
+  }
+});
+
+test("a refusal by a design rule keeps the rule's name", async () => {
+  const exporter = await fakeJsonServer(() => ({ content: "token-only-colors: raw color", isError: true, rule: "token-only-colors" }));
+  const t = await setup(
+    (_req, n) => (n === 0 ? { tool: { name: "create_shape", input: { fill: "#ff0000" } } } : { text: "ok" }),
+    { exporterUri: exporter.uri },
+  );
+  try {
+    const asked = await drive(t.base, { ...BODY, tools: [tool("create_shape")] }, ENGINE_HEADERS);
+    assert.deepEqual(asked.at(-1), { server: "create_shape", rule: "token-only-colors" });
+    assert.match(JSON.stringify(t.fake.requests[1].body.messages), /token-only-colors: raw color/);
+  } finally {
+    await t.close();
+    await exporter.close();
+  }
+});

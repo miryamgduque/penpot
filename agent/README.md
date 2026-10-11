@@ -31,16 +31,27 @@ enable the `design-agent-service` flag (with `design-agent`).
 
 ## Server-side tools
 
-With the backend flag `design-agent-server-tools`, the backend runs the tools
-it implements (today `read_design` and `find_shapes`) and a connected
-workspace runs the rest. The backend passes a turn token with each turn; the
-service presents it back to `run-agent-tool`, which runs the tool as the
-profile that started the turn, on that file only.
+With the backend flag `design-agent-server-tools`, tools stop depending on a
+browser one family at a time. Each turn carries a turn token from the backend,
+naming one profile and one file; it is the only credential the tools use.
 
-A server-side tool reads the stored file, so before each one the service asks
-the workspace to save its pending changes and to report the page in view and
-the selection. `PENPOT_BACKEND_URI` (default `http://localhost:6060`) is where
-the service reaches the backend.
+| Tools | Run by | Why there |
+|---|---|---|
+| `read_design`, `find_shapes` | the backend (`run-agent-tool`) | pure reads of the stored file |
+| `create_shape`, `modify_shape` | the exporter (`POST /agent-tool`) | changing a page needs layout, and layout is the render-wasm engine, which the exporter runs headless |
+| everything else | the connected workspace | not moved yet |
+
+A server-side tool works on the stored file, so before each one the service
+asks the workspace to save its pending changes and to report the page in view
+and the selection. After the exporter commits a change, the workspace is told
+which revision was written and catches up before it runs its next tool.
+
+When the exporter answers that it does not handle a call yet (a grid layout,
+resizing text, a rotation), the workspace runs it, as before.
+
+`PENPOT_BACKEND_URI` (default `http://localhost:6060`) and
+`PENPOT_EXPORTER_URI` (default `http://localhost:6061`) are where the service
+reaches them. The exporter needs the same flag to start its engine workers.
 
 ## Try it without a provider key
 

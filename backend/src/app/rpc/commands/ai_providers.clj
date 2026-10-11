@@ -18,12 +18,13 @@
   card) and only stores the key when that succeeds. `ai-agent-round` is
   the buffered chat proxy: the panel names a provider and sends a
   provider-shaped JSON payload; the backend attaches the stored key and
-  returns the provider response verbatim. `ai-agent-round-stream` is its
-  streaming twin, re-emitting the provider's SSE frames over ours.
+  returns the provider response verbatim. It serves the panel's side work
+  — the watcher, playbook matching, summaries — not the agent's turns, which
+  run in the agent service.
 
-  Both are dumb pipes: the payload is forwarded byte-for-byte and the
-  response is never decoded, so this namespace stays free of provider
-  dialects. Only credential injection lives here.
+  It is a dumb pipe: the payload is forwarded byte-for-byte and the response
+  is never decoded, so this namespace stays free of provider dialects. Only
+  credential injection lives here.
 
   Keys are encrypted at rest with a key derived from the instance secret
   (see `encrypt-key`). Rows written before that are plain text; they keep
@@ -429,102 +430,15 @@
      :status (:status response)
      :body (:body response)}))
 
-;; --- Mutation: one streaming agent round through a connected provider
+;; --- Agent service
 ;;
-;; The streaming twin of `ai-agent-round`. A separate command rather than a
-;; flag on that one: streaming is decided per command, server-side (there is
-;; no Accept negotiation anywhere in this codebase — see `::export-binfile`),
-;; `default-options` on the client is keyed by command id, and `::doc/added`
-;; publishes `ai-agent-round` as an API method whose content-type must not
-;; change under callers. The buffered command stays for non-browser callers.
-
-(def ^:private schema:ai-agent-round-stream
-  [:map {:title "ai-agent-round-stream"}
-   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
-   ;; provider-shaped JSON, as above; it MUST carry the provider's own stream
-   ;; flag — we never decode or re-encode it
-   [:payload [:string {:max 4000000}]]])
-
-(defn- check-stream-status!
-  "Non-2xx on a streaming request: the body is a small JSON error, not a
-  stream. Surface the provider's own message as an ordinary RPC error.
-
-  This runs *before* `sse/response` — with `:response-type :input-stream` the
-  response future completes at the headers, so bad key / rate limit / bad model
-  never reach the SSE path and the panel keeps handling them exactly as it
-  does today. The buffered command lets `parse-round` dig the message out
-  client-side; an SSE client never gets that chance."
-  [provider-id {:keys [status body]}]
-  (when-not (<= 200 status 299)
-    (let [message (try
-                    (some-> body slurp (json/decode :key-fn keyword) :error :message)
-                    (catch Throwable _ nil))]
-      (ex/raise :type :validation
-                :code (if (contains? #{401 403} status)
-                        :ai-provider-invalid-key
-                        :ai-provider-error)
-                :hint (or message (str "unexpected provider response (status " status ")"))
-                :provider provider-id
-                :status status))))
-
-(defn- pump-provider-stream!
-  "Re-emits the provider's own SSE stream, one `delta` event per `data:` line,
-  payload verbatim — the same dumb-pipe contract as the buffered command.
-
-  Anthropic's `event:` names are dropped: every payload carries its own `type`,
-  so `data:` alone covers both dialects. Pings are passed through rather than
-  filtered — they keep nginx's read timeout at bay through a long thinking
-  pause, and a write is the only thing that surfaces a broken pipe, so they are
-  also what makes the abort below detectable while the model is quiet.
-
-  Note `sse/encode` transit-encodes each event, which escapes any newline in
-  the payload — that is what keeps raw provider JSON from shattering the SSE
-  framing. Load-bearing, and not obvious."
-  [^InputStream input provider-id]
-  ;; with-open closes the stream on every exit path — including the bail-out
-  ;; below, and closing it is what aborts the upstream exchange (verified)
-  (with-open [reader (io/reader input :encoding "UTF-8")]
-    (loop [events 0]
-      (let [line (.readLine ^BufferedReader reader)]
-        (cond
-          (nil? line)
-          {:provider provider-id :events events}
-
-          (str/starts-with? line "data:")
-          (do
-            (events/tap :delta (str/trim (subs line 5)))
-            (if (events/closed?)
-              (do
-                (l/inf :hint "ai stream aborted, client gone"
-                       :provider provider-id :events events)
-                {:provider provider-id :events events :aborted true})
-              (recur (inc events))))
-
-          ;; event:/id:/retry:/comments/blank framing we don't need
-          :else
-          (recur events))))))
-
-(sv/defmethod ::ai-agent-round-stream
-  {::doc/added "2.20"
-   ::sse/stream? true
-   ::sm/params schema:ai-agent-round-stream}
-  [cfg {:keys [::rpc/profile-id provider payload]}]
-  (let [row      (connected-provider-row cfg profile-id provider)
-        request  (round-request (get providers provider) (:api-key row) payload)
-        response (provider-req! cfg request provider {:response-type :input-stream})]
-    (check-stream-status! provider response)
-    (sse/response #(pump-provider-stream! (:body response) provider))))
-
-;; --- Agent service (dsh spike)
+;; The agent's loop runs in a separate service built on DeepSeek Harness. The
+;; backend is the place where the credential is attached: the panel sends a
+;; turn, the backend adds the profile's decrypted key and a turn token, and
+;; forwards it; the service's event stream is re-emitted over ours.
 ;;
-;; The agent loop can run in a separate service built on DeepSeek Harness
-;; instead of in the browser. The backend stays what it already is for the
-;; browser loop: the place where the credential is attached. The panel sends
-;; a turn, the backend adds the profile's decrypted key and forwards it to the
-;; service, and the service's event stream is re-emitted over ours.
-;;
-;; Tools still execute in the browser: the service emits a `tool-call` event,
-;; the panel runs the tool and posts the result back through
+;; What the service asks of a connected workspace travels the same way: it
+;; emits a `tool-call` event, the panel answers through
 ;; `agent-service-tool-result`. The service never sees a session cookie and
 ;; the browser never sees the service.
 
@@ -533,25 +447,28 @@
   (or (some-> (cf/get :agent-service-uri) str (str/rtrim "/"))
       (ex/raise :type :validation
                 :code :agent-service-not-configured
-                :hint "the agent service is not configured")))
+                :hint (str "The design agent's service is not configured on this Penpot "
+                           "instance. An administrator has to set PENPOT_AGENT_SERVICE_URI."))))
 
 (defn- agent-service-req!
   [cfg path headers body options]
-  (try
-    (http/req cfg
-              {:method :post
-               :uri (str (agent-service-uri) path)
-               :headers (cond-> (merge {"content-type" "application/json"} headers)
-                          (cf/get :agent-service-shared-key)
-                          (assoc "x-penpot-shared-key" (cf/get :agent-service-shared-key)))
-               :body body
-               :timeout (ct/duration "900s")}
-              (merge {:skip-ssrf-check? true} options))
-    (catch Throwable cause
-      (ex/raise :type :validation
-                :code :agent-service-unreachable
-                :hint "could not reach the agent service"
-                :cause cause))))
+  ;; resolved out here: "not configured" must not be reported as "unreachable"
+  (let [uri (str (agent-service-uri) path)]
+    (try
+      (http/req cfg
+                {:method :post
+                 :uri uri
+                 :headers (cond-> (merge {"content-type" "application/json"} headers)
+                            (cf/get :agent-service-shared-key)
+                            (assoc "x-penpot-shared-key" (cf/get :agent-service-shared-key)))
+                 :body body
+                 :timeout (ct/duration "900s")}
+                (merge {:skip-ssrf-check? true} options))
+      (catch Throwable cause
+        (ex/raise :type :validation
+                  :code :agent-service-unreachable
+                  :hint "The design agent's service could not be reached. Try again in a moment."
+                  :cause cause)))))
 
 (defn- check-agent-service-status!
   [{:keys [status body]}]

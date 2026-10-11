@@ -61,6 +61,13 @@ const SYNC_CALL = "__sync";
 
 const WORKSPACE_UNDO_TOOLS = new Set(["undo_change", "redo_change"]);
 
+// With the tools on the server, a connected workspace says what the user is
+// looking at and does what only a workspace can: ask the user, move their
+// view, render with the engine they are looking at, and generate handoff code
+// (which renders the workspace's own components). Nothing else is sent to it,
+// except a call the server answered it cannot handle yet.
+const WORKSPACE_TOOLS = new Set(["ask_user", "switch_page", "render_board", "generate_code"]);
+
 /**
  * Runs a tool on the Penpot backend for the turn the token names. The token
  * was issued by the backend for one profile on one file; this service only
@@ -237,9 +244,12 @@ export async function createAgentServer(options = {}) {
 
     // The other direction: a tool in the workspace must not run before the
     // workspace has caught up with what the server wrote.
-    const callWorkspaceTool = async (call, signal) => {
+    const callWorkspaceTool = async (call, signal, { fallback = false } = {}) => {
       if (tabless) {
         return { content: `${call.name} needs a connected workspace, and this turn has none`, isError: true };
+      }
+      if (engineTools.size > 0 && !fallback && !WORKSPACE_TOOLS.has(call.name)) {
+        return { content: `${call.name} is not a tool this agent has`, isError: true };
       }
       if (serverRevn !== undefined) {
         const synced = await syncWorkspace(signal);
@@ -294,7 +304,7 @@ export async function createAgentServer(options = {}) {
           })
         : await runServerTool(call, signal);
       // not handled on the server yet: the workspace runs it, as before
-      if (result.fallback !== undefined) return callWorkspaceTool(call, signal);
+      if (result.fallback !== undefined) return callWorkspaceTool(call, signal, { fallback: true });
       toolTimings.push({ name: call.name, ms: Math.round(performance.now() - startedAt), server: true });
       emit({
         type: "server-tool",

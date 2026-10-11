@@ -243,18 +243,18 @@ test("an engine tool runs in the exporter, and the workspace catches up before i
       n === 0
         ? { tool: { name: "create_shape", input: { type: "rect" } } }
         : n === 1
-          ? { tool: { name: "set_layout", input: {} } }
+          ? { tool: { name: "switch_page", input: {} } }
           : { text: "Done." },
     { exporterUri: exporter.uri },
   );
   try {
-    const asked = await drive(t.base, { ...BODY, tools: [tool("create_shape"), tool("set_layout")] }, ENGINE_HEADERS);
+    const asked = await drive(t.base, { ...BODY, tools: [tool("create_shape"), tool("switch_page")] }, ENGINE_HEADERS);
     assert.deepEqual(asked, [
       { workspace: "__sync", input: {} },
       { server: "create_shape", rule: undefined },
       // the workspace is told which revision the server wrote, and only then runs its own tool
       { workspace: "__sync", input: { minRevn: 7 } },
-      { workspace: "set_layout", input: {} },
+      { workspace: "switch_page", input: {} },
     ]);
     assert.equal(exporter.seen[0].url, "/agent-tool");
     assert.equal(exporter.seen[0].type, "application/transit+json");
@@ -437,6 +437,27 @@ test("with a workspace, a board is the browser's to render", async () => {
     const asked = await drive(t.base, { ...BODY, tools: [tool("render_board")] }, ENGINE_HEADERS);
     assert.deepEqual(asked, [{ workspace: "render_board", input: { names: ["Home"] } }]);
     assert.equal(exporter.seen.length, 0);
+  } finally {
+    await t.close();
+    await exporter.close();
+  }
+});
+
+test("with the tools on the server, the workspace is only asked for what only it can do", async () => {
+  const exporter = await fakeJsonServer(() => ({ content: "{}", isError: false }));
+  const t = await setup(
+    (_req, n) =>
+      n === 0
+        ? { tool: { name: "ask_user", input: {} } }
+        : n === 1
+          ? { tool: { name: "some_old_tool", input: {} } }
+          : { text: "Done." },
+    { exporterUri: exporter.uri },
+  );
+  try {
+    const asked = await drive(t.base, { ...BODY, tools: [tool("ask_user"), tool("some_old_tool")] }, ENGINE_HEADERS);
+    assert.deepEqual(asked, [{ workspace: "ask_user", input: {} }]);
+    assert.match(JSON.stringify(t.fake.requests[2].body.messages), /some_old_tool is not a tool this agent has/);
   } finally {
     await t.close();
     await exporter.close();

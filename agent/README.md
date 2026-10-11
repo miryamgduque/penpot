@@ -1,14 +1,15 @@
 # Agent service
 
-Runs the design agent's loop on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
-instead of in the browser. Exploration: see the epic "Move the design agent
-to a backend service built on DeepSeek Harness".
+Runs the design agent on [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).
+It is the only place the agent's loop runs: the panel sends a turn, the
+service talks to the model, runs the tools and streams back what happened.
+Exploration: see the epic "Move the design agent to a backend service built
+on DeepSeek Harness".
 
 The service is called only by the Penpot backend. The backend authenticates
 the user, checks file access, attaches the user's provider key and forwards
 the turn; the service holds no credentials and reads none from the
-environment or from disk. Tools still execute in the browser: the service
-emits a `tool-call` event and waits for the result.
+environment or from disk.
 
 ## Run it
 
@@ -18,8 +19,8 @@ pnpm run start        # http://127.0.0.1:6067
 pnpm run test
 ```
 
-Then give the backend `PENPOT_AGENT_SERVICE_URI=http://localhost:6067` and
-enable the `design-agent-service` flag (with `design-agent`).
+Then give the backend `PENPOT_AGENT_SERVICE_URI=http://localhost:6067`.
+Without it the panel says the service is not configured.
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -29,25 +30,36 @@ enable the `design-agent-service` flag (with `design-agent`).
 | `PENPOT_AGENT_SERVICE_DATA_DIR` | `.data` | Stored conversations and images |
 | `PENPOT_AGENT_SERVICE_ANTHROPIC_BASE_URL` | unset | Development only: a stand-in for the Anthropic API |
 
-## Server-side tools
+## Where tools run
 
-With the backend flag `design-agent-server-tools`, tools stop depending on a
-browser one family at a time. Each turn carries a turn token from the backend,
-naming one profile and one file; it is the only credential the tools use.
+With the flag `design-agent-server-tools` (backend and exporter) the tools
+run on the server. Each turn carries a turn token from the backend, naming
+one profile, one file, one conversation and one turn; it is the only
+credential the tools use.
 
 | Tools | Run by | Why there |
 |---|---|---|
-| `read_design`, `find_shapes` | the backend (`run-agent-tool`) | pure reads of the stored file |
-| `create_shape`, `modify_shape` | the exporter (`POST /agent-tool`) | changing a page needs layout, and layout is the render-wasm engine, which the exporter runs headless |
-| everything else | the connected workspace | not moved yet |
+| reads, audit, comments, versions, page metadata | the backend (`run-agent-tool`) | they read the stored file or call what the workspace calls, as the turn's profile |
+| everything that changes a page or the file's tokens, components and foundations; `screenshot_page`; `render_board` when no workspace is connected | the exporter (`POST /agent-tool`) | layout and text measurement are the render-wasm engine, which the exporter runs headless; it also keeps the browser pool |
+| `explore_design`, `fetch_page` | this service, on a side conversation | a cheap model with its own prompt; the web reader holds no tools |
+| skills | the harness's own `skill` tool | the panel sends the enabled skills with the turn |
+| `ask_user`, `switch_page`, `generate_code`, `render_board` | the connected workspace | only a workspace can ask the user, move their view or render its own components |
 
-A server-side tool works on the stored file, so before each one the service
-asks the workspace to save its pending changes and to report the page in view
-and the selection. After the exporter commits a change, the workspace is told
-which revision was written and catches up before it runs its next tool.
+Before a server tool runs, the service asks the workspace to save what it has
+not saved and to say what the user is looking at (page, selection, active
+rules). After the exporter commits, the workspace is told which revision was
+written and catches up before anything else is asked of it.
 
-When the exporter answers that it does not handle a call yet (a grid layout,
-resizing text, a rotation), the workspace runs it, as before.
+A call the server cannot handle yet is answered with a fallback and run by
+the workspace instead: a token whose value needs arithmetic, a text set in a
+font the team uploaded, a foundation document with DESIGN.md frontmatter.
+Nothing else is sent to the workspace.
+
+Every commit a server tool makes is recorded with its conversation, turn and
+tool (`get-agent-changes`). The file's design rules are checked in one place
+before any tool runs; a mandatory rule cannot be left out by the caller.
+
+Without the flag there is no turn token and every tool runs in the workspace.
 
 `PENPOT_BACKEND_URI` (default `http://localhost:6060`) and
 `PENPOT_EXPORTER_URI` (default `http://localhost:6061`) are where the service

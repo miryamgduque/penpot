@@ -160,7 +160,8 @@
       (t/is (= (:id file) (:file-id result)))
       (t/is (= (first (get-in file [:data :pages])) (:page-id result)))
       (t/is (= 1 (:revn result)))
-      (t/is (= "hero-card" (get-in result [:objects first-id :name])))
+      (t/is (= "hero-card" (get-in result [:data :pages-index (:page-id result) :objects first-id :name])))
+      (t/is (= {} (:libraries result)))
       (t/is (set? (:allowed-colors result))))
 
     (t/testing "a commit lands in the file, as the profile of the turn"

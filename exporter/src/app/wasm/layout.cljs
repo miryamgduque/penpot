@@ -16,6 +16,7 @@
   (:require
    [app.common.data :as d]
    [app.common.geom.matrix :as gmt]
+   [app.common.render-wasm.api.layout :as wasm.layout]
    [app.common.render-wasm.api.props :as props]
    [app.common.render-wasm.api.upload :as upload]
    [app.common.render-wasm.helpers :as h]
@@ -23,6 +24,7 @@
    [app.common.render-wasm.mem.heap32 :as mem.h32]
    [app.common.render-wasm.serializers :as sr]
    [app.common.render-wasm.wasm :as wasm]
+   [app.common.types.shape.layout :as ctl]
    [app.common.uuid :as uuid]
    [app.wasm.text :as text]))
 
@@ -49,7 +51,10 @@
     (when-not (= type :group)
       (props/write-shape-strokes! (get shape :strokes)))
     (when (= type :text)
-      (text/set-shape-text! (get shape :content)))))
+      (text/set-shape-text! (get shape :content)))
+    ;; flex travels in the upload above; a grid's tracks and cells do not
+    (when (ctl/grid-layout? shape)
+      (wasm.layout/set-grid-layout shape))))
 
 (defn load-page!
   "Loads every shape of an `objects` map, replacing whatever was loaded."

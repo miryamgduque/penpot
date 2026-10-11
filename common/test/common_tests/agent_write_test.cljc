@@ -41,7 +41,11 @@
    grid-id   (cts/setup-shape {:id grid-id :type :frame :name "Grid"
                                :x 0 :y 400 :width 100 :height 100
                                :parent-id uuid/zero :frame-id uuid/zero
-                               :layout :grid})})
+                               :layout :grid
+                               :layout-grid-dir :row
+                               :layout-grid-rows []
+                               :layout-grid-columns []
+                               :layout-grid-cells {}})})
 
 (def ^:private view {:page-id page-id :objects objects})
 
@@ -102,11 +106,16 @@
                                  :propagate (engine (atom []))})]
       (t/is (some? (:changes out))))))
 
-(t/deftest create-shape-in-a-grid-is-left-to-the-workspace
-  (let [out (caw/create-shape view {:type "rect" :x 0 :y 0 :width 1 :height 1 :parentId (str grid-id)}
-                              {:guard no-guard :propagate (engine (atom []))})]
-    (t/is (string? (:fallback out)))
-    (t/is (nil? (:changes out)))))
+(t/deftest create-shape-in-a-grid-gets-a-cell-and-flows-into-it
+  (let [calls (atom [])
+        out   (caw/create-shape view {:type "rect" :x 0 :y 0 :width 10 :height 10 :parentId (str grid-id)}
+                                {:guard no-guard :propagate (engine calls)})
+        after (apply-changes (:changes out))
+        id    (uuid/parse (get-in out [:result :id]))
+        cells (vals (:layout-grid-cells (get after grid-id)))]
+    (t/is (= [[[grid-id :parent]]] @calls))
+    ;; the grid seated it in a cell before the engine was asked
+    (t/is (some #(= [id] (:shapes %)) cells))))
 
 (t/deftest modify-shape-names-what-is-wrong
   (let [run #(caw/modify-shape view % {:guard no-guard :propagate (engine (atom []))})]
@@ -150,6 +159,5 @@
   (let [run #(caw/modify-shape view % {:guard no-guard :propagate (engine (atom []))})]
     (t/is (string? (:fallback (run {:shapeId (str child-id) :rotation 45}))))
     (t/is (string? (:fallback (run {:shapeId (str text-id) :width 120}))))
-    (t/is (string? (:fallback (run {:shapeId (str grid-id) :width 120}))))
     ;; but a text can still be renamed or moved
     (t/is (some? (:changes (run {:shapeId (str text-id) :name "heading"}))))))

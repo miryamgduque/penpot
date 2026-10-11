@@ -56,9 +56,36 @@ function requireString(value, name) {
   return value;
 }
 
+const SYNC_CALL = "__sync";
+
+/**
+ * Runs a tool on the Penpot backend for the turn the token names. The token
+ * was issued by the backend for one profile on one file; this service only
+ * carries it back.
+ */
+async function runBackendTool(backendUri, token, call, context, signal) {
+  const response = await fetch(`${backendUri}/api/rpc/command/run-agent-tool`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({
+      token,
+      tool: call.name,
+      input: JSON.stringify(call.input ?? {}),
+      context: context ?? "{}",
+    }),
+    signal,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    return { content: body.hint ?? `the server could not run ${call.name} (status ${response.status})`, isError: true };
+  }
+  return { content: String(body.content ?? ""), isError: body.isError === true };
+}
+
 export async function createAgentServer(options = {}) {
   const harness = options.harness ?? (await createHarness(options));
   const sharedKey = options.sharedKey;
+  const backendUri = (options.backendUri ?? "http://localhost:6060").replace(/\/$/, "");
 
   /** turnId → { profileId, pending: Map<callId, {resolve}> } */
   const turns = new Map();
@@ -74,6 +101,10 @@ export async function createAgentServer(options = {}) {
     const text = requireString(body.text, "text");
     const tools = Array.isArray(body.tools) ? body.tools : [];
     const skills = Array.isArray(body.skills) ? body.skills : [];
+    const turnToken = req.headers["x-penpot-turn-token"];
+    const serverTools = new Set(
+      typeof turnToken === "string" ? String(req.headers["x-penpot-server-tools"] ?? "").split(",").filter(Boolean) : [],
+    );
     const images = Array.isArray(body.images) ? body.images : [];
 
     const turnId = randomUUID();
@@ -121,10 +152,25 @@ export async function createAgentServer(options = {}) {
         emit({ type: "tool-call", ...call });
       });
 
+    // A server-side tool reads the stored file. The connected workspace is
+    // first asked to save what it has not saved yet — or the tool would miss
+    // the agent's own last change — and to say what the user is looking at.
+    const callServerTool = async (call, signal) => {
+      const startedAt = performance.now();
+      const synced = await callTool({ callId: randomUUID(), name: SYNC_CALL, input: {} }, signal);
+      toolTimings.pop();
+      const result = synced.isError
+        ? { content: synced.content, isError: true }
+        : await runBackendTool(backendUri, turnToken, call, synced.content, signal);
+      toolTimings.push({ name: call.name, ms: Math.round(performance.now() - startedAt), server: true });
+      emit({ type: "server-tool", name: call.name, input: call.input, content: result.content, isError: result.isError });
+      return result;
+    };
+
     try {
       const result = await harness.runTurn(
         { sessionId, profileId, provider, apiKey, model, system, text, images, tools, skills },
-        { emit, callTool, signal: controller.signal },
+        { emit, callTool, callServerTool, serverTools, signal: controller.signal },
       );
       emit({ type: "done", reason: result.reason, resumed: result.resumed, toolTimings });
     } catch (cause) {
@@ -196,6 +242,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const anthropicBaseURL = process.env.PENPOT_AGENT_SERVICE_ANTHROPIC_BASE_URL;
   const app = await createAgentServer({
     sharedKey: process.env.PENPOT_AGENT_SERVICE_SHARED_KEY,
+    backendUri: process.env.PENPOT_BACKEND_URI,
     sessionsRoot: process.env.PENPOT_AGENT_SERVICE_SESSIONS_DIR ?? join(dataDir, "sessions"),
     attachmentsHome: process.env.PENPOT_AGENT_SERVICE_ATTACHMENTS_DIR ?? join(dataDir, "attachments"),
     providers: anthropicBaseURL ? { anthropic: { baseURL: anthropicBaseURL } } : undefined,

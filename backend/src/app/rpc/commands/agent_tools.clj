@@ -1,0 +1,177 @@
+;; This Source Code Form is subject to the terms of the Mozilla Public
+;; License, v. 2.0. If a copy of the MPL was not distributed with this
+;; file, You can obtain one at http://mozilla.org/MPL/2.0/.
+;;
+;; Copyright (c) KALEIDOS INC Sucursal en España SL
+
+(ns app.rpc.commands.agent-tools
+  "Design agent tools that run on the server, without a browser.
+
+  The agent service has no session of its own. When the backend forwards a
+  turn to it, it also hands over a turn token: a short-lived, encrypted claim
+  naming the profile that started the turn and the file it is working on. The
+  service presents that token to run a tool, and the tool runs with exactly
+  that profile's permissions on exactly that file.
+
+  The tools themselves are the shared implementations in
+  `app.common.agent.*`, the same code the workspace runs. What is added here
+  is loading the file and its libraries from storage."
+  (:require
+   [app.binfile.common :as bfc]
+   [app.common.agent.read :as car]
+   [app.common.exceptions :as ex]
+   [app.common.json :as json]
+   [app.common.schema :as sm]
+   [app.common.time :as ct]
+   [app.common.uuid :as uuid]
+   [app.features.fdata :as feat.fdata]
+   [app.rpc :as-alias rpc]
+   [app.rpc.commands.files :as files]
+   [app.rpc.doc :as-alias doc]
+   [app.tokens :as tokens]
+   [app.util.services :as sv]))
+
+(def server-tools
+  "The tools the backend runs itself. The agent service asks a connected
+  workspace to run every other tool."
+  #{"read_design" "find_shapes"})
+
+;; A tool result is capped like the workspace caps it: an oversized result is
+;; replaced by a small, valid object saying so, never cut mid-token.
+(def ^:private max-result-chars 20000)
+
+;; --- Turn token
+
+(def ^:private turn-token-iss :agent-turn)
+
+(defn turn-token
+  "A claim that `profile-id` started an agent turn on `file-id`. Outlives the
+  longest turn we expect; a tool call after that fails and the turn ends."
+  [cfg profile-id file-id]
+  (tokens/generate cfg {:iss turn-token-iss
+                        :exp (ct/in-future {:hours 2})
+                        :profile-id profile-id
+                        :file-id file-id}))
+
+(defn- verify-turn-token
+  [cfg token]
+  (let [claims (try
+                 (tokens/verify cfg {:token token :iss turn-token-iss})
+                 (catch Throwable _
+                   (ex/raise :type :validation
+                             :code :invalid-turn-token
+                             :hint "the agent turn token is not valid")))]
+    (when-not (and (uuid? (:profile-id claims)) (uuid? (:file-id claims)))
+      (ex/raise :type :validation
+                :code :invalid-turn-token
+                :hint "the agent turn token is not valid"))
+    claims))
+
+;; --- Loading what a tool looks at
+
+(defn- parse-ids
+  [ids]
+  (into [] (keep #(when (string? %) (uuid/parse* %))) ids))
+
+(defn- load-whole-file
+  "A file with all of its data in memory. Stored files keep large parts
+  behind lazy references; the tools walk whole pages, so they are resolved
+  up front."
+  [cfg file-id]
+  (some->> (bfc/get-file cfg file-id :read-only? true :throw-if-not-exists? false)
+           (feat.fdata/realize cfg)))
+
+(defn- load-view
+  "The file as the read tools want it: its data, its libraries and the page in
+  view. `context` is what a connected workspace reported — the page the user
+  is on and what they have selected. With no workspace there is no page in
+  view, so the first page stands in, and nothing is selected."
+  [cfg file-id {:keys [pageId selectedIds]}]
+  (let [file    (load-whole-file cfg file-id)
+        data    (:data file)
+        libs    (->> (bfc/get-file-libraries cfg file-id)
+                     (map :id)
+                     (remove #(= file-id %))
+                     (keep #(load-whole-file cfg %))
+                     (map (juxt :id identity))
+                     (into {file-id file}))
+        page-id (or (some->> pageId str uuid/parse* (#(when (contains? (:pages-index data) %) %)))
+                    (first (:pages data)))]
+    {:file-id file-id
+     :file-name (:name file)
+     :data data
+     :page-id page-id
+     :libraries libs
+     :selected (parse-ids selectedIds)}))
+
+;; --- Tools
+
+(defmulti ^:private run-tool
+  "→ the tool's result as data. A problem the model can act on is raised as
+  `:type :agent-tool`, with the message it should read as the hint."
+  (fn [tool _view _input _context] tool))
+
+(defmethod run-tool "read_design"
+  [_ view _ {:keys [extras]}]
+  (car/read-design view
+                   (-> (select-keys extras [:skills :openViolations])
+                       (assoc :hasDesignDoc (car/has-design-doc? (:data view))))))
+
+(defmethod run-tool "find_shapes"
+  [_ {:keys [data page-id]} input _]
+  (let [query (select-keys input [:name :type])]
+    (when-let [problem (car/find-shapes-problem query)]
+      (ex/raise :type :agent-tool :hint problem))
+    (car/find-shapes (get-in data [:pages-index page-id :objects]) query)))
+
+(defn- result->content
+  [result]
+  (let [s (json/encode result)]
+    (if (> (count s) max-result-chars)
+      (json/encode
+       {:truncated true
+        :chars (count s)
+        :limit max-result-chars
+        :error (str "This result was " (count s) " characters, over the "
+                    max-result-chars " limit, so none of it was returned "
+                    "— a partial result would be indistinguishable from a "
+                    "complete one. Narrow the request and try again: "
+                    "read_design with a smaller depth, or find_shapes with a "
+                    "name/type query.")})
+      s)))
+
+(defn- decode-json
+  [s]
+  (try
+    (let [v (json/decode s :key-fn keyword)]
+      (if (map? v) v {}))
+    (catch Throwable _ {})))
+
+(def ^:private schema:run-agent-tool
+  [:map {:title "run-agent-tool"}
+   [:token [:string {:max 5000}]]
+   [:tool [::sm/one-of {:format "string"} server-tools]]
+   ;; JSON, as the model wrote it
+   [:input {:optional true} [:string {:max 100000}]]
+   ;; JSON: what a connected workspace reported about the page in view
+   [:context {:optional true} [:string {:max 200000}]]])
+
+(sv/defmethod ::run-agent-tool
+  "Runs one design agent tool on the server for the turn named by `token`."
+  {::rpc/auth false
+   ::doc/added "2.20"
+   ::sm/params schema:run-agent-tool}
+  [cfg {:keys [token tool input context]}]
+  (let [{:keys [profile-id file-id]} (verify-turn-token cfg token)]
+    ;; the token says who started the turn; whether they may still read the
+    ;; file is checked now, on every call
+    (files/check-read-permissions! cfg profile-id file-id)
+    (let [context (decode-json context)
+          view    (load-view cfg file-id context)]
+      (try
+        {:content (result->content (run-tool tool view (decode-json input) context))
+         :is-error false}
+        (catch clojure.lang.ExceptionInfo cause
+          (if (= :agent-tool (:type (ex-data cause)))
+            {:content (:hint (ex-data cause)) :is-error true}
+            (throw cause)))))))

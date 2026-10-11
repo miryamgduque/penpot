@@ -9,14 +9,13 @@
   labels, the token-only-colors enforcement boundary, fill parsing, flex
   flow-order translation and the create-shape builder they all lean on."
   (:require
+   [app.common.agent.read :as car]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
-   [app.common.types.component :as ctc]
    [app.common.types.container :as ctn]
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
-   [app.common.types.token :as cto]
    [app.common.types.tokens-lib :as ctob]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
@@ -82,211 +81,17 @@
 
 (def text-aligns #{"left" "center" "right" "justify"})
 
-(def searchable-types
-  "`find_shapes`' vocabulary → Penpot's. No default: an unmapped name resolves to
-  nil and matches nothing."
-  {"board" :frame "frame" :frame
-   "rect" :rect "rectangle" :rect
-   "ellipse" :circle "circle" :circle
-   "text" :text
-   "group" :group
-   "path" :path
-   "image" :image
-   "bool" :bool})
+;; The shape and token summaries the read tools are built from live in
+;; `app.common.agent.read`, shared with the server-side tools. They keep their
+;; names here for the families that use them.
 
-(defn bounded
-  "`[items omission]` — at most `limit` of `coll`, plus a note when it held back.
-  The note names `find_shapes` because a cut the agent cannot act on is just a
-  cut."
-  [coll limit what]
-  (let [total (count coll)]
-    (if (<= total limit)
-      [(vec coll) nil]
-      [(vec (take limit coll))
-       (dm/str "showing " limit " of " total " " what
-               " — use find_shapes to query the rest by name or type")])))
-
-(defn fill-summary
-  "A shape's paint, as compact descriptors the agent can recognise and copy —
-  not the raw attrs. Exactly one of `:fill-color` / `:fill-color-gradient` /
-  `:fill-image` is set per fill (`cfl/valid-fill-attrs`).
-
-  The image case is the point: a raster cannot be reproduced from JSON, so the
-  useful answer is \"this is an image, here is its id, name and size\" rather
-  than silence — which is what the agent hit when it said it could see the fill
-  but could not inspect it."
-  [fills]
-  (into []
-        (keep (fn [{:keys [fill-color fill-opacity fill-color-ref-id
-                           fill-color-gradient fill-image]}]
-                (cond
-                  (some? fill-image)
-                  (cond-> {:type "image"
-                           :imageId (dm/str (:id fill-image))
-                           :width (:width fill-image)
-                           :height (:height fill-image)}
-                    (:name fill-image)  (assoc :name (:name fill-image))
-                    (:mtype fill-image) (assoc :mtype (:mtype fill-image)))
-
-                  (some? fill-color-gradient)
-                  {:type "gradient"
-                   :gradient (some-> (:type fill-color-gradient) name)
-                   :stops (mapv :color (:stops fill-color-gradient))}
-
-                  (some? fill-color)
-                  (cond-> {:type "solid" :color fill-color}
-                    ;; only when it is not the default — every fill would carry
-                    ;; `opacity: 1` otherwise, for nothing
-                    (and (some? fill-opacity) (not= 1 fill-opacity))
-                    (assoc :opacity fill-opacity)
-                    ;; a token-bound fill is a reference to reuse, not a raw
-                    ;; colour to copy — the distinction audit-tokens looks for
-                    (some? fill-color-ref-id)
-                    (assoc :fromToken true)))))
-        fills))
-
-(defn effect-summary
-  "A shape's effects, in **Phase 14's own write-param names** — `radius`,
-  `opacity`, `shadow {style offsetX offsetY blur spread color opacity}` — so a
-  read can be handed straight back to `modify_shape` with no translation.
-
-  Only present, non-default attrs are emitted: every shape carries `r1..r4 = 0`
-  and `opacity 1`, and reporting those would spend the budget saying nothing.
-
-  `blur` and `blendMode` are reported although `modify_shape` cannot write them.
-  The transcript's complaint was a *glow* it could see but not inspect — a blur
-  IS that glow. Naming what cannot be reproduced is the same honesty Phase 17
-  gives an image fill: better a replica that says \"the original also has an 8px
-  blur\" than one that silently drops it."
-  [shape]
-  (let [{:keys [r1 r2 r3 r4 opacity blend-mode blur shadow strokes]} shape
-        live   (remove :hidden shadow)
-        ;; stroke depth (Phase 29): width + style beyond the plain color, so a
-        ;; 4px dashed border no longer reads identically to a 1px solid one.
-        stroke (when-let [s (first strokes)]
-                 (cond-> {:color (:stroke-color s)}
-                   (some? (:stroke-width s)) (assoc :width (:stroke-width s))
-                   (some? (:stroke-style s)) (assoc :style (name (:stroke-style s)))))
-        one    (fn [s] (cond-> {:style (some-> (:style s) name)
-                                :offsetX (:offset-x s)
-                                :offsetY (:offset-y s)
-                                :blur (:blur s)
-                                :spread (:spread s)
-                                :color (:color (:color s))}
-                         (some? (:opacity (:color s)))
-                         (assoc :opacity (:opacity (:color s)))))
-        radius (when (some pos? [r1 r2 r3 r4])
-                 (if (apply = [r1 r2 r3 r4])
-                   r1
-                   ;; Phase 14 writes ONE radius for all four, so a mixed radius
-                   ;; is not copyable in a single call — reporting a single
-                   ;; number here would be a plausible lie
-                   {:topLeft r1 :topRight r2 :bottomRight r3 :bottomLeft r4}))]
-    (cond-> {}
-      (some? radius)                     (assoc :radius radius)
-      (and (some? opacity) (not= 1 opacity)) (assoc :opacity opacity)
-      (and (some? blend-mode) (not= :normal blend-mode))
-      (assoc :blendMode (name blend-mode))
-
-      (and (some? blur) (not (:hidden blur)))
-      (assoc :blur {:type (some-> (:type blur) name) :value (:value blur)})
-
-      (some? stroke) (assoc :stroke stroke)
-
-      (= 1 (count live)) (assoc :shadow (one (first live)))
-      (< 1 (count live)) (assoc :shadows (mapv one live)))))
-
-(defn summarize-shape
-  "The shape as the agent sees it. Variant keys are added only when truthy —
-  `read_design` is called constantly, so a file without variants should not pay
-  for the feature in every payload.
-
-  `:look?` — a shape's paint and effects — is off by default and on for the two
-  places the look is actually wanted: the **selection** (\"replicate this\") and
-  **find_shapes** hits (drill-in). On every shape of the broad list it cost ~11%
-  of the 20k budget for a 59-shape file; the constant-cost orientation call stays
-  about *what is here*, not *what it looks like*."
-  ([objects id] (summarize-shape objects id nil))
-  ([objects id {:keys [look?]}]
-   (let [shape   (get objects id)
-         kids    (count (:shapes shape))
-         fills   (when look? (fill-summary (:fills shape)))
-         effects (when look? (effect-summary shape))]
-     (cond-> {:id (dm/str id)
-              :name (:name shape)
-              :type (some-> (:type shape) name)
-              :x (:x shape)
-              :y (:y shape)
-              :width (:width shape)
-              :height (:height shape)}
-       ;; so the agent can tell an empty board from one it cannot see into
-       (pos? kids)
-       (assoc :childCount kids)
-
-       (seq fills)
-       (assoc :fills fills)
-
-       (seq effects)
-       (merge effects)
-
-       (ctc/is-variant-container? shape)
-       (assoc :isVariantContainer true)
-
-       (ctc/is-variant? shape)
-       (assoc :variantId (dm/str (:variant-id shape))
-              :variantName (:variant-name shape))
-
-       (:variant-error shape)
-       (assoc :variantError (:variant-error shape))
-
-       (:masked-group shape)
-       (assoc :isMask true)
-
-       ;; hide/lock flags (Phase 26) — truthy-only, same discipline
-       (:hidden shape)
-       (assoc :hidden true)
-
-       (:blocked shape)
-       (assoc :locked true)
-
-       (and (:rotation shape) (not (zero? (:rotation shape))))
-       (assoc :rotation (:rotation shape))))))
-
-(defn- token-summary
-  [t]
-  (let [value    (str (:value t))
-        resolved (some-> (:resolved-value t) str)]
-    (cond-> {:name (:name t) :value value}
-      ;; only when it differs: an alias's reference is the interesting half, and
-      ;; showing only the resolved value hides that this is a reference at all
-      (and (some? resolved) (not= resolved value))
-      (assoc :resolvedValue resolved))))
-
-(defn tokens-by-type
-  "The file's active tokens, grouped under the same public DTCG type names
-  `create_token` accepts — so a type read here can be passed straight back.
-  Types with no tokens are absent rather than empty."
-  [tokens]
-  (reduce-kv (fn [acc type toks]
-               (assoc acc (get cto/token-type->dtcg-token-type type (name type))
-                      (mapv token-summary toks)))
-             {}
-             (group-by :type tokens)))
-
-(defn shape-matches?
-  "Does this shape match the query? `name` is a case-insensitive substring;
-  `type` accepts the agent's own vocabulary (\"board\" for `:frame`, as
-  `create_shape` takes). An empty query matches nothing — a query that matched
-  everything would be a dump, which is what bounding exists to prevent."
-  [shape {:keys [name type]}]
-  (let [want (some->> type (str/lower) (get searchable-types))]
-    (and (or (some? name) (some? type))
-         (or (nil? name)
-             (and (:name shape)
-                  (str/includes? (str/lower (:name shape)) (str/lower name))))
-         ;; `type` given but unmapped leaves `want` nil, which matches nothing —
-         ;; never everything
-         (or (nil? type) (= want (:type shape))))))
+(def searchable-types car/searchable-types)
+(def bounded car/bounded)
+(def fill-summary car/fill-summary)
+(def effect-summary car/effect-summary)
+(def summarize-shape car/summarize-shape)
+(def tokens-by-type car/tokens-by-type)
+(def shape-matches? car/shape-matches?)
 
 ;; --- Structural tools (create / modify / nest)
 ;;

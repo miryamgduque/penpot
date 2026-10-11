@@ -202,6 +202,10 @@
     ;; backend configured with PENPOT_AGENT_SERVICE_URI. OFF by default.
     :design-agent-service
 
+    ;; With :design-agent-service, runs the tools the backend implements
+    ;; on the server instead of in the workspace. Exploration. OFF by default.
+    :design-agent-server-tools
+
     ;; Design session recording: capture every layout interaction on a file,
     ;; by any participant, for an agent to critique afterwards.
     ;;

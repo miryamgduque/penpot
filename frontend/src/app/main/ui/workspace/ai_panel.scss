@@ -16,7 +16,8 @@
 // variable instead. Every wrapped mixin's line-height is unitless, so leading
 // follows the size for free. Deliberately not scaled: the header band (aligned
 // to the workspace right-header), fixed glyph boxes like the attachment ✕, and
-// DS buttons (`button*`), which keep the DS size.
+// DS buttons (`button*`), which use the fixed compact label size from
+// _agent_button.scss.
 
 @mixin scaled-body-small {
   @include deprecated.body-small-typography;
@@ -62,8 +63,8 @@
 }
 
 // Every DS text button in the panel: see _agent_button.scss.
-.sentence-case {
-  @include agent-button.sentence-case;
+.compact-label {
+  @include agent-button.compact-label;
 }
 
 // Native right-docked AI panel. The workspace grid gives it the `ai-panel`

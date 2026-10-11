@@ -15,6 +15,7 @@
    [clojure.test :as t]
    [common-tests.agent-layout-test]
    [common-tests.agent-read-test]
+   [common-tests.agent-structure-test]
    [common-tests.agent-write-test]
    [common-tests.attrs-test]
    [common-tests.buffer-test]
@@ -124,6 +125,7 @@
   [#?(:clj 'common-tests.fressian-test)
    'common-tests.agent-layout-test
    'common-tests.agent-read-test
+   'common-tests.agent-structure-test
    'common-tests.agent-write-test
    'common-tests.attrs-test
    'common-tests.buffer-test

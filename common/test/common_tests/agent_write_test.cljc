@@ -157,7 +157,30 @@
 
 (t/deftest modify-shape-leaves-what-it-cannot-do-yet-to-the-workspace
   (let [run #(caw/modify-shape view % {:guard no-guard :propagate (engine (atom []))})]
-    (t/is (string? (:fallback (run {:shapeId (str child-id) :rotation 45}))))
     (t/is (string? (:fallback (run {:shapeId (str text-id) :width 120}))))
     ;; but a text can still be renamed or moved
     (t/is (some? (:changes (run {:shapeId (str text-id) :name "heading"}))))))
+
+(t/deftest modify-shape-rotates-to-an-absolute-angle
+  (let [calls (atom [])
+        out   (caw/modify-shape view {:shapeId (str child-id) :rotation 30}
+                                {:guard no-guard :propagate (engine calls)})
+        shape (get (apply-changes (:changes out)) child-id)]
+    (t/is (= [[[child-id :child]]] @calls))
+    ;; the angle is written on the shape, not only its geometry
+    (t/is (== 30 (:rotation shape))))
+  (t/testing "from where it already is"
+    (let [turned (assoc-in view [:objects child-id :rotation] 20)
+          seen   (atom nil)
+          out    (caw/modify-shape turned {:shapeId (str child-id) :rotation 30}
+                                   {:guard no-guard
+                                    :propagate (fn [_ entries] (reset! seen entries) {})})]
+      (t/is (some? (:changes out)))
+      (t/is (= 1 (count @seen))))))
+
+(t/deftest modify-shape-flips-through-the-engine
+  (let [calls (atom [])
+        out   (caw/modify-shape view {:shapeId (str child-id) :flipH true :flipV true}
+                                {:guard no-guard :propagate (engine calls)})]
+    (t/is (= 2 (count @calls)))
+    (t/is (some? (:changes out)))))

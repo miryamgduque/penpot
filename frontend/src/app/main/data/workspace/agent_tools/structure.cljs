@@ -8,13 +8,13 @@
   "Structural tools: create/modify/nest shapes, text, components,
   masks, SVG import, booleans, delete/duplicate and group/ungroup."
   (:require
+   [app.common.agent.structure :as cas]
    [app.common.agent.write :as caw]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
    [app.common.geom.rect :as grc]
-   [app.common.types.component :as ctc]
    [app.common.types.container :as ctn]
    [app.common.types.path :as path]
    [app.common.types.shape :as cts]
@@ -37,10 +37,32 @@
    [app.main.features :as features]
    [app.main.store :as st]
    [beicon.v2.core :as rx]
-   [cuerdas.core :as str]
    [potok.v2.core :as ptk]))
 
-(declare unparsable-problem ids-problem)
+;; --- Shared with the server
+;;
+;; The refusals of the structure tools live in `app.common.agent.structure`,
+;; shared with the server-side tools. They keep their names here.
+
+(def mask-problem cas/mask-problem)
+
+(def unmask-problem cas/unmask-problem)
+
+(def nest-problem cas/nest-problem)
+
+(def unparsable-problem cas/unparsable-problem)
+
+(def ids-problem cas/ids-problem)
+
+(def delete-problem cas/delete-problem)
+
+(def duplicate-problem cas/duplicate-problem)
+
+(def group-problem cas/group-problem)
+
+(def ungroup-problem cas/ungroup-problem)
+
+(def boolean-problem cas/boolean-problem)
 
 ;; --- Mask / unmask
 ;;
@@ -49,31 +71,6 @@
 ;; no-ops on empty; `unmask-group` keeps only group/bool and commits whatever
 ;; survived — pass a rect and it "succeeds" having done nothing. It also changes
 ;; the user's selection, which we restore.
-
-(defn mask-problem
-  "Why `mask_shapes` cannot run, or nil. Pure."
-  [objects ids]
-  (or (ids-problem "mask_shapes" objects ids)
-      (let [in-copy (filter #(ctn/has-any-copy-parent? objects (get objects %)) ids)]
-        (when (seq in-copy)
-          (dm/str "mask_shapes: " (atc/labels (map #(get objects %) in-copy))
-                  (if (= 1 (count in-copy)) " is" " are")
-                  " inside a component copy, whose structure is owned by the main"
-                  " component — mask the main instead, or detach the copy first")))))
-
-(defn unmask-problem
-  "Why `unmask_shapes` cannot run, or nil. Pure."
-  [objects ids]
-  (or (ids-problem "unmask_shapes" objects ids)
-      (let [shapes (map #(get objects %) ids)
-            wrong  (remove #(and (or (cfh/group-shape? %) (cfh/bool-shape? %))
-                                 (:masked-group %))
-                           shapes)]
-        (when (seq wrong)
-          (dm/str "unmask_shapes: " (atc/labels wrong)
-                  (if (= 1 (count wrong)) " is not a masked group" " are not masked groups")
-                  " — only a shape created by mask_shapes can be unmasked (see its"
-                  " isMask flag in read_design)")))))
 
 (defn mask-shapes
   [{:keys [shapeIds]}]
@@ -270,46 +267,6 @@
           (rx/of {:updated (count updates)
                   :note (str "updated — one undo step. Geometry settles "
                              "asynchronously; verify with read_design.")}))))))
-
-(defn nest-problem
-  "Why `nest_shape` cannot run, or nil. Pure. Public for tests.
-
-  relocate-shapes filters silently — a stale id, a cycle, or a copy-owned
-  target all no-op and read as success, which is how the Kahoot session lost
-  half its content to nests that never landed. Name the refusal instead."
-  [objects id pid]
-  (let [shape  (get objects id)
-        parent (get objects pid)]
-    (cond
-      (or (nil? id) (nil? pid))
-      "nest_shape: missing or invalid shapeId/parentId"
-
-      (nil? shape)
-      (dm/str "nest_shape: no shape on this page with id " (str id)
-              " — it may already be deleted; check read_design")
-
-      (nil? parent)
-      (dm/str "nest_shape: no shape on this page with id " (str pid)
-              " (the parentId) — check read_design")
-
-      (= id pid)
-      "nest_shape: a shape cannot be nested into itself"
-
-      (not (or (cfh/frame-shape? parent) (cfh/group-shape? parent)))
-      (dm/str "nest_shape: " (atc/shape-label parent) " is a "
-              (some-> (:type parent) name)
-              " — the parent must be a board or a group")
-
-      (cfh/is-parent? objects pid id)
-      (dm/str "nest_shape: " (atc/shape-label parent) " is inside "
-              (atc/shape-label shape)
-              " — nesting a shape into its own descendant would create a cycle")
-
-      (or (ctc/in-component-copy? parent)
-          (ctn/has-any-copy-parent? objects parent))
-      (dm/str "nest_shape: " (atc/shape-label parent) " is part of a component copy,"
-              " whose structure is owned by the main component — nest into the"
-              " main component instead, or sever the copy with detach_instance"))))
 
 (defn nest-shape
   [{:keys [shapeId parentId index]}]
@@ -565,49 +522,6 @@
 ;; set, and `duplicate-shapes` drops anything `allow-duplicate?` refuses and then
 ;; no-ops on the empty set, which reads as success.
 
-(defn- unparsable-problem
-  "Why a call must be rejected because some `shapeIds` entry is not a valid
-  shape id, or nil. The handlers parse ids with `(keep parse-uuid)`, which
-  drops malformed entries silently — so without this a request like
-  [\"<valid>\" \"b7f3-truncated\"] would act on the valid subset and read as
-  success, leaving the model believing a shape it named was handled. Reject the
-  whole call and name the offenders; nothing is mutated. Pure."
-  [tool shapeIds]
-  (let [bad (into [] (remove #(and (string? %) (some? (parse-uuid %)))) shapeIds)]
-    (when (seq bad)
-      (dm/str tool ": not valid shape ids: "
-              (str/join ", " (map pr-str bad))
-              " — pass the exact ids from read_design; nothing was changed"))))
-
-(defn ids-problem
-  [tool objects ids]
-  (let [missing (remove #(contains? objects %) ids)]
-    (cond
-      (empty? ids)
-      (dm/str tool ": shapeIds is required — pass the ids to act on (see read_design)")
-
-      (seq missing)
-      (dm/str tool ": no shape on this page with id "
-              (str/join ", " (map str missing))
-              " — it may be on another page, or already gone; check read_design"))))
-
-(defn delete-problem
-  "Why `delete_shape` cannot run, or nil. Pure."
-  [objects ids]
-  (ids-problem "delete_shape" objects ids))
-
-(defn duplicate-problem
-  "Why `duplicate_shape` cannot run, or nil. Pure."
-  [objects ids]
-  (or (ids-problem "duplicate_shape" objects ids)
-      (let [blocked (remove #(ctc/allow-duplicate? objects (get objects %)) ids)]
-        (when (seq blocked)
-          (dm/str "duplicate_shape: " (atc/labels (map #(get objects %) blocked))
-                  (if (= 1 (count blocked)) " is" " are")
-                  " inside a component copy, whose structure is owned by the main"
-                  " component — duplicate the main instead, or sever this copy with"
-                  " detach_instance first")))))
-
 (defn delete-shape
   [{:keys [shapeIds]}]
   (let [state   @st/state
@@ -676,66 +590,6 @@
 ;; input silently and then `(when-not (empty? …))`, so a fully-filtered call
 ;; does nothing and returns success.
 
-(defn group-problem
-  "Why `group_shapes` cannot run, or nil. Mirrors `group-shapes`' own filters
-  (`groups.cljs:195-200`)."
-  [objects ids]
-  (or (ids-problem "group_shapes" objects ids)
-      (let [shapes   (map #(get objects %) ids)
-            variants (filter ctc/is-variant? shapes)
-            in-copy  (filter #(ctn/has-any-copy-parent? objects %) shapes)]
-        (cond
-          (seq variants)
-          (dm/str "group_shapes: " (atc/labels variants)
-                  (if (= 1 (count variants)) " is" " are")
-                  " part of a variant set, which owns its own structure"
-                  " — a variant set cannot be grouped")
-
-          (seq in-copy)
-          (dm/str "group_shapes: " (atc/labels in-copy)
-                  (if (= 1 (count in-copy)) " is" " are")
-                  " inside a component copy, whose structure is owned by the main"
-                  " component — group the main instead, or sever this copy with"
-                  " detach_instance first")))))
-
-(defn ungroup-problem
-  "Why `ungroup_shapes` cannot run, or nil. Mirrors `ungroup-shapes`' filters
-  (`groups.cljs:242-246`) and what its `prepare` can actually handle."
-  [objects ids]
-  (or (ids-problem "ungroup_shapes" objects ids)
-      (let [shapes    (map #(get objects %) ids)
-            in-copy   (filter #(ctn/has-any-copy-parent? objects %) shapes)
-            comps     (filter ctc/instance-head? shapes)
-            containers (filter ctc/is-variant-container? shapes)
-            ;; prepare handles group / bool / frame; anything else yields no
-            ;; changes and is dropped without a word
-            wrong     (remove #(or (cfh/group-shape? %)
-                                   (cfh/bool-shape? %)
-                                   (cfh/frame-shape? %))
-                              shapes)]
-        (cond
-          (seq containers)
-          (dm/str "ungroup_shapes: " (atc/labels containers)
-                  (if (= 1 (count containers)) " is a variant container" " are variant containers")
-                  " — ungrouping one would destroy the set; delete it instead if that is the intent")
-
-          (seq comps)
-          (dm/str "ungroup_shapes: " (atc/labels comps)
-                  (if (= 1 (count comps)) " is a component" " are components")
-                  " and components cannot be ungrouped — sever a copy with detach_instance,"
-                  " or delete the component")
-
-          (seq in-copy)
-          (dm/str "ungroup_shapes: " (atc/labels in-copy)
-                  (if (= 1 (count in-copy)) " is" " are")
-                  " inside a component copy, whose structure is owned by the main component")
-
-          (seq wrong)
-          (dm/str "ungroup_shapes: " (atc/labels wrong)
-                  (if (= 1 (count wrong)) " is a " " are ")
-                  (some-> (:type (first wrong)) name)
-                  " — only a group, a board or a boolean can be ungrouped")))))
-
 (defn group-shapes
   [{:keys [shapeIds]}]
   (let [state   @st/state
@@ -773,27 +627,6 @@
 ;; capability it could not begin. Same silent filter as group/bool everywhere:
 ;; create-bool drops frames, variants and copy-children, no-ops on empty, and
 ;; selects the new bool (which we restore).
-
-(def ^:private bool-ops #{"union" "difference" "intersection" "exclusion"})
-
-(defn boolean-problem
-  "Why `create_boolean` cannot run, or nil. Pure — mirrors create-bool's filter."
-  [objects operation ids]
-  (or (atc/enum-problem "create_boolean" "operation" operation bool-ops)
-      (when (< (count ids) 2)
-        (dm/str "create_boolean: needs at least 2 shapes (got " (count ids)
-                ") — a boolean combines shapes"))
-      (ids-problem "create_boolean" objects ids)
-      (let [usable (remove (fn [id]
-                             (let [s (get objects id)]
-                               (or (cfh/frame-shape? s)
-                                   (ctc/is-variant? s)
-                                   (ctn/has-any-copy-parent? objects s))))
-                           ids)]
-        (when (< (count usable) 2)
-          (dm/str "create_boolean: after skipping boards, variants and copy-children"
-                  " fewer than 2 usable shapes remain — a board is not a boolean"
-                  " operand; use plain shapes or paths")))))
 
 (defn create-boolean
   [{:keys [operation shapeIds]}]

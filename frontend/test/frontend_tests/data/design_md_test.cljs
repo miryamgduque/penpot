@@ -8,8 +8,8 @@
   "US #38 Phase 01: parse/serialize/validate the DESIGN.md format —
   YAML token frontmatter + markdown body (google-labs-code/design.md)."
   (:require
+   [app.common.agent.design-md :as dmd]
    [app.main.data.workspace.design-doc :as dd]
-   [app.main.data.workspace.design-md :as dmd]
    [cljs.test :refer [deftest is]]
    [cuerdas.core :as str]))
 

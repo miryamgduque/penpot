@@ -433,7 +433,9 @@
              (let [project (db/get-by-id conn :project project-id {:columns [:id :team-id]})]
                (->> (db/query conn :team-font-variant
                               {:team-id (:team-id project) :deleted-at nil})
-                    (mapv #(select-keys % [:font-id :font-family :font-weight :font-style])))))))
+                    ;; `:ttf-file-id` names the font's file: the exporter asks for
+                    ;; it by that id when it has to measure or draw text in it
+                    (mapv #(select-keys % [:font-id :font-family :font-weight :font-style :ttf-file-id])))))))
 
 (def ^:private schema:get-agent-tool-page
   [:map {:title "get-agent-tool-page"}
@@ -509,6 +511,15 @@
 
 (def ^:private max-media-bytes (* 8 1024 1024))
 
+(defn- object-data
+  "A storage object's bytes, base64 encoded, or nil when there is none or it
+  is too large to hand over this way."
+  [storage object-id]
+  (when-let [object (some->> object-id (sto/get-object storage))]
+    (when (<= (:size object 0) max-media-bytes)
+      (.encodeToString (java.util.Base64/getEncoder)
+                       ^bytes (sto/get-object-bytes storage object)))))
+
 (def ^:private schema:get-agent-tool-media
   [:map {:title "get-agent-tool-media"}
    [:token [:string {:max 5000}]]
@@ -523,13 +534,40 @@
    ::sm/params schema:get-agent-tool-media}
   [{:keys [::sto/storage ::db/pool] :as cfg} {:keys [token id]}]
   (let [{:keys [profile-id]} (verify-turn-token cfg token)
-        media  (db/get* pool :file-media-object {:id id} {::db/remove-deleted false})
-        object (when (and (some? media)
-                          (:can-read (perms/get-file-read-permissions pool profile-id (:file-id media) nil)))
-                 (sto/get-object storage (:media-id media)))]
-    {:data (when (and (some? object) (<= (:size object 0) max-media-bytes))
-             (.encodeToString (java.util.Base64/getEncoder)
-                              ^bytes (sto/get-object-bytes storage object)))}))
+        media (db/get* pool :file-media-object {:id id} {::db/remove-deleted false})]
+    {:data (when (and (some? media)
+                      (:can-read (perms/get-file-read-permissions pool profile-id (:file-id media) nil)))
+             (object-data storage (:media-id media)))}))
+
+;; Fonts the same way: a team's uploaded font can only be downloaded with a
+;; session, and the exporter needs it to measure or draw text set in it.
+
+(def ^:private sql:team-font-file
+  "SELECT v.ttf_file_id
+     FROM team_font_variant AS v
+     JOIN project AS p ON (p.team_id = v.team_id)
+     JOIN file AS f ON (f.project_id = p.id)
+    WHERE f.id = ?
+      AND v.ttf_file_id = ?
+      AND v.deleted_at IS NULL
+    LIMIT 1")
+
+(def ^:private schema:get-agent-tool-font
+  [:map {:title "get-agent-tool-font"}
+   [:token [:string {:max 5000}]]
+   [:id ::sm/uuid]])
+
+(sv/defmethod ::get-agent-tool-font
+  "The bytes of a font the team of the turn's file uploaded, by the id of its
+  TTF file, base64 encoded; nothing when that team has no such font."
+  {::rpc/auth false
+   ::doc/added "2.20"
+   ::sm/params schema:get-agent-tool-font}
+  [{:keys [::sto/storage] :as cfg} {:keys [token id]}]
+  (let [{:keys [profile-id file-id]} (verify-turn-token cfg token)]
+    (files/check-read-permissions! cfg profile-id file-id)
+    {:data (when (some? (db/exec-one! cfg [sql:team-font-file file-id id]))
+             (object-data storage id))}))
 
 ;; The file-update command as declared, before the RPC layer wraps it: the
 ;; exporter's commit runs it for the profile the turn token names.

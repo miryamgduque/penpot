@@ -13,6 +13,7 @@
    #?(:cljs [goog.object :as gobj])
    [clojure.test :as t]
    [common-tests.agent-components-test]
+   [common-tests.agent-compose-test]
    [common-tests.agent-layout-test]
    [common-tests.agent-media-test]
    [common-tests.agent-read-test]
@@ -101,6 +102,7 @@
 (def test-namespaces
   [#?(:clj 'common-tests.fressian-test)
    'common-tests.agent-components-test
+   'common-tests.agent-compose-test
    'common-tests.agent-layout-test
    'common-tests.agent-media-test
    'common-tests.agent-read-test

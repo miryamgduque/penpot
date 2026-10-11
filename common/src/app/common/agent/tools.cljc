@@ -14,6 +14,7 @@
   described in `app.common.agent.write`."
   (:require
    [app.common.agent.components :as cac]
+   [app.common.agent.compose :as cap]
    [app.common.agent.layout :as cal]
    [app.common.agent.media :as cam]
    [app.common.agent.structure :as cas]
@@ -56,11 +57,15 @@
    "search_icons"  cam/search-icons
    "insert_icon"   cam/insert-icon
    "search_fonts"  cam/search-fonts
-   "set_font"      cam/set-font})
+   "set_font"      cam/set-font
+   "clone_shape"   cap/clone-shape
+   "build_tree"    cap/build-tree})
 
 (def needs
   "Tool name → `(fn [input])` → what the tool needs fetched from outside the
   file before it runs; see `app.common.agent.media`."
   {"insert_image" cam/insert-image-needs
    "search_icons" cam/search-icons-needs
-   "insert_icon"  cam/insert-icon-needs})
+   "insert_icon"  cam/insert-icon-needs
+   "clone_shape"  cap/clone-shape-needs
+   "build_tree"   cap/build-tree-needs})

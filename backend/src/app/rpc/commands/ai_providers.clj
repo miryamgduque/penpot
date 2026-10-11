@@ -25,8 +25,11 @@
   response is never decoded, so this namespace stays free of provider
   dialects. Only credential injection lives here.
 
-  NOTE(prototype): keys are stored in plain text; encrypt with the
-  instance secret before this leaves the prototype stage."
+  Keys are encrypted at rest with a key derived from the instance secret
+  (see `encrypt-key`). Rows written before that are plain text; they keep
+  working and are re-encrypted the first time they are read. A key that can
+  no longer be decrypted (the instance secret changed) reads as
+  `:ai-provider-key-unreadable` and the user reconnects the provider."
   (:require
    [app.common.exceptions :as ex]
    [app.common.json :as json]
@@ -38,8 +41,12 @@
    [app.http.sse :as sse]
    [app.rpc :as-alias rpc]
    [app.rpc.doc :as-alias doc]
+   [app.setup :as-alias setup]
+   [app.setup.keys :as keys]
    [app.util.events :as events]
    [app.util.services :as sv]
+   [buddy.core.codecs :as bc]
+   [buddy.sign.jwe :as jwe]
    [clojure.java.io :as io]
    [cuerdas.core :as str])
   (:import
@@ -69,6 +76,50 @@
   [api-key]
   (let [n (count api-key)]
     (subs api-key (max 0 (- n 4)) n)))
+
+;; --- Key encryption at rest
+;;
+;; A stored key is `enc:v1:<jwe>`: the API key encrypted with a 256-bit key
+;; derived from the instance secret under its own salt, so it shares nothing
+;; with the tokens key. The prefix is what tells an encrypted value from a
+;; legacy plain-text one, and leaves room to rotate the scheme.
+
+(def ^:private encrypted-prefix "enc:v1:")
+
+(def ^:private jwe-options
+  {:alg :a256kw :enc :a256gcm})
+
+(defn- storage-key
+  [{:keys [::setup/props]}]
+  (let [secret (get props :secret-key)]
+    (assert (string? secret) "expect props to have secret-key")
+    (keys/derive secret :salt "ai-providers")))
+
+(defn- encrypted?
+  [stored]
+  (str/starts-with? stored encrypted-prefix))
+
+(defn- encrypt-key
+  [cfg api-key]
+  (str encrypted-prefix (jwe/encrypt api-key (storage-key cfg) jwe-options)))
+
+(defn- decrypt-key
+  "The API key behind a stored value. Legacy plain-text values are returned
+  as they are; an encrypted value that does not decrypt raises
+  `:ai-provider-key-unreadable`."
+  [cfg provider-id stored]
+  (if (encrypted? stored)
+    (try
+      (-> (subs stored (count encrypted-prefix))
+          (jwe/decrypt (storage-key cfg) jwe-options)
+          (bc/bytes->str))
+      (catch Throwable cause
+        (ex/raise :type :validation
+                  :code :ai-provider-key-unreadable
+                  :hint "the stored API key cannot be read; connect the provider again"
+                  :provider provider-id
+                  :cause cause)))
+    stored))
 
 ;; --- Provider HTTP
 
@@ -163,15 +214,26 @@
           (update :enabled-models db/decode-json-pgobject)))
 
 (defn- get-provider-row
-  [pool profile-id provider-id]
-  (decode-row (db/get* pool :profile-ai-provider {:profile-id profile-id
-                                                  :provider provider-id})))
+  "The profile's row for one provider, with `:api-key` decrypted. A legacy
+  plain-text key is encrypted in place on the way."
+  [{:keys [::db/pool] :as cfg} profile-id provider-id]
+  (when-let [row (decode-row (db/get* pool :profile-ai-provider {:profile-id profile-id
+                                                                 :provider provider-id}))]
+    (let [stored (:api-key row)]
+      (when-not (encrypted? stored)
+        (db/update! pool :profile-ai-provider
+                    {:api-key (encrypt-key cfg stored)}
+                    {:profile-id profile-id :provider provider-id}))
+      (assoc row :api-key (decrypt-key cfg provider-id stored)))))
 
 (defn- row->status
-  [row]
+  "Status of a stored row, never the key. An unreadable key still lists as
+  connected, with an empty hint: the user finds out and reconnects on use."
+  [cfg row]
   {:provider (:provider row)
    :connected true
-   :key-hint (key-hint (:api-key row))
+   :key-hint (or (ex/ignoring (key-hint (decrypt-key cfg (:provider row) (:api-key row))))
+                 "")
    :enabled-models (vec (:enabled-models row))
    :connected-at (:updated-at row)})
 
@@ -183,9 +245,9 @@
 (sv/defmethod ::get-ai-providers
   {::doc/added "2.20"
    ::sm/params schema:get-ai-providers}
-  [{:keys [::db/pool]} {:keys [::rpc/profile-id]}]
+  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id]}]
   (->> (db/query pool :profile-ai-provider {:profile-id profile-id})
-       (map (comp row->status decode-row))
+       (map (comp (partial row->status cfg) decode-row))
        (sort-by :provider)
        (vec)))
 
@@ -198,8 +260,8 @@
 (sv/defmethod ::get-ai-provider-models
   {::doc/added "2.20"
    ::sm/params schema:get-ai-provider-models}
-  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider]}]
-  (let [row (get-provider-row pool profile-id provider)]
+  [cfg {:keys [::rpc/profile-id provider]}]
+  (let [row (get-provider-row cfg profile-id provider)]
     (when-not row
       (ex/raise :type :validation
                 :code :ai-provider-not-connected
@@ -234,12 +296,13 @@
 (sv/defmethod ::set-ai-provider-key
   {::doc/added "2.20"
    ::sm/params schema:set-ai-provider-key}
-  [{:keys [::db/pool]} {:keys [::rpc/profile-id provider api-key]}]
-  (let [row  (get-provider-row pool profile-id provider)
+  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider api-key]}]
+  (let [row  (get-provider-row cfg profile-id provider)
         kept (vec (:enabled-models row []))]
-    (db/exec-one! pool [sql:upsert-provider-key
-                        profile-id provider api-key (db/json kept)
-                        api-key])
+    (let [stored (encrypt-key cfg api-key)]
+      (db/exec-one! pool [sql:upsert-provider-key
+                          profile-id provider stored (db/json kept)
+                          stored]))
     {:provider provider
      :connected true
      :key-hint (key-hint api-key)
@@ -269,13 +332,14 @@
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider api-key]}]
   ;; validation doubles as the model fetch: an invalid key stores nothing
   (let [models (fetch-models! cfg provider api-key)
-        row    (get-provider-row pool profile-id provider)
+        row    (get-provider-row cfg profile-id provider)
         ;; on key rotation keep the enabled selection, dropping models the
         ;; provider no longer offers
         kept   (vec (filter (set models) (:enabled-models row [])))]
-    (db/exec-one! pool [sql:upsert-provider-connection
-                        profile-id provider api-key (db/json kept)
-                        api-key (db/json kept)])
+    (let [stored (encrypt-key cfg api-key)]
+      (db/exec-one! pool [sql:upsert-provider-connection
+                          profile-id provider stored (db/json kept)
+                          stored (db/json kept)]))
     {:provider provider
      :connected true
      :key-hint (key-hint api-key)
@@ -292,8 +356,8 @@
 (sv/defmethod ::set-ai-provider-models
   {::doc/added "2.20"
    ::sm/params schema:set-ai-provider-models}
-  [{:keys [::db/pool]} {:keys [::rpc/profile-id provider models]}]
-  (let [row (get-provider-row pool profile-id provider)]
+  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider models]}]
+  (let [row (get-provider-row cfg profile-id provider)]
     (when-not row
       (ex/raise :type :validation
                 :code :ai-provider-not-connected
@@ -343,8 +407,8 @@
    :timeout (ct/duration "240s")})
 
 (defn- connected-provider-row
-  [pool profile-id provider]
-  (or (get-provider-row pool profile-id provider)
+  [cfg profile-id provider]
+  (or (get-provider-row cfg profile-id provider)
       (ex/raise :type :validation
                 :code :ai-provider-not-connected
                 :hint "provider not connected"
@@ -353,8 +417,8 @@
 (sv/defmethod ::ai-agent-round
   {::doc/added "2.20"
    ::sm/params schema:ai-agent-round}
-  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider payload]}]
-  (let [row      (connected-provider-row pool profile-id provider)
+  [cfg {:keys [::rpc/profile-id provider payload]}]
+  (let [row      (connected-provider-row cfg profile-id provider)
         request  (round-request (get providers provider) (:api-key row) payload)
         response (provider-req! cfg request provider)]
     {:provider provider
@@ -440,8 +504,8 @@
   {::doc/added "2.20"
    ::sse/stream? true
    ::sm/params schema:ai-agent-round-stream}
-  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider payload]}]
-  (let [row      (connected-provider-row pool profile-id provider)
+  [cfg {:keys [::rpc/profile-id provider payload]}]
+  (let [row      (connected-provider-row cfg profile-id provider)
         request  (round-request (get providers provider) (:api-key row) payload)
         response (provider-req! cfg request provider {:response-type :input-stream})]
     (check-stream-status! provider response)

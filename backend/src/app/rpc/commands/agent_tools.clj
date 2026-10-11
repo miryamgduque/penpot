@@ -27,6 +27,7 @@
    [app.common.json :as json]
    [app.common.schema :as sm]
    [app.common.time :as ct]
+   [app.common.uri :as u]
    [app.common.uuid :as uuid]
    [app.db :as db]
    [app.features.fdata :as feat.fdata]
@@ -188,11 +189,21 @@
             {:content (:hint (ex-data cause)) :is-error true}
             (throw cause)))))))
 
-;; --- For the engine tools: a page out, changes in
-;;
 ;; The exporter holds the render engine but no session. These two commands are
 ;; all it can do with a turn token: read the page the turn is about, and
 ;; commit changes to that file as the profile that started the turn.
+
+;; --- For the engine tools: a page out, changes in
+
+(defn- team-fonts
+  "The fonts the file's team has uploaded, as the font tools list them."
+  [cfg project-id]
+  (db/run! cfg
+           (fn [{:keys [::db/conn]}]
+             (let [project (db/get-by-id conn :project project-id {:columns [:id :team-id]})]
+               (->> (db/query conn :team-font-variant
+                              {:team-id (:team-id project) :deleted-at nil})
+                    (mapv #(select-keys % [:font-id :font-family :font-weight :font-style])))))))
 
 (def ^:private schema:get-agent-tool-page
   [:map {:title "get-agent-tool-page"}
@@ -212,6 +223,7 @@
           file    (bfc/get-file cfg file-id :read-only? true :load-data? false)]
       {:file-id file-id
        :page-id page-id
+       :team-fonts (team-fonts cfg (:project-id file))
        :revn (:revn file)
        :vern (:vern file)
        :data data
@@ -223,6 +235,41 @@
                         libraries)
        ;; what token-only-colors would let through, were it enforced
        :allowed-colors (caw/allowed-colors data)})))
+
+;; An image a tool inserts is downloaded and stored by the backend, under the
+;; same limits and network rules as an upload from the workspace.
+(def ^:private create-media-fn
+  (delay
+    (->> (sv/scan-ns 'app.rpc.commands.media)
+         (some (fn [[f mdata]]
+                 (when (= "create-file-media-object-from-url" (::sv/name mdata)) f))))))
+
+(def ^:private schema:create-agent-tool-media
+  [:map {:title "create-agent-tool-media"}
+   [:token [:string {:max 5000}]]
+   [:url [:string {:max 2048}]]
+   [:name {:optional true} [:string {:max 250}]]])
+
+(sv/defmethod ::create-agent-tool-media
+  "Stores the image at `url` in the turn's file, as the turn's profile. A
+  download the model can fix by asking differently answers `{:error code}`."
+  {::rpc/auth false
+   ::doc/added "2.20"
+   ::sm/params schema:create-agent-tool-media}
+  [cfg {:keys [token url name]}]
+  (let [{:keys [profile-id file-id]} (verify-turn-token cfg token)]
+    (try
+      (-> (@create-media-fn cfg (cond-> {::rpc/profile-id profile-id
+                                         :file-id file-id
+                                         :is-local true
+                                         :url (u/uri url)}
+                                  (some? name) (assoc :name name)))
+          (select-keys [:id :width :height :mtype]))
+      (catch clojure.lang.ExceptionInfo cause
+        (let [{:keys [type code]} (ex-data cause)]
+          (if (and (contains? #{:validation :restriction} type) (keyword? code))
+            {:error code}
+            (throw cause)))))))
 
 ;; The file-update command as declared, before the RPC layer wraps it: the
 ;; exporter's commit runs it for the profile the turn token names.

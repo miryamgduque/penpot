@@ -665,11 +665,34 @@
 
 ;; --- create_from_svg
 
+(defn import-svg
+  "The changes that add parsed SVG `svg-data` to the page as shapes named
+  `nm`, at `x`,`y` → `{:id :changes}`, the changes still a builder."
+  [{:keys [page-id objects]} svg-data nm x y {:keys [propagate]}]
+  (let [id       (uuid/next)
+        position (gpt/point (or x 0) (or y 0))
+        frame-id (ctst/top-nested-frame objects position)
+        [shape children]
+        (sb/create-svg-shapes id (assoc svg-data :name nm) position objects frame-id frame-id #{} true)
+        changes  (reduce cb/add-object
+                         (-> (caw/page-changes page-id objects)
+                             (cb/add-object shape))
+                         children)
+        added    (->> (:redo-changes changes)
+                      (filter #(= :add-obj (:type %)))
+                      (map :id)
+                      (reverse)
+                      (vec))]
+    {:id id
+     :changes (-> changes
+                  (cb/resize-parents added)
+                  (caw/reflow-all propagate [(:id shape)]))}))
+
 (defn create-from-svg
   "Imports an SVG as real shapes. `parse-svg` turns the markup into the tree
   the shape builder reads, or nil when it is not SVG; parsing XML is the
   host's job."
-  [{:keys [page-id objects]} {:keys [svg x y]} {:keys [propagate parse-svg]}]
+  [view {:keys [svg x y]} {:keys [parse-svg] :as engine}]
   (if (nil? parse-svg)
     {:fallback "SVG cannot be parsed on the server here"}
     (let [svg-data (when (and (string? svg) (not (str/blank? svg))) (parse-svg svg))]
@@ -677,24 +700,8 @@
         {:problem (str "create_from_svg: not valid SVG — pass a complete <svg>…</svg> "
                        "string. Good for icons and small illustrations; for a "
                        "rectangle/ellipse/board use create_shape.")}
-        (let [id       (uuid/next)
-              position (gpt/point (or x 0) (or y 0))
-              frame-id (ctst/top-nested-frame objects position)
-              [shape children]
-              (sb/create-svg-shapes id (assoc svg-data :name "svg") position objects frame-id frame-id #{} true)
-              changes  (reduce cb/add-object
-                               (-> (caw/page-changes page-id objects)
-                                   (cb/add-object shape))
-                               children)
-              added    (->> (:redo-changes changes)
-                            (filter #(= :add-obj (:type %)))
-                            (map :id)
-                            (reverse)
-                            (vec))]
-          {:changes (-> changes
-                        (cb/resize-parents added)
-                        (caw/reflow-all propagate [(:id shape)])
-                        (redo))
+        (let [{:keys [id changes]} (import-svg view svg-data "svg" x y engine)]
+          {:changes (redo changes)
            :result {:id (dm/str id)
                     :note (str "SVG imported as real shapes (a group when it has several "
                                "elements). Its own fills are NOT checked against "

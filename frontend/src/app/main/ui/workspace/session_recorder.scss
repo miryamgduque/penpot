@@ -9,9 +9,9 @@
 // Design session recording controls, in the agent panel header.
 //
 // Colours come from the DS custom properties throughout, so both themes follow
-// without a second set of rules. The one hard-coded hue is the recording dot:
-// "we are recording" is a state that must not blend into the surrounding chrome
-// in either theme, and no DS token carries that meaning.
+// without a second set of rules. The recording red is the DS error foreground
+// token: "we are recording" must not blend into the surrounding chrome, and the
+// DS keeps that red the same in both themes on purpose.
 
 .record-controls {
   position: relative;
@@ -27,12 +27,12 @@
 // recording fills it.
 
 .rec-button svg {
-  stroke: #e11d48;
+  stroke: var(--color-foreground-error);
 }
 
 .rec-button-live svg {
-  fill: #e11d48;
-  stroke: #e11d48;
+  fill: var(--color-foreground-error);
+  stroke: var(--color-foreground-error);
 }
 
 // --- the recording timer card
@@ -109,8 +109,8 @@
   block-size: deprecated.$s-8;
   border-radius: 50%;
 
-  // deliberate hard-coded hue: see the note at the top
-  background-color: #e11d48;
+  // the DS error red on purpose: see the note at the top
+  background-color: var(--color-foreground-error);
   animation: rec-pulse 1.6s ease-in-out infinite;
 }
 
@@ -166,7 +166,7 @@
   border: deprecated.$s-1 solid var(--color-background-quaternary);
   border-radius: deprecated.$br-8;
   background-color: var(--color-background-primary);
-  box-shadow: 0 deprecated.$s-4 deprecated.$s-12 rgb(0 0 0 / 0.25);
+  box-shadow: var(--el-shadow-dark);
 }
 
 .popover-head {

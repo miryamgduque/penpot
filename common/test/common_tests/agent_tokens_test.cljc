@@ -206,3 +206,89 @@
     (t/is (= "#000000" (fill (commit themed out))))
     (t/is (re-find #"no theme named \"Nope\" — this file has: Dark"
                    (:problem (cato/activate-theme (view themed) {:name "Nope"} (engine (atom []))))))))
+
+;; --- With the resolver library a host hands over
+
+(defn- resolver
+  "Stands in for the host's resolver: knows these tokens once asked twice,
+  the way an asynchronous one does."
+  [answers]
+  (let [asked (atom #{})]
+    (fn [tokens]
+      (if (contains? @asked tokens)
+        answers
+        (do (swap! asked conj tokens) nil)))))
+
+(t/deftest a-host-resolver-is-asked-first-and-then-used
+  (let [resolve (resolver {"space.sum" {:resolved-value 32 :unit "px"}
+                           "color.brand" {:resolved-value "rgba(0,0,0,0.5)" :color {:color "#000000" :opacity 0.5}}
+                           "fade" {:error :invalid-opacity}})
+        apply!  #(cato/apply-tokens (view designed)
+                                    {:applications [{:shapeId (str row-id) :tokenName "space.sum"}
+                                                    {:shapeId (str box-id) :tokenName "color.brand"}
+                                                    {:shapeId (str box-id) :tokenName "fade"}]}
+                                    (assoc (engine (atom [])) :resolve-tokens resolve))
+        asked   (apply!)
+        applied (apply!)
+        objects (get-in (commit designed applied) [:pages-index (first (:pages designed)) :objects])]
+    ;; first the tool says which tokens it needs resolved, and changes nothing
+    (t/is (= (ctob/get-tokens-in-active-sets (:tokens-lib designed)) (-> asked :pending :tokens)))
+    (t/is (nil? (:changes asked)))
+    ;; then arithmetic and an rgba color are just values
+    (t/is (= 32 (-> (get objects row-id) :layout-gap :column-gap)))
+    (t/is (= {:fill-color "#000000" :fill-opacity 0.5}
+             (-> (get objects box-id) :fills first (select-keys [:fill-color :fill-opacity]))))
+    ;; a token that does not resolve is bound, and writes nothing
+    (t/is (= "fade" (-> (get objects box-id) :applied-tokens :opacity)))
+    (t/is (not= 0.5 (:opacity (get objects box-id))))))
+
+(t/deftest composite-and-typography-values-are-written-part-by-part
+  (let [fonts   {"gfont-inter" {:id "gfont-inter" :family "Inter" :backend :google
+                                :variants [{:id "regular" :weight "400" :style "normal"}]}}
+        data    (commit designed
+                        (run designed cato/create-tokens
+                             {:tokens [{:type "fontFamilies" :name "font.body" :value "Inter"}
+                                       {:type "letterSpacing" :name "track" :value "2"}]}))
+        answers {"font.body" {:resolved-value ["\"Inter\"" "sans-serif"]}
+                 "track" {:resolved-value 1.5}}
+        out     (cato/apply-tokens (assoc (view data) :fonts fonts)
+                                   {:applications [{:shapeId (str text-id) :tokenName "font.body"}
+                                                   {:shapeId (str text-id) :tokenName "track"}]}
+                                   (assoc (engine (atom [])) :resolve-tokens (constantly answers)))
+        runs    (->> (get-in (commit data out) [:pages-index (first (:pages data)) :objects text-id :content])
+                     (txt/node-seq txt/is-text-node?))]
+    (t/is (every? :ok (-> out :result :results)))
+    (t/is (= #{"gfont-inter"} (set (map :font-id runs))))
+    (t/is (= #{"Inter"} (set (map :font-family runs))))
+    (t/is (= #{"1.5"} (set (map :letter-spacing runs))))
+    ;; with no font list, a font family cannot be matched here
+    (t/is (some? (:fallback (cato/apply-tokens (view data)
+                                               {:applications [{:shapeId (str text-id) :tokenName "font.body"}]}
+                                               (assoc (engine (atom [])) :resolve-tokens (constantly answers))))))))
+
+(t/deftest a-theme-switch-asks-for-the-tokens-of-the-new-theme
+  (let [step    (fn [data tool input] (commit data (tool (view data) input (engine (atom [])))))
+        themed  (-> designed
+                    (step cato/apply-tokens {:applications [{:shapeId (str row-id) :tokenName "space.md"}]})
+                    (step cato/create-token-set {:name "dense"})
+                    (step cato/create-token {:type "spacing" :name "space.md" :value "{space.md.base} / 2" :set "dense"})
+                    (step cato/create-token-theme {:name "Dense" :sets ["Global" "dense"]}))
+        asked   (cato/activate-theme (view themed) {:name "Dense"}
+                                     (assoc (engine (atom [])) :resolve-tokens (constantly nil)))
+        out     (cato/activate-theme (view themed) {:name "Dense"}
+                                     (assoc (engine (atom [])) :resolve-tokens (constantly {"space.md" {:resolved-value 8}})))
+        row     (get-in (commit themed out) [:pages-index (first (:pages themed)) :objects row-id])]
+    ;; the tokens it asks about are the ones active AFTER the switch
+    (t/is (= "{space.md.base} / 2" (-> asked :pending :tokens (get "space.md") :value)))
+    (t/is (= 8 (-> row :layout-gap :column-gap)))))
+
+(t/deftest a-font-family-token-is-stored-as-a-list-of-families
+  (let [after  (commit data (run data cato/create-tokens
+                                 {:tokens [{:type "fontFamilies" :name "font.body" :value "Inter, Helvetica Neue , sans-serif"}
+                                           {:type "fontFamilies" :name "font.alias" :value "{font.body}"}
+                                           {:type "spacing" :name "space.sm" :value "4, 8"}]}))
+        tokens (ctob/get-tokens-in-active-sets (:tokens-lib after))]
+    (t/is (= ["Inter" "Helvetica Neue" "sans-serif"] (:value (get tokens "font.body"))))
+    ;; a reference stays what it is, and other types are not touched
+    (t/is (= "{font.body}" (:value (get tokens "font.alias"))))
+    (t/is (= "4, 8" (:value (get tokens "space.sm"))))))

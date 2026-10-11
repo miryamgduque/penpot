@@ -56,7 +56,7 @@
   (if (some? stopped)
     run
     (let [answer (f view)]
-      (if (or (contains? answer :problem) (contains? answer :fallback))
+      (if (or (contains? answer :problem) (contains? answer :fallback) (contains? answer :pending))
         (assoc run :stopped answer)
         (-> run
             (update :changes into (:changes answer))
@@ -306,7 +306,7 @@
           (tree-seq map? :children tree))))
 
 (defn- at-path
-  "Stops the run at `path` when the step just run was refused."
+  "Notes where the run stopped, when the step just run stopped it."
   [run path]
   (cond-> run
     (and (some? (:stopped run)) (nil? (:path run)))
@@ -376,7 +376,9 @@
     (let [run     (build-node (assoc (start view) :ids {}) tree parentId "tree" options)
           stopped (:stopped run)]
       (cond
-        (contains? stopped :fallback)
+        ;; not this build's to settle: the host takes over, or resolves
+        ;; the tokens and runs it again
+        (or (contains? stopped :fallback) (contains? stopped :pending))
         stopped
 
         (some? stopped)

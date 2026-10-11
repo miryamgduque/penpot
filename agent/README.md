@@ -52,8 +52,8 @@ rules). After the exporter commits, the workspace is told which revision was
 written and catches up before anything else is asked of it.
 
 A call the server cannot handle yet is answered with a fallback and run by
-the workspace instead: a token whose value needs arithmetic, a text set in a
-font the team uploaded, a foundation document with DESIGN.md frontmatter.
+the workspace instead: a text set in a font the team uploaded, a foundation
+document with DESIGN.md frontmatter.
 Nothing else is sent to the workspace.
 
 Every commit a server tool makes is recorded with its conversation, turn and

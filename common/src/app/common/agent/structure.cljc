@@ -248,7 +248,7 @@
   "Many modify_shape-style updates as ONE call. All-or-nothing: every update is
   validated before anything is touched, so a bad entry cannot leave the batch
   half-applied."
-  [{:keys [page-id objects]} {:keys [updates]} {:keys [guard propagate]}]
+  [{:keys [page-id objects]} {:keys [updates]} {:keys [guard] :as engine}]
   (if-not (and (sequential? updates) (seq updates))
     {:problem (str "update_shapes: pass updates — an array of "
                    "modify_shape-style {shapeId, …} maps")}
@@ -256,8 +256,8 @@
                 (when-let [refusal (caw/modify-problem "update_shapes" objects u guard)]
                   (update refusal :problem #(dm/str "updates[" i "]: " %))))
               (map-indexed vector updates))
-        (some (fn [u] (some->> (caw/modify-fallback objects u) (hash-map :fallback))) updates)
-        {:changes (redo (reduce (fn [changes u] (caw/modify-into changes u propagate))
+        (some (fn [u] (some->> (caw/modify-fallback objects u engine) (hash-map :fallback))) updates)
+        {:changes (redo (reduce (fn [changes u] (caw/modify-into changes u engine))
                                 (caw/page-changes page-id objects)
                                 updates))
          :result {:updated (count updates)

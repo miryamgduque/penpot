@@ -493,11 +493,47 @@
                   (gpt/point (:x bbox) (:y bbox)))))
 
 (defn- unsupported
-  "Why this update is not handled on the server yet, or nil."
-  [shape {:keys [width height]}]
-  ;; resizing a text re-measures it, which needs its fonts in the engine
-  (when (and (or (some? width) (some? height)) (cfh/text-shape? shape))
-    "text is not resized on the server yet"))
+  "Why this update cannot be done here, or nil."
+  [shape {:keys [width height]} {:keys [measure-text]}]
+  ;; resizing a text re-measures it, which only the engine can do
+  (when (and (or (some? width) (some? height))
+             (cfh/text-shape? shape)
+             (nil? measure-text))
+    "text cannot be resized on the server without the render engine"))
+
+(defn next-grow-type
+  "How a text sizes itself after being resized by hand: stretching it one way
+  stops it hugging its words that way."
+  [current scale]
+  (cond
+    (= current :fixed)
+    :fixed
+
+    (and (not (mth/close? (:y scale) 1.0))
+         (or (= current :auto-width) (= current :auto-height)))
+    :fixed
+
+    (and (not (mth/close? (:x scale) 1.0))
+         (= current :auto-width))
+    :auto-height
+
+    :else
+    current))
+
+(defn- resize-text-mode
+  "Updates a text's sizing mode for a resize to `width`/`height`, before the
+  resize itself: the engine has to see the new mode when it lays the text out."
+  [changes id attr value]
+  (let [shape (get (cb/lookup-objects changes) id)]
+    (if-not (cfh/text-shape? shape)
+      changes
+      (let [{sr-width :width sr-height :height} (:selrect shape)
+            scale (gpt/point (/ (if (= attr :width) value sr-width) sr-width)
+                             (/ (if (= attr :height) value sr-height) sr-height))
+            mode  (next-grow-type (:grow-type shape) scale)]
+        (cond-> changes
+          (not= mode (:grow-type shape))
+          (cb/update-shapes [id] #(assoc % :grow-type mode)))))))
 
 (defn- flip-modifiers
   "Mirrors `shape` around its own center, on one axis."
@@ -514,15 +550,39 @@
       (cond-> (ctm/has-structure? modifiers)
         (cb/update-shapes [id] #(ctm/apply-structure-modifiers % modifiers)))))
 
+(defn fit-text
+  "Sizes text `id` to its words, the way the workspace does after a text
+  changes: a fixed text keeps its box, an auto-height one keeps its width, an
+  auto-width one takes both from the words. The resize goes through the
+  engine, so a laid-out parent makes room."
+  [changes {:keys [propagate measure-text]} id]
+  (let [changes (cb/apply-changes-local changes)
+        objects (cb/lookup-objects changes)
+        {:keys [selrect points grow-type] :as shape} (get objects id)
+        measured (when (not= :fixed grow-type) (measure-text objects id))]
+    (if (or (nil? measured)
+            (not (pos? (:width selrect)))
+            (not (pos? (:height selrect))))
+      changes
+      (let [width  (if (= :auto-height grow-type) (:width selrect) (:width measured))
+            height (:height measured)]
+        (propagate-modifiers
+         changes propagate id
+         (ctm/resize-modifiers (gpt/point (/ width (:width selrect)) (/ height (:height selrect)))
+                               (first points)
+                               (:transform shape (gmt/matrix))
+                               (:transform-inverse shape (gmt/matrix))))))))
+
 (defn modify-fallback
-  "Why one modify_shape-style update is not handled on the server yet, or nil.
-  Call after `modify-problem`."
-  [objects input]
-  (unsupported (get objects (parse-uuid (:shapeId input))) input))
+  "Why one modify_shape-style update cannot be done here, or nil. Call after
+  `modify-problem`."
+  [objects input engine]
+  (unsupported (get objects (parse-uuid (:shapeId input))) input engine))
 
 (defn modify-into
   "Appends one already-validated modify_shape-style update to `changes`."
-  [changes {:keys [shapeId x y width height hidden locked rotation flipH flipV] :as input} propagate]
+  [changes {:keys [shapeId x y width height hidden locked rotation flipH flipV] :as input}
+   {:keys [propagate measure-text] :as engine}]
   (let [id      (parse-uuid shapeId)
         shape   (get (cb/lookup-objects changes) id)
         attr-fn (attr-update-fn input)
@@ -553,9 +613,16 @@
           (step (fn [objects shape]
                   (ctm/move-modifiers (position-delta objects shape input)))))
         (cond-> (some? width)
-          (step (fn [_ shape] (ctm/change-dimensions-modifiers shape :width width))))
+          (-> (resize-text-mode id :width width)
+              (step (fn [_ shape] (ctm/change-dimensions-modifiers shape :width width)))))
         (cond-> (some? height)
-          (step (fn [_ shape] (ctm/change-dimensions-modifiers shape :height height)))))))
+          (-> (resize-text-mode id :height height)
+              (step (fn [_ shape] (ctm/change-dimensions-modifiers shape :height height)))))
+        ;; a text that still hugs its words on one side re-measures itself
+        (cond-> (and (or (some? width) (some? height))
+                     (cfh/text-shape? shape)
+                     (some? measure-text))
+          (fit-text engine id)))))
 
 (defn page-changes
   "An empty change set for a page, tracking `objects` as changes are added."
@@ -600,11 +667,12 @@
 (defn modify-shape
   "→ `{:changes :result}`, `{:problem}` or `{:fallback}`; arguments as in
   `create-shape`."
-  [{:keys [page-id objects]} {:keys [shapeId x y width height] :as input} {:keys [guard propagate]}]
+  [{:keys [page-id objects]} {:keys [shapeId x y width height] :as input}
+   {:keys [guard] :as engine}]
   (or (modify-problem "modify_shape" objects input guard)
-      (some->> (modify-fallback objects input) (hash-map :fallback))
+      (some->> (modify-fallback objects input engine) (hash-map :fallback))
       (let [id      (parse-uuid shapeId)
-            changes (modify-into (page-changes page-id objects) input propagate)]
+            changes (modify-into (page-changes page-id objects) input engine)]
         {:changes (:redo-changes changes)
          :result
          (if-not (or (some? x) (some? y) (some? width) (some? height))

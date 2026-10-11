@@ -15,6 +15,7 @@
   (:require
    [app.common.agent.layout :as cal]
    [app.common.agent.structure :as cas]
+   [app.common.agent.text :as catx]
    [app.common.agent.write :as caw]))
 
 (def tools
@@ -30,4 +31,6 @@
    "group_shapes"     cas/group-shapes
    "ungroup_shapes"   cas/ungroup-shapes
    "mask_shapes"      cas/mask-shapes
-   "unmask_shapes"    cas/unmask-shapes})
+   "unmask_shapes"    cas/unmask-shapes
+   "create_text"      catx/create-text
+   "set_text"         catx/set-text})

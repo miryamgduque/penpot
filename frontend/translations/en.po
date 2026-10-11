@@ -9978,14 +9978,6 @@ msgid "workspace.agent.composer.send"
 msgstr "Send message"
 
 #: src/app/main/ui/workspace/ai_panel.cljs
-msgid "workspace.agent.composer.attach-images"
-msgstr "Attach images"
-
-#: src/app/main/ui/workspace/ai_panel.cljs
-msgid "workspace.agent.composer.model-cannot-read-images"
-msgstr "This model can't read images"
-
-#: src/app/main/ui/workspace/ai_panel.cljs
 msgid "workspace.agent.composer.no-model"
 msgstr "No model"
 

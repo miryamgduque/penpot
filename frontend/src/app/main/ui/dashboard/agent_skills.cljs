@@ -15,6 +15,7 @@
    [app.common.data.macros :as dm]
    [app.main.data.workspace.team-skills :as dwts]
    [app.main.store :as st]
+   [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.foundations.assets.icon :as i :refer [icon*]]
    [app.util.dom :as dom]
    [app.util.i18n :as i18n :refer [tr]]
@@ -52,9 +53,10 @@
   (let [{:keys [label category reactive promoted-by-name trigger description]} skill]
     [:div {:class (stl/css :detail)}
      [:div {:class (stl/css :detail-head)}
-      [:button {:class (stl/css :detail-back) :type "button" :on-click on-back
-                :aria-label "Back"}
-       [:> icon* {:icon-id i/arrow-left}]]
+      [:> icon-button* {:variant "ghost"
+                        :aria-label (tr "labels.back")
+                        :on-click on-back
+                        :icon i/arrow-left}]
       [:h2 {:class (stl/css :detail-name)} label]]
      [:> skill-tags* {:category category :reactive reactive :promoted-by-name promoted-by-name}]
 

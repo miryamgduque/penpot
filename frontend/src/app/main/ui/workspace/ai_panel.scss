@@ -6,6 +6,7 @@
 
 @use "refactor/common-refactor.scss" as deprecated;
 @use "ds/typography.scss" as t;
+@use "./agent_button" as agent-button;
 
 // --- Text scale
 //
@@ -14,7 +15,8 @@
 // reach them by inheritance; these wrappers re-state font-size against the
 // variable instead. Every wrapped mixin's line-height is unitless, so leading
 // follows the size for free. Deliberately not scaled: the header band (aligned
-// to the workspace right-header) and fixed glyph boxes like the attachment ✕.
+// to the workspace right-header), fixed glyph boxes like the attachment ✕, and
+// DS buttons (`button*`), which keep the DS size.
 
 @mixin scaled-body-small {
   @include deprecated.body-small-typography;
@@ -57,6 +59,11 @@
   @include deprecated.big-title-typography;
 
   font-size: calc(#{deprecated.$fs-24} * var(--ai-font-scale, 1));
+}
+
+// Every DS text button in the panel: see _agent_button.scss.
+.sentence-case {
+  @include agent-button.sentence-case;
 }
 
 // Native right-docked AI panel. The workspace grid gives it the `ai-panel`
@@ -479,20 +486,9 @@
   color: var(--color-foreground-secondary);
 }
 
-// A quiet accent text action — apply just this rule's fixes.
+// Apply just this rule's fixes: pushed to the end of the group head.
 .observer-group-fix {
-  @include scaled-body-small;
-
   margin-inline-start: auto;
-  padding: 0 deprecated.$s-4;
-  border: none;
-  background: none;
-  color: var(--color-accent-primary);
-  cursor: pointer;
-
-  &:hover {
-    text-decoration: underline;
-  }
 }
 
 .observer-rows {
@@ -551,20 +547,6 @@
   color: var(--color-accent-primary);
 }
 
-.observer-showmore {
-  @include scaled-body-small;
-
-  padding: deprecated.$s-4 0 0;
-  border: none;
-  background: none;
-  color: var(--color-accent-primary);
-  cursor: pointer;
-
-  &:hover {
-    text-decoration: underline;
-  }
-}
-
 .observer-footer {
   display: flex;
   gap: deprecated.$s-12;
@@ -572,39 +554,6 @@
   justify-content: flex-end;
   padding: deprecated.$s-8;
   border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
-}
-
-// Muted, low-emphasis — clearly secondary to Fix all.
-.observer-dismiss {
-  @include scaled-body-small;
-
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    color: var(--color-foreground-primary);
-  }
-}
-
-// Primary action: solid accent.
-.observer-fixall {
-  @include scaled-body-small;
-
-  flex-shrink: 0;
-  padding: deprecated.$s-4 deprecated.$s-12;
-  border: none;
-  border-radius: deprecated.$br-6;
-  background-color: var(--color-accent-primary);
-  color: var(--color-background-primary);
-  cursor: pointer;
-
-  &:hover {
-    background-color: var(--color-accent-primary-muted);
-    color: var(--color-foreground-primary);
-  }
 }
 
 // The runaway brake: a turn paused at its round/spend allowance,
@@ -628,28 +577,6 @@
 .checkpoint-actions {
   display: flex;
   gap: deprecated.$s-8;
-}
-
-.checkpoint-continue {
-  @include scaled-body-small;
-
-  padding: deprecated.$s-4 deprecated.$s-12;
-  border: none;
-  border-radius: deprecated.$br-4;
-  background-color: var(--color-accent-primary);
-  color: var(--color-background-secondary);
-  cursor: pointer;
-}
-
-.checkpoint-stop {
-  @include scaled-body-small;
-
-  padding: deprecated.$s-4 deprecated.$s-12;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-4;
-  background-color: transparent;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
 }
 
 // Arrival notice (US #52): a team skill promoted since this member last
@@ -771,20 +698,10 @@
   color: var(--color-foreground-secondary);
 }
 
+// Full width under the notice text, label centred.
 .handoff-action {
-  @include scaled-body-small;
-
   align-self: stretch;
-  padding: deprecated.$s-4 deprecated.$s-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-4;
-  background: none;
-  color: var(--color-accent-primary);
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--color-accent-primary);
-  }
+  justify-content: center;
 }
 
 .handoff-dismiss {
@@ -1612,23 +1529,6 @@
   gap: deprecated.$s-8;
 }
 
-.eform-submit {
-  @include deprecated.body-small-typography;
-
-  padding: deprecated.$s-6 deprecated.$s-16;
-  border: none;
-  border-radius: deprecated.$br-8;
-  background-color: var(--color-accent-primary);
-  color: var(--color-background-primary);
-  font-weight: 600;
-  cursor: pointer;
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-}
-
 .eform-pending-hint {
   @include deprecated.body-small-typography;
 
@@ -1708,30 +1608,6 @@
   &:focus {
     outline: none;
     border-color: var(--color-accent-primary);
-  }
-}
-
-.eform-attach-btn {
-  @include deprecated.body-small-typography;
-
-  display: inline-flex;
-  align-items: center;
-  gap: deprecated.$s-4;
-  padding: deprecated.$s-4 deprecated.$s-8;
-  border: deprecated.$s-1 dashed var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
-  background-color: transparent;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover:not(:disabled) {
-    border-color: var(--color-foreground-secondary);
-    color: var(--color-foreground-primary);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
   }
 }
 
@@ -2069,20 +1945,9 @@
   }
 }
 
+// Keep the add buttons at their own width in the column.
 .vibes-form-add {
-  @include deprecated.body-small-typography;
-
   align-self: flex-start;
-  padding: 0 deprecated.$s-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-4;
-  background-color: var(--color-background-secondary);
-  color: var(--color-foreground-primary);
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--color-accent-primary);
-  }
 }
 
 .vibes-form-type {
@@ -2126,42 +1991,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: deprecated.$s-8;
-}
-
-.vibes-button,
-.vibes-button-primary {
-  @include deprecated.body-small-typography;
-
-  padding: deprecated.$s-6 deprecated.$s-12;
-  border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  background-color: transparent;
-  color: var(--color-foreground-primary);
-  cursor: pointer;
-
-  &:hover {
-    border-color: var(--color-foreground-secondary);
-  }
-}
-
-.vibes-button-primary {
-  border-color: var(--color-accent-primary);
-  background-color: var(--color-accent-primary);
-  color: var(--color-background-primary);
-  font-weight: 600;
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-}
-
-.vibes-button-danger {
-  color: var(--color-accent-error);
-}
-
-.vibes-button-confirm {
-  border-color: var(--color-accent-error);
 }
 
 .vibes-empty {
@@ -2420,25 +2249,7 @@
 }
 
 .chat-clear {
-  @include scaled-body-small;
-
   flex-shrink: 0;
-  padding: deprecated.$s-2 deprecated.$s-6;
-  border-radius: deprecated.$br-6;
-  border: none;
-  background-color: transparent;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover:not(:disabled) {
-    background-color: var(--color-background-tertiary);
-    color: var(--color-foreground-primary);
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.5;
-  }
 }
 
 // Skills tab: the built-in catalog, grouped Audits / Build / Auto-fix.
@@ -2615,22 +2426,12 @@ textarea.create-input {
   color: var(--color-accent-warning);
 }
 
-.create-submit {
-  @include scaled-body-small;
-
+// Create skill and the no-provider Connect link: own width, set off from the
+// fields above.
+.create-submit,
+.create-connect {
   align-self: flex-start;
   margin-block-start: deprecated.$s-8;
-  padding: deprecated.$s-8 deprecated.$s-16;
-  border: none;
-  border-radius: deprecated.$br-8;
-  background-color: var(--color-accent-primary);
-  color: var(--color-background-primary);
-  cursor: pointer;
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
 }
 
 // Promote-to-team confirmation (US #12): the muted note (reactive travels,
@@ -2648,30 +2449,6 @@ textarea.create-input {
   align-items: center;
   justify-content: flex-end;
   margin-block-start: deprecated.$s-8;
-
-  // the accent Publish button drops its own top margin inside the flow footer
-  .create-submit {
-    margin-block-start: 0;
-  }
-}
-
-.promote-cancel {
-  @include scaled-body-small;
-
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    color: var(--color-foreground-primary);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
 }
 
 .catalog-group {

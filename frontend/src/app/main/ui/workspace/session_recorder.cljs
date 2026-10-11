@@ -46,6 +46,7 @@
    [app.main.data.workspace.session-review :as srev]
    [app.main.refs :as refs]
    [app.main.store :as st]
+   [app.main.ui.ds.buttons.button :refer [button*]]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
    [app.util.clipboard :as clipboard]
@@ -132,9 +133,9 @@
                    :title (tr "workspace.session-recorder.not-saving-title" spersist/max-flush-failures)}
             (tr "workspace.session-recorder.not-saving")])
 
-         [:button {:type "button"
-                   :class (stl/css :timer-stop)
-                   :on-click on-stop}
+         [:> button* {:variant "secondary"
+                      :class (stl/css :sentence-case :timer-stop)
+                      :on-click on-stop}
           (tr "workspace.session-recorder.stop-short")]]]])))
 
 (mf/defc session-row*
@@ -189,9 +190,9 @@
    [:div {:class (stl/css :popover-head)}
     [:span (tr "workspace.session-recorder.sessions")]
     (when (seq sessions)
-      [:button {:type "button"
-                :class (stl/css :export-all)
-                :on-click #(on-export-all)}
+      [:> button* {:variant "ghost"
+                   :class (stl/css :sentence-case)
+                   :on-click #(on-export-all)}
        (tr "workspace.session-recorder.export-all")])]
 
    (if (empty? sessions)

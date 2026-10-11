@@ -51,6 +51,7 @@
    [app.main.ui.hooks :as hooks]
    [app.main.ui.workspace.session-recorder :as session-recorder]
    [app.util.dom :as dom]
+   [app.util.i18n :as i18n :refer [tr]]
    [app.util.keyboard :as kbd]
    [app.util.object :as obj]
    [app.util.webapi :as wapi]
@@ -159,9 +160,9 @@
   [selected objects]
   (let [n (count selected)]
     (cond
-      (zero? n) "No selection"
-      (= 1 n)   (dm/str "1 layer: " (:name (get objects (first selected))))
-      :else     (dm/str n " layers selected"))))
+      (zero? n) (tr "workspace.agent.selection.none")
+      (= 1 n)   (tr "workspace.agent.selection.one" (:name (get objects (first selected))))
+      :else     (tr "workspace.agent.selection.many" n))))
 
 (defn- chat-context
   "The context payload riding a user message: current page + selection. Shared
@@ -240,8 +241,8 @@
   (let [prompt (+ (or input-tokens 0) (or cache-read-tokens 0) (or cache-write-tokens 0))
         cached (if (pos? prompt) (js/Math.round (* (/ (or cache-read-tokens 0) prompt) 100)) 0)
         cost   (agent/estimate-cost-usd model usage)]
-    (dm/str requests " calls · " (format-tokens prompt) " in (" cached "% cached) · "
-            (format-tokens output-tokens) " out"
+    (dm/str (tr "workspace.agent.usage.summary" requests (format-tokens prompt)
+                (dm/str cached "%") (format-tokens output-tokens))
             (when cost (dm/str " · ~$" (.toFixed cost 2))))))
 
 ;; How close to the end still counts as "at the bottom", in px. Slack for
@@ -280,7 +281,7 @@
       [:span {:class (stl/css :tool-chip-name)}
        (if (= 1 n)
          (:name (first messages))
-         (dm/str "Ran " n " tools"))]
+         (tr "workspace.agent.tools.ran" n))]
       [:> i/icon* {:icon-id (if open? i/arrow-down i/arrow-right)
                    :class (stl/css :tool-group-caret)}]]
 
@@ -319,7 +320,7 @@
                :on-click on-toggle}
       [:span {:class (stl/css :thinking-glyph)} "✦"]
       [:span {:class (stl/css :thinking-label)}
-       (if live "Thinking…" "Thought process")]
+       (if live (tr "workspace.agent.thinking") (tr "workspace.agent.thought-process"))]
       [:> i/icon* {:icon-id (if open? i/arrow-down i/arrow-right)
                    :class (stl/css :tool-group-caret)}]]
      (when open?
@@ -355,14 +356,14 @@
     [:div {:class (stl/css :eform-question)}
      [:div {:class (stl/css :eform-prompt)}
       (:question question)
-      (when optional [:span {:class (stl/css :eform-optional)} " (optional)"])]
+      (when optional [:span {:class (stl/css :eform-optional)} (tr "workspace.agent.form.optional")])]
      (when (seq hint)
        [:div {:class (stl/css :eform-hint)} hint])
 
      (if text-type?
        [:textarea {:class (stl/css :eform-textarea)
                    :rows 3
-                   :placeholder "Your answer…"
+                   :placeholder (tr "workspace.agent.form.answer-placeholder")
                    :value (or (:text qstate) "")
                    :on-change #(on-text id (dom/get-value (dom/get-target %)))}]
 
@@ -386,19 +387,19 @@
                                          :eform-chip-active other-on?)
                     :aria-pressed other-on?
                     :on-click #(on-toggle id type :other)}
-           "Other…"])
+           (tr "workspace.agent.form.other")])
         (when allow-decide
           [:button {:type "button"
                     :class (stl/css-case :eform-chip true
                                          :eform-chip-active (contains? selected :decide))
                     :aria-pressed (contains? selected :decide)
                     :on-click #(on-toggle id type :decide)}
-           "Decide for me"])])
+           (tr "workspace.agent.form.decide-for-me")])])
 
      (when (and (not text-type?) other-on?)
        [:input {:class (stl/css :eform-other-input)
                 :type "text"
-                :placeholder "Tell me in your words…"
+                :placeholder (tr "workspace.agent.form.own-words-placeholder")
                 :value (or (:other-text qstate) "")
                 ;; Enter must not bubble into anything submit-like; the form
                 ;; sends only from its own button
@@ -419,21 +420,21 @@
           [:div {:key i :class (stl/css :eform-thumb)}
            [:img {:class (stl/css :eform-thumb-img)
                   :src (image-src image)
-                  :alt (dm/str "Reference image " (inc i))}]
+                  :alt (tr "workspace.agent.form.reference-image" (inc i))}]
            [:button {:type "button"
                      :class (stl/css :eform-thumb-remove)
-                     :aria-label (dm/str "Remove reference image " (inc i))
+                     :aria-label (tr "workspace.agent.form.remove-reference-image" (inc i))
                      :on-click #(on-remove-image id i)}
             [:span {:aria-hidden true} "✕"]]])
         [:button {:type "button"
                   :class (stl/css :eform-attach-btn)
                   :disabled (zero? room)
                   :title (if (pos? room)
-                           "Attach reference images"
-                           "Image limit reached")
+                           (tr "workspace.agent.form.attach-reference-images")
+                           (tr "workspace.agent.form.image-limit-reached"))
                   :on-click on-attach-click}
          [:> i/icon* {:icon-id i/img}]
-         "Add reference"]])]))
+         (tr "workspace.agent.form.add-reference")]])]))
 
 (mf/defc elicitation-form*
   "The ask_user interview, rendered at the tail of the transcript while a
@@ -530,10 +531,10 @@
                 :class (stl/css :eform-submit)
                 :disabled (not ready?)
                 :on-click on-submit}
-       "Send answers"]
+       (tr "workspace.agent.form.send-answers")]
       (when-not ready?
         [:span {:class (stl/css :eform-pending-hint)}
-         "Answer the required questions to continue"])]]))
+         (tr "workspace.agent.form.answer-required")])]]))
 
 (mf/defc transcript*
   "The message list, split out so it can own its scroll ref.
@@ -655,7 +656,7 @@
                     [:img {:key i
                            :class (stl/css :message-image)
                            :src (image-src image)
-                           :alt (dm/str "Attached image " (inc i))}])])
+                           :alt (tr "workspace.agent.attached-image" (inc i))}])])
                ;; the user didn't write markdown — don't eat their asterisks;
                ;; a note is a plain string by construction
                (if (or user? note?)
@@ -672,28 +673,28 @@
               cost (agent/estimate-cost-usd (:model settings) usage)]
           [:div {:class (stl/css :checkpoint)}
            [:div {:class (stl/css :checkpoint-label)}
-            (dm/str "Still working — " rounds " tool rounds"
-                    (when cost (dm/str " and ~$" (.toFixed cost 2)))
-                    " this turn. Keep going?")]
+            (if cost
+              (tr "workspace.agent.checkpoint.with-cost" rounds (.toFixed cost 2))
+              (tr "workspace.agent.checkpoint" rounds))]
            [:div {:class (stl/css :checkpoint-actions)}
             [:button {:type "button"
                       :class (stl/css :checkpoint-continue)
                       :on-click on-continue}
-             "Continue"]
+             (tr "workspace.agent.checkpoint.continue")]
             [:button {:type "button"
                       :class (stl/css :checkpoint-stop)
                       :on-click on-stop-here}
-             "Stop here"]]]))
+             (tr "workspace.agent.checkpoint.stop")]]]))
       ;; …and no placeholder under a thinking row that is itself still
       ;; streaming — its own summary already reads "Thinking…"
       (when (and busy? (nil? form)
                  (not= "thinking" (:role (nth messages last-idx nil))))
-        [:div {:class (stl/css :message :message-thinking)} "Thinking…"])]
+        [:div {:class (stl/css :message :message-thinking)} (tr "workspace.agent.thinking")])]
 
      (when-not at-bottom?
        [:> icon-button* {:class (stl/css :jump-to-latest)
                          :variant "primary"
-                         :aria-label "Jump to latest message"
+                         :aria-label (tr "workspace.agent.jump-to-latest")
                          :on-click scroll-to-end
                          :icon i/arrow-down}])]))
 
@@ -707,8 +708,15 @@
 ;; Zero violations — or a dismissed set that hasn't changed — renders nothing.
 
 (def ^:private rule-labels
-  {"layer-naming"      "Layer naming"
-   "token-only-colors" "Token-only colors"})
+  {"layer-naming"      "workspace.agent.rule.layer-naming"
+   "token-only-colors" "workspace.agent.rule.token-only-colors"})
+
+(defn- rule-label
+  "The translated name of a rule, or `default` for one without a label."
+  [rule default]
+  (if-let [code (get rule-labels rule)]
+    (tr code)
+    default))
 
 (def ^:private max-row-shapes 3)
 
@@ -727,7 +735,7 @@
   (->> violations
        (group-by :rule)
        (map (fn [[rule vs]]
-              {:rule rule :label (get rule-labels rule rule) :n (count vs) :shapes vs}))
+              {:rule rule :label (rule-label rule rule) :n (count vs) :shapes vs}))
        (sort-by (juxt (comp - :n) :rule))
        (vec)))
 
@@ -737,8 +745,9 @@
   [violations]
   (let [shapes (count (into #{} (map :shapeId) violations))
         rules  (count (into #{} (map :rule) violations))]
-    (dm/str shapes (if (= 1 shapes) " layer needs attention · " " layers need attention · ")
-            rules (if (= 1 rules) " rule" " rules"))))
+    (dm/str (tr "workspace.agent.observer.layers" (i18n/c shapes))
+            " · "
+            (tr "workspace.agent.observer.rules" (i18n/c rules)))))
 
 (defn- observer-cards
   "Group the live violation set by owning Observer skill → one card model each,
@@ -750,7 +759,7 @@
        (map (fn [[skill-name vs]]
               (let [sk (ask/rule->skill (:rule (first vs)))]
                 {:name      skill-name
-                 :label     (or (:label sk) (get rule-labels (:rule (first vs)) skill-name))
+                 :label     (or (:label sk) (rule-label (:rule (first vs)) skill-name))
                  :shapes    vs
                  :groups    (rule-groups vs)
                  :summary   (summary-line vs)
@@ -784,8 +793,8 @@
        [:span {:class (stl/css :observer-summary)} summary]]
       [:button {:type "button"
                 :class (stl/css :observer-close)
-                :aria-label "Dismiss"
-                :title "Dismiss"
+                :aria-label (tr "workspace.agent.dismiss")
+                :title (tr "workspace.agent.dismiss")
                 :on-click on-dismiss}
        [:> i/icon* {:icon-id i/close}]]]
 
@@ -800,11 +809,11 @@
               [:span {:class (stl/css :observer-group-count)} (dm/str "· " n)]
               [:button {:type "button"
                         :class (stl/css :observer-group-fix)
-                        :title (dm/str "Fix only the " label " findings")
+                        :title (tr "workspace.agent.observer.fix-group-title" label)
                         ;; render-time closure, deliberately: hooks cannot live
                         ;; inside `for`, and the group list is tiny
                         :on-click (fn [_] (on-fix g-shapes))}
-               "Fix"]]
+               (tr "workspace.agent.observer.fix")]]
              [:ul {:class (stl/css :observer-rows)}
               (for [v shown]
                 (let [hex (parse-swatch (:reason v))]
@@ -827,19 +836,19 @@
                  [:button {:type "button"
                            :class (stl/css :observer-showmore)
                            :on-click (fn [_] (swap! open-rules* conj rule))}
-                  (dm/str "Show " (- n max-row-shapes) " more")]])]]))])
+                  (tr "workspace.agent.observer.show-more" (- n max-row-shapes))]])]]))])
 
      (when expanded?
        [:div {:class (stl/css :observer-footer)}
         [:button {:type "button"
                   :class (stl/css :observer-dismiss)
                   :on-click on-dismiss}
-         "Dismiss"]
+         (tr "workspace.agent.dismiss")]
         [:button {:type "button"
                   :class (stl/css :observer-fixall)
-                  :title "Ask the agent to fix everything listed, in this conversation"
+                  :title (tr "workspace.agent.observer.fix-all-title")
                   :on-click (fn [_] (on-fix shapes))}
-         "Fix all"]])]))
+         (tr "workspace.agent.observer.fix-all")]])]))
 
 (mf/defc observer-notifications*
   "The Observer notification stack (issue #37): one calm card per affected
@@ -987,13 +996,13 @@
                            ;; two competing ones
                            error    (cond
                                       (and (seq files) (empty? pictures))
-                                      "Only images can be attached (PNG, JPEG or WebP)."
+                                      (tr "workspace.agent.attach.only-images")
 
                                       (< (count pictures) (count files))
-                                      "Some files were skipped — only images can be attached."
+                                      (tr "workspace.agent.attach.some-skipped")
 
                                       (< (count accepted) (count pictures))
-                                      (dm/str "Only " max-images " images can be attached at once."))]
+                                      (tr "workspace.agent.attach.too-many" max-images))]
                        (reset! attach-error* error)
                        (when (seq accepted)
                          (->> (read-images accepted)
@@ -1001,7 +1010,7 @@
                                           (swap! images* into read))
                                         (fn [_]
                                           (reset! attach-error*
-                                                  "That image could not be read."))))))))
+                                                  (tr "workspace.agent.attach.unreadable")))))))))
 
         on-pick   (mf/use-fn
                    (mf/deps add-files)
@@ -1234,14 +1243,16 @@
           [:div {:class (stl/css :arrival-text-col)}
            [:div {:class (stl/css :arrival-title-row)}
             [:div {:class (stl/css :arrival-title)} label]
-            [:span {:class (stl/css :catalog-new-pill)} "New"]]
+            [:span {:class (stl/css :catalog-new-pill)} (tr "workspace.agent.skills.new-pill")]]
            [:div {:class (stl/css :arrival-promoted-by)}
-            (dm/str "Promoted by " (or promoted-by "a teammate") ".")]
+            (if promoted-by
+              (tr "workspace.agent.arrival.promoted-by" promoted-by)
+              (tr "workspace.agent.arrival.promoted-by-teammate"))]
            [:div {:class (stl/css :arrival-body)} blurb]]
           [:button {:type "button"
                     :class (stl/css :arrival-close)
-                    :aria-label (dm/str "Dismiss arrival notice for " label)
-                    :title "Dismiss"
+                    :aria-label (tr "workspace.agent.arrival.dismiss" label)
+                    :title (tr "workspace.agent.dismiss")
                     :on-click (fn [event]
                                 (dom/stop-propagation event)
                                 (on-dismiss-arrival id))
@@ -1260,19 +1271,19 @@
      (when (or (seq messages) (some-> usage :requests pos?))
        [:div {:class (stl/css :chat-status)}
         [:span {:class (stl/css :usage-meter)
-                :title "Session token usage across all API calls from this panel. Cost is an estimate at standard list prices."}
+                :title (tr "workspace.agent.usage.title")}
          (if (some-> usage :requests pos?)
            (usage-summary usage (:model settings))
-           "Restored conversation")]
+           (tr "workspace.agent.usage.restored"))]
         ;; the glyph is decorative — kept out of the accessible name, which
         ;; would otherwise read "plus sign new chat"
         [:button {:class (stl/css :chat-clear)
                   :type "button"
                   :disabled busy?
-                  :title "Start a new chat — this conversation is kept in History"
+                  :title (tr "workspace.agent.chat.new-title")
                   :on-click on-clear}
          [:span {:aria-hidden true} "+"]
-         "New chat"]])
+         (tr "workspace.agent.chat.new")]])
 
      ;; Fresh-chat suggestion: the conversation is big enough that every reply
      ;; re-reads a lot of it. The action summarizes ALL of it (one cheap round)
@@ -1284,18 +1295,18 @@
         ;; the text wrapped into a skinny column in the narrow panel
         [:div {:class (stl/css :handoff-header)}
          [:span {:class (stl/css :handoff-text)}
-          "This conversation is getting long — replies re-read all of it."]
+          (tr "workspace.agent.handoff.notice")]
          [:button {:type "button"
                    :class (stl/css :handoff-dismiss)
-                   :aria-label "Dismiss this suggestion"
+                   :aria-label (tr "workspace.agent.handoff.dismiss")
                    :on-click on-handoff-dismiss}
           [:span {:aria-hidden true} "✕"]]]
         [:button {:type "button"
                   :class (stl/css :handoff-action)
-                  :title "Summarize this conversation and continue in a fresh chat — this one is kept in History"
+                  :title (tr "workspace.agent.handoff.summarize-title")
                   :on-click on-handoff}
          [:span {:aria-hidden true} "✦ "]
-         "Summarize into a new chat"]])
+         (tr "workspace.agent.handoff.summarize")]])
 
      ;; A Fix-it-now queued behind the running turn: visible, cancellable,
      ;; sends itself when the turn ends (drain effect above).
@@ -1303,16 +1314,16 @@
        [:div {:class (stl/css :pending-fix)}
         [:div {:class (stl/css :pending-fix-body)}
          [:span {:class (stl/css :pending-fix-label)}
-          (dm/str "Queued — sends when the current turn ends"
+          (dm/str (tr "workspace.agent.pending.queued")
                   ;; name the model only when it is not the one the user is
                   ;; chatting with — that divergence is worth a heads-up
                   (when-let [m (get-in pending-fix [:settings :model])]
                     (when (not= m (:model settings))
-                      (dm/str " · via " m))))]
+                      (dm/str " · " (tr "workspace.agent.pending.via" m)))))]
          [:span {:class (stl/css :pending-fix-text)} (:text pending-fix)]]
         [:button {:type "button"
                   :class (stl/css :pending-fix-cancel)
-                  :aria-label "Cancel the queued fix"
+                  :aria-label (tr "workspace.agent.pending.cancel")
                   :on-click on-cancel-pending}
          [:span {:aria-hidden true} "✕"]]])
 
@@ -1323,10 +1334,10 @@
            [:div {:key i :class (stl/css :composer-attachment)}
             [:img {:class (stl/css :composer-attachment-img)
                    :src (image-src image)
-                   :alt (dm/str "Attached image " (inc i))}]
+                   :alt (tr "workspace.agent.attached-image" (inc i))}]
             [:button {:type "button"
                       :class (stl/css :composer-attachment-remove)
-                      :aria-label (dm/str "Remove attached image " (inc i))
+                      :aria-label (tr "workspace.agent.composer.remove-attached-image" (inc i))
                       :data-index (dm/str i)
                       :on-click on-remove}
              [:span {:aria-hidden true} "✕"]]])])
@@ -1336,7 +1347,7 @@
       ;; beats letting the user find out from the reply
       (when (and (seq images) (not sees?))
         [:div {:class (stl/css :composer-hint)}
-         (dm/str (:model settings) " can't read images — they won't be sent.")])
+         (tr "workspace.agent.composer.images-not-sent" (:model settings))])
 
       (when attach-error
         [:div {:class (stl/css :composer-hint)} attach-error])
@@ -1353,7 +1364,7 @@
          [:div {:class (stl/css :slash-menu)
                 :ref slash-menu-ref
                 :role "listbox"
-                :aria-label "Commands and skills"}
+                :aria-label (tr "workspace.agent.composer.commands-and-skills")}
           (for [[i entry] (map-indexed vector slash-matches)]
             [:button {:key (:command entry)
                       :type "button"
@@ -1385,7 +1396,7 @@
                    ;; scrollHeight is measured against) is a single line, not the
                    ;; browser default of two
                    :rows 1
-                   :placeholder "Ask the agent…"
+                   :placeholder (tr "workspace.agent.composer.placeholder")
                    :value input
                    :on-change on-input
                    :on-paste on-paste
@@ -1393,12 +1404,12 @@
        (if busy?
          [:button {:type "button"
                    :class (stl/css :composer-stop)
-                   :aria-label "Stop generating"
+                   :aria-label (tr "workspace.agent.composer.stop")
                    :on-click on-cancel}
           [:> i/icon* {:icon-id i/close}]]
          [:button {:type "button"
                    :class (stl/css :composer-send)
-                   :aria-label "Send message"
+                   :aria-label (tr "workspace.agent.composer.send")
                    ;; an image on its own is a legitimate message
                    :disabled (or (not settings)
                                  (and (empty? (str/trim input)) (empty? images)))
@@ -1410,10 +1421,10 @@
       [:div {:class (stl/css :composer-footer)}
        [:button {:type "button"
                  :class (stl/css :composer-attach)
-                 :aria-label (if sees? "Attach images" "This model can't read images")
+                 :aria-label (if sees? (tr "workspace.agent.composer.attach-images") (tr "workspace.agent.composer.model-cannot-read-images"))
                  :title (if sees?
-                          (dm/str "Attach images (up to " max-images ")")
-                          (dm/str (:model settings) " can't read images"))
+                          (tr "workspace.agent.composer.attach-images-up-to" max-images)
+                          (tr "workspace.agent.composer.named-model-cannot-read-images" (:model settings)))
                  ;; disabled, not hidden: a control that vanishes when you
                  ;; switch models reads as a bug, not a capability
                  :disabled (or (not settings) (not sees?)
@@ -1431,7 +1442,7 @@
                   :aria-expanded picker-open?
                   :on-click on-toggle-picker}
          [:span {:class (stl/css :model-picker-current)}
-          (if settings (:model settings) "No model")]
+          (if settings (:model settings) (tr "workspace.agent.composer.no-model"))]
          [:> i/icon* {:icon-id i/arrow-down :class (stl/css :model-picker-caret)}]]
 
         (when picker-open?
@@ -1452,7 +1463,7 @@
                  (:model entry)])])
            [:a {:class (stl/css :model-picker-manage)
                 :href "#/settings/integrations"}
-            "Manage your models"]])]]]]))
+            (tr "workspace.agent.composer.manage-models")]])]]]]))
 
 (mf/defc reactive-badge*
   "The reactive-behavior pill (US #14) shared by the catalog cards and the detail
@@ -1494,26 +1505,26 @@
                                    :body body}))
                        (on-saved))))]
     [:div {:class (stl/css :skill-edit)}
-     [:label {:class (stl/css :create-label)} "Name"]
+     [:label {:class (stl/css :create-label)} (tr "workspace.agent.skill.name")]
      [:input {:class (stl/css :create-input)
               :value label
               :on-change #(reset! label* (dom/get-value (dom/get-target %)))}]
 
-     [:label {:class (stl/css :create-label)} "Trigger phrase"]
+     [:label {:class (stl/css :create-label)} (tr "workspace.agent.skill.trigger-phrase")]
      [:input {:class (stl/css :create-input)
               :value trigger
               :on-change #(reset! trigger* (dom/get-value (dom/get-target %)))}]
 
-     [:label {:class (stl/css :create-label)} "Behavior"]
+     [:label {:class (stl/css :create-label)} (tr "workspace.agent.skill.behavior")]
      [:div {:class (stl/css :create-modes)}
-      (for [[m lbl] [["on-demand" "💬 On-demand"] ["observer" "👁 Observer"]]]
+      (for [[m lbl] [["on-demand" (tr "workspace.agent.skill.on-demand-emoji")] ["observer" (tr "workspace.agent.skill.observer-emoji")]]]
         [:button {:key m
                   :type "button"
                   :class (stl/css-case :create-mode true :selected (= m reactive))
                   :on-click #(reset! reactive* m)}
          lbl])]
 
-     [:label {:class (stl/css :create-label)} "Playbook (what the agent follows)"]
+     [:label {:class (stl/css :create-label)} (tr "workspace.agent.skill.playbook-hint")]
      [:textarea {:class (stl/css :skill-edit-body)
                  :value body
                  :rows 14
@@ -1524,11 +1535,11 @@
                 :class (stl/css :vibes-button-primary)
                 :disabled (not ready?)
                 :on-click on-save}
-       "Save"]
+       (tr "workspace.agent.save")]
       [:button {:type "button"
                 :class (stl/css :vibes-button)
                 :on-click on-cancel}
-       "Cancel"]]]))
+       (tr "workspace.agent.cancel")]]]))
 
 (mf/defc skill-detail*
   "Detail for one catalog skill, shown in place of the list within the Skills
@@ -1564,32 +1575,34 @@
        [:div {:class (stl/css :detail-head)}
         [:div {:class (stl/css :detail-name)} label]
         [:> switch* {:default-checked enabled
-                     :aria-label (dm/str (if enabled "Disable " "Enable ") label)
+                     :aria-label (if enabled
+                                   (tr "workspace.agent.skill.disable-named" label)
+                                   (tr "workspace.agent.skill.enable-named" label))
                      :on-change on-toggle}]]
        [:div {:class (stl/css :detail-tags)}
         [:> reactive-badge* {:reactive reactive}]
         (when team?
-          [:span {:class (stl/css :catalog-team)} "Team"])]
-       [:div {:class (stl/css :detail-section-label)} "Example trigger phrase"]
+          [:span {:class (stl/css :catalog-team)} (tr "workspace.agent.skill.team")])]
+       [:div {:class (stl/css :detail-section-label)} (tr "workspace.agent.skill.example-trigger")]
        [:div {:class (stl/css :detail-example)} (dm/str "“" example "”")]
-       [:div {:class (stl/css :detail-section-label)} "What it does"]
+       [:div {:class (stl/css :detail-section-label)} (tr "workspace.agent.skill.what-it-does")]
        [:div {:class (stl/css :detail-what)} what]
        (when user?
          [:*
-          [:div {:class (stl/css :detail-section-label)} "Playbook"]
+          [:div {:class (stl/css :detail-section-label)} (tr "workspace.agent.skill.playbook")]
           [:pre {:class (stl/css :detail-body)} body]
           [:div {:class (stl/css :vibes-actions)}
            [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
-            "Edit"]
+            (tr "workspace.agent.edit")]
            (when on-promote
              [:button {:type "button" :class (stl/css :vibes-button) :on-click on-promote}
-              "Promote to team"])
+              (tr "workspace.agent.skill.promote")])
            [:button {:type "button"
                      :class (stl/css-case :vibes-button true
                                           :vibes-button-danger true
                                           :vibes-button-confirm confirm?)
                      :on-click on-delete}
-            (if confirm? "Really delete?" "Delete")]]])])))
+            (if confirm? (tr "workspace.agent.really-delete") (tr "workspace.agent.delete"))]]])])))
 
 (mf/defc skill-row*
   "One catalog row: name + description, a muted \"Off\" pill when disabled, and a
@@ -1639,9 +1652,9 @@
       (when arrived
         [:span {:class (stl/css-case :catalog-new-pill true
                                      :catalog-new-pill-faded (not highlighted?))}
-         "New"])
+         (tr "workspace.agent.skills.new-pill")])
       (when-not enabled
-        [:span {:class (stl/css :catalog-off)} "Off"])
+        [:span {:class (stl/css :catalog-off)} (tr "workspace.agent.skills.off")])
       ;; The menu lives inside the clickable row, so swallow its click/keydown to
       ;; keep them from opening the detail view.
       [:div {:class (stl/css :catalog-menu)
@@ -1649,27 +1662,27 @@
              :on-key-down dom/stop-propagation}
        [:> icon-button* {:variant "ghost"
                          :icon i/menu
-                         :aria-label (dm/str "Actions for " label)
+                         :aria-label (tr "workspace.agent.skill.actions-for" label)
                          :on-click toggle-menu}]
        [:& dropdown {:show @show-menu? :on-close close-menu}
         [:ul {:class (stl/css :skill-menu)}
          [:li {:class (stl/css :menu-option)
                :role "button"
                :on-click #(do (on-enable) (close-menu))}
-          (if enabled "Disable" "Enable")]
+          (if enabled (tr "workspace.agent.skill.disable") (tr "workspace.agent.skill.enable"))]
          [:li {:class (stl/css-case :menu-option true :menu-option-disabled true)
                :aria-disabled true}
-          "Fork"]
+          (tr "workspace.agent.skill.fork")]
          ;; Promote to team (US #12): live only for a personal skill; built-ins
          ;; and team skills keep it disabled.
          (if (and user? on-promote)
            [:li {:class (stl/css :menu-option)
                  :role "button"
                  :on-click #(do (on-promote) (close-menu))}
-            "Promote to team"]
+            (tr "workspace.agent.skill.promote")]
            [:li {:class (stl/css-case :menu-option true :menu-option-disabled true)
                  :aria-disabled true}
-            "Promote to team"])]]]]
+            (tr "workspace.agent.skill.promote")])]]]]
      [:div {:class (stl/css :catalog-desc)}
       [:span {:class (stl/css :catalog-blurb)} blurb]]]))
 
@@ -1748,19 +1761,19 @@
        ;; creation).
        [:div {:class (stl/css :vibes-empty)}
         [:p {:class (stl/css :vibes-empty-text)}
-         "Standing design context for this file: vibes, tone of voice, naming rules, and more. Skills and the agent read them on every task."]
+         (tr "workspace.agent.foundations.intro")]
         [:button {:type "button" :class (stl/css :foundation-card) :on-click on-interview}
          [:span {:class (stl/css :foundation-card-icon)}
           [:> i/icon* {:icon-id i/sparkles}]]
          [:div {:class (stl/css :foundation-card-text)}
-          [:div {:class (stl/css :foundation-card-title)} "Vibes"]
-          [:div {:class (stl/css :foundation-card-summary)} "Playful, bold, high-contrast"]]]
+          [:div {:class (stl/css :foundation-card-title)} (tr "workspace.agent.foundations.example.vibes")]
+          [:div {:class (stl/css :foundation-card-summary)} (tr "workspace.agent.foundations.example.vibes-summary")]]]
         [:button {:type "button" :class (stl/css :foundation-card) :on-click on-tone}
          [:span {:class (stl/css :foundation-card-icon)}
           [:> i/icon* {:icon-id i/heart}]]
          [:div {:class (stl/css :foundation-card-text)}
-          [:div {:class (stl/css :foundation-card-title)} "Tone of voice"]
-          [:div {:class (stl/css :foundation-card-summary)} "Friendly, concise, active voice"]]]]
+          [:div {:class (stl/css :foundation-card-title)} (tr "workspace.agent.foundations.example.tone")]
+          [:div {:class (stl/css :foundation-card-summary)} (tr "workspace.agent.foundations.example.tone-summary")]]]]
        [:*
         (for [{:keys [slug doc]} foundations]
           [:button {:key slug
@@ -1806,16 +1819,16 @@
             (for [[i {:keys [name value]}] (map-indexed vector (get model k))]
               [:div {:key (dm/str title i) :class (stl/css :vibes-form-row)}
                [:input {:class (stl/css :vibes-form-input)
-                        :placeholder "name (sm, md…)"
+                        :placeholder (tr "workspace.agent.vibes.token-name-placeholder")
                         :value name
                         :on-change (set-in [k i :name])}]
                [:input {:class (stl/css :vibes-form-input :vibes-form-input-mono)
-                        :placeholder "value (8px)"
+                        :placeholder (tr "workspace.agent.vibes.token-value-placeholder")
                         :value value
                         :on-change (set-in [k i :value])}]
                [:button {:type "button"
                          :class (stl/css :vibes-form-remove)
-                         :aria-label (dm/str "Remove " title " token")
+                         :aria-label (tr "workspace.agent.vibes.remove-token" title)
                          :on-click (rm-row k i)}
                 "×"]])
             [:button {:type "button"
@@ -1825,69 +1838,69 @@
 
     [:div {:class (stl/css :vibes-form)}
      [:div {:class (stl/css :vibes-form-field)}
-      [:span {:class (stl/css :vibes-form-label)} "Name"]
+      [:span {:class (stl/css :vibes-form-label)} (tr "workspace.agent.vibes.name")]
       [:input {:class (stl/css :vibes-form-input)
-               :placeholder "the design system's name"
+               :placeholder (tr "workspace.agent.vibes.name-placeholder")
                :value (:name model)
                :on-change (set-in [:name])}]]
      [:div {:class (stl/css :vibes-form-field)}
-      [:span {:class (stl/css :vibes-form-label)} "Description"]
+      [:span {:class (stl/css :vibes-form-label)} (tr "workspace.agent.vibes.description")]
       [:input {:class (stl/css :vibes-form-input)
-               :placeholder "identity in one line"
+               :placeholder (tr "workspace.agent.vibes.description-placeholder")
                :value (:description model)
                :on-change (set-in [:description])}]]
 
-     [:div {:class (stl/css :vibes-form-section-title)} "Colors"]
+     [:div {:class (stl/css :vibes-form-section-title)} (tr "workspace.agent.vibes.colors")]
      (for [[i {:keys [name value]}] (map-indexed vector (:colors model))]
        [:div {:key (dm/str "color" i) :class (stl/css :vibes-form-row)}
         [:span {:class (stl/css :vibes-form-swatch)
                 :style #js {:backgroundColor value}}]
         [:input {:class (stl/css :vibes-form-input)
-                 :placeholder "name (primary…)"
+                 :placeholder (tr "workspace.agent.vibes.color-name-placeholder")
                  :value name
                  :on-change (set-in [:colors i :name])}]
         [:input {:class (stl/css :vibes-form-input :vibes-form-input-mono)
-                 :placeholder "#rrggbb or any CSS color"
+                 :placeholder (tr "workspace.agent.vibes.color-value-placeholder")
                  :value value
                  :on-change (set-in [:colors i :value])}]
         [:button {:type "button"
                   :class (stl/css :vibes-form-remove)
-                  :aria-label "Remove color"
+                  :aria-label (tr "workspace.agent.vibes.remove-color")
                   :on-click (rm-row :colors i)}
          "×"]])
      [:button {:type "button"
                :class (stl/css :vibes-form-add)
                :on-click (add-row :colors {:name "" :value ""})}
-      "+ Add color"]
+      (tr "workspace.agent.vibes.add-color")]
 
-     [:div {:class (stl/css :vibes-form-section-title)} "Typography"]
+     [:div {:class (stl/css :vibes-form-section-title)} (tr "workspace.agent.vibes.typography")]
      (for [[i row] (map-indexed vector (:typography model))]
        [:div {:key (dm/str "type" i) :class (stl/css :vibes-form-type)}
         [:div {:class (stl/css :vibes-form-row)}
          [:input {:class (stl/css :vibes-form-input)
-                  :placeholder "role (heading, body…)"
+                  :placeholder (tr "workspace.agent.vibes.role-placeholder")
                   :value (:name row)
                   :on-change (set-in [:typography i :name])}]
          [:button {:type "button"
                    :class (stl/css :vibes-form-remove)
-                   :aria-label "Remove typography role"
+                   :aria-label (tr "workspace.agent.vibes.remove-role")
                    :on-click (rm-row :typography i)}
           "×"]]
         [:div {:class (stl/css :vibes-form-type-grid)}
          [:input {:class (stl/css :vibes-form-input)
-                  :placeholder "family (Inter)"
+                  :placeholder (tr "workspace.agent.vibes.family-placeholder")
                   :value (:family row)
                   :on-change (set-in [:typography i :family])}]
          [:input {:class (stl/css :vibes-form-input)
-                  :placeholder "size (14px)"
+                  :placeholder (tr "workspace.agent.vibes.size-placeholder")
                   :value (:size row)
                   :on-change (set-in [:typography i :size])}]
          [:input {:class (stl/css :vibes-form-input)
-                  :placeholder "weight (600)"
+                  :placeholder (tr "workspace.agent.vibes.weight-placeholder")
                   :value (:weight row)
                   :on-change (set-in [:typography i :weight])}]
          [:input {:class (stl/css :vibes-form-input)
-                  :placeholder "line height (1.5)"
+                  :placeholder (tr "workspace.agent.vibes.line-height-placeholder")
                   :value (:line-height row)
                   :on-change (set-in [:typography i :line-height])}]]])
      [:button {:type "button"
@@ -1895,14 +1908,14 @@
                :on-click (add-row :typography {:name "" :family "" :size ""
                                                :weight "" :line-height ""
                                                :extra {}})}
-      "+ Add role"]
+      (tr "workspace.agent.vibes.add-role")]
 
-     (scale-section :rounded "Rounded" "+ Add radius")
-     (scale-section :spacing "Spacing" "+ Add step")
+     (scale-section :rounded (tr "workspace.agent.vibes.rounded") (tr "workspace.agent.vibes.add-radius"))
+     (scale-section :spacing (tr "workspace.agent.vibes.spacing") (tr "workspace.agent.vibes.add-step"))
 
      (when (contains? (:extra model) "components")
        [:p {:class (stl/css :vibes-form-note)}
-        "components tokens are kept as-is — edit them through the agent for now"])]))
+        (tr "workspace.agent.vibes.components-note")])]))
 
 (mf/defc foundation-view*
   "One foundation's detail (US #38): the doc rendered readable, an agent
@@ -2007,10 +2020,10 @@
           [:button {:type "button"
                     :class (stl/css :vibes-form-add)
                     :on-click on-add-tokens}
-           "+ Add design tokens"]]
+           (tr "workspace.agent.vibes.add-tokens")]]
          [:*
           [:> vibes-token-form* {:state edit*}]
-          [:div {:class (stl/css :vibes-form-section-title)} "Body (markdown)"]
+          [:div {:class (stl/css :vibes-form-section-title)} (tr "workspace.agent.vibes.body")]
           [:textarea {:class (stl/css :vibes-editor)
                       :value (:body edit)
                       :rows 12
@@ -2025,11 +2038,11 @@
                   :class (stl/css :vibes-button-primary)
                   :disabled (some? problem)
                   :on-click on-save}
-         "Save"]
+         (tr "workspace.agent.save")]
         [:button {:type "button"
                   :class (stl/css :vibes-button)
                   :on-click on-cancel}
-         "Cancel"]]]
+         (tr "workspace.agent.cancel")]]]
 
       (some? doc)
       [:div {:class (stl/css :vibes-view)}
@@ -2037,7 +2050,7 @@
        ;; the conversational edit path — the agent rewrites the guidance
        [:div {:class (stl/css :foundation-ask)}
         [:input {:class (stl/css :vibes-form-input)
-                 :placeholder "Ask the agent for a change — \"allow emoji\", \"more formal\"…"
+                 :placeholder (tr "workspace.agent.foundation.ask-placeholder")
                  :value ask
                  :on-change on-ask-change
                  :on-key-down on-ask-key}]
@@ -2045,34 +2058,34 @@
                   :class (stl/css :vibes-button-primary)
                   :disabled (str/blank? ask)
                   :on-click on-ask-submit}
-         "Ask"]]
+         (tr "workspace.agent.foundation.ask")]]
        [:div {:class (stl/css :vibes-actions)}
         [:button {:type "button" :class (stl/css :vibes-button) :on-click on-edit}
-         "Edit"]
+         (tr "workspace.agent.edit")]
         (when vibes?
           [:button {:type "button" :class (stl/css :vibes-button) :on-click on-interview}
-           "Re-run interview"])
+           (tr "workspace.agent.foundation.rerun-interview")])
         [:button {:type "button"
                   :class (stl/css-case :vibes-button true
                                        :vibes-button-danger true
                                        :vibes-button-confirm confirm?)
                   :on-click on-delete}
-         (if confirm? "Really delete? (undoable)" "Delete")]]]
+         (if confirm? (tr "workspace.agent.foundation.really-delete") (tr "workspace.agent.delete"))]]]
 
       vibes?
       [:div {:class (stl/css :vibes-empty)}
-       [:div {:class (stl/css :vibes-empty-title)} "No vibes set yet"]
+       [:div {:class (stl/css :vibes-empty-title)} (tr "workspace.agent.vibes.empty-title")]
        [:p {:class (stl/css :vibes-empty-text)}
-        "A short interview pins down this project's design direction — vibe, audience, platform, do/don't — as a design.md on this file. The agent then designs against it, and collaborators share it."]
+        (tr "workspace.agent.vibes.empty-desc")]
        [:button {:type "button"
                  :class (stl/css :vibes-button-primary)
                  :on-click on-interview}
-        "Set the vibes"]]
+        (tr "workspace.agent.vibes.set")]]
 
       :else
       [:div {:class (stl/css :vibes-empty)}
        [:p {:class (stl/css :vibes-empty-text)}
-        "This foundation is gone — someone may have removed it just now."]])))
+        (tr "workspace.agent.foundation.gone")]])))
 
 (defn- toggle-set
   [s v]
@@ -2144,7 +2157,7 @@
                               :on-set-enabled #(toggle name %)
                               :on-promote #(on-promote entry)}])])
          [:div {:class (stl/css :skills-empty)}
-          "No skills match these filters."])])))
+          (tr "workspace.agent.skills.no-match")])])))
 
 (mf/defc connect-empty*
   "Shown in place of the whole panel body (tabs included) when no AI provider
@@ -2154,12 +2167,12 @@
   [:div {:class (stl/css :connect-empty)}
    [:div {:class (stl/css :connect-icon)}
     [:> i/icon* {:icon-id i/unplug :size "l"}]]
-   [:div {:class (stl/css :connect-title)} "Ready when you are!"]
+   [:div {:class (stl/css :connect-title)} (tr "workspace.agent.connect.title")]
    [:p {:class (stl/css :connect-subtitle)}
-    "Works with Claude, ChatGPT, and others. Bring your own key, no subscription through Penpot."]
+    (tr "workspace.agent.connect.desc")]
    [:a {:class (stl/css :connect-button)
         :href "#/settings/integrations"}
-    "Connect a provider"]])
+    (tr "workspace.agent.connect.action")]])
 
 (mf/defc skill-create*
   "The guided creation flow (US #9): capture what / trigger / reactive behavior
@@ -2200,32 +2213,32 @@
     (if (nil? settings)
       [:div {:class (stl/css :skill-create)}
        [:p {:class (stl/css :create-guard)}
-        "Connect an AI model to create skills."]
+        (tr "workspace.agent.create.connect-first")]
        [:a {:class (stl/css :connect-button) :href "#/settings/integrations"}
-        "Connect a provider"]]
+        (tr "workspace.agent.connect.action")]]
 
       [:div {:class (stl/css :skill-create)}
        [:p {:class (stl/css :create-intro)}
-        "Describe the skill in your words — the agent writes the playbook."]
+        (tr "workspace.agent.create.intro")]
 
-       [:label {:class (stl/css :create-label)} "What should it do?"]
+       [:label {:class (stl/css :create-label)} (tr "workspace.agent.create.what")]
        [:textarea {:class (stl/css :create-input)
                    :value what
-                   :placeholder "e.g. Check all the copy on a screen against a tone of voice I describe, and flag anything that doesn't match."
+                   :placeholder (tr "workspace.agent.create.what-placeholder")
                    :disabled busy?
                    :on-change on-what}]
 
-       [:label {:class (stl/css :create-label)} "When should it trigger? An example phrase."]
+       [:label {:class (stl/css :create-label)} (tr "workspace.agent.create.when")]
        [:input {:class (stl/css :create-input)
                 :value trigger
-                :placeholder "e.g. Check the tone of voice on this screen."
+                :placeholder (tr "workspace.agent.create.when-placeholder")
                 :disabled busy?
                 :on-change on-trigger}]
 
        [:label {:class (stl/css :create-label)}
-        "Should it only respond when asked, or keep an eye on things and let you know?"]
+        (tr "workspace.agent.create.behavior-question")]
        [:div {:class (stl/css :create-modes)}
-        (for [[m lbl] [["on-demand" "💬 On-demand"] ["observer" "👁 Observer"]]]
+        (for [[m lbl] [["on-demand" (tr "workspace.agent.skill.on-demand-emoji")] ["observer" (tr "workspace.agent.skill.observer-emoji")]]]
           [:button {:key m
                     :type "button"
                     :class (stl/css-case :create-mode true :selected (= m reactive))
@@ -2233,17 +2246,17 @@
                     :on-click #(reset! reactive* m)}
            lbl
            (when (= m proposed)
-             [:span {:class (stl/css :create-mode-hint)} " · suggested"])])]
+             [:span {:class (stl/css :create-mode-hint)} (tr "workspace.agent.create.suggested")])])]
 
        (when (= status :error)
          [:p {:class (stl/css :create-error)}
-          "Couldn't generate that skill — try rephrasing and create again."])
+          (tr "workspace.agent.create.error")])
 
        [:button {:class (stl/css :create-submit)
                  :type "button"
                  :disabled (not ready?)
                  :on-click submit}
-        (if busy? "Generating…" "Create skill")]])))
+        (if busy? (tr "workspace.agent.create.generating") (tr "workspace.agent.create.action"))]])))
 
 (mf/defc skill-promote*
   "The promote-to-team confirmation (US #12): review the team-facing name +
@@ -2278,18 +2291,18 @@
                          :on-error   (fn [_] (reset! status* :error))})))))]
     (if (nil? team-id)
       [:div {:class (stl/css :skill-create)}
-       [:p {:class (stl/css :create-guard)} "Open a team file to promote a skill."]]
+       [:p {:class (stl/css :create-guard)} (tr "workspace.agent.promote.needs-team-file")]]
       [:div {:class (stl/css :skill-create)}
        [:p {:class (stl/css :create-intro)}
-        "Teammates will see this in Agent Skills. Review before publishing."]
+        (tr "workspace.agent.promote.intro")]
 
-       [:label {:class (stl/css :create-label)} "Name"]
+       [:label {:class (stl/css :create-label)} (tr "workspace.agent.skill.name")]
        [:input {:class (stl/css :create-input)
                 :value name
                 :disabled busy?
                 :on-change on-name}]
 
-       [:label {:class (stl/css :create-label)} "Description"]
+       [:label {:class (stl/css :create-label)} (tr "workspace.agent.promote.description")]
        [:textarea {:class (stl/css :create-input)
                    :value desc
                    :disabled busy?
@@ -2299,19 +2312,19 @@
        ;; per-file — the skill reads whatever file it runs in) — US #12/#14
        [:p {:class (stl/css :promote-note)}
         (dm/str (get ask/reactive-label (:reactive skill) (:reactive skill))
-                " · reads file foundations")]
+                " · " (tr "workspace.agent.promote.reads-foundations"))]
 
        (when (= status :error)
          [:p {:class (stl/css :create-error)}
-          "Couldn't publish that skill — try again."])
+          (tr "workspace.agent.promote.error")])
 
        [:div {:class (stl/css :promote-actions)}
         [:button {:type "button" :class (stl/css :promote-cancel)
                   :disabled busy? :on-click on-done}
-         "Cancel"]
+         (tr "workspace.agent.cancel")]
         [:button {:type "button" :class (stl/css :create-submit)
                   :disabled (not ready?) :on-click publish}
-         (if busy? "Publishing…" "Publish")]]])))
+         (if busy? (tr "workspace.agent.promote.publishing") (tr "workspace.agent.promote.publish"))]]])))
 
 ;; --- Panel resize
 ;;
@@ -2446,13 +2459,13 @@
            :ref root-ref}
      ;; disabled on an empty chat: "new" from nothing is a no-op
      [:> icon-button* {:variant "ghost"
-                       :aria-label "New chat"
+                       :aria-label (tr "workspace.agent.chat.new")
                        :disabled (or busy? (empty? messages))
                        :on-click on-new
                        :icon i/add}]
      (when (seq chats)
        [:> icon-button* {:variant "ghost"
-                         :aria-label "Chat history"
+                         :aria-label (tr "workspace.agent.chat.history")
                          :aria-haspopup "listbox"
                          :aria-expanded open?
                          :on-click on-toggle
@@ -2497,19 +2510,19 @@
                           :on-click #(do (st/emit! (dwach/load-chat id))
                                          (reset! open* false))}
                  [:span {:class (stl/css :chat-history-title)}
-                  (if (str/blank? title) "Untitled chat" title)]
+                  (if (str/blank? title) (tr "workspace.agent.chat.untitled") title)]
                  [:span {:class (stl/css :chat-history-time)}
                   (ct/timeago updated-at)]]
                 ;; rename stays enabled while busy — it only touches metadata,
                 ;; never the live history
                 [:> icon-button* {:variant "ghost"
-                                  :aria-label "Rename conversation"
+                                  :aria-label (tr "workspace.agent.chat.rename")
                                   :class (stl/css :chat-history-rename)
                                   :on-click #(do (reset! draft* (or title ""))
                                                  (reset! editing* id))
                                   :icon i/pentool}]
                 [:> icon-button* {:variant "ghost"
-                                  :aria-label "Delete conversation"
+                                  :aria-label (tr "workspace.agent.chat.delete")
                                   :class (stl/css :chat-history-delete)
                                   :disabled busy?
                                   :on-click #(st/emit! (dwach/delete-chat id))
@@ -2691,17 +2704,17 @@
       (if (or skills? foundations?)
         [:div {:class (stl/css :header-lead)}
          [:> icon-button* {:variant "ghost"
-                           :aria-label "Back"
+                           :aria-label (tr "workspace.agent.back")
                            :on-click on-back
                            :icon i/arrow-left}]
          [:span {:class (stl/css :title)}
           (cond
-            foundations? (if foundation (dd/display-name foundation) "Foundations")
-            creating?    "New skill"
-            promoting    "Promote to team"
-            skill        "Skill info"
-            :else        "Skills")]]
-        [:span {:class (stl/css :title)} "Agent"])
+            foundations? (if foundation (dd/display-name foundation) (tr "workspace.agent.foundations.title"))
+            creating?    (tr "workspace.agent.header.new-skill")
+            promoting    (tr "workspace.agent.skill.promote")
+            skill        (tr "workspace.agent.header.skill-info")
+            :else        (tr "workspace.agent.skills.title"))]]
+        [:span {:class (stl/css :title)} (tr "workspace.agent.title")])
       (cond
         ;; Skills' list: Filters (own dropdown, state owned here and handed
         ;; to skills-tab*) + Create, both icon-buttons, same line as the title.
@@ -2710,7 +2723,7 @@
          [:div {:class (stl/css :skills-filter-wrapper) :ref filter-ref}
           [:> icon-button* {:variant "ghost"
                             :icon i/filter
-                            :aria-label "Filters"
+                            :aria-label (tr "workspace.agent.filters.title")
                             :on-click toggle-filters}]
           [:& dropdown {:show filters-open? :on-close close-filters :container filter-ref}
            ;; Same listbox + tick-icon idiom as comments.cljs's sidebar-options
@@ -2721,13 +2734,13 @@
             [:li {:class (stl/css-case :skills-filter-item true
                                        :selected (= skills-filter-active :enabled))
                   :on-click #(st/emit! (dwaip/set-skills-filter (if (= skills-filter-active :enabled) :all :enabled)))}
-             [:span {:class (stl/css :skills-filter-item-label)} "Show only enabled skills"]
+             [:span {:class (stl/css :skills-filter-item-label)} (tr "workspace.agent.filters.only-enabled")]
              (when (= skills-filter-active :enabled)
                [:span {:class (stl/css :skills-filter-item-icon)}
                 [:> i/icon* {:icon-id i/tick}]])]
             [:li {:class (stl/css :skills-filter-separator)}]
-            [:li {:class (stl/css :skills-filter-group-label)} "Behavior"]
-            (for [[k lbl] [["on-demand" "On-demand"] ["observer" "Observer"]]]
+            [:li {:class (stl/css :skills-filter-group-label)} (tr "workspace.agent.skill.behavior")]
+            (for [[k lbl] [["on-demand" (tr "workspace.agent.skill.on-demand")] ["observer" (tr "workspace.agent.skill.observer")]]]
               [:li {:key k
                     :class (stl/css-case :skills-filter-item true
                                          :selected (contains? reactive-filter k))
@@ -2737,8 +2750,8 @@
                  [:span {:class (stl/css :skills-filter-item-icon)}
                   [:> i/icon* {:icon-id i/tick}]])])
             [:li {:class (stl/css :skills-filter-separator)}]
-            [:li {:class (stl/css :skills-filter-group-label)} "Source"]
-            (for [[k lbl] [[:personal "Personal"] [:team "Team"]]]
+            [:li {:class (stl/css :skills-filter-group-label)} (tr "workspace.agent.filters.source")]
+            (for [[k lbl] [[:personal (tr "workspace.agent.filters.personal")] [:team (tr "workspace.agent.skill.team")]]]
               [:li {:key k
                     :class (stl/css-case :skills-filter-item true
                                          :selected (contains? source-filter k))
@@ -2749,7 +2762,7 @@
                   [:> i/icon* {:icon-id i/tick}]])])]]]
          [:> icon-button* {:variant "ghost"
                            :icon i/add
-                           :aria-label "Create skill"
+                           :aria-label (tr "workspace.agent.create.action")
                            :on-click open-create}]]
 
         ;; Foundations' list: a single Create icon-button, same line as the
@@ -2758,7 +2771,7 @@
         [:div {:class (stl/css :header-actions)}
          [:> icon-button* {:variant "ghost"
                            :icon i/add
-                           :aria-label "Add a foundation"
+                           :aria-label (tr "workspace.agent.foundations.add")
                            :on-click on-add-foundation}]]
 
         (not (or skills? foundations?))
@@ -2782,7 +2795,7 @@
          [:div {:class (stl/css :more-actions)
                 :ref more-ref}
           [:> icon-button* {:variant "ghost"
-                            :aria-label "More actions"
+                            :aria-label (tr "workspace.agent.more-actions")
                             :on-click toggle-more
                             :icon i/menu}]
           [:& dropdown {:show more-open? :on-close close-more :container more-ref}
@@ -2791,12 +2804,12 @@
                       :class (stl/css :more-option)
                       :on-click #(do (close-more) (open-foundations))}
              [:> i/icon* {:icon-id i/compass}]
-             [:span "Foundations"]]
+             [:span (tr "workspace.agent.foundations.title")]]
             [:button {:type "button"
                       :class (stl/css :more-option)
                       :on-click #(do (close-more) (open-skills))}
              [:> i/icon* {:icon-id i/list-checks}]
-             [:span "Skills"]]
+             [:span (tr "workspace.agent.skills.title")]]
             ;; A labelled entry, not just the header dot: an unlabelled icon for
             ;; something as consequential as "start recording everyone's edits"
             ;; is not discoverable, and it was not found in practice.
@@ -2806,21 +2819,21 @@
                         :on-click #(do (close-more)
                                        (st/emit! (dwsp/toggle-session-recording)))}
                [:> i/icon* {:icon-id i/stroke-circle}]
-               [:span (if recording-session? "Stop recording session" "Record design session")]])
+               [:span (if recording-session? (tr "workspace.agent.recording.stop") (tr "workspace.agent.recording.start"))]])
             [:div {:class (stl/css :more-row)}
-             [:span {:class (stl/css :more-row-label)} "Text size"]
+             [:span {:class (stl/css :more-row-label)} (tr "workspace.agent.text-size")]
              [:div {:class (stl/css :font-stepper)}
               [:button {:type "button"
                         :class (stl/css :font-step-btn)
-                        :aria-label "Decrease text size"
-                        :title "Decrease text size"
+                        :aria-label (tr "workspace.agent.text-size.decrease")
+                        :title (tr "workspace.agent.text-size.decrease")
                         :disabled (zero? font-step)
                         :on-click on-font-dec}
                "A−"]
               [:button {:type "button"
                         :class (stl/css :font-step-btn)
-                        :aria-label "Increase text size"
-                        :title "Increase text size"
+                        :aria-label (tr "workspace.agent.text-size.increase")
+                        :title (tr "workspace.agent.text-size.increase")
                         :disabled (= font-step (dec (count font-scale-steps)))
                         :on-click on-font-inc}
                "A+"]]]]]]])]

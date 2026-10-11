@@ -770,7 +770,7 @@
 
 (mf/defc observer-card*
   "One Observer skill's notification (issue #37, slimmed 2026-07-16): collapsed
-  it is ONE line — eye + headline + count — with only an ✕ (dismiss); the row
+  it is ONE line — eye + headline + count — with only a close button (dismiss); the row
   itself toggles. Expanded it adds the per-rule groups (rows jump to the layer
   on canvas) and the Dismiss / Fix all footer. `on-fix` takes the violations to
   fix; `on-dismiss` waves this card off."
@@ -792,12 +792,11 @@
                 :on-click on-toggle}
        [:span {:class (stl/css :observer-headline)} label]
        [:span {:class (stl/css :observer-summary)} summary]]
-      [:button {:type "button"
-                :class (stl/css :observer-close)
-                :aria-label (tr "workspace.agent.dismiss")
-                :title (tr "workspace.agent.dismiss")
-                :on-click on-dismiss}
-       [:> i/icon* {:icon-id i/close}]]]
+      [:> icon-button* {:variant "ghost"
+                        :class (stl/css :observer-close)
+                        :aria-label (tr "workspace.agent.dismiss")
+                        :on-click on-dismiss
+                        :icon i/close}]]
 
      (when expanded?
        [:div {:class (stl/css :observer-groups)}
@@ -1250,15 +1249,14 @@
               (tr "workspace.agent.arrival.promoted-by" promoted-by)
               (tr "workspace.agent.arrival.promoted-by-teammate"))]
            [:div {:class (stl/css :arrival-body)} blurb]]
-          [:button {:type "button"
-                    :class (stl/css :arrival-close)
-                    :aria-label (tr "workspace.agent.arrival.dismiss" label)
-                    :title (tr "workspace.agent.dismiss")
-                    :on-click (fn [event]
-                                (dom/stop-propagation event)
-                                (on-dismiss-arrival id))
-                    :on-key-down dom/stop-propagation}
-           [:> i/icon* {:icon-id i/close}]]]))
+          [:> icon-button* {:variant "ghost"
+                            :tooltip-class (stl/css :arrival-close)
+                            :aria-label (tr "workspace.agent.arrival.dismiss" label)
+                            :on-click (fn [event]
+                                        (dom/stop-propagation event)
+                                        (on-dismiss-arrival id))
+                            :on-key-down dom/stop-propagation
+                            :icon i/close}]]))
 
      (if (or (seq messages) (some? pending-form))
        [:> transcript* {:messages messages :busy? busy? :form pending-form
@@ -1292,16 +1290,16 @@
      ;; stays whole in History.
      (when handoff?
        [:div {:class (stl/css :handoff-notice)}
-        ;; text + ✕ on top, the action full-width at the bottom — side by side
+        ;; text + close button on top, the action full-width at the bottom — side by side
         ;; the text wrapped into a skinny column in the narrow panel
         [:div {:class (stl/css :handoff-header)}
          [:span {:class (stl/css :handoff-text)}
           (tr "workspace.agent.handoff.notice")]
-         [:button {:type "button"
-                   :class (stl/css :handoff-dismiss)
-                   :aria-label (tr "workspace.agent.handoff.dismiss")
-                   :on-click on-handoff-dismiss}
-          [:span {:aria-hidden true} "✕"]]]
+         [:> icon-button* {:variant "ghost"
+                           :tooltip-class (stl/css :handoff-dismiss)
+                           :aria-label (tr "workspace.agent.handoff.dismiss")
+                           :on-click on-handoff-dismiss
+                           :icon i/close}]]
         [:> button* {:variant "secondary"
                      :class (stl/css :compact-label :handoff-action)
                      :title (tr "workspace.agent.handoff.summarize-title")
@@ -1322,11 +1320,11 @@
                     (when (not= m (:model settings))
                       (dm/str " · " (tr "workspace.agent.pending.via" m)))))]
          [:span {:class (stl/css :pending-fix-text)} (:text pending-fix)]]
-        [:button {:type "button"
-                  :class (stl/css :pending-fix-cancel)
-                  :aria-label (tr "workspace.agent.pending.cancel")
-                  :on-click on-cancel-pending}
-         [:span {:aria-hidden true} "✕"]]])
+        [:> icon-button* {:variant "ghost"
+                          :tooltip-class (stl/css :pending-fix-cancel)
+                          :aria-label (tr "workspace.agent.pending.cancel")
+                          :on-click on-cancel-pending
+                          :icon i/close}]])
 
      [:div {:class (stl/css :composer)}
       (when (seq images)
@@ -1403,35 +1401,36 @@
                    :on-paste on-paste
                    :on-key-down on-key-down}]
        (if busy?
-         [:button {:type "button"
-                   :class (stl/css :composer-stop)
-                   :aria-label (tr "workspace.agent.composer.stop")
-                   :on-click on-cancel}
-          [:> i/icon* {:icon-id i/close}]]
-         [:button {:type "button"
-                   :class (stl/css :composer-send)
-                   :aria-label (tr "workspace.agent.composer.send")
-                   ;; an image on its own is a legitimate message
-                   :disabled (or (not settings)
-                                 (and (empty? (str/trim input)) (empty? images)))
-                   :on-click send}
-          [:> i/icon* {:icon-id i/forward}]])]
+         [:> icon-button* {:variant "secondary"
+                           :class (stl/css :composer-stop)
+                           :aria-label (tr "workspace.agent.composer.stop")
+                           :on-click on-cancel
+                           :icon i/close}]
+         [:> icon-button* {:variant "ghost"
+                           :class (stl/css :composer-send)
+                           :aria-label (tr "workspace.agent.composer.send")
+                           ;; an image on its own is a legitimate message
+                           :disabled (or (not settings)
+                                         (and (empty? (str/trim input)) (empty? images)))
+                           :on-click send
+                           :icon i/forward}])]
 
       ;; Below the input: the attach button on the left, the model picker (half
       ;; width, borderless) on the right.
       [:div {:class (stl/css :composer-footer)}
-       [:button {:type "button"
-                 :class (stl/css :composer-attach)
-                 :aria-label (if sees? (tr "workspace.agent.composer.attach-images") (tr "workspace.agent.composer.model-cannot-read-images"))
-                 :title (if sees?
-                          (tr "workspace.agent.composer.attach-images-up-to" max-images)
-                          (tr "workspace.agent.composer.named-model-cannot-read-images" (:model settings)))
-                 ;; disabled, not hidden: a control that vanishes when you
-                 ;; switch models reads as a bug, not a capability
-                 :disabled (or (not settings) (not sees?)
-                               (>= (count images) max-images))
-                 :on-click on-attach}
-        [:> i/icon* {:icon-id i/img}]]
+       ;; the DS tooltip shows the accessible name, so the name carries the
+       ;; full hint (limit, or which model can't read images)
+       [:> icon-button* {:variant "ghost"
+                         :tooltip-class (stl/css :composer-attach)
+                         :aria-label (if sees?
+                                       (tr "workspace.agent.composer.attach-images-up-to" max-images)
+                                       (tr "workspace.agent.composer.named-model-cannot-read-images" (:model settings)))
+                         ;; disabled, not hidden: a control that vanishes when you
+                         ;; switch models reads as a bug, not a capability
+                         :disabled (or (not settings) (not sees?)
+                                       (>= (count images) max-images))
+                         :on-click on-attach
+                         :icon i/img}]
 
        [:div {:class (stl/css :model-picker)
               :ref picker-ref}
@@ -1826,11 +1825,11 @@
                         :placeholder (tr "workspace.agent.vibes.token-value-placeholder")
                         :value value
                         :on-change (set-in [k i :value])}]
-               [:button {:type "button"
-                         :class (stl/css :vibes-form-remove)
-                         :aria-label (tr "workspace.agent.vibes.remove-token" title)
-                         :on-click (rm-row k i)}
-                "×"]])
+               [:> icon-button* {:variant "ghost"
+                                 :tooltip-class (stl/css :vibes-form-remove)
+                                 :aria-label (tr "workspace.agent.vibes.remove-token" title)
+                                 :on-click (rm-row k i)
+                                 :icon i/remove}]])
             [:> button* {:variant "ghost"
                          :class (stl/css :compact-label :vibes-form-add)
                          :on-click (add-row k {:name "" :value ""})}
@@ -1863,11 +1862,11 @@
                  :placeholder (tr "workspace.agent.vibes.color-value-placeholder")
                  :value value
                  :on-change (set-in [:colors i :value])}]
-        [:button {:type "button"
-                  :class (stl/css :vibes-form-remove)
-                  :aria-label (tr "workspace.agent.vibes.remove-color")
-                  :on-click (rm-row :colors i)}
-         "×"]])
+        [:> icon-button* {:variant "ghost"
+                          :tooltip-class (stl/css :vibes-form-remove)
+                          :aria-label (tr "workspace.agent.vibes.remove-color")
+                          :on-click (rm-row :colors i)
+                          :icon i/remove}]])
      [:> button* {:variant "ghost"
                   :class (stl/css :compact-label :vibes-form-add)
                   :on-click (add-row :colors {:name "" :value ""})}
@@ -1881,11 +1880,11 @@
                   :placeholder (tr "workspace.agent.vibes.role-placeholder")
                   :value (:name row)
                   :on-change (set-in [:typography i :name])}]
-         [:button {:type "button"
-                   :class (stl/css :vibes-form-remove)
-                   :aria-label (tr "workspace.agent.vibes.remove-role")
-                   :on-click (rm-row :typography i)}
-          "×"]]
+         [:> icon-button* {:variant "ghost"
+                           :tooltip-class (stl/css :vibes-form-remove)
+                           :aria-label (tr "workspace.agent.vibes.remove-role")
+                           :on-click (rm-row :typography i)
+                           :icon i/remove}]]
         [:div {:class (stl/css :vibes-form-type-grid)}
          [:input {:class (stl/css :vibes-form-input)
                   :placeholder (tr "workspace.agent.vibes.family-placeholder")
@@ -2824,20 +2823,16 @@
             [:div {:class (stl/css :more-row)}
              [:span {:class (stl/css :more-row-label)} (tr "workspace.agent.text-size")]
              [:div {:class (stl/css :font-stepper)}
-              [:button {:type "button"
-                        :class (stl/css :font-step-btn)
-                        :aria-label (tr "workspace.agent.text-size.decrease")
-                        :title (tr "workspace.agent.text-size.decrease")
-                        :disabled (zero? font-step)
-                        :on-click on-font-dec}
-               "A−"]
-              [:button {:type "button"
-                        :class (stl/css :font-step-btn)
-                        :aria-label (tr "workspace.agent.text-size.increase")
-                        :title (tr "workspace.agent.text-size.increase")
-                        :disabled (= font-step (dec (count font-scale-steps)))
-                        :on-click on-font-inc}
-               "A+"]]]]]]])]
+              [:> icon-button* {:variant "secondary"
+                                :aria-label (tr "workspace.agent.text-size.decrease")
+                                :disabled (zero? font-step)
+                                :on-click on-font-dec
+                                :icon i/remove}]
+              [:> icon-button* {:variant "secondary"
+                                :aria-label (tr "workspace.agent.text-size.increase")
+                                :disabled (= font-step (dec (count font-scale-steps)))
+                                :on-click on-font-inc
+                                :icon i/add}]]]]]]])]
 
      [:div {:class (stl/css :body)}
       (cond

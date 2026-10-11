@@ -20,15 +20,13 @@
    [app.main.ui.components.dropdown :refer [dropdown]]
    [app.main.ui.components.forms :as fm]
    [app.main.ui.dashboard.team :refer [header*]]
-   [app.main.ui.icons :as deprecated-icon]
+   [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
+   [app.main.ui.ds.foundations.assets.icon :as i]
    [app.util.dom :as dom]
    [app.util.i18n :as i18n :refer [tr]]
    [beicon.v2.core :as rx]
    [okulary.core :as l]
    [rumext.v2 :as mf]))
-
-(def ^:private menu-icon
-  (deprecated-icon/icon-xref :menu (stl/css :menu-icon)))
 
 (def ^:private ref:design-skills
   (l/derived :design-skills st/state))
@@ -120,8 +118,11 @@
            (some? skill) (tr "modals.edit-design-skill.title")
            (= scope :app) (tr "modals.create-design-skill.title-app")
            :else (tr "modals.create-design-skill.title-team"))]
-        [:button {:class (stl/css :modal-close-btn)
-                  :on-click modal/hide!} deprecated-icon/close]]
+        [:> icon-button* {:variant "ghost"
+                          :class (stl/css :modal-close-btn)
+                          :aria-label (tr "labels.close")
+                          :on-click modal/hide!
+                          :icon i/close}]]
 
        [:div {:class (stl/css :modal-content)}
         [:div {:class (stl/css :fields-row)}
@@ -190,9 +191,10 @@
         on-hide (mf/use-fn #(reset! show? false))]
     (when can-edit
       [:*
-       [:button {:class (stl/css :menu-btn)
-                 :on-click on-show}
-        menu-icon]
+       [:> icon-button* {:variant "ghost"
+                         :aria-label (tr "labels.options")
+                         :on-click on-show
+                         :icon i/menu}]
        [:& dropdown {:show @show? :on-close on-hide :dropdown-id "skill-actions"}
         [:ul {:class (stl/css :skill-actions-dropdown)}
          [:li {:on-click on-edit

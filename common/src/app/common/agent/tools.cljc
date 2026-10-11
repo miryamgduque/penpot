@@ -15,6 +15,7 @@
   (:require
    [app.common.agent.components :as cac]
    [app.common.agent.layout :as cal]
+   [app.common.agent.media :as cam]
    [app.common.agent.structure :as cas]
    [app.common.agent.text :as catx]
    [app.common.agent.tokens :as cato]
@@ -50,4 +51,16 @@
    "swap_component"       cac/swap-component
    "switch_variant"       cac/switch-variant
    "add_variant"          cac/add-variant
-   "set_variant_property" cac/set-variant-property})
+   "set_variant_property" cac/set-variant-property
+   "insert_image"  cam/insert-image
+   "search_icons"  cam/search-icons
+   "insert_icon"   cam/insert-icon
+   "search_fonts"  cam/search-fonts
+   "set_font"      cam/set-font})
+
+(def needs
+  "Tool name → `(fn [input])` → what the tool needs fetched from outside the
+  file before it runs; see `app.common.agent.media`."
+  {"insert_image" cam/insert-image-needs
+   "search_icons" cam/search-icons-needs
+   "insert_icon"  cam/insert-icon-needs})

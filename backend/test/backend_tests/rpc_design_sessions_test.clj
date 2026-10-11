@@ -25,6 +25,7 @@
    [app.config :as cf]
    [app.db :as db]
    [app.rpc :as-alias rpc]
+   [app.rpc.commands.design-sessions :as design-sessions]
    [backend-tests.helpers :as th]
    [clojure.test :as t])
   (:import
@@ -246,3 +247,42 @@
     (t/testing "and the flag is OFF in the shipped default set, so this is the
                 out-of-the-box behaviour"
       (t/is (not (contains? (flags/parse flags/default) :design-session-recording))))))
+
+(t/deftest design-session-payload-and-count-are-bounded
+  (reset-sessions!)
+  (let [owner      (th/create-profile* 1 {:is-active true})
+        profile-id (:id owner)
+        file       (th/create-file* 1 {:profile-id profile-id
+                                       :project-id (:default-project-id owner)})
+        rec-id     (UUID/randomUUID)
+        upsert!    (fn [& {:as params}]
+                     (th/command! (merge {::th/type :upsert-design-session
+                                          ::rpc/profile-id profile-id
+                                          :id (UUID/randomUUID)
+                                          :file-id (:id file)
+                                          :session-id (UUID/randomUUID)
+                                          :events events}
+                                         params)))]
+
+    (t/testing "events that are not a list are refused"
+      (let [out (upsert! :events "not a timeline")]
+        (t/is (= :validation (th/ex-type (:error out))))
+        (t/is (= :invalid-session-events (th/ex-code (:error out))))))
+
+    (t/testing "an oversized timeline is refused"
+      (with-redefs [design-sessions/max-events-size 20]
+        (let [out (upsert!)]
+          (t/is (= :validation (th/ex-type (:error out))))
+          (t/is (= :design-session-too-large (th/ex-code (:error out)))))))
+
+    (with-redefs [design-sessions/max-sessions-per-file 1]
+      (t/testing "the first recording is saved"
+        (t/is (nil? (:error (upsert! :id rec-id :session-id rec-id)))))
+
+      (t/testing "a second one is refused"
+        (let [out (upsert!)]
+          (t/is (= :validation (th/ex-type (:error out))))
+          (t/is (= :design-session-limit-reached (th/ex-code (:error out))))))
+
+      (t/testing "flushing the existing one again is still allowed"
+        (t/is (nil? (:error (upsert! :id rec-id :session-id rec-id))))))))

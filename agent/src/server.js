@@ -160,6 +160,10 @@ export async function createAgentServer(options = {}) {
     // tools the backend runs, and tools the exporter runs on the render engine
     const backendTools = new Set(namedIn("x-penpot-server-tools"));
     const engineTools = new Set(namedIn("x-penpot-engine-tools"));
+    // A turn started with no workspace: nothing to sync with, nobody to run a
+    // tool in a browser, and a board is rendered by the exporter.
+    const tabless = body.workspace === false && engineTools.size > 0;
+    if (tabless) engineTools.add("render_board");
     // tools this service runs itself, on a side conversation
     const ownTools = scoutTools(backendTools);
     const serverTools = new Set([...backendTools, ...engineTools, ...ownTools]);
@@ -221,15 +225,22 @@ export async function createAgentServer(options = {}) {
     // It is also told the revision the server last wrote, so it answers only
     // once it has received that change.
     let serverRevn;
-    const syncWorkspace = (signal) =>
-      callTool(
-        { callId: randomUUID(), name: SYNC_CALL, input: serverRevn === undefined ? {} : { minRevn: serverRevn } },
-        signal,
-      ).finally(() => toolTimings.pop());
+    const syncWorkspace = (signal) => {
+      if (tabless) {
+        // what a workspace would have said: the caller may say it instead
+        const context = typeof body.context === "string" ? body.context : "{}";
+        return Promise.resolve({ content: context, isError: false });
+      }
+      const input = serverRevn === undefined ? {} : { minRevn: serverRevn };
+      return callTool({ callId: randomUUID(), name: SYNC_CALL, input }, signal).finally(() => toolTimings.pop());
+    };
 
     // The other direction: a tool in the workspace must not run before the
     // workspace has caught up with what the server wrote.
     const callWorkspaceTool = async (call, signal) => {
+      if (tabless) {
+        return { content: `${call.name} needs a connected workspace, and this turn has none`, isError: true };
+      }
       if (serverRevn !== undefined) {
         const synced = await syncWorkspace(signal);
         if (synced.isError) return synced;

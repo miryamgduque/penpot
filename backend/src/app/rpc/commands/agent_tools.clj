@@ -37,6 +37,8 @@
    [app.rpc :as-alias rpc]
    [app.rpc.commands.files :as files]
    [app.rpc.doc :as-alias doc]
+   [app.rpc.permissions :as perms]
+   [app.storage :as sto]
    [app.tokens :as tokens]
    [app.util.services :as sv]
    [cuerdas.core :as str]))
@@ -452,6 +454,34 @@
           (if (and (contains? #{:validation :restriction} type) (keyword? code))
             {:error code}
             (throw cause)))))))
+
+;; The exporter renders a board for the model with no session to download the
+;; images in it. This hands them over, to whoever holds the turn token and
+;; only if the turn's profile can read the file the image belongs to.
+
+(def ^:private max-media-bytes (* 8 1024 1024))
+
+(def ^:private schema:get-agent-tool-media
+  [:map {:title "get-agent-tool-media"}
+   [:token [:string {:max 5000}]]
+   [:id ::sm/uuid]])
+
+(sv/defmethod ::get-agent-tool-media
+  "The bytes of an image a shape of the turn's file uses, base64 encoded, or
+  nothing when there is no such image, it is not the profile's to read, or it
+  is too large to hand over this way."
+  {::rpc/auth false
+   ::doc/added "2.20"
+   ::sm/params schema:get-agent-tool-media}
+  [{:keys [::sto/storage ::db/pool] :as cfg} {:keys [token id]}]
+  (let [{:keys [profile-id]} (verify-turn-token cfg token)
+        media  (db/get* pool :file-media-object {:id id} {::db/remove-deleted false})
+        object (when (and (some? media)
+                          (:can-read (perms/get-file-read-permissions pool profile-id (:file-id media) nil)))
+                 (sto/get-object storage (:media-id media)))]
+    {:data (when (and (some? object) (<= (:size object 0) max-media-bytes))
+             (.encodeToString (java.util.Base64/getEncoder)
+                              ^bytes (sto/get-object-bytes storage object)))}))
 
 ;; The file-update command as declared, before the RPC layer wraps it: the
 ;; exporter's commit runs it for the profile the turn token names.

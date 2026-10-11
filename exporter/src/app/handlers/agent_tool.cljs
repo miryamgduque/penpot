@@ -95,9 +95,9 @@
                                        ".")))))))))))
 
 (def tools
-  "Every tool this service runs: the ones that change a page, and the
-  screenshot."
-  (conj (set (keys cat/tools)) "screenshot_page"))
+  "Every tool this service runs: the ones that change a page, the render of
+  a board for a turn with no workspace, and the screenshot of a web page."
+  (conj (set (keys cat/tools)) "render_board" "screenshot_page"))
 
 
 (defn handler

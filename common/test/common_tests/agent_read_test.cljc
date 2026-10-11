@@ -85,3 +85,26 @@
   (t/is (false? (car/has-design-doc? data)))
   (t/is (false? (car/has-design-doc? (assoc-in data [:plugin-data :penpot-vibes "design-md"] "  "))))
   (t/is (true? (car/has-design-doc? (assoc-in data [:plugin-data :penpot-vibes "design-md"] "# Vibes")))))
+
+(t/deftest render-targets-resolve-names-ids-and-the-selection
+  (t/is (= [{:name "Card" :id card-id}] (car/render-targets objects ["Card"] nil)))
+  (t/is (= [{:name "Card" :id card-id}] (car/render-targets objects [(str card-id)] nil)))
+  ;; nothing named: what the user has selected
+  (t/is (= [card-id] (mapv :id (car/render-targets objects nil [card-id]))))
+  (t/is (= [] (car/render-targets objects nil nil)))
+  (t/is (= "no shape with that name or id" (:error (first (car/render-targets objects ["Nope"] nil)))))
+  (t/is (re-find #"cannot be rendered — name the boards you want instead, e.g. Card"
+                 (:error (first (car/render-targets objects [(str uuid/zero)] nil)))))
+  (t/is (= car/max-render-boards (count (car/render-targets objects (repeat 9 "Card") nil))))
+  (t/is (= [1 2 4] (mapv car/render-scale [0 nil 9]))))
+
+(t/deftest audit-checks-only-the-active-rules
+  (let [named  (assoc-in objects [card-id :name] "Rectangle 2")
+        rules  (fn [enforced]
+                 (mapv :rule (car/audit-violations named {:enforced enforced
+                                                          :allowed #{}
+                                                          :normalize identity})))]
+    (t/is (= [] (rules #{})))
+    (t/is (= ["layer-naming"] (rules #{"layer-naming"})))
+    (t/is (= ["token-only-colors"] (rules #{"token-only-colors"})))
+    (t/is (= 0 (:count (car/audit-result []))))))

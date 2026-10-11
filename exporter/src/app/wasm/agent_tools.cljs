@@ -16,15 +16,19 @@
   the profile and the file it names, and for nothing else."
   (:require
    ["undici" :as http]
+   [app.common.agent.read :as car]
    [app.common.agent.tools :as cat]
    [app.common.agent.write :as caw]
    [app.common.data :as d]
    [app.common.fonts :as cfnt]
    [app.common.transit :as t]
+   [app.common.types.shape.images :as images]
    [app.common.uri :as u]
    [app.config :as cf]
+   [app.wasm :as wasm]
    [app.wasm.layout :as layout]
    [app.wasm.render :as render]
+   [app.wasm.serialize :as serialize]
    [app.wasm.svg-parse :as svg-parse]
    [promesa.core :as p]))
 
@@ -155,7 +159,82 @@
                        (run view input (merge options (select-keys (make-engine) [:propagate :measure-text :parse-svg])))
                        {:fallback "a font this text uses is not available to the server"})))))))
 
-(defn run
+;; --- render_board
+;;
+;; The one tool that returns pixels. A connected workspace renders with its
+;; own engine; this is the same engine, headless, for a turn with no workspace.
+;; What the turn token cannot reach is drawn without: a team's uploaded fonts
+;; fall back to a stock one.
+
+(defn- provision-images!
+  "Loads into the engine the images the scene's shapes use."
+  [token scene]
+  (->> (remove wasm/image-cached? (images/scene-image-ids scene))
+       (map (fn [id]
+              (->> (command! "get-agent-tool-media" {:token token :id id})
+                   (p/fmap (fn [{:keys [data]}]
+                             (when (string? data)
+                               (wasm/store-image! id (js/Buffer.from data "base64")))))
+                   ;; a missing image leaves a blank fill, not a failed render
+                   (p/merr (fn [_] (p/resolved nil))))))
+       (p/all)))
+
+(defn- base64
+  [bytes]
+  (.toString (js/Buffer.from bytes) "base64"))
+
+(defn- render-target
+  "One shape → its attachable image, or why not."
+  [{:keys [id name error] :as target} scale]
+  (if (some? error)
+    target
+    (try
+      (let [png (base64 (wasm/render-shape-raster id scale :png))]
+        (if (<= (count png) car/jpeg-threshold-b64-chars)
+          {:name name :id (str id) :mediaType "image/png" :data png}
+          (let [jpeg (base64 (wasm/render-shape-raster id scale :jpeg))
+                [mtype data] (if (< (count jpeg) (count png))
+                               ["image/jpeg" jpeg]
+                               ["image/png" png])]
+            (if (> (count data) car/max-render-b64-chars)
+              {:name name :error car/render-too-large}
+              {:name name :id (str id) :mediaType mtype :data data}))))
+      (catch :default cause
+        {:name name :error (or (ex-message cause) "render failed")}))))
+
+(defn- render-board
+  [{:keys [token input context]}]
+  (let [ctx   (parse-json context)
+        input (parse-json input)
+        scale (car/render-scale (:scale input))]
+    (->> (p/all [(render/ensure-module!)
+                 (command! "get-agent-tool-page" {:token token :context context})])
+         (p/mcat
+          (fn [[_ {:keys [data page-id]}]]
+            (let [objects (get-in data [:pages-index page-id :objects])
+                  targets (car/render-targets objects (:names input) (:selectedIds ctx))]
+              (if (empty? targets)
+                (p/resolved {:content car/no-render-targets :isError true})
+                (do
+                  (serialize/serialize-scene! objects)
+                  (->> (provision-images! token objects)
+                       (p/mcat (fn [_] (render/provision-scene-fonts! objects)))
+                       (p/fmap
+                        (fn [_]
+                          (let [results (mapv #(render-target % scale) targets)
+                                good    (filterv :data results)
+                                failed  (filterv :error results)]
+                            (if (empty? good)
+                              {:content (car/render-failure failed) :isError true}
+                              {:content (js/JSON.stringify
+                                         (clj->js (cond-> {:rendered (mapv #(select-keys % [:name :id]) good)
+                                                           :scale scale}
+                                                    (seq failed)
+                                                    (assoc :failed (mapv #(select-keys % [:name :error]) failed)))))
+                               :isError false
+                               :images (mapv #(select-keys % [:mediaType :data]) good)})))))))))))))
+
+(defn- run-page-tool
   "→ promise of `{:content json :isError bool}`, or `{:fallback why}` when the
   call is one this side does not handle yet."
   [{:keys [token tool input context]}]
@@ -200,3 +279,10 @@
                                          ;; lets a workspace know when it has caught up
                                          (some? (:revn committed))
                                          (assoc :revn (:revn committed))))))))))))))))
+
+(defn run
+  "Runs one tool for the turn `token` names → promise of its answer."
+  [{:keys [tool] :as call}]
+  (if (= "render_board" tool)
+    (render-board call)
+    (run-page-tool call)))

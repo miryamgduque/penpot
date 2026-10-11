@@ -450,3 +450,73 @@
    :note (if (seq violations)
            "fix shape by shape, then run audit_file again to confirm"
            "no open violations for the active rules")})
+
+;; --- render_board
+;;
+;; Which shapes a render_board call means. Rendering is per shape and is the
+;; host's: the workspace draws with its own engine, the exporter with the
+;; headless one.
+
+(def max-render-boards 5)
+
+(def default-render-scale 2)
+
+(defn render-scale
+  [scale]
+  (-> (or scale default-render-scale) (max 1) (min 4)))
+
+(defn- resolve-board
+  "Accepts an id or a name. Names are what the model has — `read_design`
+  reports them."
+  [objects term]
+  (or (some->> (uuid/parse* term) (get objects) :id)
+      (->> (vals objects)
+           (filter #(= term (:name %)))
+           (first)
+           (:id))))
+
+(defn render-targets
+  "`names` (or, with none, the `selected` ids) → one `{:name :id}` or `{:name
+  :error}` per shape asked for, capped at `max-render-boards`."
+  [objects names selected]
+  (->> (or (seq names) (map str selected))
+       (take max-render-boards)
+       (mapv (fn [term]
+               (let [id (when (string? term) (resolve-board objects term))]
+                 (cond
+                   (nil? id)
+                   {:name term :error "no shape with that name or id"}
+
+                   ;; the page root has no size: rendering it gives one grey
+                   ;; pixel and no error. Better a refusal naming the fix.
+                   (= id uuid/zero)
+                   {:name term
+                    :error (str "the page as a whole cannot be rendered — "
+                                "name the boards you want instead, e.g. "
+                                (->> (get-in objects [uuid/zero :shapes])
+                                     (keep #(:name (get objects %)))
+                                     (take 3)
+                                     (str/join ", ")))}
+
+                   :else
+                   {:name (or (:name (get objects id)) term) :id id}))))))
+
+(def no-render-targets
+  "Nothing to render: pass board names, or ask the user to select something.")
+
+(defn render-failure
+  [failed]
+  (str "Could not render: "
+       (str/join "; " (map #(str (:name %) " — " (:error %)) failed))))
+
+;; Past the soft threshold a render is encoded again as JPEG (a photographic
+;; board compresses ~10×; crisp UI rarely crosses it); past the hard budget it
+;; is refused with the fix named.
+(def jpeg-threshold-b64-chars 300000)
+
+(def max-render-b64-chars 1000000)
+
+(def render-too-large
+  (str "render too large to attach even compressed — "
+       "render a smaller shape (one section, not the "
+       "whole screen) or pass scale 1"))

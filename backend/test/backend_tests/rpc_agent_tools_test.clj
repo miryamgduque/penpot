@@ -248,3 +248,16 @@
     (t/testing "a web tool refuses a url that is not one, without touching the file"
       (t/is (re-find #"get_page_meta: url must be an absolute"
                      (get-in (run-tool! token "get_page_meta" :input {:url "nope"}) [:result :content]))))))
+
+(t/deftest media-is-handed-over-only-for-a-valid-turn
+  (let [profile (th/create-profile* 1 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file))]
+    ;; an image that does not exist is not an error: the render goes on without
+    (t/is (= {:data nil}
+             (:result (th/command! {::th/type :get-agent-tool-media :token token :id (uuid/random)}))))
+    (t/is (= :invalid-turn-token
+             (-> (th/command! {::th/type :get-agent-tool-media :token "nope" :id (uuid/random)})
+                 :error ex-data :code)))))

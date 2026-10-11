@@ -397,3 +397,48 @@ test("a scout tool refuses what it cannot work with", async () => {
     await t.close();
   }
 });
+
+test("a turn with no workspace renders through the exporter and asks no browser for anything", async () => {
+  const exporter = await fakeJsonServer(() => ({
+    content: '{"rendered":[{"name":"Home"}],"scale":2}',
+    isError: false,
+    images: [{ mediaType: "image/png", data: "iVBORw0KGgo=" }],
+  }));
+  const t = await setup(
+    (_req, n) =>
+      n === 0
+        ? { tool: { name: "render_board", input: { names: ["Home"] } } }
+        : n === 1
+          ? { tool: { name: "ask_user", input: {} } }
+          : { text: "Done." },
+    { exporterUri: exporter.uri, attachmentsRoot: undefined },
+  );
+  try {
+    const body = { ...BODY, workspace: false, context: '{"pageId":"page-9"}', tools: [tool("render_board"), tool("ask_user")] };
+    const asked = await drive(t.base, body, ENGINE_HEADERS);
+    assert.deepEqual(asked, [{ server: "render_board", rule: undefined }]);
+    const sent = JSON.parse(exporter.seen[0].raw);
+    assert.equal(sent[sent.indexOf("~:tool") + 1], "render_board");
+    assert.equal(sent[sent.indexOf("~:context") + 1], '{"pageId":"page-9"}');
+    assert.match(JSON.stringify(t.fake.requests[2].body.messages), /needs a connected workspace/);
+  } finally {
+    await t.close();
+    await exporter.close();
+  }
+});
+
+test("with a workspace, a board is the browser's to render", async () => {
+  const exporter = await fakeJsonServer(() => ({ content: "{}", isError: false }));
+  const t = await setup(
+    (_req, n) => (n === 0 ? { tool: { name: "render_board", input: { names: ["Home"] } } } : { text: "Done." }),
+    { exporterUri: exporter.uri },
+  );
+  try {
+    const asked = await drive(t.base, { ...BODY, tools: [tool("render_board")] }, ENGINE_HEADERS);
+    assert.deepEqual(asked, [{ workspace: "render_board", input: { names: ["Home"] } }]);
+    assert.equal(exporter.seen.length, 0);
+  } finally {
+    await t.close();
+    await exporter.close();
+  }
+});

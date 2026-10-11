@@ -56,6 +56,9 @@
   {"anthropic"
    ;; every current Claude model reads images (per the models overview)
    [{:id "claude-fable-5"             :label "Claude Fable 5"   :context 1000000 :vision true}
+    {:id "claude-opus-5-5"            :label "Claude Opus 5.5"  :context 1000000 :vision true}
+    {:id "claude-sonnet-5-5"          :label "Claude Sonnet 5.5" :context 1000000 :vision true}
+    {:id "claude-haiku-5-5"           :label "Claude Haiku 5.5" :context 1000000 :vision true}
     {:id "claude-opus-4-8"            :label "Claude Opus 4.8"  :context 1000000 :vision true}
     {:id "claude-sonnet-5"            :label "Claude Sonnet 5"  :context 1000000 :vision true}
     {:id "claude-haiku-4-5-20251001"  :label "Claude Haiku 4.5" :context 200000  :vision true}]

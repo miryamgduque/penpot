@@ -8,13 +8,12 @@
   "Composition tools: clone_shape and build_tree, which orchestrate
   the other families to build whole subtrees in one call."
   (:require
+   [app.common.agent.compose :as cap]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
    [app.common.logic.libraries :as cll]
-   [app.common.types.component :as ctc]
-   [app.common.types.container :as ctn]
    [app.common.types.shape.layout :as ctl]
    [app.common.types.text :as txt]
    [app.main.data.changes :as dch]
@@ -39,46 +38,7 @@
 ;; the transcripts show taking 25+ — cloning a card into a grid with per-clone
 ;; content, and standing up a whole laid-out subtree.
 
-(def ^:private max-clones 12)
-
-(defn clone-problem
-  "Why `clone_shape` cannot run, or nil. Pure. Public for tests."
-  [objects id pid clones]
-  (let [shape  (get objects id)
-        parent (when pid (get objects pid))]
-    (cond
-      (nil? id)
-      "clone_shape: missing or invalid shapeId"
-
-      (nil? shape)
-      (dm/str "clone_shape: no shape on this page with id " (str id)
-              " — check read_design")
-
-      (not (and (sequential? clones) (seq clones)))
-      (str "clone_shape: pass clones — an array of override maps"
-           " ({} for a plain copy)")
-
-      (> (count clones) max-clones)
-      (dm/str "clone_shape: at most " max-clones " clones per call")
-
-      (not (ctc/allow-duplicate? objects shape))
-      (dm/str "clone_shape: " (atc/shape-label shape) " is inside a component copy,"
-              " whose structure is owned by the main component — clone the main"
-              " instead, or detach_instance first")
-
-      (and (some? pid) (nil? parent))
-      (dm/str "clone_shape: no shape on this page with id " (str pid)
-              " (the parentId) — check read_design")
-
-      (and parent (not (or (cfh/frame-shape? parent) (cfh/group-shape? parent))))
-      (dm/str "clone_shape: " (atc/shape-label parent) " is a "
-              (some-> (:type parent) name)
-              " — the parent must be a board or a group")
-
-      (and parent (or (ctc/in-component-copy? parent)
-                      (ctn/has-any-copy-parent? objects parent)))
-      (dm/str "clone_shape: " (atc/shape-label parent) " is part of a component"
-              " copy — clone into the main component instead"))))
+(def clone-problem cap/clone-problem)
 
 (defn- upload-image-url
   "External image URL → the image-fill descriptor for `atc/fill->shape`."
@@ -202,55 +162,7 @@
 
 ;; --- build_tree
 
-(def ^:private tree-node-types #{"board" "rect" "ellipse" "text" "image"})
-
-(def ^:private max-tree-nodes 80)
-
-(def ^:private max-tree-depth 6)
-
-(defn tree-problem
-  "Why `build_tree` cannot run, or nil. Pure. Public for tests."
-  [tree]
-  (letfn [(walk [node path depth]
-            (cond
-              (not (map? node))
-              (dm/str "build_tree: " path " is not a node object")
-
-              (> depth max-tree-depth)
-              (dm/str "build_tree: deeper than " max-tree-depth " levels at "
-                      path " — flatten the structure or build in two calls")
-
-              (not (contains? tree-node-types (:type node)))
-              (dm/str "build_tree: " path " has type \"" (:type node)
-                      "\" — use board, rect, ellipse, text or image")
-
-              (and (= "text" (:type node)) (not (string? (:text node))))
-              (dm/str "build_tree: text node " path " needs `text` (the words)")
-
-              (and (= "image" (:type node))
-                   (not (and (string? (:url node))
-                             (re-matches atc/http-url-re (:url node)))))
-              (dm/str "build_tree: image node " path
-                      " needs an absolute http(s) `url`")
-
-              (and (seq (:children node)) (not= "board" (:type node)))
-              (dm/str "build_tree: " path " has children but is a "
-                      (:type node) " — only boards contain children")
-
-              :else
-              (some (fn [[i child]]
-                      (walk child (dm/str path ".children[" i "]") (inc depth)))
-                    (map-indexed vector (:children node)))))]
-    (cond
-      (nil? tree)
-      "build_tree: pass tree — the root node ({type, name, children…})"
-
-      (> (count (tree-seq map? :children tree)) max-tree-nodes)
-      (dm/str "build_tree: more than " max-tree-nodes
-              " nodes — split the build into two calls")
-
-      :else
-      (walk tree "tree" 1))))
+(def tree-problem cap/tree-problem)
 
 (defn- build-node
   "Creates one node (via the same validated single-shape paths the individual

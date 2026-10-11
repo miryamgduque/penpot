@@ -2823,12 +2823,12 @@
             [:div {:class (stl/css :more-row)}
              [:span {:class (stl/css :more-row-label)} (tr "workspace.agent.text-size")]
              [:div {:class (stl/css :font-stepper)}
-              [:> icon-button* {:variant "secondary"
+              [:> icon-button* {:variant "action"
                                 :aria-label (tr "workspace.agent.text-size.decrease")
                                 :disabled (zero? font-step)
                                 :on-click on-font-dec
                                 :icon i/remove}]
-              [:> icon-button* {:variant "secondary"
+              [:> icon-button* {:variant "action"
                                 :aria-label (tr "workspace.agent.text-size.increase")
                                 :disabled (= font-step (dec (count font-scale-steps)))
                                 :on-click on-font-inc

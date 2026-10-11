@@ -308,27 +308,6 @@
   gap: deprecated.$s-2;
 }
 
-.font-step-btn {
-  @include deprecated.body-small-typography;
-
-  padding: deprecated.$s-4 deprecated.$s-6;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
-  background-color: transparent;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover:not(:disabled) {
-    background-color: var(--color-background-quaternary);
-    color: var(--color-foreground-primary);
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.4;
-  }
-}
-
 // Fills the panel below the flex-none header; the chat/skills bodies size to it.
 .body {
   flex: 1;
@@ -390,7 +369,7 @@
   overflow: hidden;
 }
 
-// Title over byline, ✕ top-right; the text block is the toggle.
+// Title over byline, close button top-right; the text block is the toggle.
 .observer-header-row {
   display: flex;
   align-items: flex-start;
@@ -409,26 +388,11 @@
   text-align: start;
 }
 
+// DS icon-button (32px); the 4px margins keep the icon centred 20px from
+// the card's corner, where the old 24px button put it.
 .observer-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  inline-size: deprecated.$s-24;
-  block-size: deprecated.$s-24;
-  margin-block-start: deprecated.$s-8;
-  margin-inline-end: deprecated.$s-8;
-  padding: 0;
-  border: none;
-  border-radius: deprecated.$br-6;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    background-color: var(--color-background-tertiary);
-    color: var(--color-foreground-primary);
-  }
+  margin-block-start: deprecated.$s-4;
+  margin-inline-end: deprecated.$s-4;
 }
 
 // Smaller than the old title-small — the card is a notice, not a section head.
@@ -582,7 +546,7 @@
 
 // Arrival notice (US #52): a team skill promoted since this member last
 // acknowledged one. The whole card opens the skill's detail view (US #8's
-// existing toggle lives there — no Disable here, on purpose); only the ✕
+// existing toggle lives there — no Disable here, on purpose); only the close button
 // (top-right, same shape as .observer-close) is exempted via
 // stop-propagation. Background matches .catalog-card-new's highlighted row
 // in the skills list, so the same "just arrived" signal reads consistently
@@ -612,33 +576,18 @@
   gap: deprecated.$s-2;
   min-inline-size: 0;
 
-  // Room so the text never runs under the absolutely-positioned ✕.
-  padding-inline-end: deprecated.$s-24;
+  // Room so the text never runs under the absolutely-positioned close button.
+  padding-inline-end: deprecated.$s-32;
 }
 
-// Same shape as .observer-close — a small icon-only dismiss in the card's
-// top-right corner. stop-propagation (in the click/keydown handlers) keeps
-// it from also triggering the card's own click-to-view.
+// Same as .observer-close — a DS icon-button dismiss in the card's top-right
+// corner. stop-propagation (in the click/keydown handlers) keeps it from also
+// triggering the card's own click-to-view. Set on the tooltip wrapper, so the
+// wrapper leaves the card's flex flow instead of adding an empty gap row.
 .arrival-close {
   position: absolute;
-  inset-block-start: deprecated.$s-8;
-  inset-inline-end: deprecated.$s-8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: deprecated.$s-24;
-  block-size: deprecated.$s-24;
-  padding: 0;
-  border: none;
-  border-radius: deprecated.$br-6;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    background-color: var(--color-background-tertiary);
-    color: var(--color-foreground-primary);
-  }
+  inset-block-start: deprecated.$s-4;
+  inset-inline-end: deprecated.$s-4;
 }
 
 .arrival-title-row {
@@ -672,7 +621,7 @@
 }
 
 // Fresh-chat suggestion: the conversation outgrew the handoff threshold.
-// Stacked: text (with the ✕) on top, the action full-width at the bottom —
+// Stacked: text (with the close button) on top, the action full-width at the bottom —
 // side by side the text wrapped into a skinny column in the narrow panel.
 .handoff-notice {
   display: flex;
@@ -705,19 +654,9 @@
   justify-content: center;
 }
 
+// On the DS icon-button's tooltip wrapper, the flex item of the header row.
 .handoff-dismiss {
-  @include scaled-body-small;
-
   flex: none;
-  padding: 0 deprecated.$s-4;
-  border: none;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    color: var(--color-foreground-primary);
-  }
 }
 
 // A Fix-it-now parked behind the running turn.
@@ -758,18 +697,9 @@
   overflow: hidden;
 }
 
+// On the DS icon-button's tooltip wrapper, the flex item of the strip.
 .pending-fix-cancel {
-  @include scaled-body-small;
-
   flex-shrink: 0;
-  border: none;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    color: var(--color-accent-error);
-  }
 }
 
 // Anchors the jump-to-latest pill against the scrollport. The pill cannot live
@@ -1931,19 +1861,9 @@
   border-radius: deprecated.$br-4;
 }
 
+// On the DS icon-button's tooltip wrapper, the flex item of the row.
 .vibes-form-remove {
-  @include deprecated.body-small-typography;
-
   flex: none;
-  padding: 0 deprecated.$s-4;
-  border: none;
-  background: none;
-  color: var(--color-foreground-secondary);
-  cursor: pointer;
-
-  &:hover {
-    color: var(--color-accent-error);
-  }
 }
 
 // Keep the add buttons at their own width in the column.
@@ -2021,34 +1941,15 @@
   display: none;
 }
 
-// Mirrors .composer-send across the textarea: same size and shape, other corner.
 // Below the input: attach on the left, model picker pushed to the right.
 .composer-footer {
   display: flex;
   align-items: center;
 }
 
+// On the DS icon-button's tooltip wrapper, the flex item of the footer.
 .composer-attach {
-  display: grid;
-  place-content: center;
   flex: none;
-  width: deprecated.$s-28;
-  height: deprecated.$s-28;
-  border: none;
-  border-radius: deprecated.$br-8;
-  cursor: pointer;
-  background-color: transparent;
-  color: var(--color-foreground-secondary);
-
-  &:hover:not(:disabled) {
-    background-color: var(--color-background-quaternary);
-    color: var(--color-foreground-primary);
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.4;
-  }
 }
 
 .composer-attachments {
@@ -2102,42 +2003,14 @@
   color: var(--color-foreground-secondary);
 }
 
+// DS icon-buttons (32px) inside the textarea's bottom-right corner: centred
+// in the single-line input (36 − 32 = 4, split top/bottom) and clear of the
+// 44px the input reserves on its end side.
 .composer-send,
 .composer-stop {
   position: absolute;
-
-  // Vertically centred in the single-line input (36 − 28 = 8, split top/bottom).
-  inset-block-end: deprecated.$s-4;
-  inset-inline-end: deprecated.$s-8;
-  display: grid;
-  place-content: center;
-  width: deprecated.$s-28;
-  height: deprecated.$s-28;
-  border: none;
-  border-radius: deprecated.$br-8;
-  cursor: pointer;
-}
-
-// Send: the icon in the accent colour over a clear background.
-.composer-send {
-  background-color: transparent;
-  color: var(--color-accent-primary);
-
-  &:disabled {
-    color: var(--color-foreground-secondary);
-    cursor: default;
-    opacity: 0.5;
-  }
-}
-
-// Stop: a gray icon over a gray background.
-.composer-stop {
-  background-color: var(--color-background-quaternary);
-  color: var(--color-foreground-secondary);
-
-  &:hover {
-    background-color: var(--color-background-tertiary);
-  }
+  inset-block-end: deprecated.$s-2;
+  inset-inline-end: deprecated.$s-6;
 }
 
 // The real <input type=file>: kept in the DOM (the attach button clicks it)

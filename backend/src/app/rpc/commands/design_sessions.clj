@@ -35,9 +35,12 @@
   the pool is nil and these commands fail with `:sessions-database-unavailable`
   rather than NPE-ing.
 
-  NOTE(prototype): no per-file row quota (same gap as `profile_agent_chat`), and
-  no reaper for sessions whose file or profile has been deleted — cross-database
-  cascades do not exist."
+  A session is bounded here, not only in the client: the encoded timeline is
+  capped at `max-events-size` and a profile keeps at most
+  `max-sessions-per-file` recordings per file.
+
+  NOTE(prototype): no reaper for sessions whose file or profile has been
+  deleted — cross-database cascades do not exist."
   (:require
    [app.common.exceptions :as ex]
    [app.common.schema :as sm]
@@ -48,6 +51,14 @@
    [app.rpc.commands.teams :as teams]
    [app.rpc.doc :as-alias doc]
    [app.util.services :as sv]))
+
+(def ^:private max-events-size
+  "Cap, in characters, for one session's encoded timeline."
+  (* 8 1024 1024))
+
+(def ^:private max-sessions-per-file
+  "Cap for the recordings one profile keeps on one file."
+  200)
 
 ;; The sessions pool is injected into `:app.rpc/methods` under `app.main`'s own
 ;; component key. Referenced as a literal keyword rather than through a require:
@@ -148,6 +159,29 @@
       AND design_session.session_id = ?
       AND design_session.stopped_at IS NULL")
 
+(def ^:private sql:count-other-sessions
+  "SELECT count(*) AS total
+     FROM design_session
+    WHERE profile_id = ?
+      AND file_id = ?
+      AND id <> ?")
+
+(defn- check-session-limits!
+  "Rejects a timeline over `max-events-size`, and a NEW recording once the
+  profile already keeps `max-sessions-per-file` on the file. Flushing an
+  existing recording is never blocked by the count."
+  [spool profile-id file-id id ^org.postgresql.util.PGobject events]
+  (when (> (count (.getValue events)) max-events-size)
+    (ex/raise :type :validation
+              :code :design-session-too-large
+              :hint "the recording is too large to be saved"))
+  (let [others (:total (db/exec-one! spool [sql:count-other-sessions profile-id file-id id]))]
+    (when (and (>= others max-sessions-per-file)
+               (nil? (db/get* spool :design-session {:id id})))
+      (ex/raise :type :validation
+                :code :design-session-limit-reached
+                :hint "too many recordings on this file"))))
+
 (sv/defmethod ::upsert-design-session
   {::doc/added "2.20"
    ::sm/params schema:upsert-design-session}
@@ -157,8 +191,14 @@
   ;; this is the check that stops a viewer from recording a file they can only see
   (files/check-edition-permissions! pool profile-id file-id)
 
+  (when-not (sequential? events)
+    (ex/raise :type :validation
+              :code :invalid-session-events
+              :hint "events must be a list of session events"))
+
   (let [spool    (get-sessions-pool cfg)
-        events   (db/tjson events)
+        events   (db/tjson (vec events))
+        _        (check-session-limits! spool profile-id file-id id events)
         dropped  (or raw-dropped 0)
         affected (->> (db/exec-one! spool [sql:upsert-session
                                            id file-id profile-id session-id events

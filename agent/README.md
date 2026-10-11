@@ -29,6 +29,19 @@ enable the `design-agent-service` flag (with `design-agent`).
 | `PENPOT_AGENT_SERVICE_DATA_DIR` | `.data` | Stored conversations and images |
 | `PENPOT_AGENT_SERVICE_ANTHROPIC_BASE_URL` | unset | Development only: a stand-in for the Anthropic API |
 
+## Server-side tools
+
+With the backend flag `design-agent-server-tools`, the backend runs the tools
+it implements (today `read_design` and `find_shapes`) and a connected
+workspace runs the rest. The backend passes a turn token with each turn; the
+service presents it back to `run-agent-tool`, which runs the tool as the
+profile that started the turn, on that file only.
+
+A server-side tool reads the stored file, so before each one the service asks
+the workspace to save its pending changes and to report the page in view and
+the selection. `PENPOT_BACKEND_URI` (default `http://localhost:6060`) is where
+the service reaches the backend.
+
 ## Try it without a provider key
 
 `node test/fake-anthropic-cli.js 6068` starts a scripted stand-in model.

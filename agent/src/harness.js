@@ -146,10 +146,12 @@ export async function createHarness(options = {}) {
       async execute(args, exec) {
         const turn = conversation.turn;
         if (turn === undefined) throw new Error("no browser is connected to run this tool");
-        const result = await turn.callTool(
-          { callId: String(exec.callId), name: spec.name, input: args ?? {} },
-          exec.signal,
-        );
+        const call = { callId: String(exec.callId), name: spec.name, input: args ?? {} };
+        // the backend runs the tools it implements; a connected workspace
+        // runs the rest
+        const result = turn.serverTools?.has(spec.name)
+          ? await turn.callServerTool(call, exec.signal)
+          : await turn.callTool(call, exec.signal);
         if (result.isError) throw new Error(result.content || "tool error");
         const images = await imageBlocks(result.images, "returned by this tool");
         return images.length > 0 ? { content: result.content ?? "", images } : { content: result.content ?? "" };
@@ -244,10 +246,11 @@ export async function createHarness(options = {}) {
 
   /**
    * Runs one user turn. `emit` receives the turn's events; `callTool` runs a
-   * tool wherever tools live and resolves with `{content, isError}`. Resolves
-   * when the turn is over; `signal` cancels it.
+   * tool in the connected workspace and resolves with `{content, isError}`;
+   * `callServerTool` does the same for the tools named in `serverTools`, which
+   * the backend runs. Resolves when the turn is over; `signal` cancels it.
    */
-  async function runTurn(request, { emit, callTool, signal }) {
+  async function runTurn(request, { emit, callTool, callServerTool, serverTools, signal }) {
     const { sessionId, profileId, provider, apiKey, text } = request;
     if (PROVIDER_ROUTES[provider] === undefined) throw new Error(`unknown provider: ${provider}`);
 
@@ -262,7 +265,13 @@ export async function createHarness(options = {}) {
     ctx.credentials.setKeys(id, { [keyRef(provider)]: apiKey });
 
     let endReason;
-    conversation.turn = { emit, callTool, ended: (reason) => (endReason = reason) };
+    conversation.turn = {
+      emit,
+      callTool,
+      callServerTool,
+      serverTools: callServerTool ? serverTools : undefined,
+      ended: (reason) => (endReason = reason),
+    };
     const agent = conversation.handle.agent;
     const onAbort = () => agent.cancel({ kind: "user" });
     signal?.addEventListener("abort", onAbort, { once: true });

@@ -111,3 +111,82 @@ test("the shared key is required when configured", async () => {
     await t.close();
   }
 });
+
+test("a server tool: the workspace is synced first, then the backend runs it with the turn token", async () => {
+  const { createServer } = await import("node:http");
+  const seen = [];
+  const backend = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      seen.push({ url: req.url, body: JSON.parse(raw) });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ content: '{"file":"Stored"}', isError: false }));
+    });
+  });
+  await new Promise((r) => backend.listen(0, "127.0.0.1", r));
+  const t = await setup(
+    (_req, n) => (n === 0 ? { tool: { name: "read_design", input: {} } } : { text: "Read." }),
+    { backendUri: `http://127.0.0.1:${backend.address().port}` },
+  );
+  try {
+    const body = { ...BODY, tools: [{ name: "read_design", description: "Reads.", inputSchema: { type: "object", properties: {} } }] };
+    const headers = { ...HEADERS, "x-penpot-turn-token": "turn-token-1", "x-penpot-server-tools": "read_design,find_shapes" };
+    const response = await fetch(`${t.base}/v1/turns`, { method: "POST", headers, body: JSON.stringify(body) });
+    const order = [];
+    let turnId;
+    let done;
+    for await (const event of events(response)) {
+      if (event.type === "turn") turnId = event.turnId;
+      if (event.type === "tool-call") {
+        order.push(`workspace:${event.name}`);
+        assert.equal(seen.length, 0, "the backend must not be asked before the workspace has saved");
+        await fetch(`${t.base}/v1/turns/${turnId}/tool-results`, {
+          method: "POST",
+          headers: HEADERS,
+          body: JSON.stringify({ callId: event.callId, content: '{"pageId":"page-1","selectedIds":[]}' }),
+        });
+      }
+      if (event.type === "server-tool") order.push(`server:${event.name}`);
+      if (event.type === "done") done = event;
+    }
+    assert.deepEqual(order, ["workspace:__sync", "server:read_design"]);
+    assert.equal(seen[0].url, "/api/rpc/command/run-agent-tool");
+    assert.equal(seen[0].body.token, "turn-token-1");
+    assert.equal(seen[0].body.tool, "read_design");
+    assert.equal(JSON.parse(seen[0].body.context).pageId, "page-1");
+    assert.match(JSON.stringify(t.fake.requests[1].body.messages), /Stored/);
+    assert.deepEqual(done.toolTimings.map((x) => [x.name, x.server]), [["read_design", true]]);
+  } finally {
+    await t.close();
+    await new Promise((r) => backend.close(r));
+  }
+});
+
+test("without a turn token every tool goes to the workspace", async () => {
+  const t = await setup((_req, n) => (n === 0 ? { tool: { name: "read_design", input: {} } } : { text: "Read." }));
+  try {
+    const body = { ...BODY, tools: [{ name: "read_design", description: "Reads.", inputSchema: { type: "object", properties: {} } }] };
+    const response = await fetch(`${t.base}/v1/turns`, {
+      method: "POST",
+      headers: { ...HEADERS, "x-penpot-server-tools": "read_design" },
+      body: JSON.stringify(body),
+    });
+    const asked = [];
+    let turnId;
+    for await (const event of events(response)) {
+      if (event.type === "turn") turnId = event.turnId;
+      if (event.type === "tool-call") {
+        asked.push(event.name);
+        await fetch(`${t.base}/v1/turns/${turnId}/tool-results`, {
+          method: "POST",
+          headers: HEADERS,
+          body: JSON.stringify({ callId: event.callId, content: "{}" }),
+        });
+      }
+    }
+    assert.deepEqual(asked, ["read_design"]);
+  } finally {
+    await t.close();
+  }
+});

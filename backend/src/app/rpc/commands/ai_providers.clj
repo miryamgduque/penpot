@@ -41,6 +41,7 @@
    [app.http.client :as http]
    [app.http.sse :as sse]
    [app.rpc :as-alias rpc]
+   [app.rpc.commands.agent-tools :as agent-tools]
    [app.rpc.commands.files :as files]
    [app.rpc.doc :as-alias doc]
    [app.setup :as-alias setup]
@@ -604,10 +605,16 @@
   (files/check-read-permissions! pool profile-id file-id)
   (let [row      (connected-provider-row cfg profile-id provider)
         response (agent-service-req! cfg "/v1/turns"
-                                     {"x-penpot-profile-id" (str profile-id)
-                                      "x-penpot-file-id" (str file-id)
-                                      "x-penpot-provider" provider
-                                      "x-penpot-api-key" (:api-key row)}
+                                     (cond-> {"x-penpot-profile-id" (str profile-id)
+                                              "x-penpot-file-id" (str file-id)
+                                              "x-penpot-provider" provider
+                                              "x-penpot-api-key" (:api-key row)}
+                                       ;; with server tools on, the service
+                                       ;; runs these itself, as this profile
+                                       ;; on this file and nothing else
+                                       (contains? cf/flags :design-agent-server-tools)
+                                       (assoc "x-penpot-turn-token" (agent-tools/turn-token cfg profile-id file-id)
+                                              "x-penpot-server-tools" (str/join "," (sort agent-tools/server-tools))))
                                      payload
                                      {:response-type :input-stream})]
     (check-agent-service-status! response)

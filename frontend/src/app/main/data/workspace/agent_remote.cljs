@@ -17,10 +17,14 @@
   `run-turn` emits the same turn events as `agent/run-turn`, so the panel
   cannot tell the two apart."
   (:require
+   [app.main.data.helpers :as dsh]
+   [app.main.data.persistence :as dps]
    [app.main.data.session-actor :as sa]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-tools :as at]
+   [app.main.data.workspace.agent-tools.read :as atr]
    [app.main.repo :as rp]
+   [app.main.store :as st]
    [app.util.sse :as sse]
    [beicon.v2.core :as rx]))
 
@@ -80,6 +84,57 @@
                                                 {:mediaType mtype :data data})
                                               (:images outcome))}))}))
 
+;; --- Server-side tools
+;;
+;; A tool the backend runs reads the file from storage, not from this tab. So
+;; before each one the service asks the workspace two things: to save what it
+;; has not saved yet — otherwise the tool would not see the agent's own last
+;; change — and to say what the user is looking at.
+
+(def ^:private sync-call "__sync")
+
+;; A change committed by the previous tool reaches the save queue a moment
+;; later; asking "is everything saved?" before that would answer yes too early.
+(def ^:private settle-ms 80)
+
+(def ^:private save-timeout-ms 15000)
+
+(defn workspace-context
+  "What a server-side tool cannot know without a workspace: the page in view,
+  the selection, and the facts `read_design` reports from workspace state."
+  [state]
+  {:pageId (str (:current-page-id state))
+   :selectedIds (mapv str (dsh/get-selected-ids state))
+   :extras (select-keys (atr/workspace-extras state) [:skills :openViolations])})
+
+(defn- sync-workspace
+  "Saves pending changes, then → observable of one outcome carrying the
+  workspace context as its content."
+  [call]
+  (st/emit! ::dps/force-persist)
+  (->> (rx/timer settle-ms)
+       (rx/mapcat (fn [_] (dps/wait-persisted-or-error save-timeout-ms)))
+       (rx/map (fn [_]
+                 {:call call
+                  :status :ok
+                  :content (js/JSON.stringify (clj->js (workspace-context @st/state)))}))
+       (rx/catch (fn [cause]
+                   (rx/of {:call call
+                           :status :error
+                           :error? true
+                           :content (str "The workspace could not save its changes: "
+                                         (or (ex-message cause) "unknown error"))})))))
+
+(defn- server-tool-event
+  "A tool the server ran, as the transcript shows any other tool."
+  [{:keys [name input content isError]}]
+  (agent/tool-outcome->event
+   {:call {:name name :input (or input {})}
+    :status (if isError :error :ok)
+    :detail (when isError content)
+    :content content
+    :error? (boolean isError)}))
+
 (defn- usage
   [{:keys [input output cacheRead cacheWrite]}]
   {:input-tokens (or input 0)
@@ -92,6 +147,12 @@
   "Per-tool round-trip times of the last finished turn, as the service
   measured them. A measurement aid for comparing the bridge with the
   in-browser loop; nothing reads it at runtime."
+  (atom nil))
+
+(def last-server-tool*
+  "The last tool the server ran, with its whole result. A verification aid
+  for comparing a server-side tool with its workspace twin; nothing reads it
+  at runtime."
   (atom nil))
 
 (defn run-turn
@@ -124,15 +185,25 @@
                   (rx/of {:kind :thinking-delta :text (:text ev)})
 
                   "tool-call"
-                  (->> (run-tool settings {:id (:callId ev)
-                                           :name (:name ev)
-                                           :input (or (:input ev) {})})
-                       (rx/mapcat
-                        (fn [outcome]
-                          (rx/concat
-                           (rx/of (agent/tool-outcome->event outcome))
-                           (->> (post-result @turn-id* outcome)
-                                (rx/ignore))))))
+                  (if (= sync-call (:name ev))
+                    ;; plumbing, not a tool: nothing is shown in the transcript
+                    (->> (sync-workspace {:id (:callId ev)})
+                         (rx/mapcat #(post-result @turn-id* %))
+                         (rx/ignore))
+                    (->> (run-tool settings {:id (:callId ev)
+                                             :name (:name ev)
+                                             :input (or (:input ev) {})})
+                         (rx/mapcat
+                          (fn [outcome]
+                            (rx/concat
+                             (rx/of (agent/tool-outcome->event outcome))
+                             (->> (post-result @turn-id* outcome)
+                                  (rx/ignore)))))))
+
+                  "server-tool"
+                  (do
+                    (reset! last-server-tool* ev)
+                    (rx/of (server-tool-event ev)))
 
                   "usage"
                   (rx/of {:kind :usage :usage (usage (:usage ev))})

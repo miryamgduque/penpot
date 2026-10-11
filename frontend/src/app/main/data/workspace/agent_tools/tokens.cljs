@@ -7,6 +7,7 @@
 (ns app.main.data.workspace.agent-tools.tokens
   "Design-token tools: create/apply tokens, sets and themes."
   (:require
+   [app.common.agent.read :as car]
    [app.common.data.macros :as dm]
    [app.common.types.token :as cto]
    [app.common.types.tokens-lib :as ctob]
@@ -274,26 +275,10 @@
                            "read_design.")})))))
 
 (defn sets-and-themes
-  "The library's sets (with active flag) and themes — `read_design` flattens
-  tokens into active sets only, so without this the agent cannot see that an
-  inactive `modes/dark` exists at all."
+  "The library's sets (with active flag) and themes; see
+  `app.common.agent.read/sets-and-themes`."
   [state]
-  (let [lib (atc/tokens-lib state)]
-    (when lib
-      (let [active (ctob/get-active-themes-set-names lib)
-            themes (->> (ctob/get-themes lib)
-                        (remove #(= ctob/hidden-theme-name (ctob/get-name %)))
-                        (mapv (fn [t] (cond-> {:name (ctob/get-name t)
-                                               :sets (vec (:sets t))}
-                                        (ctob/theme-active? lib (ctob/get-id t))
-                                        (assoc :active true)))))
-            sets   (->> (ctob/get-sets lib)
-                        (mapv (fn [s] (cond-> {:name (ctob/get-name s)}
-                                        (contains? active (ctob/get-name s))
-                                        (assoc :active true)))))]
-        (cond-> {}
-          (seq sets)   (assoc :sets sets)
-          (seq themes) (assoc :themes themes))))))
+  (car/sets-and-themes (atc/tokens-lib state)))
 
 ;; --- Token application
 ;;

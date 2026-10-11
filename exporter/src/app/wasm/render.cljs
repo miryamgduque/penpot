@@ -397,6 +397,28 @@
                                          :media-id (str image-id))))))))
          (p/all))))
 
+(defn provision-scene-fonts!
+  "Loads into the engine the fonts the text of the loaded `scene` uses, then
+  lays that text out again with them → promise of true when every font was
+  found. For callers that hold no session: built-in and Google fonts only. A
+  team's own uploaded fonts need the user's session to download, so a scene
+  that uses one answers false."
+  [scene]
+  (let [missing? (volatile! false)
+        resolve  (make-resolve-font nil nil)
+        text-ids (into [] (comp (filter #(= :text (:type %))) (map :id)) (vals scene))]
+    (wasm/clear-fonts!)
+    (->> (wasm/provision-fonts! text-ids
+                                (fn [family]
+                                  (->> (resolve family)
+                                       (p/fmap (fn [bytes]
+                                                 (when (nil? bytes) (vreset! missing? true))
+                                                 bytes)))))
+         (p/mcat (fn [_] (provision-fallback-fonts! scene)))
+         (p/fmap (fn [_]
+                   (doseq [id text-ids] (wasm/update-text-layout! id))
+                   (not @missing?))))))
+
 (defn- relayout-text!
   "Recomputes layout for every text shape, once the real fonts are provisioned
   (serialize-time layout used the fallback)."

@@ -116,3 +116,20 @@
   matrix on a parent is how the workspace asks for a reflow."
   [ids]
   (propagate (map (fn [id] [id {:transform (gmt/matrix) :kind :parent}]) ids)))
+
+(defn measure-text
+  "How big the words of text shape `id` are in the loaded page, as the engine
+  lays them out with the fonts it has → `{:width :height}`, or nil when the
+  shape is not a text."
+  [id]
+  (let [buffer (uuid/get-u32 id)]
+    (h/call wasm/internal-module "_use_shape"
+            (aget buffer 0) (aget buffer 1) (aget buffer 2) (aget buffer 3))
+    (let [ptr (h/call wasm/internal-module "_get_text_dimensions")]
+      (when-not (zero? ptr)
+        (let [offset  (mem/->offset-32 ptr)
+              heapf32 (mem/get-heap-f32)
+              width   (aget heapf32 (+ offset 0))
+              height  (aget heapf32 (+ offset 1))]
+          (mem/free)
+          {:width width :height height})))))

@@ -55,12 +55,40 @@
       (if (map? v) v {}))
     (catch :default _ {})))
 
-(defn- engine
-  "The layout engine as the shared tools take it: lay `objects` out and say
-  what `entries` move."
-  [objects entries]
-  (layout/load-page! objects)
-  (layout/propagate entries))
+(defn- make-engine
+  "The render engine as the shared tools take it, plus what it was last shown
+  and whether it was asked to measure text."
+  []
+  (let [scene     (volatile! nil)
+        measured? (volatile! false)
+        load!     (fn [objects]
+                    (vreset! scene objects)
+                    (layout/load-page! objects))]
+    {:scene scene
+     :measured? measured?
+     :propagate (fn [objects entries]
+                  (load! objects)
+                  (layout/propagate entries))
+     :measure-text (fn [objects id]
+                     (vreset! measured? true)
+                     (load! objects)
+                     (layout/measure-text id))}))
+
+(defn- answer-of
+  "Runs `tool` → promise of its answer. A tool that measures text is run
+  twice: the first run shows the engine the text it will measure, the fonts
+  that text uses are then loaded, and the second run measures with them."
+  [tool view input guard]
+  (let [run    (get cat/tools tool)
+        engine (make-engine)
+        first  (run view input (assoc (select-keys engine [:propagate :measure-text]) :guard guard))]
+    (if-not @(:measured? engine)
+      (p/resolved first)
+      (->> (render/provision-scene-fonts! @(:scene engine))
+           (p/fmap (fn [found?]
+                     (if found?
+                       (run view input (assoc (select-keys (make-engine) [:propagate :measure-text]) :guard guard))
+                       {:fallback "a font this text uses is not available to the server"})))))))
 
 (defn run
   "→ promise of `{:content json :isError bool}`, or `{:fallback why}` when the
@@ -73,31 +101,31 @@
           (fn [[_ {:keys [file-id page-id data libraries revn vern allowed-colors]}]]
             (let [guard  {:enforced? (boolean (some #{caw/color-rule} (:enforcedRules ctx)))
                           :allowed allowed-colors}
-                  run    (get cat/tools tool)
-                  answer (run {:file-id file-id
-                               :data data
-                               :libraries (assoc libraries file-id {:id file-id :data data})
-                               :page-id page-id
-                               :objects (get-in data [:pages-index page-id :objects])}
-                              (parse-json input)
-                              {:guard guard :propagate engine})]
-              (cond
-                (some? (:fallback answer))
-                (p/resolved {:fallback (:fallback answer)})
+                  view   {:file-id file-id
+                          :data data
+                          :libraries (assoc libraries file-id {:id file-id :data data})
+                          :page-id page-id
+                          :objects (get-in data [:pages-index page-id :objects])}]
+              (->> (answer-of tool view (parse-json input) guard)
+                   (p/mcat
+                    (fn [answer]
+                      (cond
+                        (some? (:fallback answer))
+                        (p/resolved {:fallback (:fallback answer)})
 
-                (some? (:problem answer))
-                (p/resolved {:content (:problem answer)
-                             :isError true
-                             :rule (:rule answer)})
+                        (some? (:problem answer))
+                        (p/resolved {:content (:problem answer)
+                                     :isError true
+                                     :rule (:rule answer)})
 
-                :else
-                (->> (if (seq (:changes answer))
-                       (command! "commit-agent-tool-changes"
-                                 {:token token :revn revn :vern vern :changes (:changes answer)})
-                       (p/resolved nil))
-                     (p/fmap (fn [committed]
-                               (cond-> {:content (js/JSON.stringify (clj->js (:result answer)))
-                                        :isError false}
-                                 ;; lets a workspace know when it has caught up
-                                 (some? (:revn committed))
-                                 (assoc :revn (:revn committed)))))))))))))
+                        :else
+                        (->> (if (seq (:changes answer))
+                               (command! "commit-agent-tool-changes"
+                                         {:token token :revn revn :vern vern :changes (:changes answer)})
+                               (p/resolved nil))
+                             (p/fmap (fn [committed]
+                                       (cond-> {:content (js/JSON.stringify (clj->js (:result answer)))
+                                                :isError false}
+                                         ;; lets a workspace know when it has caught up
+                                         (some? (:revn committed))
+                                         (assoc :revn (:revn committed))))))))))))))))

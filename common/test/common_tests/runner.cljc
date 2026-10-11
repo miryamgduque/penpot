@@ -12,9 +12,11 @@
    #?(:cljs [clojure.tools.cli :refer [parse-opts]])
    #?(:cljs [goog.object :as gobj])
    [clojure.test :as t]
+   [common-tests.agent-components-test]
    [common-tests.agent-layout-test]
    [common-tests.agent-read-test]
    [common-tests.agent-structure-test]
+   [common-tests.agent-tokens-test]
    [common-tests.agent-write-test]
    [common-tests.attrs-test]
    [common-tests.buffer-test]
@@ -97,9 +99,11 @@
 
 (def test-namespaces
   [#?(:clj 'common-tests.fressian-test)
+   'common-tests.agent-components-test
    'common-tests.agent-layout-test
    'common-tests.agent-read-test
    'common-tests.agent-structure-test
+   'common-tests.agent-tokens-test
    'common-tests.agent-write-test
    'common-tests.attrs-test
    'common-tests.buffer-test

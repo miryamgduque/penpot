@@ -133,6 +133,40 @@
      :libraries libs
      :selected (parse-ids selectedIds)}))
 
+;; --- Design rules
+;;
+;; A rule is active on a file when the workspace that started the turn says
+;; so, or when it is mandatory: an enabled rule of the instance or of the
+;; file's team marked as such. The first is the user's choice; the second is
+;; not, so it is read here, from the database, on every call.
+
+(def ^:private sql:mandatory-rules
+  "SELECT s.name
+     FROM design_skill AS s
+    WHERE s.kind = 'rule'
+      AND s.is_mandatory IS TRUE
+      AND s.is_enabled IS TRUE
+      AND (s.team_id IS NULL OR s.team_id = ?)
+      AND NOT EXISTS (SELECT 1
+                        FROM design_skill_override AS o
+                       WHERE o.team_id = ?
+                         AND o.skill_name = s.name
+                         AND o.is_enabled IS FALSE)")
+
+(def ^:private sql:file-team
+  "SELECT p.team_id
+     FROM file AS f
+     JOIN project AS p ON (p.id = f.project_id)
+    WHERE f.id = ?")
+
+(defn- enforced-rules
+  "The names of the rules active on the file for this call."
+  [cfg file-id {:keys [enforcedRules]}]
+  (let [team-id (:team-id (db/exec-one! cfg [sql:file-team file-id]))]
+    (-> #{}
+        (into (filter string?) enforcedRules)
+        (into (map :name) (db/exec! cfg [sql:mandatory-rules team-id team-id])))))
+
 ;; --- Tools
 
 (defmulti ^:private run-tool
@@ -154,8 +188,8 @@
     (car/find-shapes (get-in data [:pages-index page-id :objects]) query)))
 
 (defmethod run-tool "audit_file"
-  [_ {:keys [data page-id]} _ {:keys [enforcedRules]}]
-  (let [enforced (into #{} (filter string?) enforcedRules)]
+  [_ {:keys [file-id data page-id]} _ {:keys [::cfg] :as context}]
+  (let [enforced (enforced-rules cfg file-id context)]
     (car/audit-result
      (car/audit-violations (get-in data [:pages-index page-id :objects])
                            {:enforced enforced
@@ -408,6 +442,8 @@
       {:file-id file-id
        :page-id page-id
        :team-fonts (team-fonts cfg (:project-id file))
+       ;; the design rules the tool is held to
+       :enforced-rules (vec (enforced-rules cfg file-id context))
        :revn (:revn file)
        :vern (:vern file)
        :data data

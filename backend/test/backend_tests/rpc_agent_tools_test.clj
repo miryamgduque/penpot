@@ -261,3 +261,32 @@
     (t/is (= :invalid-turn-token
              (-> (th/command! {::th/type :get-agent-tool-media :token "nope" :id (uuid/random)})
                  :error ex-data :code)))))
+
+(t/deftest a-mandatory-rule-is-active-whatever-the-caller-says
+  (let [profile (th/create-profile* 1 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file))
+        rules   (fn [context]
+                  (-> (th/command! (cond-> {::th/type :get-agent-tool-page :token token}
+                                     context (assoc :context (json/encode context))))
+                      :result :enforced-rules set))]
+    ;; the workspace's own choice is taken as given
+    (t/is (= #{} (rules nil)))
+    (t/is (= #{"layer-naming"} (rules {:enforcedRules ["layer-naming"]})))
+
+    (th/db-insert! :design-skill {:team-id (:default-team-id profile)
+                                  :name "token-only-colors"
+                                  :kind "rule"
+                                  :enforcement "enforced"
+                                  :is-mandatory true})
+    (th/db-insert! :design-skill {:team-id (:default-team-id profile)
+                                  :name "layer-naming"
+                                  :kind "rule"
+                                  :enforcement "advisory"
+                                  :is-mandatory false})
+    ;; a mandatory rule of the team is active even when the caller leaves it out
+    (t/is (= #{"token-only-colors"} (rules nil)))
+    (t/is (= #{"token-only-colors"} (rules {:enforcedRules []})))
+    (t/is (= #{"token-only-colors" "layer-naming"} (rules {:enforcedRules ["layer-naming"]})))))

@@ -148,7 +148,7 @@
   twice: the first run shows the engine the text it will measure, the fonts
   that text uses are then loaded, and the second run measures with them."
   [tool view input options]
-  (let [run    (get cat/tools tool)
+  (let [run    (partial cat/run tool)
         engine (make-engine)
         first  (run view input (merge options (select-keys engine [:propagate :measure-text :parse-svg])))]
     (if-not @(:measured? engine)
@@ -244,9 +244,12 @@
                  (command! "get-agent-tool-page" {:token token :context context})
                  (resolve-needs token tool input)])
          (p/mcat
-          (fn [[_ {:keys [file-id page-id data libraries revn vern allowed-colors team-fonts]} resources]]
+          (fn [[_ {:keys [file-id page-id data libraries revn vern allowed-colors team-fonts enforced-rules]}
+                resources]]
             (layout/install-bool-engine!)
-            (let [guard  {:enforced? (boolean (some #{caw/color-rule} (:enforcedRules ctx)))
+            (let [;; which rules are active is the backend's to say: the
+                  ;; caller cannot switch a mandatory one off
+                  guard  {:enforced? (boolean (some #{caw/color-rule} enforced-rules))
                           :allowed allowed-colors}
                   view   {:file-id file-id
                           :data data

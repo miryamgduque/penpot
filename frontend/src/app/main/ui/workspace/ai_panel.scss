@@ -143,7 +143,7 @@
 
 // Conversation controls (new chat + history) and the History popover. The
 // container is the popover's anchor; the menu drops below the header band,
-// right-aligned, and borrows the model-picker menu's visual language.
+// right-aligned.
 .chat-controls {
   position: relative;
   display: flex;
@@ -151,33 +151,36 @@
   gap: deprecated.$s-2;
 }
 
+// Penpot's shared menu (basic-rules.scss's %dropdown-wrapper), like the
+// Skills filter; the overrides keep this menu's own placement.
 .chat-history-menu {
-  position: absolute;
-  inset-block-start: calc(100% + deprecated.$s-8);
+  @extend %dropdown-wrapper;
+
+  --menu-max-height: 320px;
+
+  top: calc(100% + #{deprecated.$s-8});
+  left: auto;
   inset-inline-end: 0;
-  z-index: 3;
   display: flex;
   flex-direction: column;
   gap: deprecated.$s-2;
-  min-inline-size: 220px;
-  max-inline-size: 280px;
-  max-block-size: 320px;
-  overflow-y: auto;
-  padding: deprecated.$s-4;
-  border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  background-color: var(--color-background-primary);
-  box-shadow: var(--el-shadow-dark);
+  width: auto;
+  min-width: 220px;
+  max-width: 280px;
+  margin: 0;
 }
 
+// A shared menu item, grown to fit the two-line select button and the row's
+// own icon buttons, which keep their DS colours on row hover.
 .chat-history-row {
-  display: flex;
-  align-items: center;
-  gap: deprecated.$s-2;
-  border-radius: deprecated.$br-8;
+  @extend %dropdown-element-base;
 
-  &:hover {
-    background-color: var(--color-background-tertiary);
+  gap: deprecated.$s-2;
+  height: auto;
+  padding: 0;
+
+  &:hover svg {
+    stroke: currentcolor;
   }
 }
 
@@ -197,7 +200,7 @@
   padding: deprecated.$s-6 deprecated.$s-8;
   border: none;
   background-color: transparent;
-  color: var(--color-foreground-primary);
+  color: inherit;
   text-align: start;
   cursor: pointer;
 
@@ -245,40 +248,27 @@
   align-items: center;
 }
 
-// The dropdown itself (mirrors .skill-menu), opening below the ⋯ button.
+// The dropdown itself: Penpot's shared menu, opening below the ⋯ button.
 .more-menu {
-  position: absolute;
-  inset-block-start: calc(100% + #{deprecated.$s-4});
+  @extend %dropdown-wrapper;
+
+  top: calc(100% + #{deprecated.$s-4});
+  left: auto;
   inset-inline-end: 0;
-  z-index: 12;
+  width: auto;
   min-width: 200px;
-  padding: deprecated.$s-4;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
-  background-color: var(--color-background-primary);
-  box-shadow: var(--el-shadow-dark);
+  margin: 0;
 }
 
 // A navigation row in the menu: icon + label, opens a destination (US #38 moved
 // Foundations / Skills here from the header).
 .more-option {
-  @include deprecated.body-small-typography;
+  @extend %dropdown-element-base;
 
-  display: flex;
-  align-items: center;
-  gap: deprecated.$s-8;
   width: 100%;
-  padding: deprecated.$s-6 deprecated.$s-8;
   border: none;
-  border-radius: deprecated.$br-8;
   background: none;
-  color: var(--color-foreground-primary);
-  cursor: pointer;
   text-align: start;
-
-  &:hover {
-    background-color: var(--color-background-tertiary);
-  }
 }
 
 // One action row: a label on the left, its control on the right.
@@ -293,7 +283,7 @@
 .more-row-label {
   @include deprecated.body-small-typography;
 
-  color: var(--color-foreground-primary);
+  color: var(--menu-foreground-color-rest);
 }
 
 .font-stepper {
@@ -1147,54 +1137,37 @@
   transform: rotate(180deg);
 }
 
+// Penpot's shared menu, opening upward.
 .model-picker-menu {
-  position: absolute;
-  inset-block-end: calc(100% + deprecated.$s-4);
+  @extend %dropdown-wrapper;
 
-  // Right-anchored so it lines up with the half-width trigger, but free to grow
-  // left to fit full model names rather than truncating to half.
-  inset-inline: auto 0;
-  min-inline-size: 100%;
-  inline-size: max-content;
-  max-inline-size: 260px;
-  z-index: 2;
+  --menu-max-height: 240px;
+
+  // Opens upward, right-anchored so it lines up with the half-width trigger,
+  // but free to grow left to fit full model names rather than truncating.
+  inset: auto 0 calc(100% + #{deprecated.$s-4}) auto;
   display: flex;
   flex-direction: column;
   gap: deprecated.$s-4;
-  max-block-size: 240px;
-  overflow-y: auto;
-  padding: deprecated.$s-4;
-  border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  background-color: var(--color-background-primary);
-  box-shadow: var(--el-shadow-dark);
+  width: max-content;
+  min-width: 100%;
+  max-width: 260px;
+  margin: 0;
 }
 
-.model-picker-group-label {
-  @include scaled-body-small;
-
-  padding: deprecated.$s-4 deprecated.$s-8;
-  color: var(--color-foreground-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
+// A shared menu item; grows past 32px when a long model name wraps.
 .model-picker-option {
+  @extend %dropdown-element-base;
   @include scaled-body-small;
 
-  display: block;
+  flex-shrink: 0;
   width: 100%;
+  height: auto;
+  min-height: deprecated.$s-32;
   padding: deprecated.$s-4 deprecated.$s-8;
   border: none;
-  border-radius: deprecated.$br-8;
   background-color: transparent;
-  color: var(--color-foreground-primary);
   text-align: start;
-  cursor: pointer;
-
-  &:hover {
-    background-color: var(--color-background-tertiary);
-  }
 
   &.selected {
     color: var(--color-accent-primary);
@@ -1252,47 +1225,55 @@
   outline-offset: deprecated.$s-2;
 }
 
-// The `/` menu, floated above the composer row (same recipe as the
-// model-picker menu: bordered card, opens upward, scrolls when long).
+// The `/` menu: Penpot's shared menu, floated above the composer row (opens
+// upward, full row width, scrolls when long).
 .slash-menu {
-  position: absolute;
-  inset-block-end: calc(100% + deprecated.$s-4);
-  inset-inline: 0;
-  z-index: 2;
+  @extend %dropdown-wrapper;
+
+  --menu-max-height: 260px;
+
+  top: auto;
+  bottom: calc(100% + #{deprecated.$s-4});
   display: flex;
   flex-direction: column;
-  max-block-size: 260px;
-  overflow-y: auto;
-  padding: deprecated.$s-4;
-  border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  background-color: var(--color-background-primary);
-  box-shadow: var(--el-shadow-dark);
+  margin: 0;
 }
 
+// A shared menu item laid out as command + title over an optional detail line.
 .slash-option {
-  @include deprecated.body-small-typography;
+  @extend %dropdown-element-base;
 
   display: grid;
   grid-template-columns: auto 1fr;
-  column-gap: deprecated.$s-8;
+  gap: 0 deprecated.$s-8;
   align-items: baseline;
+  flex-shrink: 0;
   width: 100%;
+  height: auto;
+  min-height: deprecated.$s-32;
   padding: deprecated.$s-6 deprecated.$s-8;
   border: none;
-  border-radius: deprecated.$br-8;
   background-color: transparent;
-  color: var(--color-foreground-primary);
   text-align: start;
-  cursor: pointer;
 }
 
-// hover moves the highlight (pointer-enter), so active covers both inputs
+// Hover moves the highlight (pointer-enter), so active covers both inputs; a
+// row the pointer rests on after the keys move away stays unhighlighted.
+.slash-option:not(.slash-option-active):hover {
+  background-color: transparent;
+  color: var(--menu-foreground-color-rest);
+}
+
 .slash-option-active {
-  background-color: var(--color-background-tertiary);
+  background-color: var(--menu-background-color-hover);
+  color: var(--menu-foreground-color);
 }
 
-.slash-command {
+// Never truncated: the shared item clips every span with an ellipsis, which
+// would collapse this auto-sized column.
+.slash-option .slash-command {
+  overflow: visible;
+  max-width: none;
   color: var(--color-accent-primary);
   white-space: nowrap;
 }
@@ -2139,7 +2120,8 @@
   margin: 0;
 }
 
-.skills-filter-group-label {
+.skills-filter-group-label,
+.model-picker-group-label {
   @include scaled-body-small;
 
   padding: deprecated.$s-8 deprecated.$s-8 deprecated.$s-4;
@@ -2461,43 +2443,33 @@ textarea.create-input {
   opacity: 1;
 }
 
-// The overflow menu itself (rendered by `dropdown` when open), anchored to the
-// trailing edge below the ⋯ button.
+// The overflow menu itself (rendered by `dropdown` when open): Penpot's shared
+// menu, anchored to the trailing edge below the ⋯ button.
 .skill-menu {
-  position: absolute;
-  inset-block-start: calc(100% + #{deprecated.$s-4});
+  @extend %dropdown-wrapper;
+
+  top: calc(100% + #{deprecated.$s-4});
+  left: auto;
   inset-inline-end: 0;
-  z-index: 12;
+  width: auto;
   min-width: 160px;
   margin: 0;
-  padding: deprecated.$s-4;
   list-style: none;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
-  background-color: var(--color-background-primary);
-  box-shadow: var(--el-shadow-dark);
 }
 
 .menu-option {
+  @extend %dropdown-element-base;
   @include scaled-body-small;
-
-  padding: deprecated.$s-6 deprecated.$s-8;
-  border-radius: deprecated.$br-6;
-  color: var(--color-foreground-primary);
-  cursor: pointer;
-
-  &:hover {
-    background-color: var(--color-background-tertiary);
-  }
 }
 
+// Faded, with no hover feedback.
 .menu-option-disabled {
-  color: var(--color-foreground-secondary);
   cursor: default;
   opacity: 0.5;
 
   &:hover {
     background-color: transparent;
+    color: var(--menu-foreground-color-rest);
   }
 }
 

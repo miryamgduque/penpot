@@ -312,21 +312,16 @@
   color: var(--color-accent-warning);
 }
 
-.provider-models-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-xs);
-  max-block-size: $sz-224;
-  overflow-y: auto;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
+// A shared menu item (basic-rules.scss's %dropdown-element-base); the
+// checkbox tick keeps its own colour on row hover.
 .provider-models-item {
-  display: flex;
-  align-items: center;
+  @extend %dropdown-element-base;
+
   gap: var(--sp-s);
+
+  &:hover svg {
+    stroke: currentcolor;
+  }
 
   &:has(:disabled) {
     opacity: 0.6;
@@ -399,21 +394,17 @@
   transform: rotate(180deg);
 }
 
+// Penpot's shared menu (basic-rules.scss's %dropdown-wrapper), below the
+// trigger at its full width.
 .provider-models-menu {
-  position: absolute;
-  inset-block-start: calc(100% + var(--sp-xs));
-  inset-inline: 0;
-  z-index: 2;
+  @extend %dropdown-wrapper;
+
+  --menu-max-height: #{$sz-224};
+
+  top: calc(100% + var(--sp-xs));
   display: flex;
   flex-direction: column;
   gap: var(--sp-xs);
-  max-block-size: $sz-224;
-  overflow-y: auto;
   margin: 0;
-  padding: var(--sp-s);
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
-  background-color: var(--color-background-primary);
-  box-shadow: var(--el-shadow-dark);
   list-style: none;
 }

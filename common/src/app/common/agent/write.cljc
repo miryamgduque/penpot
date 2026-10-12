@@ -39,6 +39,36 @@
    [app.common.uuid :as uuid]
    [cuerdas.core :as str]))
 
+;; --- A tool's changes, and how to take them back
+;;
+;; A tool answers the changes to commit. The change builder also works out how
+;; to undo them, and that is kept: it rides on the changes as metadata, so the
+;; answer stays a plain vector for everything that only commits it. A host
+;; that wants to be able to revert what the agent did reads it with `undo-of`.
+
+(defn with-undo
+  "`redo` as a tool answers it, carrying the changes that take it back."
+  [redo undo]
+  (with-meta (vec redo) {::undo (vec undo)}))
+
+(defn redo
+  "The changes of a change builder, as a tool answers them."
+  [changes]
+  (with-undo (:redo-changes changes) (:undo-changes changes)))
+
+(defn undo-of
+  "The changes that take back what a tool answered, in the order to apply
+  them, or nil when the tool did not say."
+  [changes]
+  (::undo (meta changes)))
+
+(defn then-changes
+  "`earlier` followed by `later`, both as tools answer them: the changes of
+  both, and an undo that takes back the later ones first."
+  [earlier later]
+  (with-undo (into (vec earlier) later)
+    (into (vec (undo-of later)) (undo-of earlier))))
+
 ;; --- shape types
 ;;
 ;; The agent says "board"; the file model says `:frame`. Two mappings, and the
@@ -475,7 +505,7 @@
                         (seat-in-grid (:id parent)))
                       (cond-> (ctl/any-layout? parent)
                         (propagate-into propagate [(reflow-entry (:id parent))])))]
-      {:changes (:redo-changes changes)
+      {:changes (redo changes)
        :result {:id (dm/str (:id shape))
                 :type type
                 :parentId (when parent (dm/str (:id parent)))
@@ -674,7 +704,7 @@
       (some->> (modify-fallback objects input engine) (hash-map :fallback))
       (let [id      (parse-uuid shapeId)
             changes (modify-into (page-changes page-id objects) input engine)]
-        {:changes (:redo-changes changes)
+        {:changes (redo changes)
          :result
          (if-not (or (some? x) (some? y) (some? width) (some? height))
            {:id shapeId :note "modified — verify with read_design"}
@@ -709,7 +739,7 @@
 
 (defn session
   [data page-id]
-  {:data data :page-id page-id :redo []})
+  {:data data :page-id page-id :redo (with-undo [] [])})
 
 (defn session-objects
   [{:keys [data page-id]}]
@@ -725,9 +755,9 @@
                        (cb/with-library-data data))
                    objects
                    data)
-        redo    (:redo-changes changes)]
-    (if (empty? redo)
+        made    (redo changes)]
+    (if (empty? made)
       session
       (-> session
-          (update :redo into redo)
-          (assoc :data (cfc/process-changes data redo false))))))
+          (update :redo then-changes made)
+          (assoc :data (cfc/process-changes data made false))))))

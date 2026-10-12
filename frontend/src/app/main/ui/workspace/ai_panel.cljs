@@ -549,7 +549,7 @@
   never pin to the latest — and once the content outgrows the panel the
   sentinel is never seen, leaving it wrongly detached forever."
   {::mf/private true}
-  [{:keys [messages busy? form checkpoint]}]
+  [{:keys [messages busy? form checkpoint revert]}]
   (let [;; consecutive tool calls collapse into one row; `partition-by` on the
         ;; role category yields alternating runs of tools / thinking rows /
         ;; everything else
@@ -564,6 +564,10 @@
 
         on-continue   (mf/use-fn #(st/emit! (dwaip/continue-turn)))
         on-stop-here  (mf/use-fn #(st/emit! (dwaip/dismiss-checkpoint)))
+
+        on-revert       (mf/use-fn #(st/emit! (dwaip/revert-turn)))
+        on-revert-force (mf/use-fn #(st/emit! (dwaip/revert-turn true)))
+        on-revert-keep  (mf/use-fn #(st/emit! (dwaip/dismiss-revert)))
 
         scroll-ref    (mf/use-ref nil)
         ;; a fresh transcript starts pinned to the newest message
@@ -606,7 +610,7 @@
 
     ;; `form`/`checkpoint` are in the deps: an interview or a pause appearing
     ;; is new content to follow
-    (mf/with-layout-effect [messages busy? form checkpoint]
+    (mf/with-layout-effect [messages busy? form checkpoint revert]
       (when ^boolean (mf/ref-val at-bottom-ref)
         (scroll-to-end)))
 
@@ -685,6 +689,47 @@
                       :class (stl/css :checkpoint-stop)
                       :on-click on-stop-here}
              (tr "workspace.agent.checkpoint.stop")]]]))
+      ;; the way back: what the agent changes is not in the user's undo
+      ;; history, so a turn that changed the file ends with this offer
+      (when (and (some? revert) (not busy?))
+        (let [{:keys [state shapes unknown]} revert]
+          [:div {:class (stl/css :checkpoint)
+                 :data-testid "agent-revert"}
+           [:div {:class (stl/css :checkpoint-label)}
+            (case state
+              :offered  (tr "workspace.agent.revert.offer")
+              :reverted (tr "workspace.agent.revert.done")
+              :conflict (cond
+                          (seq shapes) (tr "workspace.agent.revert.conflict" (str/join ", " shapes))
+                          unknown      (tr "workspace.agent.revert.conflict-unknown")
+                          :else        (tr "workspace.agent.revert.conflict-unknown"))
+              nil)]
+           [:div {:class (stl/css :checkpoint-actions)}
+            (case state
+              :offered
+              [:button {:type "button"
+                        :class (stl/css :checkpoint-stop)
+                        :on-click on-revert}
+               (tr "workspace.agent.revert.action")]
+
+              :reverted
+              [:button {:type "button"
+                        :class (stl/css :checkpoint-stop)
+                        :on-click on-revert}
+               (tr "workspace.agent.revert.undo")]
+
+              :conflict
+              [:*
+               [:button {:type "button"
+                         :class (stl/css :checkpoint-continue)
+                         :on-click on-revert-force}
+                (tr "workspace.agent.revert.anyway")]
+               [:button {:type "button"
+                         :class (stl/css :checkpoint-stop)
+                         :on-click on-revert-keep}
+                (tr "workspace.agent.revert.keep")]]
+
+              nil)]]))
       ;; …and no placeholder under a thinking row that is itself still
       ;; streaming — its own summary already reads "Thinking…"
       (when (and busy? (nil? form)
@@ -901,6 +946,7 @@
         busy?     (mf/deref refs/ai-panel-busy?)
         usage     (mf/deref refs/ai-panel-usage)
         checkpoint (mf/deref refs/ai-panel-checkpoint)
+        revert     (mf/deref refs/ai-panel-revert)
         history   (mf/deref refs/ai-panel-history)
         handoff-dismissed? (mf/deref refs/ai-panel-handoff-dismissed)
         ;; history identity only changes at turn boundaries — the size memo
@@ -1261,7 +1307,7 @@
 
      (if (or (seq messages) (some? pending-form))
        [:> transcript* {:messages messages :busy? busy? :form pending-form
-                        :checkpoint checkpoint}]
+                        :checkpoint checkpoint :revert revert}]
        [:div {:class (stl/css :transcript-empty)}
         [:> i/icon* {:icon-id i/bot-message-square
                      :size "m"

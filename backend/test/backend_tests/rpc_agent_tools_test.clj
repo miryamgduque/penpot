@@ -404,3 +404,132 @@
     (let [design (content (run-tool! token "read_design"))]
       (t/is (= "Page 1" (:page design)))
       (t/is (= [{:id (str page-id) :name "Page 1" :current true}] (:pages design))))))
+
+;; --- Taking a turn back
+
+(defn- shape-change
+  [page-id id name]
+  {:type :add-obj :page-id page-id :id id :parent-id uuid/zero :frame-id uuid/zero
+   :obj (cts/setup-shape {:id id :name name :type :rect :frame-id uuid/zero :parent-id uuid/zero})})
+
+(defn- rename-change
+  [page-id id name]
+  {:type :mod-obj :page-id page-id :id id
+   :operations [{:type :set :attr :name :val name}]})
+
+(t/deftest a-turn-can-be-taken-back-and-the-revert-too
+  (let [profile (th/create-profile* 1 {:is-active true})
+        other   (th/create-profile* 2 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        page-id (first (get-in file [:data :pages]))
+        kept    (add-rect! profile file "kept")
+        turn-id (uuid/random)
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file)
+                                        {:turn-id turn-id :conversation-id "chat-1"})
+        commit! (fn [tool changes undo]
+                  (let [page (:result (th/command! {::th/type :get-agent-tool-page :token token}))
+                        out  (th/command! (cond-> {::th/type :commit-agent-tool-changes
+                                                   :token token
+                                                   :revn (:revn page)
+                                                   :vern (:vern page)
+                                                   :tool tool
+                                                   :changes changes}
+                                            undo (assoc :undo-changes undo)))]
+                    (t/is (nil? (:error out)))))
+        names   (fn []
+                  (let [page (:result (th/command! {::th/type :get-agent-tool-page :token token}))]
+                    (->> (get-in page [:data :pages-index page-id :objects])
+                         (vals)
+                         (keep :name)
+                         (remove #{"Root Frame"})
+                         (set))))
+        revert! (fn [profile turn & {:as opts}]
+                  (th/command! (merge {::th/type :revert-agent-turn
+                                       ::rpc/profile-id (:id profile)
+                                       :file-id (:id file)
+                                       :turn-id turn}
+                                      opts)))
+        a       (uuid/random)
+        b       (uuid/random)]
+
+    ;; the turn: two shapes, then the first renamed
+    (commit! "create_shape" [(shape-change page-id a "a")] [{:type :del-obj :page-id page-id :id a}])
+    (commit! "create_shape" [(shape-change page-id b "b")] [{:type :del-obj :page-id page-id :id b}])
+    (commit! "modify_shape" [(rename-change page-id a "a2")] [(rename-change page-id a "a")])
+    (t/is (= #{"kept" "a2" "b"} (names)))
+
+    (t/testing "the listing says the turn can be reverted"
+      (let [rows (:result (th/command! {::th/type :get-agent-changes ::rpc/profile-id (:id profile)
+                                        :file-id (:id file) :turn-id turn-id}))]
+        (t/is (= [true true true] (mapv :can-revert rows)))
+        (t/is (every? (comp nil? :reverted-at) rows))))
+
+    (t/testing "only by someone who can edit the file"
+      (t/is (= :not-found (-> (revert! other turn-id) :error ex-data :type))))
+
+    (t/testing "reverting leaves what the turn did not touch"
+      (let [out (revert! profile turn-id)]
+        (t/is (nil? (:error out)))
+        (t/is (= 3 (get-in out [:result :reverted])))
+        (t/is (= #{"kept"} (names)))
+
+        (t/testing "it cannot be reverted twice"
+          (t/is (= :nothing-to-revert (-> (revert! profile turn-id) :error ex-data :code))))
+
+        (t/testing "the revert is a recorded change that can itself be taken back"
+          (let [revert-turn (get-in out [:result :turn-id])
+                rows        (:result (th/command! {::th/type :get-agent-changes ::rpc/profile-id (:id profile)
+                                                   :file-id (:id file) :turn-id revert-turn}))]
+            (t/is (= ["revert_turn"] (mapv :tool rows)))
+            (t/is (nil? (:error (revert! profile revert-turn))))
+            (t/is (= #{"kept" "a2" "b"} (names)))))))))
+
+(t/deftest a-revert-asks-before-overwriting-a-later-edit
+  (let [profile (th/create-profile* 1 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        page-id (first (get-in file [:data :pages]))
+        turn-id (uuid/random)
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file)
+                                        {:turn-id turn-id :conversation-id "chat-1"})
+        page    (fn [] (:result (th/command! {::th/type :get-agent-tool-page :token token})))
+        a       (uuid/random)
+        b       (uuid/random)
+        _       (let [p (page)]
+                  (th/command! {::th/type :commit-agent-tool-changes :token token
+                                :revn (:revn p) :vern (:vern p) :tool "create_shape"
+                                :changes [(shape-change page-id a "a") (shape-change page-id b "b")]
+                                :undo-changes [{:type :del-obj :page-id page-id :id b}
+                                               {:type :del-obj :page-id page-id :id a}]}))
+        ;; then the user renames one of them
+        _       (let [p (page)]
+                  (th/command! {::th/type :update-file
+                                ::rpc/profile-id (:id profile)
+                                :id (:id file)
+                                :session-id (uuid/random)
+                                :revn (:revn p)
+                                :vern (:vern p)
+                                :features cfeat/supported-features
+                                :changes [(rename-change page-id a "mine now")]}))
+        revert! (fn [& {:as opts}]
+                  (th/command! (merge {::th/type :revert-agent-turn
+                                       ::rpc/profile-id (:id profile)
+                                       :file-id (:id file)
+                                       :turn-id turn-id}
+                                      opts)))
+        names   (fn [] (->> (get-in (page) [:data :pages-index page-id :objects]) vals (keep :name) set))]
+
+    (t/testing "it says which shape was edited since, and changes nothing"
+      (let [out (:result (revert!))]
+        (t/is (true? (:conflict out)))
+        (t/is (= [{:id a :name "mine now"}] (:shapes out)))
+        (t/is (false? (:unknown out)))
+        (t/is (contains? (names) "mine now"))))
+
+    (t/testing "told to go ahead, it reverts"
+      (let [out (revert! :force true)]
+        (t/is (nil? (:error out)))
+        (t/is (= #{"Root Frame"} (names)))))))

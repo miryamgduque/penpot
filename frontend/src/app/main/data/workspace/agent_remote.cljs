@@ -133,14 +133,21 @@
            (rx/take 1)
            (rx/timeout catch-up-timeout-ms (rx/of false))))))
 
+(defn save-pending
+  "→ observable that emits once what this workspace has not saved yet is
+  saved. Whatever is about to look at the stored file, or change it, has to
+  see the user's last edits first."
+  []
+  (st/emit! ::dps/force-persist)
+  (->> (rx/timer settle-ms)
+       (rx/mapcat (fn [_] (dps/wait-persisted-or-error save-timeout-ms)))))
+
 (defn- sync-workspace
   "Saves pending changes, waits for the server's own last change when asked,
   then → observable of one outcome carrying the workspace context as its
   content."
   [call]
-  (st/emit! ::dps/force-persist)
-  (->> (rx/timer settle-ms)
-       (rx/mapcat (fn [_] (dps/wait-persisted-or-error save-timeout-ms)))
+  (->> (save-pending)
        (rx/mapcat (fn [_] (caught-up (:minRevn (:input call)))))
        (rx/map (fn [_]
                  {:call call

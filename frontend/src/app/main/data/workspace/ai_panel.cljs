@@ -27,6 +27,7 @@
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.data.workspace.session-events :as se]
+   [app.main.repo :as rp]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
    [potok.v2.core :as ptk]))
@@ -653,6 +654,93 @@
           (update-in state [:ai-panel file-id] dissoc :checkpoint))
         state))))
 
+;; --- Taking the agent's last turn back
+;;
+;; What the agent changes on the server is not in the user's undo history: it
+;; arrives like another collaborator's edit. So a turn that changed the file
+;; ends with an offer to revert it. `[:ai-panel <file-id> :revert]` holds the
+;; offer: `{:turn-id :count :state}`, where `:state` is `:offered`,
+;; `:conflict` (something the turn touched was edited since — `:shapes` names
+;; it, `:unknown` says it could not be told), or `:reverted` (and `:turn-id` is
+;; then the revert itself, so it can be taken back the same way).
+
+(defn- set-revert
+  [offer]
+  (ptk/reify ::set-revert
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (if (some? offer)
+          (assoc-in state [:ai-panel file-id :revert] offer)
+          (update-in state [:ai-panel file-id] dissoc :revert))
+        state))))
+
+(defn- offer-revert
+  "After a turn: offers to revert it when it changed the file and can be
+  taken back."
+  []
+  (ptk/reify ::offer-revert
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [file-id (:current-file-id state)
+            turn-id (some-> @agent-remote/last-turn-ref* parse-uuid)]
+        (if (or (nil? file-id) (nil? turn-id))
+          (rx/empty)
+          (->> (rp/cmd! :get-agent-changes {:file-id file-id :turn-id turn-id})
+               (rx/map (fn [rows]
+                         (set-revert
+                          (when (and (seq rows)
+                                     (every? :can-revert rows)
+                                     (every? (comp nil? :reverted-at) rows))
+                            {:turn-id turn-id :count (count rows) :state :offered}))))
+               ;; an offer that cannot be made is no reason to disturb the turn
+               (rx/catch (fn [_] (rx/empty)))))))))
+
+(defn dismiss-revert
+  []
+  (set-revert nil))
+
+(defn revert-turn
+  "Reverts the offered turn. `force?` goes ahead although something the turn
+  touched was edited since."
+  ([] (revert-turn false))
+  ([force?]
+   (ptk/reify ::revert-turn
+     ptk/WatchEvent
+     (watch [_ state _]
+       (let [file-id (:current-file-id state)
+             offer   (dm/get-in state [:ai-panel file-id :revert])]
+         (if (nil? offer)
+           (rx/empty)
+           ;; the user's own last edits are saved first: the revert has to
+           ;; see them to say what it would overwrite
+           (->> (agent-remote/save-pending)
+                (rx/mapcat (fn [_]
+                             (rp/cmd! :revert-agent-turn (cond-> {:file-id file-id :turn-id (:turn-id offer)}
+                                                           force? (assoc :force true)))))
+                (rx/map (fn [out]
+                          (cond
+                            (:conflict out)
+                            (set-revert (assoc offer
+                                               :state :conflict
+                                               :shapes (mapv :name (:shapes out))
+                                               :unknown (boolean (:unknown out))))
+
+                            ;; taking a revert back leaves nothing to offer
+                            (= :reverted (:state offer))
+                            (set-revert nil)
+
+                            :else
+                            (set-revert {:turn-id (:turn-id out)
+                                         :count (:count offer)
+                                         :state :reverted}))))
+                (rx/catch (fn [cause]
+                            (rx/of (set-revert nil)
+                                   (append-message "assistant"
+                                                   (dm/str "⚠️ " (or (:hint (ex-data cause))
+                                                                     (ex-message cause)
+                                                                     "the turn could not be reverted")))))))))))))
+
 (defn- turn-stream
   "The shared run→panel pipeline behind a fresh turn (`send-message`) and a
   checkpoint resume (`continue-turn`): maps agent turn events onto transcript
@@ -688,7 +776,8 @@
                                                    (-> (select-keys ev [:rounds :usage :history])
                                                        (assoc :settings settings)))))
                          :done         (do (reset! ended?* true)
-                                           (rx/of (store-history (:history ev))))
+                                           (rx/of (store-history (:history ev))
+                                                  (offer-revert)))
                          (rx/empty))))
           (rx/catch (fn [cause]
                       (reset! ended?* true)
@@ -776,6 +865,8 @@
                  ;; a new message while a checkpoint is pending supersedes it —
                  ;; the stored history already contains the paused turn
                  (set-checkpoint nil)
+                 ;; a new turn: the offer to revert the last one is gone
+                 (set-revert nil)
                  (set-busy true))
           ;; first message of a conversation: one cheap tool-less round names
           ;; the matching playbook and injects it INTO the user message — the

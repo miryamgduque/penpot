@@ -243,7 +243,7 @@
 
 (defn- redo
   [changes]
-  (:redo-changes changes))
+  (caw/redo changes))
 
 ;; --- update_shapes
 

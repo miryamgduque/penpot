@@ -20,6 +20,7 @@
    [common-tests.agent-read-test]
    [common-tests.agent-structure-test]
    [common-tests.agent-tokens-test]
+   [common-tests.agent-undo-test]
    [common-tests.agent-write-test]
    [common-tests.attrs-test]
    [common-tests.buffer-test]
@@ -110,6 +111,7 @@
    'common-tests.agent-read-test
    'common-tests.agent-structure-test
    'common-tests.agent-tokens-test
+   'common-tests.agent-undo-test
    'common-tests.agent-write-test
    'common-tests.attrs-test
    'common-tests.buffer-test

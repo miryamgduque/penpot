@@ -309,7 +309,10 @@
                         :else
                         (->> (if (seq (:changes answer))
                                (backend/command! "commit-agent-tool-changes"
-                                                 {:token token :revn revn :vern vern :tool tool :changes (:changes answer)})
+                                                 (cond-> {:token token :revn revn :vern vern :tool tool :changes (:changes answer)}
+                                                   ;; what takes the changes back, so the turn can be reverted
+                                                   (some? (caw/undo-of (:changes answer)))
+                                                   (assoc :undo-changes (caw/undo-of (:changes answer)))))
                                (p/resolved nil))
                              (p/fmap (fn [committed]
                                        (cond-> {:content (js/JSON.stringify (clj->js (:result answer)))

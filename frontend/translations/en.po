@@ -11163,6 +11163,30 @@ msgid "workspace.agent.checkpoint.continue"
 msgstr "Continue"
 
 #: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.revert.offer"
+msgstr "The agent changed the file in this turn. Its changes are not in your undo history."
+
+msgid "workspace.agent.revert.action"
+msgstr "Revert this turn"
+
+msgid "workspace.agent.revert.done"
+msgstr "The turn's changes were reverted."
+
+msgid "workspace.agent.revert.undo"
+msgstr "Undo revert"
+
+msgid "workspace.agent.revert.conflict"
+msgstr "Edited since the agent changed them: %s. Reverting will overwrite those edits."
+
+msgid "workspace.agent.revert.conflict-unknown"
+msgstr "This turn is too old to tell whether what it changed was edited since. Reverting may overwrite later edits."
+
+msgid "workspace.agent.revert.anyway"
+msgstr "Revert anyway"
+
+msgid "workspace.agent.revert.keep"
+msgstr "Keep as is"
+
 msgid "workspace.agent.checkpoint.stop"
 msgstr "Stop here"
 

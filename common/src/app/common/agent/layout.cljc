@@ -378,7 +378,7 @@
           {:changes (-> start
                         (cb/update-shapes [id] #(apply dissoc % layout-keys))
                         (caw/propagate-into propagate [(caw/reflow-entry id)])
-                        :redo-changes)
+                        (caw/redo))
            :result {:note "layout removed — children keep their positions"}}
           {:changes
            (-> start
@@ -395,7 +395,7 @@
                  (cb/update-shapes [id] (fn [shape objects] (rebuild-grid shape objects columns))
                                    {:with-objects? true}))
                (caw/propagate-into propagate [(caw/reflow-entry id)])
-               :redo-changes)
+               (caw/redo))
            :result {:note (if grid?
                             (str "grid layout applied — children flow into cells and "
                                  "reflow as you add more, so stop setting their x/y. "
@@ -432,7 +432,7 @@
                                          (ctl/assign-cells objects))))
                                  {:with-objects? true}))
              (caw/propagate-into propagate [(caw/reflow-entry id)])
-             :redo-changes)
+             (caw/redo))
          :result {:note (str "layout applied to the child — its parent reflows. "
                              "Margins accept spacing tokens via apply_tokens. "
                              "Verify with read_design.")}}))))

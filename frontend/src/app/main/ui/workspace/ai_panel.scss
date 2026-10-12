@@ -56,12 +56,6 @@
   font-size: calc(#{deprecated.$fs-20} * var(--ai-font-scale, 1));
 }
 
-@mixin scaled-big-title {
-  @include deprecated.big-title-typography;
-
-  font-size: calc(#{deprecated.$fs-24} * var(--ai-font-scale, 1));
-}
-
 // Every DS text button in the panel: see _agent_button.scss.
 .compact-label {
   @include agent-button.compact-label;
@@ -1222,7 +1216,8 @@
   }
 }
 
-// Chat tab: no-provider empty state — a single centered call to action.
+// Chat tab: no-provider empty state — the DS empty state and its call to
+// action, centred.
 .connect-empty {
   // Anchored above the vertical centre (block centre sits at 35% → 15% up).
   position: absolute;
@@ -1232,56 +1227,13 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: deprecated.$s-8;
+  gap: deprecated.$s-16;
   padding-inline: deprecated.$s-24;
-  text-align: center;
 }
 
-.connect-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: deprecated.$s-64;
-  height: deprecated.$s-64;
-  margin-block-end: deprecated.$s-4;
-  border-radius: 50%;
-  background-color: var(--color-accent-select);
-
-  svg {
-    stroke: var(--color-accent-primary);
-  }
-}
-
-.connect-title {
-  @include scaled-big-title;
-
-  color: var(--color-foreground-primary);
-}
-
-.connect-subtitle {
-  @include scaled-body-small;
-
-  margin: 0;
+// Keeps the description at its previous wrap width in a wide panel.
+.connect-state {
   max-inline-size: 34ch;
-  color: var(--color-foreground-secondary);
-}
-
-.connect-button {
-  @include scaled-body-small;
-
-  margin-block-start: deprecated.$s-8;
-  padding: deprecated.$s-8 deprecated.$s-16;
-  border: none;
-  border-radius: deprecated.$br-8;
-  background-color: var(--color-accent-primary);
-  color: var(--color-background-primary);
-  cursor: pointer;
-  text-decoration: none;
-
-  &:hover {
-    opacity: 0.88;
-    text-decoration: none;
-  }
 }
 
 // The input, with send/stop anchored over its bottom-right corner and attach

@@ -533,3 +533,38 @@
       (let [out (revert! :force true)]
         (t/is (nil? (:error out)))
         (t/is (= #{"Root Frame"} (names)))))))
+
+;; --- Shared libraries
+
+(t/deftest the-teams-shared-libraries-are-listed-and-linked-only-when-the-user-agreed
+  (let [{:keys [owner file token]} (setup)
+        library (th/create-file* 2 {:profile-id (:id owner)
+                                    :project-id (:default-project-id owner)
+                                    :is-shared true})
+        other   (th/create-profile* 2 {:is-active true})
+        foreign (th/create-file* 3 {:profile-id (:id other)
+                                    :project-id (:default-project-id other)
+                                    :is-shared true})
+        listed  (fn [] (content (run-tool! token "list_shared_libraries")))
+        rels    (fn [] (th/db-query :file-library-rel {:file-id (:id file)}))]
+    (t/testing "listed: the team's, not another team's, and none linked yet"
+      (let [out (listed)]
+        (t/is (= [(str (:id library))] (mapv :fileId (:libraries out))))
+        (t/is (= [false] (mapv :linked (:libraries out))))
+        (t/is (= 0 (-> out :libraries first :components)))
+        (t/is (re-find #"only after the user says yes" (:note out)))))
+    (t/testing "without the user's yes nothing is linked"
+      (let [out (run-tool! token "link_library" :input {:fileId (str (:id library))})]
+        (t/is (true? (get-in out [:result :is-error])))
+        (t/is (re-find #"nothing was linked" (get-in out [:result :content])))
+        (t/is (empty? (rels)))))
+    (t/testing "another team's library is not linked even with it"
+      (let [out (run-tool! token "link_library" :input {:fileId (str (:id foreign)) :userAgreed true})]
+        (t/is (or (some? (:error out)) (true? (get-in out [:result :is-error]))))
+        (t/is (empty? (rels)))))
+    (t/testing "with it, it is linked, and listed as linked"
+      (let [out (content (run-tool! token "link_library" :input {:fileId (str (:id library)) :userAgreed true}))]
+        (t/is (true? (:linked out)))
+        (t/is (= [(:id library)] (mapv :library-file-id (rels))))
+        (t/is (= [true] (mapv :linked (:libraries (listed)))))
+        (t/is (true? (:already (content (run-tool! token "link_library" :input {:fileId (str (:id library)) :userAgreed true})))))))))

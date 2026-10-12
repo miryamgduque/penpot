@@ -31,7 +31,9 @@
    [app.common.json :as json]
    [app.common.schema :as sm]
    [app.common.time :as ct]
+   [app.common.types.components-list :as ctkl]
    [app.common.types.shape-tree :as ctst]
+   [app.common.types.tokens-lib :as ctob]
    [app.common.uri :as u]
    [app.common.uuid :as uuid]
    [app.db :as db]
@@ -53,7 +55,8 @@
   "The tools the backend runs itself. The agent service asks a connected
   workspace to run every other tool."
   #{"read_design" "find_shapes" "audit_file" "get_page_meta"
-    "leave_comment" "list_comments" "save_version" "save_recipe"})
+    "leave_comment" "list_comments" "save_version" "save_recipe"
+    "list_shared_libraries" "link_library"})
 
 (def ^:private fileless-tools
   #{"get_page_meta" "fetch_web_page" "turn_profile"})
@@ -289,14 +292,14 @@
 ;; components: what the recipes are measured against. For whoever measures,
 ;; not for the model.
 (defmethod run-tool "capability_usage"
-  [_ {:keys [data page-id]} {:keys [names shapeIds]} _]
+  [_ {:keys [file-id data page-id]} {:keys [names shapeIds]} _]
   (let [objects (get-in data [:pages-index page-id :objects])
         named   (set (filter string? names))
         roots   (-> (into [] (keep #(when (string? %) (uuid/parse* %))) shapeIds)
                     (into (comp (filter #(contains? named (:name %))) (map :id)) (vals objects)))]
     (when (and (or (seq names) (seq shapeIds)) (empty? (filter #(contains? objects %) roots)))
       (ex/raise :type :agent-tool :hint "capability_usage: none of those boards is on this page"))
-    (cau/capability-usage objects roots)))
+    (cau/capability-usage objects roots file-id)))
 
 (defmethod run-tool "turn_profile"
   [_ _ _ {:keys [::profile-id]}]
@@ -365,6 +368,108 @@
 
 ;; --- save_recipe
 ;;
+;; --- Shared libraries
+;;
+;; A team's shared libraries are a design system it already has. The agent
+;; may look at them freely; linking one changes what the file depends on, so
+;; it happens only when the call says the user agreed.
+
+(def ^:private sql:shared-files
+  "SELECT f.id, f.name
+     FROM file AS f
+     JOIN project AS p ON (p.id = f.project_id)
+    WHERE f.is_shared = true
+      AND f.deleted_at IS NULL
+      AND p.deleted_at IS NULL
+      AND p.team_id = ?
+    ORDER BY f.name")
+
+(def ^:private max-component-names 40)
+
+(defn- library-contents
+  "What a shared library offers: its components by name, and how many
+  tokens, colors and typographies it has."
+  [cfg id]
+  (when-let [data (:data (load-whole-file cfg id))]
+    (let [names (->> (ctkl/components-seq data)
+                     (map (fn [{:keys [path name]}] (if (str/blank? path) name (str path " / " name))))
+                     (distinct)
+                     (sort))]
+      (cond-> {:components (count names)
+               :componentNames (vec (take max-component-names names))
+               :tokens (count (some-> (:tokens-lib data) ctob/get-all-tokens-map))
+               :colors (count (:colors data))
+               :typographies (count (:typographies data))}
+        (< max-component-names (count names))
+        (assoc :moreComponents (- (count names) max-component-names))))))
+
+(defmethod run-tool "list_shared_libraries"
+  [_ {:keys [file-id libraries]} _ {:keys [::cfg ::profile-id]}]
+  (let [team-id (:team-id (db/exec-one! cfg [sql:file-team file-id]))
+        linked  (disj (set (keys libraries)) file-id)
+        _       (teams/check-read-permissions! cfg profile-id team-id)
+        found   (->> (db/exec! cfg [sql:shared-files team-id])
+                     (remove #(= file-id (:id %)))
+                     (mapv (fn [{:keys [id name]}]
+                             (merge {:fileId (str id) :name name :linked (contains? linked id)}
+                                    (library-contents cfg id)))))]
+    {:libraries found
+     :note (cond
+             (empty? found)
+             "this team has no shared libraries — build on a token pack instead (list_token_packs)"
+
+             (some :linked found)
+             (str "a linked library is the design system to build on: use its components "
+                  "(read_design lists them, create_instance places one) before any recipe")
+
+             :else
+             (str "none is linked to this file. If one fits, PROPOSE linking it — name it and say "
+                  "what it offers — and call link_library only after the user says yes"))}))
+
+(defmethod run-tool "link_library"
+  [_ {:keys [file-id libraries]} {:keys [fileId userAgreed]} {:keys [::cfg ::profile-id]}]
+  (let [library-id (some-> fileId str uuid/parse*)]
+    (cond
+      (nil? library-id)
+      (ex/raise :type :agent-tool
+                :hint "link_library: pass fileId — a library from list_shared_libraries")
+
+      (not (true? userAgreed))
+      (ex/raise :type :agent-tool
+                :hint (str "link_library: nothing was linked. Linking a library changes what this file "
+                           "depends on, so the user decides: propose it, wait for their yes, then call "
+                           "again with userAgreed: true. Never set it on your own."))
+
+      (= library-id file-id)
+      (ex/raise :type :agent-tool :hint "link_library: a file cannot be linked to itself")
+
+      (contains? libraries library-id)
+      {:linked true :already true :fileId (str library-id)
+       :note "this library was linked already — its components are in read_design"}
+
+      :else
+      (db/tx-run! cfg
+                  (fn [{:keys [::db/conn] :as cfg}]
+                    (let [library (db/exec-one! conn ["SELECT f.id, f.name, f.is_shared FROM file AS f WHERE f.id = ? AND f.deleted_at IS NULL"
+                                                      library-id])]
+                      (when-not (:is-shared library)
+                        (ex/raise :type :agent-tool
+                                  :hint "link_library: no shared library has that id — list_shared_libraries says which there are"))
+                      (files/check-edition-permissions! conn profile-id file-id)
+                      (files/check-read-permissions! conn profile-id library-id)
+                      (#'files/check-library-team-ownership! conn file-id library-id)
+                      (when (contains? (bfc/get-libraries cfg [library-id]) file-id)
+                        (ex/raise :type :agent-tool
+                                  :hint "link_library: that library uses this file, so linking it would go in a circle"))
+                      (files/link-file-to-library conn {:file-id file-id :library-id library-id})
+                      {:linked true
+                       :fileId (str library-id)
+                       :name (:name library)
+                       :note (str "linked. Its components are yours to place: read_design lists them with "
+                                  "their ids, create_instance {componentId, fileId} places one. Prefer them "
+                                  "over recipes wherever one matches. A workspace that was open shows the "
+                                  "library after a reload.")}))))))
+
 ;; The reverse of build_recipe: a board of the file written down as a recipe
 ;; and kept with the file's team, where every member's agent finds it.
 

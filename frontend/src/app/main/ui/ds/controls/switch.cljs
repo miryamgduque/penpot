@@ -46,11 +46,13 @@
 
         handle-keydown
         (mf/use-fn
-         (mf/deps handle-toggle)
+         (mf/deps handle-toggle disabled?)
          (fn [event]
-           (dom/prevent-default event)
-           (when-not disabled?
-             (when (or (kbd/space? event) (kbd/enter? event))
+           ;; Only Space and Enter belong to the switch; any other key
+           ;; (Tab, arrows…) must keep its default so focus can move on.
+           (when (or (kbd/space? event) (kbd/enter? event))
+             (dom/prevent-default event)
+             (when-not disabled?
                (handle-toggle event)))))
 
         props

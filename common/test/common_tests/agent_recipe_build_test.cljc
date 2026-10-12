@@ -130,6 +130,44 @@
     (t/is (re-find #"roles names the token \"brand.500\", and this file has no token"
                    (problem {:recipe "button" :roles {"color.primary" "brand.500"}})))))
 
+(t/deftest the-index-names-every-recipe-by-category
+  (let [index (carb/index cars/builtin)]
+    (t/is (= 4 (count (re-seq #"(?m)^- " index))))
+    (t/is (re-find #"(?m)^- control: avatar \(avatar\); badge \(badge\); button \(button\)" index))
+    (t/is (every? #(re-find (re-pattern (str "\\b" % " \\(")) index) (keys cars/builtin)))))
+
+(t/deftest recipes-are-found-by-name-purpose-or-keyword
+  (let [find  (fn [input] (cat/run "find_recipes" (view data) input options))
+        names (fn [input] (mapv :name (-> (find input) :result :matches)))]
+    (t/is (= "button" (first (names {:query "button"}))))
+    (t/is (= "form" (first (names {:query "sign up form"}))))
+    (t/is (= "choice-control" (first (names {:query "checkbox"}))))
+    (t/is (= "pricing-table" (first (names {:query "subscription plans"}))))
+    (t/is (= "top-bar" (first (names {:query "navbar"}))))
+    (t/is (= "stat-cards" (first (names {:query "dashboard kpi"}))))
+    (t/is (= ["bottom-tab-bar" "sidebar" "top-bar"] (names {:category "navigation"})))
+    (t/is (<= (count (names {:query "a"})) 5))
+    (t/testing "what build_recipe needs is in the answer"
+      (let [button (first (-> (find {:query "button"}) :result :matches))]
+        (t/is (= ["label"] (mapv :name (:params button))))
+        (t/is (= ["Kind" "Size"] (mapv :name (:variants button))))
+        (t/is (= "an instance of its component" (:placedAs button))))
+      (let [card (first (-> (find {:query "card"}) :result :matches))]
+        (t/is (= ["content"] (:slots card)))
+        (t/is (= ["button"] (:uses card)))))
+    (t/testing "nothing fits: the agent is told to build by hand"
+      (let [out (find {:query "isometric dragon"})]
+        (t/is (= [] (-> out :result :matches)))
+        (t/is (re-find #"build it by hand with build_tree" (-> out :result :note)))))
+    (t/is (re-find #"pass query" (:problem (find {}))))
+    (t/is (re-find #"category \"widget\" is not one" (:problem (find {:category "widget"}))))
+    (t/testing "the host's own recipes are found too"
+      (let [mine (assoc (get recipes "card") :name "ticket" :title "Ticket" :keywords ["boarding pass"])]
+        (t/is (= "ticket"
+                 (-> (cat/run "find_recipes" (view data) {:query "boarding pass"}
+                              (assoc-in options [:recipes "ticket"] mine))
+                     :result :matches first :name)))))))
+
 (t/deftest every-built-in-recipe-builds
   (doseq [[nm _] cars/builtin]
     (t/testing nm

@@ -18,6 +18,7 @@
   correctly refused."
   (:require
    [app.common.uuid :as uuid]
+   [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.data.workspace.agent-tools.agentic :as atg]
    [app.main.data.workspace.agent-tools.common :as atc]
@@ -827,9 +828,14 @@
 (t/deftest the-build-recipe-tool-names-every-recipe
   (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
     (t/is (= 22 (count (get-in spec [:input-schema :properties :recipe :enum]))))
-    (t/is (str/includes? (:description spec) "button — A pressable control"))
-    (t/is (str/includes? (:description spec) "Params: label."))
-    (t/is (str/includes? (:description spec) "Variants: Kind (Primary/Secondary/Ghost), Size (Medium/Small)."))))
+    (t/is (str/includes? (:description spec) "find_recipes")))
+  (t/is (some #(= "find_recipes" (:name %)) at/tool-specs)))
+
+(t/deftest the-agent-always-sees-the-recipe-catalog
+  (t/is (str/includes? ask/inner-knowledge "## Recipes"))
+  (t/is (str/includes? ask/inner-knowledge "- section: data-table (data table); empty-state (empty state)"))
+  (t/is (str/includes? ask/inner-knowledge "call find_recipes"))
+  (t/is (str/includes? ask/inner-knowledge "When no recipe fits, build by hand")))
 
 ;; ---------------------------------------------------------------------------
 ;; group-problem / ungroup-problem

@@ -21,6 +21,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createHarness } from "./harness.js";
 import { listMcpTools, turnMcpServers } from "./mcp.js";
+import { recipeUse, recordRecipeUse } from "./recipes.js";
 import { runScoutTool, scoutTools } from "./scout.js";
 
 const MAX_BODY_BYTES = 6 * 1024 * 1024;
@@ -223,6 +224,8 @@ export async function createAgentServer(options = {}) {
     // how long each tool call spent away from the service: the bridge round
     // trip plus the tool's own run time in the browser
     const toolTimings = [];
+    // what the turn did with recipes, for the hit rate
+    const recipes = recipeUse();
     const callTool = (call, signal) =>
       new Promise((resolve, reject) => {
         const startedAt = performance.now();
@@ -353,6 +356,7 @@ export async function createAgentServer(options = {}) {
       // not handled on the server yet: the workspace runs it, as before
       if (result.fallback !== undefined) return callWorkspaceTool(call, signal, { fallback: true });
       toolTimings.push({ name: call.name, ms: Math.round(performance.now() - startedAt), server: true });
+      recipes.note(call, result);
       emit({
         type: "server-tool",
         name: call.name,
@@ -369,7 +373,11 @@ export async function createAgentServer(options = {}) {
         { sessionId, profileId, provider, apiKey, model, system, text, images, tools, skills, mcpServers: mcp.servers },
         { emit, callTool: callWorkspaceTool, callServerTool, serverTools, signal: controller.signal },
       );
-      emit({ type: "done", reason: result.reason, resumed: result.resumed, toolTimings });
+      const used = recipes.summary();
+      if (used !== undefined) {
+        await recordRecipeUse(options.recipeLog, { at: new Date().toISOString(), turnId, sessionId, ...used });
+      }
+      emit({ type: "done", reason: result.reason, resumed: result.resumed, toolTimings, recipes: used });
     } catch (cause) {
       emit({ type: "error", message: cause?.message ?? "the turn failed" });
     } finally {
@@ -459,6 +467,7 @@ if (import.meta.url === pathToFileURL(process.argv[1]).href) {
     exporterUri: process.env.PENPOT_EXPORTER_URI,
     sessionsRoot: process.env.PENPOT_AGENT_SERVICE_SESSIONS_DIR ?? join(dataDir, "sessions"),
     attachmentsHome: process.env.PENPOT_AGENT_SERVICE_ATTACHMENTS_DIR ?? join(dataDir, "attachments"),
+    recipeLog: join(dataDir, "recipe-use.jsonl"),
     providers: anthropicBaseURL ? { anthropic: { baseURL: anthropicBaseURL } } : undefined,
   });
   await app.listen(port, host);

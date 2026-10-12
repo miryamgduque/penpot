@@ -58,6 +58,97 @@
               (conj (reduce walk seen (keep lookup (car/uses recipe))) recipe)))]
     (walk [] recipe)))
 
+;; --- Finding a recipe
+;;
+;; The agent sees the index — a line per recipe — in every turn, and asks
+;; find_recipes for the ones that fit what it is about to build: by a word of
+;; their name, their purpose or their keywords.
+
+(defn index
+  "The catalog as the agent always sees it: a line per recipe, by category."
+  [recipes]
+  (->> (vals recipes)
+       (group-by :category)
+       (sort-by (fn [[category _]] (.indexOf ["control" "container" "navigation" "section"] category)))
+       (map (fn [[category found]]
+              (dm/str "- " category ": "
+                      (str/join "; " (map #(dm/str (:name %) " (" (str/lower (:title %)) ")")
+                                          (sort-by :name found))))))
+       (str/join "\n")))
+
+(defn- words
+  [s]
+  (into [] (filter #(>= (count %) 2)) (str/split (str/lower (or s "")) #"[^a-z0-9]+")))
+
+(defn- score
+  "How well `recipe` answers the words asked for: its name and title count
+  most, then its keywords, then its purpose."
+  [recipe asked]
+  (let [in?   (fn [text word] (str/includes? (str/lower (or text "")) word))
+        named (dm/str (:name recipe) " " (:title recipe))
+        keyed (str/join " " (:keywords recipe))]
+    (reduce (fn [total word]
+              (+ total
+                 (cond
+                   (in? named word)             4
+                   (in? keyed word)             3
+                   (in? (:category recipe) word) 2
+                   (in? (:purpose recipe) word) 1
+                   :else                        0)))
+            0
+            asked)))
+
+(defn- described
+  "A recipe as find_recipes answers it: what to hand build_recipe."
+  [recipe]
+  (let [slots (into [] (keep :slot) (tree-seq map? :children (:tree recipe)))]
+    (cond-> {:name (:name recipe)
+             :title (:title recipe)
+             :category (:category recipe)
+             :purpose (:purpose recipe)
+             :placedAs (if (component? recipe) "an instance of its component" "its own tree")}
+      (seq (:params recipe))
+      (assoc :params (mapv #(select-keys % [:name :type :default :description :options :min :max])
+                           (:params recipe)))
+      (seq (:variants recipe)) (assoc :variants (:variants recipe))
+      (seq slots)              (assoc :slots slots)
+      (seq (car/uses recipe))  (assoc :uses (car/uses recipe)))))
+
+(def ^:private max-matches 5)
+
+(defn find-recipes
+  "`:recipes` in the options are the host's own recipes, over the built-in
+  ones."
+  [_ {:keys [query category]} options]
+  (let [recipes (vals (catalog options))
+        asked   (words query)]
+    (cond
+      (and (some? category) (not (contains? car/categories category)))
+      {:problem (dm/str "find_recipes: category \"" category "\" is not one — use one of: "
+                        (str/join ", " (sort car/categories)))}
+
+      (and (empty? asked) (nil? category))
+      {:problem (str "find_recipes: pass query — a few words for what you are about to "
+                     "build, e.g. \"sign up form\" — or a category")}
+
+      :else
+      (let [found (->> recipes
+                       (filter #(or (nil? category) (= category (:category %))))
+                       (map (fn [recipe] [(if (empty? asked) 1 (score recipe asked)) recipe]))
+                       (filter (fn [[points _]] (pos? points)))
+                       (sort-by (fn [[points recipe]] [(- points) (:name recipe)]))
+                       (take (if (empty? asked) 100 max-matches))
+                       (mapv (comp described second)))]
+        {:changes []
+         :result {:matches found
+                  :note (if (empty? found)
+                          (str "no recipe fits — build it by hand with build_tree, and "
+                               "use recipes for the parts that have one (button, "
+                               "text-field, card…)")
+                          (str "best match first. Build one with build_recipe {recipe, "
+                               "params, variant, parentId}; fill its slots and adapt it "
+                               "after. If none is what you need, build by hand."))}}))))
+
 ;; --- Roles
 ;;
 ;; A role is bound to a token of the file. Which one: the token the caller

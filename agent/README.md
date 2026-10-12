@@ -117,6 +117,17 @@ reported to the panel as a `server-tool` event, like one of Penpot's own.
 `PENPOT_AGENT_SERVICE_MCP_ALLOW_PRIVATE=true` lifts both address rules, for a
 server on a developer's own machine. Never in a deployment.
 
+## Recipes: the hit rate
+
+A turn that looked for a recipe (`find_recipes`), built one (`build_recipe`)
+or built structure by hand (`build_tree`, `create_shape`, `create_text`)
+leaves one line in `recipe-use.jsonl` in the data directory: the turn, the
+conversation, the counts and the names of the recipes built. Nothing of what
+the user wrote. The same counts are in the turn's `done` event, as `recipes`.
+
+The hit rate is, of the conversations that found a recipe, the share that
+built one (`hitRate` in `src/recipes.js`).
+
 ## Try it without a provider key
 
 `node test/fake-anthropic-cli.js 6068` starts a scripted stand-in model.

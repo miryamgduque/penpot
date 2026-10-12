@@ -712,6 +712,30 @@
                                              :description "only after the user chose, in a file that has tokens"}}
                    :required ["pack"]}}
 
+   {:name "list_shared_libraries"
+    :description
+    (str "The shared libraries of this file's team: each with its name, "
+         "whether it is linked to this file already, its components by name "
+         "and how many tokens, colors and typographies it has. A team's "
+         "library is the design system it already chose: look here before "
+         "proposing a token pack. It changes nothing.")
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "link_library"
+    :description
+    (str "Links a shared library of the team to this file, so its components "
+         "can be placed (create_instance with its fileId) and stay in sync "
+         "with it. It changes what the file depends on, so the USER decides: "
+         "propose the library by name, say what it offers, wait for their "
+         "yes, and only then call this with userAgreed: true. Without it "
+         "nothing is linked. Never set userAgreed on your own, and not "
+         "because they asked for a design: they have to agree to THIS link.")
+    :input-schema {:type "object"
+                   :properties {:fileId {:type "string" :description "a library from list_shared_libraries"}
+                                :userAgreed {:type "boolean"
+                                             :description "true only when the user said yes to linking this library"}}
+                   :required ["fileId"]}}
+
    {:name "critique_design"
     :description
     (str "Shows a render of a board to a critic who did not build it and "
@@ -1299,7 +1323,8 @@
          "build_tree"         (atx/build-tree-tool input)
          ;; server only: there is no second implementation in the workspace
          ("build_recipe" "find_recipes" "save_recipe" "set_texts" "set_icons" "critique_design"
-                         "list_token_packs" "generate_token_pack" "apply_token_pack")
+                         "list_token_packs" "generate_token_pack" "apply_token_pack"
+                         "list_shared_libraries" "link_library")
          (rx/of {:error (str name " runs on the server, and the server could not "
                              "run it here. Build with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)

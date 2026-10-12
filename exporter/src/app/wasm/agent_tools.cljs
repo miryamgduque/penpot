@@ -159,6 +159,13 @@
 ;; again once they are in.
 (def ^:private max-runs 5)
 
+(defn- asked
+  "What tells one question about tokens from another: their names, types
+  and values. A tool that writes a token writes it anew on every run, with
+  the time of that run on it, and is still asking the same thing."
+  [tokens]
+  (update-vals tokens #(select-keys % [:name :type :value])))
+
 (defn- answer-of
   "Runs `tool` → promise of its answer."
   [tool view input options]
@@ -168,7 +175,7 @@
                     answer (cat/run tool view input
                                     (merge options
                                            (select-keys engine [:propagate :measure-text :parse-svg])
-                                           {:resolve-tokens (fn [tokens] (get @resolved tokens))}))]
+                                           {:resolve-tokens (fn [tokens] (get @resolved (asked tokens)))}))]
                 (cond
                   (>= runs max-runs)
                   (p/resolved {:fallback "the tool did not settle on the server"})
@@ -177,7 +184,7 @@
                   (let [tokens (-> answer :pending :tokens)]
                     (->> (ctr/resolve-tokens tokens)
                          (p/mcat (fn [worth]
-                                   (vswap! resolved assoc tokens worth)
+                                   (vswap! resolved assoc (asked tokens) worth)
                                    (attempt (inc runs) fonts?)))))
 
                   (and (not fonts?) (seq @(:measured engine)))

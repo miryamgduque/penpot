@@ -189,18 +189,40 @@
     (cto/split-font-family value)
     value))
 
+(defn- held
+  "The token named `token-name` that set `set-id` holds already, or nil."
+  [lib set-id token-name]
+  (when (and lib set-id)
+    (get (ctob/get-tokens lib set-id) token-name)))
+
+(defn- changes-held?
+  "Whether `entry` gives a token that set `set-id` holds already another
+  value or type."
+  [lib set-id {:keys [type name value]}]
+  (when-let [prev (held lib set-id name)]
+    (let [kind (token-type type)]
+      (or (not= kind (:type prev))
+          (not= (stored-value kind value) (:value prev))))))
+
 (defn- add-token
-  [changes set-id {:keys [type name value]}]
+  "Writes the token into the set. A token of that name already there keeps
+  its id and takes the new value: to the model, creating it again is how a
+  token is changed."
+  [changes lib set-id {:keys [type name value]}]
   (let [kind  (token-type type)
-        token (ctob/make-token {:type kind :name name :value (stored-value kind value)})]
+        prev  (held lib set-id name)
+        token (ctob/make-token (cond-> {:type kind :name name :value (stored-value kind value)}
+                                 (some? prev) (assoc :id (:id prev))))]
     (cb/set-token changes set-id (:id token) token)))
+
+(declare follow)
 
 ;; --- create_token / create_tokens
 
 (defn create-token
   ;; `:set` is destructured as `target-set`: binding it to `set` would shadow
   ;; clojure.core/set for the whole fn
-  [{:keys [data]} {:keys [type name value] target-set :set :as input} _]
+  [{:keys [data fonts]} {:keys [type name value] target-set :set :as input} engine]
   (let [lib (:tokens-lib data)]
     (if-let [problem (or (token-problem input)
                          (some->> (token-set-problem (set-names lib) target-set)
@@ -212,15 +234,18 @@
               [changes set-id]
               ;; no sets at all: this is the case that legitimately makes one
               (add-first-set changes))]
-        {:changes (caw/redo (add-token changes set-id input))
-         :result (cond-> {:name name :type type :value value
-                          :note "token created — bind it to shapes with apply_tokens"}
-                   target-set (assoc :set (normalize-set target-set)))}))))
+        (follow data fonts
+                (caw/redo (add-token changes lib set-id input))
+                (when (changes-held? lib set-id input) [name])
+                engine
+                (cond-> {:name name :type type :value value
+                         :note "token created — bind it to shapes with apply_tokens"}
+                  target-set (assoc :set (normalize-set target-set))))))))
 
 (defn create-tokens
   "Many tokens in ONE call. All-or-nothing: every entry validates (including
   its target set existing) before any token is created."
-  [{:keys [data]} {:keys [tokens] default-set :set} _]
+  [{:keys [data fonts]} {:keys [tokens] default-set :set} engine]
   (let [lib   (:tokens-lib data)
         names (set-names lib)]
     (if-not (and (sequential? tokens) (seq tokens))
@@ -246,18 +271,20 @@
                   ;; one set for every entry that names none
                   (if (some #(nil? (:set %)) entries)
                     (add-first-set (library-changes data))
-                    [(library-changes data) nil]))]
-            {:changes (caw/redo
-                       (reduce (fn [changes {target-set :set :as entry}]
-                                 (add-token changes
-                                            (if target-set (set-id-by-name lib target-set) default-id)
-                                            entry))
-                               changes
-                               entries))
-             :result {:created (count entries)
-                      :note (str "tokens created — bind them to shapes with "
-                                 "apply_tokens; values referencing other tokens "
-                                 "(\"{color.blue.500}\") resolve lazily")}}))))))
+                    [(library-changes data) nil]))
+                set-of (fn [{target-set :set}]
+                         (if target-set (set-id-by-name lib target-set) default-id))]
+            (follow data fonts
+                    (caw/redo
+                     (reduce (fn [changes entry] (add-token changes lib (set-of entry) entry))
+                             changes
+                             entries))
+                    (into [] (comp (filter #(changes-held? lib (set-of %) %)) (map :name)) entries)
+                    engine
+                    {:created (count entries)
+                     :note (str "tokens created — bind them to shapes with "
+                                "apply_tokens; values referencing other tokens "
+                                "(\"{color.blue.500}\") resolve lazily")})))))))
 
 ;; --- create_token_set / create_token_theme
 
@@ -846,33 +873,110 @@
 
 ;; --- activate_theme
 
+(defn- dependents
+  "`names` and every active token whose value refers to one of them, however
+  far."
+  [active names]
+  (let [refers (fn [names token]
+                 (->> (tree-seq coll? seq (:value token))
+                      (filter string?)
+                      (mapcat cto/find-token-value-references)
+                      (some names)))]
+    (loop [names (set names)]
+      (let [more (into names (keep (fn [[token-name token]] (when (refers names token) token-name))) active)]
+        (if (= more names)
+          names
+          (recur more))))))
+
 (defn- page-rebind
   "The changes that give every token-bound shape of a page the value its
-  tokens have now → the changes, or `{:fallback}`."
-  [page-id objects active resolved engine]
-  (reduce
-   (fn [changes [id shape]]
-     (reduce
-      (fn [changes [token-name attrs]]
-        (let [token (get active token-name)
-              value (some->> token (token-value resolved))]
-          (cond
-            (nil? value)
-            changes
+  tokens have now → the changes, or `{:fallback}`. With `names`, only what
+  is bound to those tokens."
+  [page-id objects active resolved names engine]
+  ;; shapes are written together by token and properties: one layout pass for
+  ;; all the shapes a token colors, not one for each
+  (let [groups (reduce
+                (fn [groups [id shape]]
+                  (->> (:applied-tokens shape)
+                       (filter (fn [[_ token-name]] (or (nil? names) (contains? names token-name))))
+                       (group-by val)
+                       (reduce (fn [groups [token-name entries]]
+                                 (update groups [token-name (into #{} (map key) entries)] (fnil conj []) id))
+                               groups)))
+                {}
+                objects)]
+    (reduce
+     (fn [changes [[token-name attrs] ids]]
+       (let [token (get active token-name)
+             value (some->> token (token-value resolved))]
+         (cond
+           (nil? value)
+           changes
 
-            (= ::unresolved value)
-            (reduced (reduced {:fallback "a bound token's value needs the workspace's resolver"}))
+           (= ::unresolved value)
+           (reduced {:fallback "a bound token's value needs the workspace's resolver"})
 
-            :else
-            (if-let [fallback (write-fallback objects [id] attrs engine)]
-              (reduced (reduced fallback))
-              (write-value changes [id] attrs value engine)))))
-      changes
-      (->> (:applied-tokens shape)
-           (group-by val)
-           (map (fn [[token-name entries]] [token-name (into #{} (map key) entries)])))))
-   (caw/page-changes page-id objects)
-   (filter (fn [[_ shape]] (seq (:applied-tokens shape))) objects)))
+           :else
+           (if-let [fallback (write-fallback objects ids attrs engine)]
+             (reduced fallback)
+             (write-value changes ids attrs value engine)))))
+     (caw/page-changes page-id objects)
+     groups)))
+
+(defn- rebind-pages
+  "After `made`, changes to the tokens ready to send: gives the shapes bound
+  to a token their new value, on every page → `{:changes :shapes}`, the
+  changes with the shapes' following and how many shapes that was, or
+  `{:pending}`, or `{:fallback}`. With `names`, only what is bound to those
+  tokens or to a token that refers to one."
+  [data made names engine]
+  (let [data   (cfc/process-changes data made false)
+        active (ctob/get-tokens-in-active-sets (:tokens-lib data))
+        names  (some->> names (dependents active))
+        bound? (fn [shape]
+                 (some (fn [[_ token-name]] (or (nil? names) (contains? names token-name)))
+                       (:applied-tokens shape)))
+        pages  (keep (fn [page-id]
+                       (let [objects (get-in data [:pages-index page-id :objects])
+                             shapes  (count (filter bound? (vals objects)))]
+                         (when (pos? shapes)
+                           {:page-id page-id :objects objects :shapes shapes})))
+                     (:pages data))]
+    (if (empty? pages)
+      {:changes made :shapes 0}
+      (let [{:keys [resolved pending]} (worth active engine)]
+        (if (some? pending)
+          {:pending pending}
+          (let [out (reduce
+                     (fn [made {:keys [page-id objects]}]
+                       (let [changes (page-rebind page-id objects active resolved names engine)]
+                         (if (contains? changes :fallback)
+                           (reduced changes)
+                           (caw/then-changes made (caw/redo changes)))))
+                     made
+                     pages)]
+            (if (map? out)
+              out
+              {:changes out :shapes (transduce (map :shapes) + pages)})))))))
+
+(defn- follow
+  "The answer of a tool that wrote tokens with `made`. When it gave the
+  tokens named `changed` another value, what is bound to them follows: a
+  token's value changed on the server reaches no shape by itself."
+  [data fonts made changed engine result]
+  (if (empty? changed)
+    {:changes made :result result}
+    (let [out (rebind-pages data made changed (assoc engine :fonts fonts))]
+      (if (contains? out :changes)
+        {:changes (:changes out)
+         :result (assoc result
+                        :changed (vec changed)
+                        :restyled (:shapes out)
+                        :note (str "these tokens were there already and have their new value; every "
+                                   "shape bound to them, or to a token that refers to them, was "
+                                   "given it, in mains and copies alike — nothing needs re-applying. "
+                                   "Verify with render_board."))}
+        out))))
 
 (defn activate-theme
   "Toggles a theme, then gives every shape bound to a token its new value, on
@@ -892,25 +996,11 @@
       (let [toggle (-> (library-changes data)
                        (clt/generate-toggle-token-theme lib (ctob/get-id match))
                        (caw/redo))
-            data   (cfc/process-changes data toggle false)
-            active (ctob/get-tokens-in-active-sets (:tokens-lib data))
-            engine (assoc engine :fonts fonts)
-            {:keys [resolved pending]} (worth active engine)]
-        (if (some? pending)
-          {:pending pending}
-          (let [made (reduce
-                      (fn [made pid]
-                        (let [changes (page-rebind pid (get-in data [:pages-index pid :objects])
-                                                   active resolved engine)]
-                          (if (contains? changes :fallback)
-                            (reduced changes)
-                            (caw/then-changes made (caw/redo changes)))))
-                      toggle
-                      (:pages data))]
-            (if (map? made)
-              made
-              {:changes made
-               :result {:theme name
-                        :note (str "theme toggled — shapes bound to a token NAME re-resolve "
-                                   "automatically, so nothing needs re-applying. Verify with "
-                                   "read_design.")}})))))))
+            out    (rebind-pages data toggle nil (assoc engine :fonts fonts))]
+        (if (contains? out :changes)
+          {:changes (:changes out)
+           :result {:theme name
+                    :note (str "theme toggled — shapes bound to a token NAME re-resolve "
+                               "automatically, so nothing needs re-applying. Verify with "
+                               "read_design.")}}
+          out)))))

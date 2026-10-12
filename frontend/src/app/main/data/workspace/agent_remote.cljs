@@ -181,6 +181,29 @@
     :content content
     :error? (boolean isError)}))
 
+(def ^:private reported-refusals*
+  "The connected services already said to be left out, so each is said once
+  and not on every turn."
+  (atom #{}))
+
+(defn refused-service-events
+  "One transcript row per connected service the agent service left out of the
+  turn (its address stopped being reachable, its name is not usable), the
+  first time it happens."
+  [{:keys [refused]}]
+  (into []
+        (comp (map (fn [{:keys [name reason]}] [(str name) (str reason)]))
+              (remove @reported-refusals*)
+              (map (fn [[name reason :as refusal]]
+                     (swap! reported-refusals* conj refusal)
+                     (agent/tool-outcome->event
+                      {:call {:name name :input {}}
+                       :status :error
+                       :detail (str "This connected service was left out: " reason)
+                       :content reason
+                       :error? true}))))
+        refused))
+
 (defn- usage
   [{:keys [input output cacheRead cacheWrite]}]
   {:input-tokens (or input 0)
@@ -259,6 +282,11 @@
                   (do
                     (reset! last-server-tool* ev)
                     (rx/of (server-tool-event ev)))
+
+                  ;; which connected services are in play; one that was
+                  ;; left out is worth a row
+                  "mcp"
+                  (rx/from (refused-service-events ev))
 
                   "usage"
                   (rx/of {:kind :usage :usage (usage (:usage ev))})

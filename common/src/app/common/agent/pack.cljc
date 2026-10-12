@@ -115,7 +115,9 @@
 (defn- color?
   [value]
   (and (string? value)
-       (some? (re-matches #"(?i)#[0-9a-f]{3}|#[0-9a-f]{6}|#[0-9a-f]{8}|rgba?\([\d\s.,]+\)" (str/trim value)))))
+       ;; longest first, and as one group: a JavaScript match stops at the first
+       ;; alternative that fits, which for "#ffffff" would be "#fff"
+       (some? (re-matches #"(?i)^(?:#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3})|rgba?\([\d\s.,]+\))$" (str/trim value)))))
 
 (defn- value-problem
   [type value]

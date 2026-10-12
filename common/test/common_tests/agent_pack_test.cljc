@@ -7,8 +7,15 @@
 (ns common-tests.agent-pack-test
   (:require
    [app.common.agent.pack :as cak]
+   [app.common.agent.pack-make :as cakm]
    [app.common.agent.packs :as caks]
    [app.common.agent.recipe :as car]
+   [app.common.agent.tools :as cat]
+   [app.common.files.changes :as cfc]
+   [app.common.types.file :as ctf]
+   [app.common.types.shape :as cts]
+   [app.common.types.tokens-lib :as ctob]
+   [app.common.uuid :as uuid]
    [clojure.test :as t]))
 
 (def ^:private pack caks/neutral)
@@ -97,3 +104,177 @@
               {:theme "Light" :text "color.text-muted" :ground "color.surface"}]
              (mapv #(dissoc % :ratio) (cak/contrast-problems faint))))
     (t/is (< 1 (:ratio (first (cak/contrast-problems faint))) 4.5))))
+
+;; --- A pack from a few choices
+
+(def ^:private choices
+  {:name "relay" :title "Relay" :purpose "Calm and exact, for people who plan work."
+   :primary "#4338ca" :bodyFont "Inter"})
+
+(t/deftest a-few-choices-make-a-whole-pack
+  (doseq [primary ["#4338ca" "#c6ff3d" "#ff5a36" "#111111" "#ffffff" "#7dd3fc" "#f59e0b" "#0f766e"]
+          more    [{} {:corners "sharp" :shadow "hard" :typeScale "large" :headingFont "Space Grotesk"}
+                   {:corners "round" :density "roomy" :neutral "warm"}
+                   {:density "compact" :shadow "none" :neutral "#2a6fb8"}]]
+    (let [pack (cakm/make (merge choices {:primary primary} more))]
+      (t/testing (str primary " " more)
+        (t/is (nil? (cak/problem pack)))
+        (t/is (= [] (cak/contrast-problems pack))))))
+  (let [pack  (cakm/make (assoc choices :corners "sharp" :shadow "hard" :headingFont "Space Grotesk"))
+        light (cak/theme-values pack (first (:themes pack)))
+        dark  (cak/theme-values pack (second (:themes pack)))]
+    ;; a color that can be read as it is stays as it is
+    (t/is (= "#4338ca" (get light "color.primary")))
+    (t/is (not= (get light "color.primary") (get dark "color.primary")))
+    (t/is (= [{:family "Space Grotesk"} {:family "Inter"}] (:fonts pack)))
+    (t/is (= "Space Grotesk, sans-serif" (get light "font-family.heading")))
+    (t/is (= 0 (get light "radius.sm")))
+    ;; a hard shadow is the ink, with no blur, and the borders thicken
+    (t/is (= [{:offsetX 4 :offsetY 4 :blur 0 :spread 0 :color (get light "color.text")}] (get light "shadow.md")))
+    (t/is (= 2 (get light "border-width.sm")))))
+
+(t/deftest the-choices-are-checked
+  (let [problem #(cakm/choices-problem (apply assoc choices %&))]
+    (t/is (nil? (cakm/choices-problem choices)))
+    (t/is (re-find #"needs `primary`" (problem :primary "indigo")))
+    (t/is (re-find #"needs a `name` in kebab-case" (problem :name "Relay App")))
+    (t/is (re-find #"needs `bodyFont`" (problem :bodyFont nil)))
+    (t/is (re-find #"corners is one of: round, sharp, soft" (problem :corners "pill")))
+    (t/is (re-find #"shadow is one of: hard, none, soft" (problem :shadow "big")))
+    (t/is (re-find #"neutral is plain, cool, warm, brand" (problem :neutral "grey")))))
+
+;; --- Applying a pack to a file
+
+(def ^:private box-id (uuid/next))
+
+(def ^:private empty-file
+  (let [data    (ctf/make-file-data (uuid/next) (uuid/next))
+        page-id (first (:pages data))]
+    (update-in data [:pages-index page-id :objects]
+               (fn [objects]
+                 (-> objects
+                     (update-in [uuid/zero :shapes] conj box-id)
+                     (assoc box-id (cts/setup-shape {:id box-id :type :rect :name "box" :x 0 :y 0 :width 50 :height 50
+                                                     :parent-id uuid/zero :frame-id uuid/zero})))))))
+
+(defn- view
+  [data]
+  (let [page-id (first (:pages data))]
+    {:file-id (:id data) :data data :page-id page-id :objects (get-in data [:pages-index page-id :objects])
+     :libraries {}}))
+
+(def ^:private engine
+  {:propagate (fn [_ _] {})
+   :measure-text (fn [_ _] {:width 90 :height 30})})
+
+(defn- run
+  [data tool input]
+  (cat/run tool (view data) input engine))
+
+(defn- commit
+  [data out]
+  (cfc/process-changes data (:changes out)))
+
+(defn- active
+  [data]
+  (ctob/get-tokens-in-active-sets (:tokens-lib data)))
+
+(defn- box-fill
+  [data]
+  (-> (get-in data [:pages-index (first (:pages data)) :objects box-id]) :fills first :fill-color))
+
+(t/deftest a-pack-gives-an-empty-file-its-sets-themes-and-an-active-theme
+  (let [out   (run empty-file "apply_token_pack" {:pack "bold"})
+        after (commit empty-file out)
+        lib   (:tokens-lib after)]
+    (t/is (= {:applied true :pack "bold" :theme "Light" :was "empty" :roles (count car/roles)}
+             (select-keys (:result out) [:applied :pack :theme :was :roles])))
+    (t/is (= ["core" "modes/light" "modes/dark"] (mapv ctob/get-name (ctob/get-sets lib))))
+    (t/is (= #{"Light" "Dark"} (into #{} (comp (map ctob/get-name) (remove #{ctob/hidden-theme-name})) (ctob/get-themes lib))))
+    ;; the light theme is on: every role resolves, to its light value
+    (t/is (= (set (keys car/roles)) (set (keys (active after)))))
+    (t/is (= "#4f2bff" (:value (get (active after) "color.primary"))))
+    (t/is (= ["Space Grotesk" "sans-serif"] (:value (get (active after) "font-family.heading"))))
+    (t/is (= ["4" "4" "0"] ((juxt :offset-x :offset-y :blur) (first (:value (get (active after) "shadow.md"))))))
+    (t/testing "and the other theme is a switch away"
+      (let [dark (commit after (run after "activate_theme" {:name "Dark"}))]
+        (t/is (= "#c6ff3d" (:value (get (active dark) "color.primary"))))))
+    (t/testing "or is the one turned on"
+      (let [dark (commit empty-file (run empty-file "apply_token_pack" {:pack "bold" :theme "Dark"}))]
+        (t/is (= "#c6ff3d" (:value (get (active dark) "color.primary"))))))))
+
+(t/deftest a-file-with-tokens-is-not-touched-until-the-user-chooses
+  (let [own   (-> empty-file
+                  (as-> data (commit data (run data "create_tokens"
+                                               {:tokens [{:type "color" :name "color.primary" :value "#ff0000"}
+                                                         {:type "color" :name "brand.accent" :value "#00ff00"}]})))
+                  (as-> data (commit data (run data "apply_tokens"
+                                               {:applications [{:shapeId (str box-id) :tokenName "color.primary"}]}))))
+        asked (run own "apply_token_pack" {:pack "neutral"})]
+    (t/is (= "#ff0000" (box-fill own)))
+    (t/testing "asked: nothing changes"
+      (t/is (nil? (:changes asked)))
+      (t/is (false? (-> asked :result :applied)))
+      (t/is (= {:tokens 2 :sets ["Global"] :themes []} (-> asked :result :file)))
+      (t/is (re-find #"merge.*replace.*cancel" (-> asked :result :note))))
+    (t/testing "cancel: nothing changes"
+      (t/is (nil? (:changes (run own "apply_token_pack" {:pack "neutral" :onExisting "cancel"})))))
+    (t/testing "merge: theirs stay on, and where both name a token the pack wins"
+      (let [out   (run own "apply_token_pack" {:pack "neutral" :onExisting "merge"})
+            after (commit own out)]
+        (t/is (= "merged" (-> out :result :was)))
+        (t/is (= ["Global" "core" "modes/light" "modes/dark"] (mapv ctob/get-name (ctob/get-sets (:tokens-lib after)))))
+        (t/is (= "#00ff00" (:value (get (active after) "brand.accent"))))
+        (t/is (= "#2563eb" (:value (get (active after) "color.primary"))))
+        ;; what was bound to the token follows its new value
+        (t/is (= "#2563eb" (box-fill after)))
+        (t/is (= 1 (-> out :result :restyled)))
+        ;; and still does after a switch of theme
+        (let [dark (commit after (run after "activate_theme" {:name "Dark"}))]
+          (t/is (= "#00ff00" (:value (get (active dark) "brand.accent"))))
+          (t/is (= "#60a5fa" (box-fill dark))))))
+    (t/testing "replace: only the pack is left"
+      (let [out   (run own "apply_token_pack" {:pack "neutral" :onExisting "replace"})
+            after (commit own out)]
+        (t/is (= "replaced" (-> out :result :was)))
+        (t/is (= ["core" "modes/light" "modes/dark"] (mapv ctob/get-name (ctob/get-sets (:tokens-lib after)))))
+        (t/is (nil? (get (active after) "brand.accent")))
+        (t/is (= "#2563eb" (box-fill after)))))
+    (t/testing "applying the same pack again changes values, not the sets"
+      (let [once  (commit own (run own "apply_token_pack" {:pack "neutral" :onExisting "replace"}))
+            twice (commit once (run once "apply_token_pack" {:pack "soft" :onExisting "merge"}))]
+        (t/is (= ["core" "modes/light" "modes/dark"] (mapv ctob/get-name (ctob/get-sets (:tokens-lib twice)))))
+        (t/is (= 2 (count (remove #(= ctob/hidden-theme-name (ctob/get-name %)) (ctob/get-themes (:tokens-lib twice))))))
+        (t/is (= "#6d4aff" (box-fill twice)))
+        ;; and each theme still turns on its own mode only, whichever was on
+        (let [dark  (commit twice (run twice "activate_theme" {:name "Dark"}))
+              again (commit dark (run dark "apply_token_pack" {:pack "neutral" :onExisting "merge"}))]
+          (t/is (= "#b3a1ff" (box-fill dark)))
+          (t/is (= "#2563eb" (box-fill again)))
+          (t/is (= "#60a5fa" (box-fill (commit again (run again "activate_theme" {:name "Dark"}))))))))))
+
+(t/deftest a-pack-written-out-is-checked-before-it-is-applied
+  (let [made (:result (run empty-file "generate_token_pack" choices))]
+    (t/is (nil? (:changes (run empty-file "generate_token_pack" choices))))
+    (t/is (= "#4338ca" (get-in made [:summary :themes "Light" "color.primary"])))
+    (t/is (re-find #"NOTHING is applied yet" (:note made)))
+    (let [after (commit empty-file (run empty-file "apply_token_pack" {:pack (:pack made)}))]
+      (t/is (= "#4338ca" (:value (get (active after) "color.primary")))))
+    (t/is (re-find #"apply_token_pack: the pack theme \"Dark\" leaves 1 role"
+                   (:problem (run empty-file "apply_token_pack"
+                                  {:pack (update-in (:pack made) [:sets 2 :tokens] dissoc "color.info")}))))
+    (t/is (re-find #"the pack has text that cannot be read — color.text on color.background in Light is 1.05 to 1"
+                   (:problem (run empty-file "apply_token_pack"
+                                  {:pack (assoc-in (:pack made) [:sets 1 :tokens "color.text"] "#ffffff")}))))
+    (t/is (re-find #"no starter pack is called \"loud\" — there are: neutral, bold, soft"
+                   (:problem (run empty-file "apply_token_pack" {:pack "loud"}))))
+    (t/is (re-find #"has no theme called \"Sepia\"" (:problem (run empty-file "apply_token_pack" {:pack "soft" :theme "Sepia"}))))
+    (t/is (re-find #"generate_token_pack: needs `primary`" (:problem (run empty-file "generate_token_pack" (dissoc choices :primary)))))))
+
+(t/deftest the-packs-are-listed-with-what-the-file-has
+  (let [listed (:result (run empty-file "list_token_packs" {}))]
+    (t/is (= ["neutral" "bold" "soft"] (mapv :name (:packs listed))))
+    (t/is (= "Space Grotesk" (get-in (second (:packs listed)) [:themes "Light" "font-family.heading"])))
+    (t/is (= {:tokens 0 :sets [] :themes [] :linkedLibraries 0 :hasSystem false} (:file listed)))
+    (let [after (commit empty-file (run empty-file "apply_token_pack" {:pack "soft"}))]
+      (t/is (true? (-> (run after "list_token_packs" {}) :result :file :hasSystem))))))

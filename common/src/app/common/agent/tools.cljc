@@ -19,6 +19,7 @@
    [app.common.agent.icons :as cai]
    [app.common.agent.layout :as cal]
    [app.common.agent.media :as cam]
+   [app.common.agent.pack-build :as cakb]
    [app.common.agent.recipe-build :as carb]
    [app.common.agent.structure :as cas]
    [app.common.agent.text :as catx]
@@ -71,7 +72,10 @@
    "build_tree"    (fn [view input options]
                      (cap/build-tree view input (assoc options :apply-tokens cato/apply-tokens)))
    "build_recipe"  carb/build-recipe
-   "find_recipes"  carb/find-recipes})
+   "find_recipes"  carb/find-recipes
+   "list_token_packs"    cakb/list-packs
+   "generate_token_pack" cakb/generate-pack
+   "apply_token_pack"    cakb/apply-pack})
 
 (def needs
   "Tool name → `(fn [input])` → what the tool needs fetched from outside the

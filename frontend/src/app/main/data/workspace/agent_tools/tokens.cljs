@@ -15,6 +15,7 @@
    [app.main.data.workspace.agent-tools.common :as atc]
    [app.main.data.workspace.tokens.application :as dwta]
    [app.main.data.workspace.tokens.library-edit :as dwtl]
+   [app.main.data.workspace.tokens.propagation :as dwtp]
    [app.main.store :as st]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
@@ -71,6 +72,35 @@
              (first)
              (ctob/get-id))))
 
+(defn- write-token!
+  "Writes a token into the set. A token of that name already there is
+  changed, as on the server (`app.common.agent.tokens`): it keeps its id and
+  takes the new value. → whether a token that was there changed."
+  [state set-id {:keys [type name value]}]
+  (let [kind  (token-type type)
+        value (cato/stored-value kind value)
+        prev  (when set-id
+                (some-> (atc/tokens-lib state) (ctob/get-tokens set-id) (get name)))]
+    (cond
+      (nil? prev)
+      (do (st/emit! (if set-id
+                      (dwtl/create-token set-id (ctob/make-token {:type kind :name name :value value}))
+                      ;; no sets at all: this is the branch that legitimately makes one
+                      (dwtl/create-token (ctob/make-token {:type kind :name name :value value}))))
+          false)
+
+      (and (= kind (:type prev)) (= value (:value prev)))
+      false
+
+      :else
+      (do (st/emit! (dwtl/update-token set-id (:id prev) {:type kind :value value}))
+          true))))
+
+(def ^:private changed-note
+  (str "these tokens were there already and have their new value; every shape "
+       "bound to them, or to a token that refers to them, follows — nothing "
+       "needs re-applying. Verify with render_board."))
+
 (defn create-token
   ;; `:set` is destructured as `target-set`: binding it to `set` would shadow
   ;; clojure.core/set for the whole fn — which is exactly how token-set-problem
@@ -84,14 +114,12 @@
       (let [set-id (if target-set
                      (set-id-by-name state target-set)
                      (existing-token-set-id state))
-            kind   (token-type type)
-            token  (ctob/make-token {:type kind :name name :value (cato/stored-value kind value)})]
-        (st/emit! (if set-id
-                    (dwtl/create-token set-id token)
-                    ;; no sets at all: this is the branch that legitimately makes one
-                    (dwtl/create-token token)))
+            changed? (write-token! state set-id input)]
+        (when changed?
+          (st/emit! (dwtp/propagate-workspace-tokens)))
         (rx/of (cond-> {:name name :type type :value value
                         :note "token created — bind it to shapes with apply_tokens"}
+                 changed?   (assoc :changed [name] :note changed-note)
                  target-set (assoc :set (normalize-set target-set))))))))
 
 (defn create-tokens
@@ -121,22 +149,22 @@
           (rx/throw (ex-info (str/join " | " problems) {}))
           (do
             (atc/interrupt!)
-            (run! (fn [{:keys [type name value] target-set :set}]
-                    (let [set-id (if target-set
-                                   (set-id-by-name state target-set)
-                                   (existing-token-set-id state))
-                          kind   (token-type type)
-                          token  (ctob/make-token {:type kind
-                                                   :name name
-                                                   :value (cato/stored-value kind value)})]
-                      (st/emit! (if set-id
-                                  (dwtl/create-token set-id token)
-                                  (dwtl/create-token token)))))
-                  entries)
-            (rx/of {:created (count entries)
-                    :note (str "tokens created — bind them to shapes with "
-                               "apply_tokens; values referencing other tokens "
-                               "(\"{color.blue.500}\") resolve lazily")})))))))
+            (let [changed (into []
+                                (keep (fn [{target-set :set :as entry}]
+                                        (when (write-token! state
+                                                            (if target-set
+                                                              (set-id-by-name state target-set)
+                                                              (existing-token-set-id state))
+                                                            entry)
+                                          (:name entry))))
+                                entries)]
+              (when (seq changed)
+                (st/emit! (dwtp/propagate-workspace-tokens)))
+              (rx/of (cond-> {:created (count entries)
+                              :note (str "tokens created — bind them to shapes with "
+                                         "apply_tokens; values referencing other tokens "
+                                         "(\"{color.blue.500}\") resolve lazily")}
+                       (seq changed) (assoc :changed changed :note changed-note))))))))))
 
 (defn create-token-set
   [{:keys [name]}]

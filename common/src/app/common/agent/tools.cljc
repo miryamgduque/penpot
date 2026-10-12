@@ -18,6 +18,7 @@
    [app.common.agent.document :as cad]
    [app.common.agent.layout :as cal]
    [app.common.agent.media :as cam]
+   [app.common.agent.recipe-build :as carb]
    [app.common.agent.structure :as cas]
    [app.common.agent.text :as catx]
    [app.common.agent.tokens :as cato]
@@ -65,7 +66,8 @@
    "set_foundation" cad/set-foundation
    "clone_shape"   cap/clone-shape
    "build_tree"    (fn [view input options]
-                     (cap/build-tree view input (assoc options :apply-tokens cato/apply-tokens)))})
+                     (cap/build-tree view input (assoc options :apply-tokens cato/apply-tokens)))
+   "build_recipe"  carb/build-recipe})
 
 (def needs
   "Tool name → `(fn [input])` → what the tool needs fetched from outside the
@@ -74,7 +76,8 @@
    "search_icons" cam/search-icons-needs
    "insert_icon"  cam/insert-icon-needs
    "clone_shape"  cap/clone-shape-needs
-   "build_tree"   cap/build-tree-needs})
+   "build_tree"   cap/build-tree-needs
+   "build_recipe" carb/build-recipe-needs})
 
 
 ;; --- Design rules

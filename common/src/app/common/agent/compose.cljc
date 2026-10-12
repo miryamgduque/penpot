@@ -34,7 +34,8 @@
 ;; that answers `{:problem}` or `{:fallback}` stops the run: the answer is kept
 ;; under `:stopped` and the steps after it do nothing.
 
-(defn- start
+(defn start
+  "A run that has done nothing yet."
   [view]
   {:view view :changes (caw/with-undo [] [])})
 
@@ -49,7 +50,7 @@
           (assoc :objects (get-in data [:pages-index page-id :objects]))
           (update :libraries assoc-in [file-id :data] data)))))
 
-(defn- then
+(defn then
   "Runs `f` — view → a tool answer — unless the run has stopped. → the run,
   with the step's result under `:last`."
   [{:keys [view stopped] :as run} f]

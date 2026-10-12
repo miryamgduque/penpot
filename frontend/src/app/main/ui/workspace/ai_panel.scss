@@ -18,18 +18,24 @@
 
 // --- Where the DS scale has no step
 //
-// Three values in this file have no exact DS equivalent, so they are written
+// Some values in this file have no exact DS equivalent, so they are written
 // against the DS machinery rather than rounded to a neighbouring step, which
 // would restyle the panel:
 //
 //   6px gaps and paddings — the DS spacing scale runs 2·4·8·12·16·20·24·32,
 //     with no 6. `$sz-6` from `ds/_sizes.scss` is the same 0.375rem and stands
 //     in for it; `--sp-xs` (4) or `--sp-s` (8) would move every one of them.
-//   11px type — the DS type scale starts at 12px. `px2rem(11)` keeps the
+//   Type below the DS 12px floor — the DS type scale starts at 12px, so 10px
+//     and 11px are written as `px2rem(10)` / `px2rem(11)`. 11px keeps the
 //     history rows' title/time hierarchy and holds the tool payload below the
-//     chips around it, and is the same deliberate deviation already made for
-//     the panel's button labels (see `_agent_button.scss` and the smaller-label
-//     proposal to the DS team, #83).
+//     chips around it; 10px keeps the attachment ✕ inside its 16px circle.
+//     It is the same deliberate deviation already made for the panel's button
+//     labels (see `_agent_button.scss` and the smaller-label proposal to the
+//     DS team, #83).
+//   44px and 52px — the composer input's reserved end padding and the
+//     attachment thumbnail box. The DS size scale has neither, and both are
+//     load-bearing (44 clears the send button, 52 is the thumbnail grid), so
+//     they are written as `px2rem(44)` / `px2rem(52)`.
 //   The workspace z-index scale — see `.ai-panel` below.
 
 // --- Text scale
@@ -1137,9 +1143,9 @@
 .composer {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
-  padding: deprecated.$s-8;
-  border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+  gap: var(--sp-s);
+  padding: var(--sp-s);
+  border-block-start: $b-1 solid var(--color-background-tertiary);
 }
 
 // Model picker: a custom dropdown that opens upward, with a manage-models link.
@@ -1157,10 +1163,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
   width: 100%;
-  padding: deprecated.$s-6 deprecated.$s-8;
-  border-radius: deprecated.$br-8;
+  padding: $sz-6 var(--sp-s);
+  border-radius: $br-8;
   border: none;
   background-color: transparent;
   color: var(--color-foreground-primary);
@@ -1195,10 +1201,10 @@
 
   // Opens upward, right-anchored so it lines up with the half-width trigger,
   // but free to grow left to fit full model names rather than truncating.
-  inset: auto 0 calc(100% + #{deprecated.$s-4}) auto;
+  inset: auto 0 calc(100% + var(--sp-xs)) auto;
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
   width: max-content;
   min-width: 100%;
   max-width: 260px;
@@ -1213,8 +1219,8 @@
   flex-shrink: 0;
   width: 100%;
   height: auto;
-  min-height: deprecated.$s-32;
-  padding: deprecated.$s-4 deprecated.$s-8;
+  min-height: $sz-32;
+  padding: var(--sp-xs) var(--sp-s);
   border: none;
   background-color: transparent;
   text-align: start;
@@ -1228,9 +1234,9 @@
   @include scaled-body-small;
 
   display: block;
-  margin-block-start: deprecated.$s-4;
-  padding: deprecated.$s-8;
-  border-block-start: deprecated.$s-1 solid var(--color-background-quaternary);
+  margin-block-start: var(--sp-xs);
+  padding: var(--sp-s);
+  border-block-start: $b-1 solid var(--color-background-quaternary);
   color: var(--color-accent-primary);
   text-decoration: none;
 
@@ -1250,8 +1256,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: deprecated.$s-16;
-  padding-inline: deprecated.$s-24;
+  gap: var(--sp-l);
+  padding-inline: var(--sp-xxl);
 }
 
 // Keeps the description at its previous wrap width in a wide panel.
@@ -1265,14 +1271,14 @@
 // design rather than reinstating a row.
 .composer-row {
   position: relative;
-  border-radius: deprecated.$br-8;
+  border-radius: $br-8;
 }
 
 // Drop feedback on the whole row (the row is what accepts the drop), as an
 // outline rather than a border so it cannot shift the auto-growing textarea.
 .composer-row-dragging {
-  outline: deprecated.$s-2 dashed var(--color-accent-primary);
-  outline-offset: deprecated.$s-2;
+  outline: $b-2 dashed var(--color-accent-primary);
+  outline-offset: $b-2;
 }
 
 // The `/` menu: Penpot's shared menu, floated above the composer row (opens
@@ -1288,7 +1294,7 @@
   --menu-foreground-color-rest: var(--color-foreground-primary);
 
   top: auto;
-  bottom: calc(100% + #{deprecated.$s-4});
+  bottom: calc(100% + var(--sp-xs));
   display: flex;
   flex-direction: column;
   margin: 0;
@@ -1300,13 +1306,13 @@
 
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0 deprecated.$s-8;
+  gap: 0 var(--sp-s);
   align-items: baseline;
   flex-shrink: 0;
   width: 100%;
   height: auto;
-  min-height: deprecated.$s-32;
-  padding: deprecated.$s-6 deprecated.$s-8;
+  min-height: $sz-32;
+  padding: $sz-6 var(--sp-s);
   border: none;
   background-color: transparent;
   text-align: start;
@@ -1958,37 +1964,37 @@
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;
-  gap: deprecated.$s-8;
-  margin-block-end: deprecated.$s-8;
+  gap: var(--sp-s);
+  margin-block-end: var(--sp-s);
 }
 
 .composer-attachment {
   position: relative;
-  inline-size: deprecated.$s-52;
-  block-size: deprecated.$s-52;
+  inline-size: px2rem(52);
+  block-size: px2rem(52);
 }
 
 .composer-attachment-img {
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
-  border-radius: deprecated.$br-4;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: $br-4;
+  border: $b-1 solid var(--color-background-quaternary);
 }
 
 .composer-attachment-remove {
   position: absolute;
-  inset-block-start: calc(-1 * #{deprecated.$s-4});
-  inset-inline-end: calc(-1 * #{deprecated.$s-4});
-  inline-size: deprecated.$s-16;
-  block-size: deprecated.$s-16;
+  inset-block-start: calc(-1 * var(--sp-xs));
+  inset-inline-end: calc(-1 * var(--sp-xs));
+  inline-size: $sz-16;
+  block-size: $sz-16;
   display: grid;
   place-items: center;
   padding: 0;
   border: none;
   border-radius: 50%;
   cursor: pointer;
-  font-size: deprecated.$fs-10;
+  font-size: px2rem(10);
   background-color: var(--color-background-quaternary);
   color: var(--color-foreground-primary);
 
@@ -2002,7 +2008,7 @@
 .composer-hint {
   @include scaled-body-small;
 
-  margin-block-end: deprecated.$s-8;
+  margin-block-end: var(--sp-s);
   color: var(--color-foreground-secondary);
 }
 
@@ -2012,8 +2018,8 @@
 .composer-send,
 .composer-stop {
   position: absolute;
-  inset-block-end: deprecated.$s-2;
-  inset-inline-end: deprecated.$s-6;
+  inset-block-end: var(--sp-xxs);
+  inset-inline-end: $sz-6;
 }
 
 .composer-input {
@@ -2025,19 +2031,21 @@
 
   // Starts as a single line (snug, so the one line sits vertically centred); the
   // JS auto-grow takes it from here up to the cap.
-  min-height: deprecated.$s-36;
+  min-height: $sz-36;
 
   // Auto-grows with content (JS sets the height) up to here, then scrolls.
   max-height: 200px;
   overflow-y: auto;
   resize: none;
-  padding: deprecated.$s-8;
+  padding: var(--sp-s);
 
   // Reserve the bottom-right corner so text never runs under the send/stop
   // button. Attach now lives below the input, so the left side is normal.
-  padding-inline-end: deprecated.$s-44;
-  border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  // 44 = the button's 32 + its 6px inset + 6px of clearance; the DS size
+  // scale has no 44, so it is written as `px2rem(44)` rather than rounded.
+  padding-inline-end: px2rem(44);
+  border-radius: $br-8;
+  border: $b-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
   color: var(--color-foreground-primary);
 
@@ -2052,9 +2060,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: deprecated.$s-8;
-  padding: deprecated.$s-6 deprecated.$s-8;
-  border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
+  gap: var(--sp-s);
+  padding: $sz-6 var(--sp-s);
+  border-block-start: $b-1 solid var(--color-background-tertiary);
 }
 
 // The meter's DS tooltip wrapper takes the free width; the single column can
@@ -2127,7 +2135,7 @@
 .model-picker-group-label {
   @include scaled-body-small;
 
-  padding: deprecated.$s-8 deprecated.$s-8 deprecated.$s-4;
+  padding: var(--sp-s) var(--sp-s) var(--sp-xs);
   color: var(--color-foreground-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;

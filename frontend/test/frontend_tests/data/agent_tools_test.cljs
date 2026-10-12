@@ -845,6 +845,7 @@
   (t/is (str/includes? ask/inner-knowledge "When no recipe fits, build by hand"))
   (t/is (str/includes? ask/inner-knowledge "A built recipe is the start, not the result"))
   (t/is (str/includes? ask/inner-knowledge "Recipes are for what is convention"))
+  (t/is (str/includes? ask/inner-knowledge "What a recipe builds is yours to change"))
   (t/testing "and the team's own, the ones in use"
     (t/is (nil? (ask/team-recipes-section {})))
     (let [section (ask/team-recipes-section

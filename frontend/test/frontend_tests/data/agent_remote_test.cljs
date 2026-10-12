@@ -55,3 +55,17 @@
   (t/is (= "notes: echo" (ar/tool-display-name "mcp__notes__echo")))
   (t/is (= "tracker: create__issue" (ar/tool-display-name "mcp__tracker__create__issue")))
   (t/is (= "create_shape" (ar/tool-display-name "create_shape"))))
+
+(t/deftest a-service-left-out-of-the-turn-is-said-once
+  (let [ev     {:type "mcp"
+                :servers ["notes"]
+                :refused [{:name "inside" :reason "the address is private or blocked"}]}
+        events (ar/refused-service-events ev)]
+    (t/is (= [{:kind :tool
+               :name "inside"
+               :status :error
+               :detail "This connected service was left out: the address is private or blocked"}]
+             (mapv #(select-keys % [:kind :name :status :detail]) events)))
+    ;; the next turn carries the same refusal: it is not repeated
+    (t/is (= [] (ar/refused-service-events ev)))
+    (t/is (= [] (ar/refused-service-events {:type "mcp" :servers ["notes"] :refused []})))))

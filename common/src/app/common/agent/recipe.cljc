@@ -579,6 +579,9 @@
       (and (contains? node :name) (not (text? (:name node))))
       (dm/str where ".name is not text")
 
+      (and (contains? node :name) (some? (string-problem ctx (dm/str where ".name") (:name node))))
+      (string-problem ctx (dm/str where ".name") (:name node))
+
       (and (= "text" kind) (not (contains? node :text)))
       (dm/str where " is a text and needs `text` (the words)")
 
@@ -718,3 +721,159 @@
      (if (and (map? recipe) (string? (:name recipe)))
        (dm/str "recipe \"" (:name recipe) "\": " message)
        (dm/str "recipe: " message)))))
+
+;; --- What a recipe comes to
+;;
+;; A recipe, the values of its params and one member of its variants come to
+;; a tree with nothing left to decide: no conditions, no repeats, no
+;; placeholders. This is what gets built.
+
+(defn- by-name
+  "A map as it arrives, keyed by keyword or by text → keyed by text."
+  [m]
+  (into {} (map (fn [[k v]] [(name k) v])) m))
+
+(defn- repeat-params
+  [recipe]
+  (into #{} (comp (keep :repeat) (filter param-ref?) (map :param)) (nodes (:tree recipe))))
+
+(defn arguments-problem
+  "Why `args` — param → value — cannot be handed to `recipe`, or nil."
+  [recipe args]
+  (let [params (into {} (map (juxt :name identity)) (:params recipe))
+        counts (repeat-params recipe)]
+    (if-not (or (nil? args) (map? args))
+      "params is not a map of param to value"
+      (some (fn [[nm v]]
+              (let [param (get params nm)]
+                (cond
+                  (nil? param)
+                  (dm/str "\"" nm "\" is not a param of \"" (:name recipe) "\""
+                          (if (seq params)
+                            (dm/str " — it takes: " (listed (keys params)))
+                            ", which takes none"))
+
+                  (some? (value-problem param v))
+                  (value-problem param v)
+
+                  (and (contains? counts nm) (not (whole? v)))
+                  (dm/str "\"" nm "\" takes a whole number"))))
+            (by-name args)))))
+
+(defn members
+  "Every member of the recipe's variants, as axis → value, the one the tree
+  describes first. A recipe with no variants has the one empty member."
+  [recipe]
+  (reduce (fn [members {:keys [values] :as axis}]
+            (for [member members value values]
+              (assoc member (:name axis) value)))
+          [{}]
+          (:variants recipe)))
+
+(defn member-problem
+  "Why `variant` — axis → value — names no member of `recipe`, or nil."
+  [recipe variant]
+  (let [axes (into {} (map (juxt :name :values)) (:variants recipe))]
+    (if-not (or (nil? variant) (map? variant))
+      "variant is not a map of axis to value"
+      (some (fn [[axis value]]
+              (let [values (get axes axis)]
+                (cond
+                  (nil? values)
+                  (dm/str "\"" axis "\" is not a variant axis of \"" (:name recipe) "\""
+                          (if (seq axes)
+                            (dm/str " — it has: " (str/join ", " (keys axes)))
+                            ", which has no variants"))
+
+                  (not (some #(= value %) values))
+                  (dm/str "\"" axis "\" is one of: " (str/join ", " values)))))
+            (by-name variant)))))
+
+(defn member
+  "The whole member that `variant` names: what it leaves out is the first
+  value of that axis."
+  [recipe variant]
+  (merge (first (members recipe)) (by-name variant)))
+
+(defn- shown
+  "A value as it reads inside a text."
+  [v]
+  (if (whole? v) (str (long v)) (str v)))
+
+(defn- fill-in
+  [{:keys [args index]} s]
+  (str/replace s placeholder-re
+               (fn [[_ nm]]
+                 (shown (if (and (= "index" nm) (some? index)) index (get args nm))))))
+
+(defn- value-of
+  [{:keys [args]} v]
+  (if (param-ref? v) (get args (:param v)) v))
+
+(defn- holds?
+  [{:keys [args member]} {:keys [param variant] :as c}]
+  (cond
+    (some? variant)      (= (:is c) (get member variant))
+    (contains? c :is)    (= (:is c) (get args param))
+    :else                (true? (get args param))))
+
+(defn- varied
+  "The node with what its `:vary` gives it in this member."
+  [{:keys [member]} node]
+  (reduce (fn [node {:keys [on] :as entry}]
+            (if (every? (fn [[axis value]] (= value (get member (name axis)))) on)
+              (reduce-kv (fn [node k v]
+                           (if (contains? #{:tokens :layout :layoutChild} k)
+                             (update node k merge v)
+                             (assoc node k v)))
+                         node
+                         (:set entry))
+              node))
+          (dissoc node :vary)
+          (:vary node)))
+
+(declare expand-children)
+
+(defn- expand-node
+  [ctx node]
+  (let [node (varied ctx node)]
+    (cond-> (dissoc node :when :repeat)
+      (contains? node :name)     (update :name #(fill-in ctx %))
+      (contains? node :text)     (update :text #(fill-in ctx %))
+      (contains? node :url)      (update :url #(fill-in ctx %))
+      (contains? node :width)    (update :width #(value-of ctx %))
+      (contains? node :height)   (update :height #(value-of ctx %))
+      (contains? node :with)     (update :with (fn [with]
+                                                 (into {}
+                                                       (map (fn [[k v]]
+                                                              (let [v (value-of ctx v)]
+                                                                [(name k) (if (string? v) (fill-in ctx v) v)])))
+                                                       with)))
+      (contains? node :variant)  (update :variant by-name)
+      (contains? node :children) (update :children #(expand-children ctx %)))))
+
+(defn- expand-children
+  [ctx children]
+  (into []
+        (mapcat (fn [child]
+                  (cond
+                    (and (contains? child :when) (not (holds? ctx (:when child))))
+                    nil
+
+                    (contains? child :repeat)
+                    (map #(expand-node (assoc ctx :index (inc %)) child)
+                         (range (long (value-of ctx (:repeat child)))))
+
+                    :else
+                    [(expand-node ctx child)])))
+        children))
+
+(defn expand
+  "The tree `recipe` comes to with `args` (param → value, over the defaults)
+  in the member `variant` names. The recipe and what it is handed must have
+  no problem. A `recipe` node stays one, with what it hands over worked out."
+  [recipe args variant]
+  (expand-node {:args   (merge (into {} (map (juxt :name :default)) (:params recipe))
+                               (by-name args))
+                :member (member recipe variant)}
+               (:tree recipe)))

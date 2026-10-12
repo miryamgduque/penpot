@@ -184,6 +184,21 @@
   animation: right-header-rec-pulse 1.6s ease-in-out infinite;
 }
 
+// The dot on its own, shown when the agent toggle is hidden for the user.
+// Same box as the toggle so the header does not shift.
+.recording-standalone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: deprecated.$s-28;
+  width: deprecated.$s-28;
+  margin-inline-end: 0.125rem;
+}
+
+.recording-dot-standalone {
+  position: static;
+}
+
 // A frozen indicator is indistinguishable from a dead one; motion says "live".
 @keyframes right-header-rec-pulse {
   0%,

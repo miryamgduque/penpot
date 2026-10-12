@@ -335,7 +335,10 @@
   (ptk/reify ::start-watcher
     ptk/WatchEvent
     (watch [_ _ stream]
-      (let [stopper (rx/filter (ptk/type? ::stop-watcher) stream)
+      ;; also stops when the user switches the agent off for their account
+      (let [stopper (rx/filter #(or (ptk/type? ::stop-watcher %)
+                                    (ptk/type? agent-access/turned-off %))
+                               stream)
             commits (->> stream
                          (rx/filter (ptk/type? ::dch/commit))
                          (rx/map deref))]

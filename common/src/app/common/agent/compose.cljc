@@ -12,8 +12,10 @@
   shape tools one after another, each on the file as the previous one left
   it, and answer with all of the changes together."
   (:require
+   [app.common.agent.components :as cac]
    [app.common.agent.layout :as cal]
    [app.common.agent.media :as cam]
+   [app.common.agent.structure :as cas]
    [app.common.agent.text :as catx]
    [app.common.agent.write :as caw]
    [app.common.data.macros :as dm]
@@ -26,7 +28,8 @@
    [app.common.types.component :as ctc]
    [app.common.types.container :as ctn]
    [app.common.types.shape.layout :as ctl]
-   [app.common.types.text :as txt]))
+   [app.common.types.text :as txt]
+   [cuerdas.core :as str]))
 
 ;; --- One tool after another
 ;;
@@ -250,15 +253,24 @@
 
 ;; --- build_tree
 
-(def ^:private tree-node-types #{"board" "rect" "ellipse" "text" "image"})
+(def ^:private tree-node-types #{"board" "rect" "ellipse" "text" "image" "instance"})
 
 (def ^:private max-tree-nodes 80)
 
 (def ^:private max-tree-depth 6)
 
+(declare tree-problem*)
+
 (defn tree-problem
   "Why `build_tree` cannot run, or nil."
   [tree]
+  (let [;; the components of the tree, in the order they are built
+        made (into #{} (comp (filter #(true? (:component %))) (keep :name))
+                   (when (map? tree) (tree-seq map? :children tree)))]
+    (tree-problem* tree made)))
+
+(defn- tree-problem*
+  [tree made]
   (letfn [(walk [node path depth]
             (cond
               (not (map? node))
@@ -270,7 +282,22 @@
 
               (not (contains? tree-node-types (:type node)))
               (dm/str "build_tree: " path " has type \"" (:type node)
-                      "\" — use board, rect, ellipse, text or image")
+                      "\" — use board, rect, ellipse, text, image or instance")
+
+              (and (= "instance" (:type node))
+                   (not (or (string? (:componentId node))
+                            (contains? made (:of node)))))
+              (dm/str "build_tree: instance " path " needs `of` — the name of a node of"
+                      " this tree marked component: true and listed BEFORE it"
+                      (when (seq made) (dm/str " (" (str/join ", " (sort made)) ")"))
+                      " — or a `componentId`")
+
+              (and (true? (:component node)) (not= "board" (:type node)))
+              (dm/str "build_tree: " path " is marked component and is a "
+                      (:type node) " — only a board becomes a component")
+
+              (and (true? (:component node)) (not (string? (:name node))))
+              (dm/str "build_tree: " path " is marked component and needs a `name`")
 
               (and (= "text" (:type node)) (not (string? (:text node))))
               (dm/str "build_tree: text node " path " needs `text` (the words)")
@@ -313,10 +340,58 @@
     (and (some? (:stopped run)) (nil? (:path run)))
     (assoc :path path)))
 
+(declare build-node build-shape)
+
+(defn- build-instance
+  "An instance of a component — one this tree made, by its node's name, or
+  one the file has — under `parent-id`, with the words `:texts` gives its
+  layers."
+  [run node parent-id path options]
+  (let [component (or (:componentId node) (get (:components run) (:of node)))
+        run       (if (nil? component)
+                    (assoc run :stopped {:problem (dm/str "no component \"" (:of node) "\" was built before this instance")})
+                    (then run #(cac/create-instance % {:componentId component :x (or (:x node) 0) :y (or (:y node) 0)} options)))
+        run       (at-path run path)
+        id        (:shapeId (:last run))]
+    (if (some? (:stopped run))
+      run
+      (as-> (update run :ids assoc (or (:name node) path) id) run
+        (cond-> run
+          (some? (:name node))
+          (then #(caw/modify-shape % {:shapeId id :name (:name node)} options)))
+        (cond-> run
+          (some? parent-id)
+          (then #(cas/nest-shape % {:shapeId id :parentId parent-id} options)))
+        (cond-> run
+          (:layoutChild node)
+          (then #(cal/set-layout-child % (assoc (:layoutChild node) :shapeId id) options)))
+        (cond-> run
+          (seq (:texts node))
+          (then (fn [{:keys [objects] :as view}]
+                  (let [inside (cfh/get-children-ids objects (parse-uuid id))
+                        found  (fn [nm] (first (filter #(and (= nm (:name (get objects %)))
+                                                             (cfh/text-shape? (get objects %)))
+                                                       inside)))
+                        texts  (into [] (keep (fn [[k words]]
+                                                (when-let [target (found (if (keyword? k) (subs (str k) 1) (str k)))]
+                                                  {:shapeId (dm/str target) :text words})))
+                                     (:texts node))]
+                    (if (empty? texts)
+                      {:changes []}
+                      (catx/set-texts view {:texts texts} options))))))
+        (at-path run path)))))
+
 (defn- build-node
   "Creates one node through the single shape tools and, in order: its layout,
   its sizing as a layout child, its token bindings, its font, then its
-  children — each child appended to the flow in listed order."
+  children — each child appended to the flow in listed order. A board marked
+  `component` then becomes a main component, for the instances after it."
+  [run node parent-id path options]
+  (if (= "instance" (:type node))
+    (build-instance run node parent-id path options)
+    (build-shape run node parent-id path options)))
+
+(defn- build-shape
   [run node parent-id path {:keys [apply-tokens] :as options}]
   (let [kind (:type node)
         base (case kind
@@ -365,7 +440,15 @@
         (reduce (fn [run [i child]]
                   (build-node run child id (dm/str path ".children[" i "]") options))
                 run
-                (map-indexed vector (or (:children node) [])))))))
+                (map-indexed vector (or (:children node) [])))
+        (if (and (true? (:component node)) (nil? (:stopped run)))
+          (let [run (-> run
+                        (then #(cas/create-component % {:shapeIds [id]} options))
+                        (at-path path))]
+            (cond-> run
+              (nil? (:stopped run))
+              (assoc-in [:components (:name node)] (:componentId (:last run)))))
+          run)))))
 
 (defn build-tree
   "`:apply-tokens` in the options is the apply_tokens tool, when the host has
@@ -374,7 +457,7 @@
   [view {:keys [tree parentId]} options]
   (if-let [problem (tree-problem tree)]
     {:problem problem}
-    (let [run     (build-node (assoc (start view) :ids {}) tree parentId "tree" options)
+    (let [run     (build-node (assoc (start view) :ids {} :components {}) tree parentId "tree" options)
           stopped (:stopped run)]
       (cond
         ;; not this build's to settle: the host takes over, or resolves
@@ -393,9 +476,12 @@
 
         :else
         {:changes (:changes run)
-         :result {:created (count (:ids run))
-                  :ids (:ids run)
-                  :note (str "tree built — ids keyed by node name (or path); "
-                             "children flow in the listed order. Geometry and "
-                             "text settle asynchronously; verify with "
-                             "render_board before presenting.")}}))))
+         :result (cond-> {:created (count (:ids run))
+                          :ids (:ids run)}
+                   (seq (:components run)) (assoc :components (:components run))
+                   :always
+                   (assoc
+                    :note (str "tree built — ids keyed by node name (or path); "
+                               "children flow in the listed order. Geometry and "
+                               "text settle asynchronously; verify with "
+                               "render_board before presenting.")))}))))

@@ -25,15 +25,12 @@
              "bottom-tab-bar" {:params {:tabs 5}
                                :adjust [{:layer "Bottom tab bar"
                                          :set {:width 393
-                                               :tokens {:paddingX "spacing.xs" :paddingY "spacing.xs"}}}
-                                        {:layer "Icon"
-                                         :set {:width 28 :height 28}}]}
+                                               :tokens {:paddingX "spacing.xs" :paddingY "spacing.xs"}}}]}
              "sidebar"        {:adjust [{:layer "Sidebar"
-                                         :set {:width 320 :height 852}}
-                                        {:layer "Item {index}"
-                                         :set {:tokens {:paddingY "spacing.md"}}}
-                                        {:layer "Icon"
-                                         :set {:width 24 :height 24}}]}
+                                         :set {:width 320 :height 852
+                                               :tokens {:padding "spacing.xl"}}}
+                                        {:layer "Items"
+                                         :set {:tokens {:gap "spacing.sm"}}}]}
              "button"         {:variant {:Size "Medium"}}}})
 
 (def web
@@ -51,9 +48,7 @@
                                          :set {:width 480}}]}
              "sidebar"        {:params {:items 6}
                                :adjust [{:layer "Sidebar"
-                                         :set {:width 256 :height 900}}
-                                        {:layer "Item {index}"
-                                         :set {:tokens {:paddingY "spacing.xs"}}}]}
+                                         :set {:width 256 :height 900}}]}
              "button"         {:variant {:Size "Small"}}}})
 
 (def all [ios web])

@@ -42,14 +42,12 @@
                       :layout {:type "flex" :dir "row" :alignItems "center"}
                       :layoutChild {:horizontalSizing "auto" :verticalSizing "auto"}
                       :tokens {:gap "spacing.xl"}
-                      :children [{:type "text"
+                      :children [{:type "recipe"
                                   :name "Link {index}"
                                   :repeat {:param "links"}
-                                  :text "Link {index}"
-                                  :tokens {:fill "color.text-muted"
-                                           :fontSize "font-size.sm"
-                                           :fontWeight "font-weight.medium"}
-                                  :vary [{:at 1 :set {:tokens {:fill "color.text"}}}]}]}
+                                  :use "nav-link"
+                                  :with {:label "Link {index}"}
+                                  :vary [{:at 1 :set {:variant {:State "Current"}}}]}]}
                      {:type "board"
                       :name "Actions"
                       :slot "actions"
@@ -91,32 +89,13 @@
                       :layout {:type "flex" :dir "column"}
                       :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
                       :tokens {:gap "spacing.xs"}
-                      :children [{:type "board"
+                      :children [{:type "recipe"
                                   :name "Item {index}"
                                   :repeat {:param "items"}
-                                  :layout {:type "flex" :dir "row" :alignItems "center"}
-                                  :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
-                                  :tokens {:fill "color.surface"
-                                           :borderRadius "radius.md"
-                                           :gap "spacing.md"
-                                           :paddingX "spacing.md"
-                                           :paddingY "spacing.sm"}
-                                  :vary [{:at 1 :set {:tokens {:fill "color.surface-muted"}}}]
-                                  :children [{:type "rect"
-                                              :name "Icon"
-                                              :placeholder "icon"
-                                              :width 16
-                                              :height 16
-                                              :tokens {:fill "color.text-muted"}
-                                              :vary [{:at 1 :set {:tokens {:fill "color.primary"}}}]}
-                                             {:type "text"
-                                              :name "Label"
-                                              :text "Item {index}"
-                                              :layoutChild {:horizontalSizing "fill"}
-                                              :tokens {:fill "color.text-muted"
-                                                       :fontSize "font-size.sm"
-                                                       :fontWeight "font-weight.medium"}
-                                              :vary [{:at 1 :set {:tokens {:fill "color.text"}}}]}]}]}
+                                  :use "nav-item"
+                                  :with {:label "Item {index}"}
+                                  :vary [{:at 1 :set {:variant {:State "Current"}}}]
+                                  :layoutChild {:horizontalSizing "fill"}}]}
                      {:type "board"
                       :name "Footer"
                       :slot "footer"
@@ -143,25 +122,101 @@
           :layout {:type "flex" :dir "row" :alignItems "center"}
           :layoutChild {:verticalSizing "auto"}
           :tokens {:fill "color.surface" :paddingX "spacing.sm" :paddingY "spacing.sm"}
-          :children [{:type "board"
+          :children [{:type "recipe"
                       :name "Tab {index}"
                       :repeat {:param "tabs"}
-                      :layout {:type "flex" :dir "column" :alignItems "center"}
-                      :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
-                      :tokens {:gap "spacing.xs" :paddingY "spacing.xs"}
-                      :children [{:type "rect"
-                                  :name "Icon"
-                                  :placeholder "icon"
-                                  :width 24
-                                  :height 24
-                                  :tokens {:fill "color.text-muted" :borderRadius "radius.sm"}
-                                  :vary [{:at 1 :set {:tokens {:fill "color.primary"}}}]}
-                                 {:type "text"
-                                  :name "Label"
-                                  :text "Tab {index}"
-                                  :tokens {:fill "color.text-muted"
-                                           :fontSize "font-size.xs"
-                                           :fontWeight "font-weight.medium"}
-                                  :vary [{:at 1 :set {:tokens {:fill "color.primary"}}}]}]}]}})
+                      :use "tab-bar-item"
+                      :with {:label "Tab {index}"}
+                      :vary [{:at 1 :set {:variant {:State "Current"}}}]
+                      :layoutChild {:horizontalSizing "fill"}}]}})
 
-(def all [top-bar sidebar bottom-tab-bar])
+(def nav-link
+  {:recipe 1
+   :name "nav-link"
+   :title "Nav link"
+   :purpose "One link of a top bar: a word for a place, marked when it is the current one."
+   :category "navigation"
+   :keywords ["menu link" "header link"]
+   :params [{:name "label" :type "text" :default "Link"
+             :description "The word for the place"}]
+   :variants [{:name "State" :values ["Default" "Current"]}]
+   :tree {:type "board"
+          :name "Nav link"
+          :layout {:type "flex" :dir "row" :alignItems "center"}
+          :layoutChild {:horizontalSizing "auto" :verticalSizing "auto"}
+          :tokens {:paddingY "spacing.xs"}
+          :children [{:type "text"
+                      :name "Label"
+                      :text "{label}"
+                      :tokens {:fill "color.text-muted"
+                               :fontSize "font-size.sm"
+                               :fontWeight "font-weight.medium"}
+                      :vary [{:on {:State "Current"} :set {:tokens {:fill "color.text"}}}]}]}})
+
+(def nav-item
+  {:recipe 1
+   :name "nav-item"
+   :title "Nav item"
+   :purpose "One place to go in a sidebar: an icon and a word, marked when it is the current one."
+   :category "navigation"
+   :keywords ["sidebar item" "menu item" "side nav"]
+   :params [{:name "label" :type "text" :default "Item"
+             :description "The word for the place"}]
+   :variants [{:name "State" :values ["Default" "Current"]}]
+   :tree {:type "board"
+          :name "Nav item"
+          :width 208
+          :layout {:type "flex" :dir "row" :alignItems "center"}
+          :layoutChild {:verticalSizing "auto"}
+          :tokens {:fill "color.surface"
+                   :borderRadius "radius.md"
+                   :gap "spacing.md"
+                   :paddingX "spacing.md"
+                   :paddingY "spacing.sm"}
+          :vary [{:on {:State "Current"} :set {:tokens {:fill "color.surface-muted"}}}]
+          :children [{:type "recipe"
+                      :name "Icon"
+                      :placeholder "icon"
+                      :use "icon"
+                      :variant {:Size "Small" :Tone "Muted"}
+                      :vary [{:on {:State "Current"} :set {:variant {:Tone "Primary"}}}]}
+                     {:type "text"
+                      :name "Label"
+                      :text "{label}"
+                      :layoutChild {:horizontalSizing "fill"}
+                      :tokens {:fill "color.text-muted"
+                               :fontSize "font-size.sm"
+                               :fontWeight "font-weight.medium"}
+                      :vary [{:on {:State "Current"} :set {:tokens {:fill "color.text"}}}]}]}})
+
+(def tab-bar-item
+  {:recipe 1
+   :name "tab-bar-item"
+   :title "Tab bar item"
+   :purpose "One tab of a phone's bottom bar: an icon over a word, marked when it is the current one."
+   :category "navigation"
+   :keywords ["bottom tab" "mobile tab"]
+   :params [{:name "label" :type "text" :default "Tab"
+             :description "The word under the icon"}]
+   :variants [{:name "State" :values ["Default" "Current"]}]
+   :tree {:type "board"
+          :name "Tab bar item"
+          :width 88
+          :layout {:type "flex" :dir "column" :alignItems "center"}
+          :layoutChild {:verticalSizing "auto"}
+          :tokens {:gap "spacing.xs" :paddingY "spacing.xs"}
+          :children [{:type "recipe"
+                      :name "Icon"
+                      :placeholder "icon"
+                      :use "icon"
+                      :variant {:Size "Large" :Tone "Muted"}
+                      :vary [{:on {:State "Current"} :set {:variant {:Tone "Primary"}}}]}
+                     {:type "text"
+                      :name "Label"
+                      :text "{label}"
+                      :tokens {:fill "color.text-muted"
+                               :fontSize "font-size.xs"
+                               :fontWeight "font-weight.medium"}
+                      :vary [{:on {:State "Current"} :set {:tokens {:fill "color.primary"}}}]}]}})
+
+(def all [top-bar sidebar bottom-tab-bar nav-link nav-item tab-bar-item])

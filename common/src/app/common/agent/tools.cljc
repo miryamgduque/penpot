@@ -16,6 +16,7 @@
    [app.common.agent.components :as cac]
    [app.common.agent.compose :as cap]
    [app.common.agent.document :as cad]
+   [app.common.agent.icons :as cai]
    [app.common.agent.layout :as cal]
    [app.common.agent.media :as cam]
    [app.common.agent.recipe-build :as carb]
@@ -61,6 +62,7 @@
    "insert_image"  cam/insert-image
    "search_icons"  cam/search-icons
    "insert_icon"   cam/insert-icon
+   "set_icons"     cai/set-icons
    "search_fonts"  cam/search-fonts
    "set_font"      cam/set-font
    "create_page"   cad/create-page
@@ -77,6 +79,7 @@
   {"insert_image" cam/insert-image-needs
    "search_icons" cam/search-icons-needs
    "insert_icon"  cam/insert-icon-needs
+   "set_icons"    cai/set-icons-needs
    "clone_shape"  cap/clone-shape-needs
    "build_tree"   cap/build-tree-needs
    "build_recipe" carb/build-recipe-needs})

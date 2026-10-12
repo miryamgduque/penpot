@@ -8,15 +8,14 @@
   "Document-level tools: pages, comments, versions, undo/redo and
   handoff codegen."
   (:require
+   [app.common.agent.document :as cad]
    [app.common.data.macros :as dm]
-   [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
    [app.common.uuid :as uuid]
    [app.main.data.comments :as dc]
    [app.main.data.common :as dcm]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-tools.common :as atc]
-   [app.main.data.workspace.agent-tools.structure :as ats]
    [app.main.data.workspace.pages :as dwpg]
    [app.main.data.workspace.undo :as dwu]
    [app.main.data.workspace.versions :as dwv-ver]
@@ -86,44 +85,19 @@
 ;; were never truncated in reality. Phase 15's backstop refuses oversized results
 ;; outright, so the failure is loud — this tool just narrows the ask first.
 
-(def ^:private markup-types #{"html" "svg"})
-
-(defn code-problem
-  "Why `generate_code` cannot run, or nil. Pure."
-  [objects ids type]
-  (or (when (empty? ids)
-        (str "generate_code: nothing to inspect — pass shapeIds, or select the"
-             " shapes you want the markup for"))
-      (ats/ids-problem "generate_code" objects ids)
-      (when (and (some? type) (not (contains? markup-types type)))
-        (dm/str "generate_code: \"" type "\" is not a markup type — use one of: "
-                (str/join ", " (sort markup-types))))))
+(def code-problem cad/code-problem)
 
 (defn generate-code
-  [{:keys [shapeIds type includeChildren]}]
+  [input]
   (let [state   @st/state
         objects (dsh/lookup-page-objects state)
-        ids     (if (seq shapeIds)
-                  (into [] (comp (keep parse-uuid) (distinct)) shapeIds)
-                  (vec (dsh/get-selected-ids state)))
-        type    (or type "html")]
-    (if-let [problem (code-problem objects ids type)]
+        plan    (cad/code-plan objects (dsh/get-selected-ids state) input)]
+    (if-let [problem (:problem plan)]
       (rx/throw (ex-info problem {}))
-      (let [roots    (mapv #(get objects %) ids)
-            ;; children? defaults true, as the plugin's does — a component's own
-            ;; styles without its children is rarely what a review wants
-            kids?    (not (false? includeChildren))
-            resolved (cond->> (cfh/clean-loops objects roots)
-                       kids? (mapcat #(cfh/get-children-with-self objects (:id %))))
-            markup   (cg/generate-formatted-markup-code objects type resolved)
-            style    (cg/generate-style-code objects "css" roots resolved nil)]
-        (rx/of {:markup markup
-                :style style
-                :shapes (count resolved)
-                :note (str "Penpot's own view of these shapes — compare it against "
-                           "the shipped code rather than reading the canvas. If the "
-                           "result is refused as too large, inspect fewer shapes or "
-                           "pass includeChildren: false.")})))))
+      (let [{:keys [type roots shapes]} plan]
+        (rx/of (cad/code-result (cg/generate-formatted-markup-code objects type shapes)
+                                (cg/generate-style-code objects "css" roots shapes nil)
+                                shapes))))))
 
 ;; --- Pages
 ;;

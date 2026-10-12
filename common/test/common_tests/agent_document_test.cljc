@@ -9,6 +9,7 @@
    [app.common.agent.document :as cad]
    [app.common.files.changes :as cfc]
    [app.common.types.file :as ctf]
+   [app.common.types.shape :as cts]
    [app.common.uuid :as uuid]
    [clojure.test :as t]))
 
@@ -50,3 +51,35 @@
                                                       {:check-design-doc (constantly "bad yaml")}))))
     (t/is (some? (:changes (cad/set-foundation {:data data} {:name "vibes" :doc doc}
                                                {:check-design-doc (constantly nil)}))))))
+
+;; --- generate_code: which shapes a call means
+
+(def ^:private board-id (uuid/next))
+(def ^:private child-id (uuid/next))
+(def ^:private other-id (uuid/next))
+
+(def ^:private objects
+  {uuid/zero (cts/setup-shape {:id uuid/zero :type :frame :name "Root Frame" :shapes [board-id other-id]})
+   board-id  (cts/setup-shape {:id board-id :type :frame :name "Card" :parent-id uuid/zero :frame-id uuid/zero
+                               :shapes [child-id]})
+   child-id  (cts/setup-shape {:id child-id :type :rect :name "bg" :parent-id board-id :frame-id board-id})
+   other-id  (cts/setup-shape {:id other-id :type :rect :name "loose" :parent-id uuid/zero :frame-id uuid/zero})})
+
+(t/deftest code-plan-names-the-shapes-to-write-out
+  (let [plan (cad/code-plan objects nil {:shapeIds [(str board-id)]})]
+    (t/is (= "html" (:type plan)))
+    (t/is (= [board-id] (mapv :id (:roots plan))))
+    ;; with its children, unless told otherwise
+    (t/is (= #{board-id child-id} (set (map :id (:shapes plan)))))
+    (t/is (= [board-id]
+             (mapv :id (:shapes (cad/code-plan objects nil {:shapeIds [(str board-id)] :includeChildren false})))))
+    ;; nothing named: what the user has selected
+    (t/is (= [other-id] (mapv :id (:roots (cad/code-plan objects [other-id] {})))))
+    (t/is (= "svg" (:type (cad/code-plan objects nil {:shapeIds [(str other-id)] :type "svg"}))))))
+
+(t/deftest code-plan-refusals
+  (t/is (re-find #"nothing to inspect" (:problem (cad/code-plan objects nil {}))))
+  (t/is (re-find #"\"pdf\" is not a markup type — use one of: html, svg"
+                 (:problem (cad/code-plan objects nil {:shapeIds [(str board-id)] :type "pdf"}))))
+  (t/is (some? (:problem (cad/code-plan objects nil {:shapeIds [(str (uuid/next))]}))))
+  (t/is (= 2 (:shapes (cad/code-result "<div/>" ".a{}" [1 2])))))

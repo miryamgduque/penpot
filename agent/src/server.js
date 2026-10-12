@@ -64,10 +64,9 @@ const WORKSPACE_UNDO_TOOLS = new Set(["undo_change", "redo_change"]);
 
 // With the tools on the server, a connected workspace says what the user is
 // looking at and does what only a workspace can: ask the user, move their
-// view, render with the engine they are looking at, and generate handoff code
-// (which renders the workspace's own components). Nothing else is sent to it,
-// except a call the server answered it cannot handle yet.
-const WORKSPACE_TOOLS = new Set(["ask_user", "switch_page", "render_board", "generate_code"]);
+// view, and render with the engine they are looking at. Nothing else is sent
+// to it, except a call the server answered it cannot handle yet.
+const WORKSPACE_TOOLS = new Set(["ask_user", "switch_page", "render_board"]);
 
 /**
  * Runs a tool on the Penpot backend for the turn the token names. The token

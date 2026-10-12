@@ -10,6 +10,7 @@
   (:require
    #?(:clj [clojure.walk :as walk])
    [app.common.agent.media :as cam]
+   [app.common.agent.read :as car]
    [app.common.agent.recipe-build :as carb]
    [app.common.agent.recipe-save :as cars-save]
    [app.common.agent.recipes :as cars]
@@ -590,6 +591,48 @@
         (t/is (= (outline a (-> out-a :result :id)) (outline b (-> out-b :result :id))))))
     (t/is (re-find #"no platform profile named \"windows\" — there are: android, ios, web"
                    (:problem (second (build data {:recipe "top-bar" :profile "windows"})))))))
+
+;; --- A linked library
+
+(t/deftest a-copy-of-a-library-component-takes-the-values-of-the-file-it-is-in
+  (let [[library _] (build data {:recipe "button"})
+        ;; another file, which links the one the button was built in
+        other-id    (uuid/next)
+        other       (ctf/make-file-data other-id (uuid/next))
+        other-page  (first (:pages other))
+        view-of     (fn [data]
+                      {:file-id other-id :page-id other-page :data data
+                       :objects (get-in data [:pages-index other-page :objects])
+                       :libraries {other-id {:id other-id :name "File" :data data}
+                                   file-id {:id file-id :name "Library" :data library}}
+                       :fonts {}})
+        run         (fn [data tool input]
+                      (let [out (cat/run tool (view-of data) input options)]
+                        [(cfc/process-changes data (:changes out)) out]))
+        seen        (car/read-design (view-of other) {})
+        button      (some #(when (= "Button" (:name %)) %) (:variants seen))
+        [placed out] (run other "create_instance"
+                          {:componentId (-> button :members first :componentId) :fileId (str file-id) :x 0 :y 0})
+        copy        (fn [data] (get-in data [:pages-index other-page :objects (parse-uuid (-> out :result :shapeId))]))
+        fill        (fn [data] (-> (copy data) :fills first :fill-color))]
+    (t/testing "the library's variant sets are there to place, with its file"
+      (t/is (= {:fileId (str file-id) :library "Library"} (select-keys button [:fileId :library])))
+      (t/is (< 1 (count (:members button)))))
+    (t/testing "a copy carries the names of the tokens, and the library's values"
+      (t/is (= file-id (:component-file (copy placed))))
+      (t/is (= "color.primary" (-> (copy placed) :applied-tokens :fill)))
+      (t/is (= "#2563eb" (fill placed))))
+    (t/testing "tokens of those names in the file it is in give it their values"
+      (let [[themed applied] (run placed "apply_token_pack" {:pack "bold"})
+            [dark _]         (run themed "activate_theme" {:name "Dark"})]
+        (t/is (pos? (-> applied :result :restyled)))
+        (t/is (= "#4f2bff" (fill themed)))
+        (t/is (= "#c6ff3d" (fill dark)))
+        ;; it is still a copy of the library's component, and not an edited one
+        (t/is (= file-id (:component-file (copy dark))))
+        (t/is (empty? (:touched (copy dark))))
+        (t/is (= 1.0 (-> (cau/capability-usage (get-in dark [:pages-index other-page :objects]) [] other-id)
+                         :shares :libraryReuse)))))))
 
 ;; --- The measure recipes are held against
 

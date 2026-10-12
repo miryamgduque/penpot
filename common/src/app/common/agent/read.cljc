@@ -311,6 +311,19 @@
                                                            (:variant-properties component))})))})))
        (vec)))
 
+(defn library-variant-sets
+  "The variant sets of every connected library, each with the library's file
+  id: `library-components` leaves variants out, and a library built of
+  variant sets would otherwise look empty."
+  [libraries current-file-id]
+  (into []
+        (mapcat (fn [[file-id {:keys [data name]}]]
+                  (when (not= file-id current-file-id)
+                    (->> (:pages data)
+                         (mapcat #(variant-sets data (get-in data [:pages-index % :objects])))
+                         (map #(assoc % :fileId (dm/str file-id) :library name))))))
+        libraries))
+
 (defn sets-and-themes
   "The token library's sets (with active flag) and themes — `read_design`
   flattens tokens into active sets only, so without this the agent cannot see
@@ -349,7 +362,7 @@
   [{:keys [file-id file-name data page-id libraries selected]} extras]
   (let [objects  (get-in data [:pages-index page-id :objects])
         top-ids  (get-in objects [uuid/zero :shapes])
-        variants (variant-sets data objects)
+        variants (into (variant-sets data objects) (library-variant-sets libraries file-id))
         comps    (library-components libraries file-id)
         lib      (:tokens-lib data)
 

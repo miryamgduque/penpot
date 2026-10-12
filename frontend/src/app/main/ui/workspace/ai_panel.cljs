@@ -49,6 +49,7 @@
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
+   [app.main.ui.ds.product.empty-state :refer [empty-state*]]
    [app.main.ui.ds.tooltip :refer [tooltip*]]
    [app.main.ui.hooks :as hooks]
    [app.main.ui.workspace.session-recorder :as session-recorder]
@@ -2203,18 +2204,17 @@
           (tr "workspace.agent.skills.no-match")])])))
 
 (mf/defc connect-empty*
-  "Shown in place of the whole panel body (tabs included) when no AI provider
-  is connected — a single call to action to set one up."
+  "Shown in place of the chat when no AI provider is connected: the DS empty
+  state plus a single call to action to set one up."
   {::mf/private true}
   []
   [:div {:class (stl/css :connect-empty)}
-   [:div {:class (stl/css :connect-icon)}
-    [:> i/icon* {:icon-id i/unplug :size "l"}]]
-   [:div {:class (stl/css :connect-title)} (tr "workspace.agent.connect.title")]
-   [:p {:class (stl/css :connect-subtitle)}
-    (tr "workspace.agent.connect.desc")]
-   [:a {:class (stl/css :connect-button)
-        :href "#/settings/integrations"}
+   [:> empty-state* {:icon i/unplug
+                     :class (stl/css :connect-state)
+                     :text (tr "workspace.agent.connect.desc")}]
+   [:> button* {:variant "primary"
+                :class (stl/css :compact-label)
+                :to "#/settings/integrations"}
     (tr "workspace.agent.connect.action")]])
 
 (mf/defc skill-create*

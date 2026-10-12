@@ -10226,10 +10226,6 @@ msgid "workspace.agent.skills.no-match"
 msgstr "No skills match these filters."
 
 #: src/app/main/ui/workspace/ai_panel.cljs
-msgid "workspace.agent.connect.title"
-msgstr "Ready when you are!"
-
-#: src/app/main/ui/workspace/ai_panel.cljs
 msgid "workspace.agent.connect.desc"
 msgstr "Works with Claude, ChatGPT, and others. Bring your own key, no subscription through Penpot."
 

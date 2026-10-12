@@ -453,7 +453,8 @@ export async function createHarness(options = {}) {
     try {
       await runTurn(
         // a side conversation gets none of the user's connected services
-        { ...request, sessionId, images: [], skills: [], mcpServers: [] },
+        // it sees only the images it is handed, never the user's
+        { ...request, sessionId, images: request.images ?? [], skills: [], mcpServers: [] },
         { emit, callTool, callServerTool: callTool, serverTools, signal },
       );
       return text;

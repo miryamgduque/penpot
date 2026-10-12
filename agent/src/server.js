@@ -351,6 +351,12 @@ export async function createAgentServer(options = {}) {
             side,
             fetchPage: (url) =>
               runBackendTool(backendUri, turnToken, { name: "fetch_web_page", input: { url } }, "{}", signal),
+            // by the exporter when no workspace is connected, else by the
+            // workspace, with the engine the user is looking at
+            render: (names) => {
+              const draw = { callId: randomUUID(), name: "render_board", input: { names } };
+              return tabless ? runServerTool(draw, signal) : callWorkspaceTool(draw, signal);
+            },
           })
         : await runServerTool(call, signal);
       // not handled on the server yet: the workspace runs it, as before

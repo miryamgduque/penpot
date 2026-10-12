@@ -1512,7 +1512,7 @@
 
 // User-skill playbook: read view + inline editor.
 .detail-body {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   max-block-size: 320px;
   overflow: auto;
@@ -1533,7 +1533,7 @@
 }
 
 .skill-edit-body {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   width: 100%;
   min-block-size: 220px;
@@ -1564,7 +1564,7 @@
 }
 
 .foundations-scope {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   display: flex;
   align-items: center;
@@ -1609,14 +1609,14 @@
 }
 
 .foundation-card-title {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-primary);
   font-weight: 600;
 }
 
 .foundation-card-summary {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-secondary);
   overflow: hidden;
@@ -1686,7 +1686,7 @@
 }
 
 .vibes-tokens-desc {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   margin: 0;
   color: var(--color-foreground-secondary);
@@ -1712,7 +1712,7 @@
 }
 
 .vibes-swatch-name {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-primary);
   overflow: hidden;
@@ -1721,7 +1721,7 @@
 }
 
 .vibes-swatch-value {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-secondary);
   font-family: "robotomono", monospace;
@@ -1750,7 +1750,7 @@
 }
 
 .vibes-token-label {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   flex: none;
   min-inline-size: 72px;
@@ -1758,7 +1758,7 @@
 }
 
 .vibes-type-summary {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-primary);
 }
@@ -1770,7 +1770,7 @@
 }
 
 .vibes-scale-chip {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   padding: 0 $sz-6;
   border: $b-1 solid var(--color-background-quaternary);
@@ -1781,7 +1781,7 @@
 }
 
 .vibes-editor {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   width: 100%;
   min-block-size: 260px;
@@ -1820,7 +1820,7 @@
 }
 
 .vibes-form-label {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   flex: none;
   min-inline-size: 72px;
@@ -1828,7 +1828,7 @@
 }
 
 .vibes-form-input {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   flex: 1;
   min-inline-size: 0;
@@ -1849,7 +1849,7 @@
 }
 
 .vibes-form-section-title {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   margin-block-start: var(--sp-s);
   color: var(--color-foreground-primary);
@@ -1893,7 +1893,7 @@
 }
 
 .vibes-form-note {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   margin: 0;
   color: var(--color-foreground-secondary);
@@ -1901,7 +1901,7 @@
 }
 
 .vibes-counter {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-secondary);
   text-align: end;
@@ -1912,7 +1912,7 @@
 }
 
 .vibes-problem {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-accent-error);
 }
@@ -1932,14 +1932,14 @@
 }
 
 .vibes-empty-title {
-  @include deprecated.body-medium-typography;
+  @include t.use-typography("body-medium");
 
   color: var(--color-foreground-primary);
   font-weight: 600;
 }
 
 .vibes-empty-text {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-secondary);
 }

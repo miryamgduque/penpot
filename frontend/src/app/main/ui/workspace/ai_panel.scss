@@ -158,6 +158,11 @@
 
   --menu-max-height: 320px;
 
+  // Item text at rest: Penpot's context menu and file menu both use the
+  // primary foreground for item titles, so the shared menu's dimmer rest
+  // colour is remapped here rather than per item.
+  --menu-foreground-color-rest: var(--color-foreground-primary);
+
   top: calc(100% + #{deprecated.$s-8});
   left: auto;
   inset-inline-end: 0;
@@ -251,6 +256,11 @@
 // The dropdown itself: Penpot's shared menu, opening below the ⋯ button.
 .more-menu {
   @extend %dropdown-wrapper;
+
+  // Item text at rest: Penpot's context menu and file menu both use the
+  // primary foreground for item titles, so the shared menu's dimmer rest
+  // colour is remapped here rather than per item.
+  --menu-foreground-color-rest: var(--color-foreground-primary);
 
   top: calc(100% + #{deprecated.$s-4});
   left: auto;
@@ -1143,6 +1153,11 @@
 
   --menu-max-height: 240px;
 
+  // Item text at rest: Penpot's context menu and file menu both use the
+  // primary foreground for item titles, so the shared menu's dimmer rest
+  // colour is remapped here rather than per item.
+  --menu-foreground-color-rest: var(--color-foreground-primary);
+
   // Opens upward, right-anchored so it lines up with the half-width trigger,
   // but free to grow left to fit full model names rather than truncating.
   inset: auto 0 calc(100% + #{deprecated.$s-4}) auto;
@@ -1231,6 +1246,11 @@
   @extend %dropdown-wrapper;
 
   --menu-max-height: 260px;
+
+  // Item text at rest: Penpot's context menu and file menu both use the
+  // primary foreground for item titles, so the shared menu's dimmer rest
+  // colour is remapped here rather than per item.
+  --menu-foreground-color-rest: var(--color-foreground-primary);
 
   top: auto;
   bottom: calc(100% + #{deprecated.$s-4});
@@ -2109,6 +2129,11 @@
 .skills-filter-dropdown {
   @extend %dropdown-wrapper;
 
+  // Item text at rest: Penpot's context menu and file menu both use the
+  // primary foreground for item titles, so the shared menu's dimmer rest
+  // colour is remapped here rather than per item.
+  --menu-foreground-color-rest: var(--color-foreground-primary);
+
   // Opens leftward (like .more-menu/.skill-menu) — the trigger sits at the
   // toolbar's trailing edge, right against the panel's own right edge, so
   // anchoring at `left: 0` pushed the panel off past the visible viewport.
@@ -2447,6 +2472,11 @@ textarea.create-input {
 // menu, anchored to the trailing edge below the ⋯ button.
 .skill-menu {
   @extend %dropdown-wrapper;
+
+  // Item text at rest: Penpot's context menu and file menu both use the
+  // primary foreground for item titles, so the shared menu's dimmer rest
+  // colour is remapped here rather than per item.
+  --menu-foreground-color-rest: var(--color-foreground-primary);
 
   top: calc(100% + #{deprecated.$s-4});
   left: auto;

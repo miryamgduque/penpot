@@ -826,7 +826,7 @@
 
 (t/deftest the-build-recipe-tool-names-every-recipe
   (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
-    (t/is (= ["button" "card" "pricing-table"] (get-in spec [:input-schema :properties :recipe :enum])))
+    (t/is (= 22 (count (get-in spec [:input-schema :properties :recipe :enum]))))
     (t/is (str/includes? (:description spec) "button — A pressable control"))
     (t/is (str/includes? (:description spec) "Params: label."))
     (t/is (str/includes? (:description spec) "Variants: Kind (Primary/Secondary/Ghost), Size (Medium/Small)."))))

@@ -120,7 +120,7 @@
 
 (t/deftest refusals-name-what-is-wrong
   (let [problem (fn [input] (:problem (second (build data input))))]
-    (t/is (re-find #"pass recipe — the name of one of: button, card, pricing-table" (problem {})))
+    (t/is (re-find #"pass recipe — the name of one of: alert, avatar, badge" (problem {})))
     (t/is (re-find #"no recipe named \"buton\"" (problem {:recipe "buton"})))
     (t/is (re-find #"\"text\" is not a param of \"button\"" (problem {:recipe "button" :params {:text "x"}})))
     (t/is (re-find #"\"Kind\" is one of" (problem {:recipe "button" :variant {:Kind "Loud"}})))
@@ -376,4 +376,4 @@
   (let [mine        (assoc-in (get recipes "card") [:tree :name] "Team card")
         [after out] (build data {:recipe "card"} (assoc-in options [:recipes "card"] mine))]
     (t/is (= "Team card" (:name (shape after (-> out :result :id)))))
-    (t/is (= ["button" "card" "pricing-table"] (sort (keys (carb/catalog {})))))))
+    (t/is (= (set (keys cars/builtin)) (set (keys (carb/catalog {})))))))

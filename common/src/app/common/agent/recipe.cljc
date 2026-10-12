@@ -55,7 +55,9 @@
   - `:repeat` builds the node that many times: a number, or `{:param n}`.
   - `:vary` is `[{:on {:Kind \"Secondary\"} :set {…}}]`: what this node has
     instead in the variants that match; `:set` takes `:tokens`, `:width`,
-    `:height`, `:layout`, `:layoutChild` and `:text`.
+    `:height`, `:layout`, `:layoutChild` and `:text`. In a repeated node an
+    entry may say `:at 1` in place of `:on`: what it has instead at that
+    turn, as the tab that is the open one.
 
   Where a number is taken, `{:param \"name\"}` stands for a param's value. In
   a string, `{name}` does, and `{index}` is the turn of the nearest repeated
@@ -456,9 +458,6 @@
 (defn- vary-problem
   [{:keys [axes] :as ctx} where kind vary]
   (cond
-    (empty? axes)
-    (dm/str where " is there, but the recipe has no variants")
-
     (not (vector? vary))
     (dm/str where " is not a list")
 
@@ -469,10 +468,22 @@
                 (not (map? entry))
                 (dm/str where " is not an object")
 
-                (key-problem where entry #{:on :set})
-                (key-problem where entry #{:on :set})
+                (key-problem where entry #{:on :at :set})
+                (key-problem where entry #{:on :at :set})
 
-                (not (and (map? (:on entry)) (seq (:on entry))))
+                (= (contains? entry :on) (contains? entry :at))
+                (dm/str where " needs one of `on` (axis values) or `at` (a turn of a repeat)")
+
+                (and (contains? entry :at) (not (:repeated? ctx)))
+                (dm/str where " has `at` outside a repeated node")
+
+                (and (contains? entry :at) (not (and (whole? (:at entry)) (<= 1 (:at entry) max-repeat))))
+                (dm/str where ".at is not a whole number from 1 to " max-repeat)
+
+                (and (contains? entry :on) (empty? axes))
+                (dm/str where " has `on`, but the recipe has no variants")
+
+                (and (contains? entry :on) (not (and (map? (:on entry)) (seq (:on entry)))))
                 (dm/str where " needs `on`: the axis values it applies to")
 
                 (not (and (map? (:set entry)) (seq (:set entry))))
@@ -824,9 +835,11 @@
 
 (defn- varied
   "The node with what its `:vary` gives it in this member."
-  [{:keys [member]} node]
+  [{:keys [member index]} node]
   (reduce (fn [node {:keys [on] :as entry}]
-            (if (every? (fn [[axis value]] (= value (get member (name axis)))) on)
+            (if (if (contains? entry :at)
+                  (= (:at entry) index)
+                  (every? (fn [[axis value]] (= value (get member (name axis)))) on))
               (reduce-kv (fn [node k v]
                            (if (contains? #{:tokens :layout :layoutChild} k)
                              (update node k merge v)

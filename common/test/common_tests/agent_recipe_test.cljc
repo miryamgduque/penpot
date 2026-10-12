@@ -34,6 +34,40 @@
     (t/is (= nm (:name recipe)))
     (t/is (nil? (car/problem recipe cars/builtin)))))
 
+(t/deftest the-catalog-is-the-one-that-was-planned
+  (t/is (= {"control"    ["button" "text-field" "select" "choice-control" "badge" "avatar"]
+            "container"  ["card" "list-item" "tabs" "alert" "modal"]
+            "navigation" ["top-bar" "sidebar" "bottom-tab-bar"]
+            "section"    ["hero" "feature-grid" "pricing-table" "form" "data-table"
+                          "stat-cards" "footer" "empty-state"]}
+           (update-vals (group-by :category cars/all) #(mapv :name %))))
+  (t/is (= 22 (count cars/builtin))))
+
+(defn- tree-nodes
+  [recipe]
+  (tree-seq map? :children (:tree recipe)))
+
+(t/deftest every-recipe-is-exemplary
+  (doseq [recipe cars/all]
+    (t/testing (:name recipe)
+      (t/testing "auto-layout: every board with children lays them out"
+        (t/is (every? #(some? (:layout %))
+                      (filter #(and (= "board" (:type %)) (seq (:children %))) (tree-nodes recipe)))))
+      (t/testing "token roles: every shape and text takes its color from a role, or has none"
+        (t/is (every? #(contains? (:tokens %) :fill)
+                      (filter #(contains? #{"rect" "ellipse" "text"} (:type %)) (tree-nodes recipe)))))
+      (t/testing "no raw color anywhere"
+        (t/is (nil? (re-find #"#[0-9a-fA-F]{3,8}\b|rgba?\(" (pr-str recipe))))))))
+
+(t/deftest controls-are-components-with-variants
+  (doseq [recipe (filter #(= "control" (:category %)) cars/all)]
+    (t/is (seq (:variants recipe)) (:name recipe))))
+
+(t/deftest sections-use-the-controls-they-show
+  (t/is (= {"hero" ["button"] "feature-grid" [] "pricing-table" ["button"] "form" ["text-field" "button"]
+            "data-table" [] "stat-cards" ["badge"] "footer" [] "empty-state" ["button"]}
+           (into {} (map (juxt :name car/uses)) (filter #(= "section" (:category %)) cars/all)))))
+
 (t/deftest the-examples-prove-the-format
   (t/testing "variants"
     (t/is (= ["Kind" "Size"] (mapv :name (:variants cars/button))))
@@ -87,8 +121,17 @@
                                            {:name "C" :values ["1" "2" "3"]}])))
   (t/is (re-find #"cannot say component: false"
                  (problem assoc :component false :variants [{:name "A" :values ["x" "y"]}])))
-  (t/is (re-find #"tree.vary is there, but the recipe has no variants"
+  (t/is (re-find #"tree.vary\[0\] has `on`, but the recipe has no variants"
                  (problem assoc-in [:tree :vary] [{:on {:A "x"} :set {:width 10}}])))
+  (t/is (re-find #"vary\[0\] has `at` outside a repeated node"
+                 (problem with-child {:type "rect" :vary [{:at 1 :set {:width 10}}]})))
+  (t/is (re-find #"vary\[0\] needs one of `on`"
+                 (problem with-child {:type "rect" :repeat 2 :vary [{:set {:width 10}}]})))
+  (t/is (nil? (problem with-child {:type "rect" :repeat 3 :vary [{:at 2 :set {:width 10}}]})))
+  (t/is (= [nil 10 nil]
+           (mapv :width (:children (car/expand (with-child minimal {:type "rect" :repeat 3
+                                                                    :vary [{:at 2 :set {:width 10}}]})
+                                               nil nil)))))
   (let [varied (assoc minimal :variants [{:name "Kind" :values ["Primary" "Ghost"]}])]
     (t/is (nil? (car/problem (assoc-in varied [:tree :vary]
                                        [{:on {:Kind "Ghost"} :set {:tokens {:fill "color.surface"}}}]))))

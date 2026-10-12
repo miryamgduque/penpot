@@ -618,6 +618,11 @@
     (t/testing "a key that names no text is said, and the rest is built"
       (t/is (= ["Plan 9 / Price"] (-> out :result :textsNotSet :keys)))
       (t/is (some? (-> out :result :id)))))
+  (t/testing "keys as they arrive from JSON, as keywords"
+    (let [[after out] (build data {:recipe "pricing-table" :params {:plans 2 :features 1}
+                                   :texts {(keyword "Plan 2 / Price") "$12"}})]
+      (t/is (nil? (-> out :result :textsNotSet)))
+      (t/is (= "$12" (words (shape after (get (-> out :result :ids) "Plan 2 / Price")))))))
   (t/testing "on an instance, by the layer's name"
     (let [[after out] (build data {:recipe "button" :texts {:Label "Go"}})]
       (t/is (= "Go" (words (child after (-> out :result :id) "Label"))))))

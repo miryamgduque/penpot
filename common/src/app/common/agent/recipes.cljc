@@ -14,6 +14,7 @@
    [app.common.agent.recipes.more-navigation :as more-navigation]
    [app.common.agent.recipes.more-sections :as more-sections]
    [app.common.agent.recipes.navigation :as navigation]
+   [app.common.agent.recipes.screens :as screens]
    [app.common.agent.recipes.sections :as sections]))
 
 (def button controls/button)
@@ -26,7 +27,8 @@
   "The catalog, in the order it is shown: controls, containers, navigation,
   sections."
   (into [] cat [controls/all containers/all navigation/all sections/all
-                more-controls/all more-containers/all more-navigation/all more-sections/all]))
+                more-controls/all more-containers/all more-navigation/all more-sections/all
+                screens/all]))
 
 (def builtin
   "Name → recipe."

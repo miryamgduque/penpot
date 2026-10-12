@@ -76,7 +76,7 @@
   [recipes]
   (->> (vals recipes)
        (group-by :category)
-       (sort-by (fn [[category _]] (.indexOf ["control" "container" "navigation" "section"] category)))
+       (sort-by (fn [[category _]] (.indexOf ["screen" "section" "navigation" "container" "control"] category)))
        (map (fn [[category found]]
               (dm/str "- " category ": "
                       (str/join "; " (map #(dm/str (:name %) " (" (str/lower (:title %)) ")")

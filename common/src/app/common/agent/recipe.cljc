@@ -17,7 +17,8 @@
      :name     \"pricing-table\"      its id, kebab-case
      :title    \"Pricing table\"
      :purpose  \"…\"                  what it is for, in a sentence
-     :category \"section\"            control, container, navigation, section
+     :category \"section\"            control, container, navigation, section,
+                                    screen
      :keywords [\"plans\" …]          optional, more words to be found by
      :params   [param …]            optional, what whoever builds it may set
      :variants [axis …]             optional, makes it a variant set
@@ -74,7 +75,7 @@
 
 (def version 1)
 
-(def categories #{"control" "container" "navigation" "section"})
+(def categories #{"control" "container" "navigation" "section" "screen"})
 
 (def placeholders #{"icon" "image"})
 

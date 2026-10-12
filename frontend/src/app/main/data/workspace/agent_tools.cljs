@@ -604,7 +604,7 @@
          "hand.")
     :input-schema {:type "object"
                    :properties {:query {:type "string" :description "a few words for the piece, e.g. \"sign up form\", \"navbar\", \"pricing\""}
-                                :category {:type "string" :enum ["control" "container" "navigation" "section"]
+                                :category {:type "string" :enum ["screen" "section" "navigation" "container" "control"]
                                            :description "list a whole category instead of, or as well as, searching"}}}}
 
    {:name "build_recipe"
@@ -710,7 +710,7 @@
                                 :name {:type "string" :description "its id, kebab-case, e.g. \"news-card\""}
                                 :title {:type "string" :description "its name as shown; the board's name when left out"}
                                 :purpose {:type "string" :description "what it is for, in a sentence — this is how it is found"}
-                                :category {:type "string" :enum ["control" "container" "navigation" "section"]}
+                                :category {:type "string" :enum ["control" "container" "navigation" "section" "screen"]}
                                 :keywords {:type "array" :items {:type "string"} :description "more words to find it by"}
                                 :params {:type "array"
                                          :items {:type "object"

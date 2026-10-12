@@ -235,6 +235,9 @@
             label        (some #(when (and (= "Label" (:name %)) (= "brand.ink" (-> % :applied-tokens :fill))) %)
                                (vals (objects after)))]
         (t/is (not (contains? (set (-> out :result :tokensCreated)) "color.primary")))
+        (t/is (nil? (get-in out [:result :roleTokens "color.primary"])))
+        (t/is (= {:token "brand.ink" :from "the token you named"}
+                 (get-in out [:result :roleTokens "color.on-primary"])))
         (t/is (not (contains? (token-names after) "color.on-primary")))
         (t/is (some? label))))))
 
@@ -258,6 +261,10 @@
                                                     options))
             [after out] (with-lib library {:recipe "button"})]
         (t/is (contains? (set (-> out :result :tokensCreated)) "color.primary"))
+        (t/testing "and the result says where each role's token came from"
+          (t/is (= {:token "color.primary" :from "a new token, with the value a linked library gives it now"}
+                   (get-in out [:result :roleTokens "color.primary"])))
+          (t/is (= ["color.primary"] (keys (get-in out [:result :roleTokens])))))
         (t/is (= "#aa00aa" (:value (get (ctob/get-all-tokens-map (:tokens-lib after)) "color.primary"))))
         (t/is (= "#aa00aa" (-> (main-of after {"Kind" "Primary" "Size" "Medium"}) :fills first :fill-color)))))
     (t/testing "a library that has the component: it is placed from there and not built again"

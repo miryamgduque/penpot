@@ -838,6 +838,8 @@
   (t/is (some #(= "critique_design" (:name %)) at/tool-specs))
   (t/is (str/includes? ask/inner-knowledge "Judge it, do not only check it"))
   (t/is (str/includes? ask/inner-knowledge "A direction before the first shape"))
+  (t/is (str/includes? ask/inner-knowledge "The critic at the first whole render, not at the end"))
+  (t/is (str/includes? ask/inner-knowledge "Its points are work, not notes"))
   (t/is (str/includes? (:description (first (filter #(= "build_tree" (:name %)) at/tool-specs)))
                        "component: true"))
   (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]

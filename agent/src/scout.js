@@ -70,11 +70,17 @@ const CRITIC_SYSTEM =
   "against what is actually there.\n" +
   "Answer in plain markdown, under 2500 characters, in exactly this " +
   "shape:\n" +
-  "**Verdict:** one sentence, with a score from 1 to 5 where 3 is " +
-  "'competent and forgettable'.\n" +
+  "**Verdict:** one sentence, with a whole score from 1 to 5: 1 broken or " +
+  "unreadable; 2 a default template, nothing chosen for this product; 3 " +
+  "competent and forgettable, choices made but none you would remember; 4 " +
+  "has a point of view that serves the brief, with flaws; 5 you would " +
+  "ship it. When in doubt between two, give the lower.\n" +
   "**Weakest points:** the three that would most improve it, strongest " +
-  "first. For each: what you see, why it weakens the screen, and ONE " +
-  "concrete change (name the element and what to do to it).\n" +
+  "first, numbered 1 to 3. For each: what you see, why it weakens the " +
+  "screen, and ONE concrete change (name the element and what to do to " +
+  "it). The builder will do them in this order and may stop early: put " +
+  "first the one that changes the screen most, and keep each doable in a " +
+  "few steps with shapes, text, color and spacing — not a redesign.\n" +
   "**Keep:** one or two things that work and should survive the changes.\n" +
   "No praise for its own sake, no list of everything you notice, no " +
   "advice that is not about this render. If the render is empty or " +
@@ -193,7 +199,13 @@ export async function runScoutTool(call, { provider, model, declared, side, fetc
       tools: [],
     });
     if (blank(text)) return refused("the critic returned nothing — look at the render yourself with render_board");
-    return answered({ critique: capDigest(text), boards });
+    return answered({
+      critique: capDigest(text),
+      boards,
+      next:
+        "These points are work, not notes. Do point 1 now and render; then 2 and 3 unless one would undo what the user asked for. " +
+        "Do not call critique_design again for this screen. When you present, answer each point: done and what changed, or not done and why.",
+    });
   }
 
   return refused(`unknown tool: ${call.name}`);

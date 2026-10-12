@@ -579,7 +579,14 @@
          "(type image), fill (hex), layout (set_layout fields, boards only), "
          "layoutChild (set_layout_child fields), tokens ([{name, properties}] "
          "as in apply_tokens), font ({family, variant}, text only), children "
-         "(boards only)}. Returns ids keyed by node name. On an error you get "
+         "(boards only)}. COMPONENTS in the same call: mark a board "
+         "`component: true` (it needs a name) and it becomes a main "
+         "component once built; every later node {type: \"instance\", of: "
+         "\"<that name>\", name, texts: {layer: words}, layoutChild} places "
+         "an instance of it with its own words — build what repeats ONCE "
+         "and place it N times (`componentId` for a component the file "
+         "already has). Returns ids keyed by node name, and `components` "
+         "(name → componentId). On an error you get "
          "a PARTIAL result naming what exists — repair with targeted calls, "
          "never re-send the tree. Asynchronous: verify with render_board.")
     :input-schema {:type "object"
@@ -618,9 +625,12 @@
          "{index} — {\"Heading\": \"Plans\", \"Plan 2 / Price\": \"$12\", "
          "\"Plan 2 / Choose\": \"Choose Team\"} — never one set_text per "
          "text afterwards. Returns the placed root `id`, `ids` by layer name, "
-         "`slots` (boards left for you to fill), `placeholders` (grey boxes "
-         "standing for icons and pictures: replace them or say which you "
-         "left), `mains` and `tokensCreated`. On an error you "
+         "`slots` (boards left for you to fill), `placeholders` (boxes "
+         "standing for icons and pictures: replace the icons with ONE "
+         "set_icons call, or say which you left), `mains` and "
+         "`tokensCreated`. What repeats inside a recipe (plans, rows, nav "
+         "items) is placed as instances of a component, the current one as "
+         "a variant. On an error you "
          "get a PARTIAL result naming what exists — repair with targeted "
          "calls, never build the recipe again. Asynchronous: verify with "
          "render_board.")
@@ -644,6 +654,28 @@
                                 :roles {:type "object"
                                         :description "role → the name of the file's token to bind it to, e.g. {\"color.primary\": \"brand.500\"}"}}
                    :required ["recipe"]}}
+
+   {:name "set_icons"
+    :description
+    (str "Puts real icons where placeholders are — MANY in one call. Use it "
+         "for every icon placeholder a recipe result lists, in place of "
+         "insert_icon. Each entry names a placeholder: `shapeId` alone, or "
+         "`shapeId` of an instance plus `layer`, the placeholder's layer "
+         "name inside it (a placeholder key \"Item 2 / Icon\" is shapeId = "
+         "ids[\"Item 2\"], layer = \"Icon\"). A plain box is replaced in "
+         "its place; an instance is swapped for the icon's own component, "
+         "made once per file — so icons end up as components too. The icon "
+         "takes the placeholder's size and its color token. Find ids with "
+         "search_icons.")
+    :input-schema {:type "object"
+                   :properties {:icons {:type "array"
+                                        :items {:type "object"
+                                                :properties {:shapeId {:type "string"}
+                                                             :layer {:type "string" :description "the placeholder's layer name under shapeId"}
+                                                             :icon {:type "string" :description "prefix:name, e.g. lucide:house"}
+                                                             :size {:type "number" :description "px, default 20"}}
+                                                :required ["shapeId" "icon"]}}}
+                   :required ["icons"]}}
 
    {:name "set_texts"
     :description
@@ -1181,7 +1213,7 @@
          "clone_shape"        (atx/clone-shape-tool input)
          "build_tree"         (atx/build-tree-tool input)
          ;; server only: there is no second implementation in the workspace
-         ("build_recipe" "find_recipes" "save_recipe" "set_texts")
+         ("build_recipe" "find_recipes" "save_recipe" "set_texts" "set_icons")
          (rx/of {:error (str name " runs on the server, and the server could not "
                              "run it here. Build with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)

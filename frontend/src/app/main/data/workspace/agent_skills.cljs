@@ -300,6 +300,19 @@
    "- A recipe is structure, not content or style. After build_recipe: set the words (set_text), fill the slots it names, and restyle by editing tokens — never by overriding colors on the shapes."
    "- When no recipe fits, build by hand with build_tree — and still use recipes for the parts that have one (button, text-field, badge…) instead of drawing them."])
 
+(defn team-recipes-section
+  "What the prompt says of the team's own recipes that are in use, or nil."
+  [state]
+  (let [recipes (remove :disabled (:team-recipes state))]
+    (when (seq recipes)
+      (str/join "\n"
+                (into ["## Your team's recipes"
+                       "The team keeps these of its own. Prefer them over the built-in ones; build them with build_recipe by name, and ask find_recipes for their params:"]
+                      (map (fn [{:keys [recipe overrides-built-in]}]
+                             (str "- " (:name recipe) " (" (:title recipe) "): " (:purpose recipe)
+                                  (when overrides-built-in " — used in place of the built-in one"))))
+                      recipes)))))
+
 (def inner-knowledge
   "The always-on knowledge layer, inlined into every system prompt."
   (str/join "\n" (concat governance [""] naming-conventions [""]

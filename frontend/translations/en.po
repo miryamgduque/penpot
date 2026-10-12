@@ -3915,6 +3915,90 @@ msgstr "by %s"
 msgid "dashboard.agent-skills.no-test"
 msgstr "No test action here — the dashboard has no open file to act on."
 
+#: src/app/main/ui/dashboard/sidebar.cljs
+msgid "labels.agent-recipes"
+msgstr "Agent Recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "title.agent-recipes"
+msgstr "Agent Recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.description"
+msgstr "A recipe is the structure of a common piece of UI. The agent builds from it in one step: auto-layout, tokens and components, the same way every time. Recipes hold structure, not style."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.new"
+msgstr "New recipe"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.edit-title"
+msgstr "Edit %s"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.editor-hint"
+msgstr "A recipe is JSON in the recipe format. It is checked when you save: anything outside the format is refused, and you are told what and where."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.import"
+msgstr "Import file"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.export"
+msgstr "Export"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.enable"
+msgstr "Enable"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.disable"
+msgstr "Disable"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.refused"
+msgstr "Not saved: %s"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.team-title"
+msgstr "Your team's recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.empty"
+msgstr "No team recipes yet. Write one, import a file, or ask the agent to save a board as a recipe."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.built-in-title"
+msgstr "Built-in recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.built-in-desc"
+msgstr "These come with Penpot and cannot be changed. To change one for your team, export it, edit it and import it under the same name: your team's recipe is then used in its place."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.built-in"
+msgstr "Built-in"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.replaces-built-in"
+msgstr "Used in place of the built-in one"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.disabled"
+msgstr "Disabled"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.origin.team"
+msgstr "Written in the team"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.origin.saved"
+msgstr "Saved from “%s”"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.origin.imported"
+msgstr "Imported from “%s”"
+
 #: src/app/main/ui/onboarding/questions.cljs:53
 msgid "labels.start"
 msgstr "Start"

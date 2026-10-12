@@ -38,6 +38,7 @@
    [app.main.data.workspace.session-persist :as dwsp]
    [app.main.data.workspace.skill-state :as skst]
    [app.main.data.workspace.slash-commands :as slc]
+   [app.main.data.workspace.team-recipes :as dwtr]
    [app.main.data.workspace.team-skills :as dwts]
    [app.main.data.workspace.user-skills :as dusk]
    [app.main.data.workspace.zoom :as dwz]
@@ -2732,6 +2733,8 @@
                 ;; team-promoted skills for the current team (US #12) — every
                 ;; member picks up promotions on panel open
                 (dwts/fetch-team-skills (:id (deref refs/team)))
+                ;; the team's own recipes, for the agent's index
+                (dwtr/fetch-team-recipes (:id (deref refs/team)))
                 (dwach/fetch-chats true)))
 
     [:aside {:class (stl/css :ai-panel)

@@ -542,7 +542,10 @@
     :fn (mg/resource "app/migrations/sql/0165-mod-file-agent-change-table.sql")}
 
    {:name "0166-mod-profile-mcp-server-table"
-    :fn (mg/resource "app/migrations/sql/0166-mod-profile-mcp-server-table.sql")}])
+    :fn (mg/resource "app/migrations/sql/0166-mod-profile-mcp-server-table.sql")}
+
+   {:name "0167-add-team-recipe-table"
+    :fn (mg/resource "app/migrations/sql/0167-add-team-recipe-table.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]

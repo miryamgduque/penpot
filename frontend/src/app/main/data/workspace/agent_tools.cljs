@@ -23,7 +23,8 @@
    [app.main.data.workspace.agent-tools.read :as atr]
    [app.main.data.workspace.agent-tools.structure :as ats]
    [app.main.data.workspace.agent-tools.tokens :as att]
-   [beicon.v2.core :as rx]))
+   [beicon.v2.core :as rx]
+   [cuerdas.core :as str]))
 
 ;; Re-exports for the production consumers (agent.cljs, ai_panel.cljs,
 ;; agent_chats.cljs) that predate the family split — they keep requiring
@@ -617,7 +618,10 @@
          "calls, never build the recipe again. Asynchronous: verify with "
          "render_board.")
     :input-schema {:type "object"
-                   :properties {:recipe {:type "string" :enum (vec (sort (keys cars/builtin)))}
+                   :properties {:recipe {:type "string"
+                                         :description (str "its name: one of the built-in ones ("
+                                                           (str/join ", " (sort (keys cars/builtin)))
+                                                           ") or one of the team's own")}
                                 :params {:type "object" :description "param → value; what is left out takes its default"}
                                 :variant {:type "object" :description "axis → value, e.g. {\"Kind\": \"Secondary\"}"}
                                 :parentId {:type "string" :description "board to place it into, at the end of its flow (optional)"}
@@ -626,6 +630,41 @@
                                 :roles {:type "object"
                                         :description "role → the name of the file's token to bind it to, e.g. {\"color.primary\": \"brand.500\"}"}}
                    :required ["recipe"]}}
+
+   {:name "save_recipe"
+    :description
+    (str "Saves a board of this file as a recipe for the whole team: the "
+         "reverse of build_recipe. Use it when the user asks to keep "
+         "something they built so the agent can build it again. It keeps "
+         "structure — layers and names, each board's layout, the words, and "
+         "the tokens named as roles (color.primary, spacing.md…) — and "
+         "leaves out colors and values written on the shapes. Every board "
+         "with layers needs a layout first. You name it and say what it is "
+         "for; `params` marks what whoever builds it may set: a text layer "
+         "whose words can be given, or (type boolean) a layer that can be "
+         "left out. `slots` marks boards to be filled after a build. A "
+         "recipe of the name of a built-in one replaces it for this team. "
+         "Tell the user what was saved and what was left out.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string" :description "the board to save; the selected one when left out"}
+                                :name {:type "string" :description "its id, kebab-case, e.g. \"news-card\""}
+                                :title {:type "string" :description "its name as shown; the board's name when left out"}
+                                :purpose {:type "string" :description "what it is for, in a sentence — this is how it is found"}
+                                :category {:type "string" :enum ["control" "container" "navigation" "section"]}
+                                :keywords {:type "array" :items {:type "string"} :description "more words to find it by"}
+                                :params {:type "array"
+                                         :items {:type "object"
+                                                 :properties {:name {:type "string" :description "letters and digits, starting in lower case"}
+                                                              :layer {:type "string" :description "the name of the layer it sets"}
+                                                              :type {:type "string" :enum ["text" "boolean"]}
+                                                              :description {:type "string"}}
+                                                 :required ["name" "layer"]}}
+                                :slots {:type "array"
+                                        :items {:type "object"
+                                                :properties {:name {:type "string"}
+                                                             :layer {:type "string" :description "the name of the board to fill"}}
+                                                :required ["name" "layer"]}}}
+                   :required ["name" "purpose" "category"]}}
 
    {:name "set_layout"
     :description
@@ -1114,7 +1153,7 @@
          "clone_shape"        (atx/clone-shape-tool input)
          "build_tree"         (atx/build-tree-tool input)
          ;; server only: there is no second implementation in the workspace
-         ("build_recipe" "find_recipes")
+         ("build_recipe" "find_recipes" "save_recipe")
          (rx/of {:error (str name " runs on the server, and the server could not "
                              "run it here. Build with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)

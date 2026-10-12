@@ -19,6 +19,8 @@
   (:require
    [app.binfile.common :as bfc]
    [app.common.agent.read :as car]
+   [app.common.agent.recipe-save :as cars-save]
+   [app.common.agent.recipes :as cars]
    [app.common.agent.tools :as cat]
    [app.common.agent.write :as caw]
    [app.common.exceptions :as ex]
@@ -36,6 +38,8 @@
    [app.features.file-snapshots :as fsnap]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.files :as files]
+   [app.rpc.commands.team-recipes :as team-recipes]
+   [app.rpc.commands.teams :as teams]
    [app.rpc.doc :as-alias doc]
    [app.rpc.permissions :as perms]
    [app.storage :as sto]
@@ -48,7 +52,7 @@
   "The tools the backend runs itself. The agent service asks a connected
   workspace to run every other tool."
   #{"read_design" "find_shapes" "audit_file" "get_page_meta"
-    "leave_comment" "list_comments" "save_version"})
+    "leave_comment" "list_comments" "save_version" "save_recipe"})
 
 (def ^:private fileless-tools
   #{"get_page_meta" "fetch_web_page" "turn_profile"})
@@ -345,6 +349,45 @@
                        (assoc :replies (dec (:count-comments thread)))))
                    (@get-comment-threads-fn cfg {::rpc/profile-id profile-id :file-id file-id}))})
 
+;; --- save_recipe
+;;
+;; The reverse of build_recipe: a board of the file written down as a recipe
+;; and kept with the file's team, where every member's agent finds it.
+
+(defmethod run-tool "save_recipe"
+  [_ {:keys [file-id file-name data page-id libraries selected]} {:keys [shapeId] :as input}
+   {:keys [::cfg ::profile-id]}]
+  (let [objects (get-in data [:pages-index page-id :objects])
+        id      (or (some-> shapeId str uuid/parse*)
+                    (first (filter #(contains? objects %) selected)))
+        team-id (:team-id (db/exec-one! cfg [sql:file-team file-id]))]
+    (when (nil? id)
+      (ex/raise :type :agent-tool
+                :hint "save_recipe: pass shapeId — the board to save — or select it first"))
+    (db/tx-run! cfg
+                (fn [{:keys [::db/conn]}]
+                  (teams/check-edition-permissions! conn profile-id team-id)
+                  (let [recipes (merge cars/builtin (team-recipes/enabled-recipes conn team-id))
+                        saved   (cars-save/from-board objects libraries id
+                                                      (select-keys input [:name :title :purpose :category
+                                                                          :keywords :params :slots])
+                                                      recipes)]
+                    (when (some? (:problem saved))
+                      (ex/raise :type :agent-tool :hint (str "save_recipe: " (:problem saved))))
+                    (team-recipes/store! conn team-id profile-id (:recipe saved)
+                                         {:origin "saved" :origin-note file-name})
+                    (cond-> {:recipe (-> saved :recipe :name)
+                             :params (mapv :name (-> saved :recipe :params))
+                             :replaces (cond
+                                         (contains? cars/builtin (-> saved :recipe :name)) "the built-in recipe of that name, for this team"
+                                         (contains? recipes (-> saved :recipe :name)) "the team's recipe of that name"
+                                         :else nil)
+                             :note (str "saved for the team — build it with build_recipe {recipe: \""
+                                        (-> saved :recipe :name) "\"}. Colors and other values written "
+                                        "on the shapes are not part of a recipe: it keeps structure, "
+                                        "words and the tokens that are roles.")}
+                      (seq (:notes saved)) (assoc :notes (:notes saved))))))))
+
 ;; A turn token lasts two hours; that is the window "this session" means here.
 (def ^:private max-agent-versions 10)
 
@@ -476,6 +519,8 @@
       {:file-id file-id
        :page-id page-id
        :team-fonts (team-fonts cfg (:project-id file))
+       ;; the team's own recipes, used over the built-in ones
+       :recipes (team-recipes/enabled-recipes cfg (:team-id (db/exec-one! cfg [sql:file-team file-id])))
        ;; the design rules the tool is held to
        :enforced-rules (vec (enforced-rules cfg file-id context))
        :revn (:revn file)

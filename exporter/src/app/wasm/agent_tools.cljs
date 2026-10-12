@@ -276,7 +276,8 @@
                  (backend/command! "get-agent-tool-page" {:token token :context context})
                  (resolve-needs token tool input)])
          (p/mcat
-          (fn [[_ {:keys [file-id page-id data libraries revn vern allowed-colors team-fonts enforced-rules]}
+          (fn [[_ {:keys [file-id page-id data libraries revn vern allowed-colors team-fonts enforced-rules
+                          recipes]}
                 resources]]
             (layout/install-bool-engine!)
             (let [;; which rules are active is the backend's to say: the
@@ -292,6 +293,7 @@
                           ;; what the user has selected, when a workspace said
                           :selected (into [] (keep #(when (string? %) (parse-uuid %))) (:selectedIds ctx))}]
               (->> (answer-of tool view input {:guard guard
+                                               :recipes recipes
                                                :resources resources
                                                :font-files (font-files token team-fonts)
                                                :check-design-doc design-doc-problem})

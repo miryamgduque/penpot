@@ -652,6 +652,19 @@
         (t/is (pos? (-> own :counts :copies)))
         (t/is (= 0.0 (-> own :shares :libraryReuse)))
         (t/is (= 1.0 (-> other :shares :libraryReuse))))))
+  (t/testing "and all of what a design system owns comes from a role"
+    (let [[built out] (build data {:recipe "pricing-table"})
+          system      (cau/system-usage (objects built) [(parse-uuid (-> out :result :id))])]
+      (doseq [kind [:color :typeSize :typeface :spacing :radius]]
+        (t/is (pos? (get-in system [:counts kind :with])) kind)
+        (t/is (= 1.0 (get-in system [:shares kind])) kind))
+      (t/is (= 1.0 (-> system :shares :restyle)))
+      ;; a token that is not a role is a token, and not one a pack reaches
+      (let [id     (parse-uuid (-> out :result :id))
+            custom (update-in (objects built) [id :applied-tokens] assoc :fill "brand.bg")
+            usage  (cau/system-usage custom [id])]
+        (t/is (= 1.0 (-> usage :shares :color)))
+        (t/is (> 1.0 (-> usage :shares :restyle))))))
   (t/testing "boxes drawn by hand use none of it"
     (let [board-id (uuid/next)
           rect-id  (uuid/next)
@@ -668,7 +681,12 @@
                 :withAColor 2 :colorTokenBound 0 :inComponents 0 :copies 0 :libraryCopies 0}
                (:counts usage)))
       (t/is (= {:autoLayout 0.0 :tokenBound 0.0 :colorTokenBound 0.0 :components 0.0 :libraryReuse nil}
-               (:shares usage)))))
+               (:shares usage)))
+      (t/is (= {:color {:with 2 :bound 0 :roleBound 0} :typeSize {:with 0 :bound 0 :roleBound 0}
+                :typeface {:with 0 :bound 0 :roleBound 0}
+                :spacing {:with 0 :bound 0 :roleBound 0} :radius {:with 0 :bound 0 :roleBound 0}}
+               (:counts (cau/system-usage drawn [board-id]))))
+      (t/is (= 0.0 (-> (cau/system-usage drawn [board-id]) :shares :restyle)))))
   (t/testing "nothing to count gives no share"
     (t/is (= {:autoLayout nil :tokenBound nil :colorTokenBound nil :components nil :libraryReuse nil}
              (:shares (cau/capability-usage {} []))))))

@@ -292,14 +292,21 @@
 ;; components: what the recipes are measured against. For whoever measures,
 ;; not for the model.
 (defmethod run-tool "capability_usage"
-  [_ {:keys [file-id data page-id]} {:keys [names shapeIds]} _]
+  [_ {:keys [file-id data page-id libraries]} {:keys [names shapeIds]} _]
   (let [objects (get-in data [:pages-index page-id :objects])
         named   (set (filter string? names))
         roots   (-> (into [] (keep #(when (string? %) (uuid/parse* %))) shapeIds)
                     (into (comp (filter #(contains? named (:name %))) (map :id)) (vals objects)))]
     (when (and (or (seq names) (seq shapeIds)) (empty? (filter #(contains? objects %) roots)))
       (ex/raise :type :agent-tool :hint "capability_usage: none of those boards is on this page"))
-    (cau/capability-usage objects roots file-id)))
+    (-> (cau/capability-usage objects roots file-id)
+        ;; and what a design system is held against
+        (assoc :system (cau/system-usage objects roots)
+               :file (let [lib (:tokens-lib data)]
+                       {:tokens (count (some-> lib ctob/get-all-tokens-map))
+                        :themes (count (some->> lib ctob/get-themes
+                                                (remove #(= ctob/hidden-theme-name (ctob/get-name %)))))
+                        :linkedLibraries (count (remove #(= file-id %) (keys libraries)))})))))
 
 (defmethod run-tool "turn_profile"
   [_ _ _ {:keys [::profile-id]}]

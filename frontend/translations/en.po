@@ -10534,14 +10534,6 @@ msgid "workspace.session-recorder.review-again"
 msgstr "Already reviewed — run it again"
 
 #: src/app/main/ui/workspace/session_recorder.cljs
-msgid "workspace.session-recorder.review-title"
-msgstr "Ask the agent to critique this session"
-
-#: src/app/main/ui/workspace/session_recorder.cljs
-msgid "workspace.session-recorder.export"
-msgstr "Export this session"
-
-#: src/app/main/ui/workspace/session_recorder.cljs
 msgid "workspace.session-recorder.export-title"
 msgstr "Copy this session as JSON"
 
@@ -10588,10 +10580,6 @@ msgstr "Stop recording"
 #: src/app/main/ui/workspace/session_recorder.cljs
 msgid "workspace.session-recorder.record"
 msgstr "Record this design session"
-
-#: src/app/main/ui/workspace/session_recorder.cljs
-msgid "workspace.session-recorder.stop-title"
-msgstr "Stop recording this design session"
 
 #: src/app/main/ui/workspace/session_recorder.cljs
 msgid "workspace.session-recorder.reason.file-closed"

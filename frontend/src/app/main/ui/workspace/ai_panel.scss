@@ -451,8 +451,10 @@
   color: var(--color-foreground-secondary);
 }
 
-// Apply just this rule's fixes: pushed to the end of the group head.
-.observer-group-fix {
+// Apply just this rule's fixes: pushed to the end of the group head. Set on
+// its DS tooltip wrapper, the flex item of the head. Parent-qualified so it
+// wins over the wrapper's own `fit-content` sizing whatever the CSS order.
+.observer-group-head .observer-group-fix-tip {
   margin-inline-start: auto;
 }
 
@@ -463,6 +465,13 @@
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+// The DS tooltip wrapper of a flagged layer (it shows the flag reason) keeps
+// the row full width.
+.observer-rows .observer-row-tip {
+  inline-size: 100%;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 // A flagged layer: reads as its own clickable surface (border + padding + a
@@ -648,9 +657,15 @@
   color: var(--color-foreground-secondary);
 }
 
-// Full width under the notice text, label centred.
-.handoff-action {
+// Full width under the notice text, label centred. The DS tooltip wrapper is
+// the flex item, so it stretches and the button fills it.
+.handoff-notice .handoff-action-tip {
   align-self: stretch;
+  inline-size: auto;
+}
+
+.handoff-action {
+  inline-size: 100%;
   justify-content: center;
 }
 
@@ -2111,18 +2126,29 @@
   border-block-start: deprecated.$s-1 solid var(--color-background-tertiary);
 }
 
+// The meter's DS tooltip wrapper takes the free width; the single column can
+// shrink to zero so the meter text ellipsizes.
+.chat-status .usage-meter-tip {
+  flex: 1;
+  min-inline-size: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+// Focusable (tabindex 0) so its hint is reachable by keyboard.
 .usage-meter {
   @include scaled-body-small;
 
-  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--color-foreground-secondary);
+
+  @include agent-button.hint-focus-ring;
 }
 
-.chat-clear {
+// On the New chat button's DS tooltip wrapper, the flex item of the row.
+.chat-status .chat-clear-tip {
   flex-shrink: 0;
 }
 

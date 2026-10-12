@@ -895,3 +895,159 @@
                                (by-name args))
                 :member (member recipe variant)}
                (:tree recipe)))
+
+;; --- Platform profiles
+;;
+;; A recipe says nothing of a platform. What a platform asks of it — other
+;; sizes, other spacing, another variant of a control — is a profile: a
+;; document of its own that names recipes and says what each has instead.
+;;
+;;   {:profile 1
+;;    :name    "ios"
+;;    :title   "iOS"
+;;    :purpose "…"
+;;    :recipes {"top-bar" {:params  {:links 0}            other defaults
+;;                         :adjust  [{:layer "Brand"      a layer, by name
+;;                                    :set {:tokens {:fontSize "font-size.md"}}}
+;;                                   {:layer "Action"     a recipe it places
+;;                                    :set {:variant {:Size "Small"}}}]}
+;;              "button"  {:variant {:Size "Medium"}}}}   the variant placed
+;;
+;; `:set` takes what `:vary` takes, and `:variant` on a layer that places a
+;; recipe. A component is built once in a file, for every platform: a profile
+;; picks its variant and leaves its layers alone. A recipe a profile does not
+;; name is as it was.
+
+(defn- profile-entry-problem
+  [where entry recipe]
+  (let [component? (or (seq (:variants recipe)) (true? (:component recipe)))
+        named      (group-by :name (nodes (:tree recipe)))
+        ctx        {:params (into {} (map (juxt :name identity)) (:params recipe))
+                    :axes   (into {} (map (juxt :name :values)) (:variants recipe))
+                    :repeated? true}]
+    (cond
+      (not (map? entry))
+      (dm/str where " is not an object")
+
+      (key-problem where entry #{:params :variant :adjust})
+      (key-problem where entry #{:params :variant :adjust})
+
+      (some? (arguments-problem recipe (:params entry)))
+      (dm/str where ".params: " (arguments-problem recipe (:params entry)))
+
+      (some? (member-problem recipe (:variant entry)))
+      (dm/str where ".variant: " (member-problem recipe (:variant entry)))
+
+      (and (contains? entry :adjust) component?)
+      (dm/str where " adjusts a component, which is built once for every platform — pick its"
+              " `variant` here, and adjust the recipes that place it")
+
+      (and (contains? entry :adjust) (not (vector? (:adjust entry))))
+      (dm/str where ".adjust is not a list")
+
+      :else
+      (some (fn [[i {:keys [layer] :as adjust}]]
+              (let [where (dm/str where ".adjust[" i "]")
+                    found (get named layer)
+                    kind  (:type (first found))]
+                (cond
+                  (not (map? adjust))
+                  (dm/str where " is not an object")
+
+                  (key-problem where adjust #{:layer :set})
+                  (key-problem where adjust #{:layer :set})
+
+                  (empty? found)
+                  (dm/str where " names the layer \"" layer "\", and \"" (:name recipe)
+                          "\" has none of that name — it has: "
+                          (str/join ", " (distinct (keep :name (nodes (:tree recipe))))))
+
+                  (not (and (map? (:set adjust)) (seq (:set adjust))))
+                  (dm/str where " needs `set`: what the layer has instead")
+
+                  (= "recipe" kind)
+                  (or (key-problem (dm/str where ".set") (:set adjust) #{:variant :layoutChild})
+                      (when-not (or (nil? (-> adjust :set :variant)) (map? (-> adjust :set :variant)))
+                        (dm/str where ".set.variant is not a map of axis to value")))
+
+                  :else
+                  (or (key-problem (dm/str where ".set") (:set adjust) (get set-keys kind))
+                      (fields-problem ctx (dm/str where ".set") (:set adjust) false)))))
+            (map-indexed vector (:adjust entry))))))
+
+(defn profile-problem
+  "Why `profile` is not a valid platform profile over `recipes` (name →
+  recipe), as a sentence that names what is wrong and where, or nil."
+  [profile recipes]
+  (let [problem
+        (cond
+          (not (map? profile))
+          "not a profile object"
+
+          (not= version (:profile profile))
+          (dm/str "`profile` is " (pr-str (:profile profile)) " — the format version read here is "
+                  version)
+
+          (key-problem "the profile" profile #{:profile :name :title :purpose :recipes})
+          (key-problem "the profile" profile #{:profile :name :title :purpose :recipes})
+
+          (not (and (string? (:name profile)) (re-matches name-re (:name profile))))
+          "needs a `name` in kebab-case, such as \"ios\""
+
+          (not (text? (:title profile)))
+          "needs a `title`"
+
+          (not (text? (:purpose profile)))
+          "needs a `purpose`"
+
+          (not (map? (:recipes profile)))
+          "needs `recipes`: a map of recipe name to what it has instead"
+
+          :else
+          (some (fn [[k entry]]
+                  (let [recipe (get recipes (name k))]
+                    (if (nil? recipe)
+                      (dm/str "recipes names \"" (name k) "\", and there is no recipe of that name")
+                      (profile-entry-problem (dm/str "recipes." (name k)) entry recipe))))
+                (:recipes profile)))]
+    (when (some? problem)
+      (if (and (map? profile) (string? (:name profile)))
+        (dm/str "profile \"" (:name profile) "\": " problem)
+        (dm/str "profile: " problem)))))
+
+(defn- profile-entry
+  [profile recipe]
+  (some (fn [[k entry]] (when (= (:name recipe) (name k)) entry)) (:recipes profile)))
+
+(defn profile-variant
+  "The variant of `recipe` that `profile` places, as axis → value, or nil."
+  [profile recipe]
+  (some-> (profile-entry profile recipe) :variant by-name not-empty))
+
+(defn with-profile
+  "`recipe` as `profile` has it: its params' defaults and its layers
+  adjusted. A recipe the profile does not name comes back as it was."
+  [recipe profile]
+  (let [entry    (profile-entry profile recipe)
+        defaults (by-name (:params entry))
+        adjusts  (group-by :layer (:adjust entry))
+        adjust   (fn [node]
+                   (reduce (fn [node {:keys [set]}]
+                             (reduce-kv (fn [node k v]
+                                          (if (contains? #{:tokens :layout :layoutChild :variant} k)
+                                            (update node k merge v)
+                                            (assoc node k v)))
+                                        node
+                                        set))
+                           node
+                           (get adjusts (:name node))))
+        walk     (fn walk [node]
+                   (cond-> (adjust node)
+                     (contains? node :children) (update :children #(mapv walk %))))]
+    (if (nil? entry)
+      recipe
+      (cond-> (update recipe :tree walk)
+        (seq defaults)
+        (update :params (fn [params]
+                          (mapv #(cond-> % (contains? defaults (:name %)) (assoc :default (get defaults (:name %))))
+                                params)))))))

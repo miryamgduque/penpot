@@ -12,6 +12,7 @@
   document / tokens / media / agentic / compose)."
   (:require
    [app.common.agent.recipes :as cars]
+   [app.common.agent.recipes.profiles :as profiles]
    [app.common.data.macros :as dm]
    [app.main.data.workspace.agent-tools.agentic :as atg]
    [app.main.data.workspace.agent-tools.common :as atc]
@@ -627,6 +628,12 @@
                                 :parentId {:type "string" :description "board to place it into, at the end of its flow (optional)"}
                                 :x {:type "number" :description "where on the page, when there is no parentId (optional)"}
                                 :y {:type "number"}
+                                :profile {:type "string"
+                                          :enum (vec (sort (keys profiles/builtin)))
+                                          :description (str "the platform it is for, when the user names one: "
+                                                            (str/join "; " (map #(str (:name %) " — " (:purpose %))
+                                                                                (sort-by :name profiles/all)))
+                                                            ". It adjusts sizes and spacing and picks variants; leave it out otherwise")}
                                 :roles {:type "object"
                                         :description "role → the name of the file's token to bind it to, e.g. {\"color.primary\": \"brand.500\"}"}}
                    :required ["recipe"]}}

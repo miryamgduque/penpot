@@ -25,6 +25,7 @@
    [app.common.agent.media :as cam]
    [app.common.agent.recipe :as car]
    [app.common.agent.recipes :as cars]
+   [app.common.agent.recipes.profiles :as profiles]
    [app.common.agent.structure :as cas]
    [app.common.agent.text :as catx]
    [app.common.agent.tokens :as cato]
@@ -43,6 +44,12 @@
   in as `:recipes`."
   [options]
   (merge cars/builtin (:recipes options)))
+
+(defn profiles
+  "Name → platform profile: the built-in ones, and over them the ones the
+  host hands in as `:profiles`."
+  [options]
+  (merge profiles/builtin (:profiles options)))
 
 (defn- component?
   [recipe]
@@ -370,6 +377,10 @@
       (place-recipe build (lookup (:use node)) node parent-id at spot options)
       (let [kind  (:type node)
             input (cond-> (select-keys node [:name :width :height])
+                    ;; a board that lays out takes its size from what it
+                    ;; holds: with nothing in it, it takes no room
+                    (and (= "board" kind) (some? (:layout node)) (nil? (:width node)))  (assoc :width 1)
+                    (and (= "board" kind) (some? (:layout node)) (nil? (:height node))) (assoc :height 1)
                     (some? parent-id) (assoc :parentId (dm/str parent-id))
                     (nil? parent-id)  (merge spot))
             build (then build at
@@ -606,8 +617,9 @@
 
 (defn recipe-problem
   "Why `build_recipe` cannot run, or nil."
-  [{:keys [objects]} {:keys [recipe params variant parentId]} options]
+  [{:keys [objects]} {:keys [recipe params variant parentId profile]} options]
   (let [recipes (catalog options)
+        known   (profiles options)
         found   (get recipes recipe)
         parent  (some->> parentId parse-uuid (get objects))]
     (cond
@@ -621,6 +633,13 @@
 
       (some? (car/problem found recipes))
       (dm/str "build_recipe: " (car/problem found recipes))
+
+      (and (some? profile) (not (contains? known profile)))
+      (dm/str "build_recipe: no platform profile named \"" profile "\" — there are: "
+              (str/join ", " (sort (keys known))))
+
+      (and (some? profile) (some? (car/profile-problem (get known profile) recipes)))
+      (dm/str "build_recipe: " (car/profile-problem (get known profile) recipes))
 
       (some? (car/arguments-problem found params))
       (dm/str "build_recipe: " (car/arguments-problem found params))
@@ -673,11 +692,20 @@
   "`:recipes` in the options are the host's own recipes, over the built-in
   ones. A build that is refused part-way keeps what it made: the answer
   carries those changes and says what exists and where it stopped."
-  [view {:keys [recipe params variant parentId x y roles] :as input} options]
+  [view {:keys [recipe params variant parentId x y roles profile] :as input} options]
   (if-let [problem (recipe-problem view input options)]
     {:problem problem}
-    (let [recipes (catalog options)
+    (let [platform (get (profiles options) profile)
+          ;; each recipe as the platform has it; with none, as it is
+          recipes (cond->> (catalog options)
+                    (some? platform)
+                    (into {} (map (fn [[nm found]] [nm (car/with-profile found platform)]))))
           found   (get recipes recipe)
+          ;; the variant the platform places, unless the call says another
+          variant (if (some? platform)
+                    (merge (car/profile-variant platform found)
+                           (into {} (map (fn [[k v]] [(name k) v])) variant))
+                    variant)
           all     (involved recipes found)
           plan    (token-plan view all roles)]
       (if (contains? plan :problem)
@@ -697,7 +725,7 @@
                         (mapv :name (:create plan)))
               node    (cond-> {:type "recipe" :use recipe}
                         (some? params)  (assoc :with (into {} (map (fn [[k v]] [(name k) v])) params))
-                        (some? variant) (assoc :variant variant))
+                        (seq variant)   (assoc :variant variant))
               spot    (when (nil? parentId)
                         (cond-> (free-spot (:view build))
                           (some? x) (assoc :x x)

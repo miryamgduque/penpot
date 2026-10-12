@@ -829,6 +829,8 @@
   (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
     (t/is (str/includes? (get-in spec [:input-schema :properties :recipe :description]) "pricing-table"))
     (t/is (str/includes? (:description spec) "find_recipes")))
+  (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
+    (t/is (= ["ios" "web"] (get-in spec [:input-schema :properties :profile :enum]))))
   (t/is (some #(= "find_recipes" (:name %)) at/tool-specs))
   (t/is (some #(= "save_recipe" (:name %)) at/tool-specs)))
 

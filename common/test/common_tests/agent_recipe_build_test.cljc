@@ -522,3 +522,36 @@
           {:keys [recipe notes]} (saved built (-> out :result :id) {:name "x" :purpose "x" :category "section"})]
       (t/is (re-find #"not roles were left out \(brand.500\)" (first notes)))
       (t/is (nil? (:tokens (some #(when (= "Illustration" (:name %)) %) (-> recipe :tree :children))))))))
+
+;; --- Built for a platform
+
+(t/deftest a-profile-is-applied-when-a-recipe-is-built
+  (let [[plain out1] (build data {:recipe "top-bar"})
+        [ios out2]   (build data {:recipe "top-bar" :profile "ios"})
+        action       (fn [data out] (child data (-> out :result :id) "Action"))
+        placed       (fn [data shape]
+                       (into {} (map (juxt :name :value))
+                             (:variant-properties (ctkl/get-component data (:component-id shape)))))]
+    (t/is (= 1200 (:width (shape plain (-> out1 :result :id)))))
+    (t/is (= 393 (:width (shape ios (-> out2 :result :id)))))
+    (t/is (= 4 (count (:shapes (child plain (-> out1 :result :id) "Links")))))
+    (t/is (empty? (:shapes (child ios (-> out2 :result :id) "Links"))))
+    (t/testing "a board with nothing in it takes no room"
+      (t/is (= [1 1] ((juxt :width :height) (child ios (-> out2 :result :id) "Links")))))
+    (t/is (= {"Kind" "Primary" "Size" "Small"} (placed plain (action plain out1))))
+    (t/is (= {"Kind" "Ghost" "Size" "Small"} (placed ios (action ios out2))))
+    (t/testing "what the call says wins over the profile"
+      (let [[after out] (build data {:recipe "top-bar" :profile "ios" :params {:links 2}})]
+        (t/is (= 2 (count (:shapes (child after (-> out :result :id) "Links")))))))
+    (t/testing "a component is placed in the variant the platform asks for"
+      (let [[web out]   (build data {:recipe "button" :profile "web"})
+            [web2 out2] (build data {:recipe "button" :profile "web" :variant {:Size "Medium"}})]
+        (t/is (= {"Kind" "Primary" "Size" "Small"} (placed web (shape web (-> out :result :id)))))
+        (t/is (= {"Kind" "Primary" "Size" "Medium"} (placed web2 (shape web2 (-> out2 :result :id)))))))
+    (t/testing "a recipe the profile does not name is built as ever"
+      (let [[a out-a] (build data {:recipe "empty-state"})
+            ;; on the same file, so both place the same button
+            [b out-b] (build a {:recipe "empty-state" :profile "ios"})]
+        (t/is (= (outline a (-> out-a :result :id)) (outline b (-> out-b :result :id))))))
+    (t/is (re-find #"no platform profile named \"android\" — there are: ios, web"
+                   (:problem (second (build data {:recipe "top-bar" :profile "android"})))))))

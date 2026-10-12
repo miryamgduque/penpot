@@ -297,6 +297,7 @@
    (carb/index cars/builtin)
    "- **Before you build anything structural, look here first.** If a piece you are about to build is in the catalog — or might be — call find_recipes with a few words for it, then build_recipe. One call builds what would take you dozens, and builds it the same way every time."
    "- A screen is usually several recipes: a top-bar, a hero, a form, each placed into the screen's board with `parentId`. Build the screen's board, then the recipes into it."
+   "- Recipes say nothing of a platform. When the work is for one — an iPhone app, a desktop web page — pass `profile` (ios, web) to build_recipe: it sets the platform's sizes and spacing and picks the variants it uses."
    "- A recipe is structure, not content or style. After build_recipe: set the words (set_text), fill the slots it names, and restyle by editing tokens — never by overriding colors on the shapes."
    "- When no recipe fits, build by hand with build_tree — and still use recipes for the parts that have one (button, text-field, badge…) instead of drawing them."])
 

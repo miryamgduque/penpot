@@ -419,6 +419,21 @@
              (cb/with-page-id page-id)
              (cb/with-objects objects)
              (cb/update-shapes [id] (d/patch-object attrs))
+             ;; a text that fills its parent, or keeps a width, wraps to it
+             ;; and grows down; one that hugs grows with its words. Without
+             ;; this a filling text falls back to the width of its words the
+             ;; next time its parent is laid out — in every copy of it, too
+             (cb/update-shapes [id]
+                               (fn [shape]
+                                 (let [sizing (:layout-item-h-sizing attrs)]
+                                   (cond-> shape
+                                     (and (cfh/text-shape? shape) (not= :fixed (:grow-type shape))
+                                          (contains? #{:fill :fix} sizing))
+                                     (assoc :grow-type :auto-height)
+
+                                     (and (cfh/text-shape? shape) (not= :fixed (:grow-type shape))
+                                          (= :auto sizing))
+                                     (assoc :grow-type :auto-width)))))
              ;; a hug parent cannot hold a fill child, and the other way round:
              ;; the same corrections the sidebar applies
              (cb/update-shapes (vec (cfh/get-children-ids objects id))

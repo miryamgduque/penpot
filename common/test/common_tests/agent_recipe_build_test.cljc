@@ -719,6 +719,13 @@
     (t/testing "each item now holds an instance of its own icon"
       (t/is (= "house" (:name (ctkl/get-component after (:component-id (in-item "Item 1"))))))
       (t/is (= "folder" (:name (ctkl/get-component after (:component-id (in-item "Item 2")))))))
+    (t/testing "and its strokes take the color token the placeholder had: the current item's is another"
+      (let [drawn (fn [key] (->> (cfh/get-children-ids (objects after) (:id (in-item key)))
+                                 (map #(get (objects after) %))
+                                 (filter #(= :path (:type %)))
+                                 (first)))]
+        (t/is (= "color.primary" (-> (drawn "Item 1") :applied-tokens :stroke-color)))
+        (t/is (= "color.text-muted" (-> (drawn "Item 2") :applied-tokens :stroke-color)))))
     (t/testing "the item is still an instance of the same component"
       (t/is (= (:component-id (shape built (get ids "Item 1")))
                (:component-id (shape after (get ids "Item 1"))))))
@@ -729,6 +736,14 @@
         (t/is (nil? (-> done2 :result :componentsCreated)))
         (t/is (= 2 (count (filter #(= "Icon" (:path %)) (ctkl/components-seq again)))))))
     (t/is (empty? (errors after)))))
+
+(t/deftest a-text-that-fills-its-parent-wraps-to-it
+  (let [[after out] (build data {:recipe "table-row"})
+        cell        (child after (-> out :result :id) "Cell 1")
+        [after2 o2] (build data {:recipe "button"})]
+    (t/is (= :auto-height (:grow-type cell)))
+    (t/testing "one that hugs keeps growing with its words"
+      (t/is (= :auto-width (:grow-type (child after2 (-> o2 :result :id) "Label")))))))
 
 (t/deftest a-plain-box-that-stands-for-an-icon-is-replaced-in-its-place
   (let [box-id      (uuid/next)

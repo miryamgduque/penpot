@@ -17,6 +17,7 @@
    [app.main.data.modal :as modal]
    [app.main.data.nitrate :as dnt]
    [app.main.data.team :as dtm]
+   [app.main.refs :as refs]
    [app.main.store :as st]
    [app.main.ui.components.dropdown-menu :refer [dropdown-menu*
                                                  dropdown-menu-item*]]
@@ -67,6 +68,8 @@
         ;; so none of those options apply to it.
         show-team-management?
         (not (:is-default team))
+
+        agent-enabled? (mf/deref refs/agent-enabled?)
 
         {org-default-team-id :default-team-id
          org-leave-fn        :leave-fn}
@@ -193,7 +196,7 @@
                                    :class (stl/css :options-item)}
            (tr "labels.webhooks")])
 
-        (when (contains? cf/flags :design-agent)
+        (when ^boolean agent-enabled?
           [:> dropdown-menu-item* {:on-click on-skills-click
                                    :class (stl/css :options-item)
                                    :data-testid "team-skills"}

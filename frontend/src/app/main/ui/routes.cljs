@@ -11,6 +11,7 @@
    [app.common.uri :as u]
    [app.common.uuid :as uuid]
    [app.config :as cf]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.team :as dtm]
    [app.main.errors :as errors]
    [app.main.features :as features]
@@ -66,7 +67,9 @@
         (concat
          (when (contains? cf/flags :admin-console)
            [:nitrate-entry])
-         (when (contains? cf/flags :design-agent)
+         ;; instance scope: the route set is built once, before any profile
+         ;; is known
+         (when (agent-access/instance-enabled?)
            [:dashboard-skills
             :dashboard-agent-skills])
          (when *assert*

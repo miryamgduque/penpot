@@ -16,6 +16,7 @@
    [app.common.types.tokens-lib :as ctob]
    [app.common.types.tokens-status :as ctos]
    [app.config :as cf]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.slash-commands :as slc]
@@ -310,6 +311,17 @@
                (when-let [file-id (:current-file-id state)]
                  (dm/get-in state [:recent-fonts file-id])))
              st/state))
+
+(def agent-enabled?
+  "Whether the design agent is on for the current user, at account scope.
+  See `app.main.data.agent-access`."
+  (l/derived agent-access/agent-enabled? st/state))
+
+(defn make-agent-enabled-ref
+  "Ref of whether the design agent is on for the current user in the file
+  `file-id`. Memoize it in components."
+  [file-id]
+  (l/derived #(agent-access/agent-enabled? % file-id) st/state))
 
 (def ai-panel-open?
   "Whether the All-In Penpot (Agents) panel is open for the current file.

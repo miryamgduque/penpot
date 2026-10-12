@@ -9,6 +9,7 @@
    [frontend-tests.code-gen-style-test]
    [frontend-tests.composable-tests.comp.sync-test]
    [frontend-tests.copy-as-svg-test]
+   [frontend-tests.data.agent-access-test]
    [frontend-tests.data.agent-test]
    [frontend-tests.data.agent-tools-test]
    [frontend-tests.data.ai-providers-test]
@@ -183,6 +184,7 @@
    'frontend-tests.code-gen-style-test
    'frontend-tests.composable-tests.comp.sync-test
    'frontend-tests.copy-as-svg-test
+   'frontend-tests.data.agent-access-test
    'frontend-tests.data.agent-test
    'frontend-tests.data.agent-tools-test
    'frontend-tests.data.ai-providers-test

@@ -89,6 +89,7 @@
         on-nav-skills        (mf/use-fn #(st/emit! (dcm/go-to-dashboard-skills)))
 
         route                (mf/deref refs/route)
+        agent-enabled?       (mf/deref refs/agent-enabled?)
         invite-email         (-> route :query-params :invite-email)
         team-id              (:id team)
 
@@ -139,7 +140,7 @@
        (when (contains? cfg/flags :webhooks)
          [:li {:class (when webhooks-section? (stl/css :active))}
           [:a {:on-click on-nav-webhooks} (tr "labels.webhooks")]])
-       (when (contains? cfg/flags :design-agent)
+       (when ^boolean agent-enabled?
          [:li {:class (when skills-section? (stl/css :active))}
           [:a {:on-click on-nav-skills} (tr "labels.skills")]])
        [:li {:class (when settings-section? (stl/css :active))}

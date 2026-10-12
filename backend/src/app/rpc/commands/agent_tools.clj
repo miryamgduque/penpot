@@ -56,7 +56,7 @@
 (def ^:private service-tools
   "What the agent service asks for on its own account, to build a tool it
   runs itself. Not offered to the model."
-  #{"fetch_web_page" "turn_profile"})
+  #{"fetch_web_page" "turn_profile" "check_page"})
 
 (def engine-tools
   "The tools that change a file. They need the render engine to lay things
@@ -260,6 +260,25 @@
      :meta meta
      :note (str "metadata only — fetch_page answers content "
                 "questions, screenshot_page shows the visual")}))
+
+;; With no workspace connected there is no view to move: switching page is the
+;; agent service remembering which page the conversation's tools act on. This
+;; tells it whether the file has that page.
+(defmethod run-tool "check_page"
+  [_ {:keys [data]} {:keys [pageId]} _]
+  (let [page-id (when (string? pageId) (uuid/parse* pageId))]
+    (cond
+      (nil? page-id)
+      (ex/raise :type :agent-tool
+                :hint "switch_page: pageId is required (see the pages in read_design)")
+
+      (not (contains? (:pages-index data) page-id))
+      (ex/raise :type :agent-tool
+                :hint (str "switch_page: no page with id " pageId " in this file — see read_design"))
+
+      :else
+      {:pageId (str page-id)
+       :name (get-in data [:pages-index page-id :name])})))
 
 (defmethod run-tool "turn_profile"
   [_ _ _ {:keys [::profile-id]}]

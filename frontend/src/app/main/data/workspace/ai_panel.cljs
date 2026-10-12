@@ -18,6 +18,7 @@
    [app.common.data.macros :as dm]
    [app.common.uuid :as uuid]
    [app.config :as cf]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.ai-providers :as dai]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
@@ -41,10 +42,11 @@
 (defn- set-open
   [state open?]
   (if-let [file-id (:current-file-id state)]
-    ;; the panel never opens without the flag, whatever asks for it (header
-    ;; button, shortcut, another event)
+    ;; the panel never opens while the agent is off, whatever asks for it
+    ;; (header button, shortcut, another event)
     (assoc-in state [:ai-panel file-id :open?]
-              (and (boolean open?) (contains? cf/flags :design-agent)))
+              (and (boolean open?)
+                   (agent-access/agent-enabled? state file-id)))
     state))
 
 (declare start-watcher)

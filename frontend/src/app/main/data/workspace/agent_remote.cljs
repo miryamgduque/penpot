@@ -160,12 +160,21 @@
                            :content (str "The workspace could not save its changes: "
                                          (or (ex-message cause) "unknown error"))})))))
 
+(defn tool-display-name
+  "A tool's name as the transcript shows it. A tool of a service the user
+  connected is `mcp__<service>__<tool>` on the wire; it reads better, and
+  says whose it is, as `<service>: <tool>`."
+  [name]
+  (if-let [[_ service tool] (re-matches #"^mcp__(.+?)__(.+)$" (str name))]
+    (str service ": " tool)
+    name))
+
 (defn- server-tool-event
   "A tool the server ran, as the transcript shows any other tool: refused by
   a design rule, failed, or done."
   [{:keys [name input content isError rule]}]
   (agent/tool-outcome->event
-   {:call {:name name :input (or input {})}
+   {:call {:name (tool-display-name name) :input (or input {})}
     :status (cond (some? rule) :rejected isError :error :else :ok)
     :rule rule
     :detail (when isError content)

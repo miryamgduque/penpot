@@ -461,6 +461,14 @@
                 :hint "the server address must start with https://"))
     (ssrf/validate-uri uri)))
 
+(defn- disabled-tools
+  "The tools of a server its owner switched off, by the server's own names."
+  [row]
+  (or (try
+        (some-> (:disabled-tools row) json/decode vec)
+        (catch Throwable _ nil))
+      []))
+
 (defn- mcp-server-row->entry
   "What a client may know of a registered server."
   [row]
@@ -468,7 +476,8 @@
    :name (:name row)
    :url (:url row)
    :has-token (some? (:token row))
-   :is-enabled (:is-enabled row)})
+   :is-enabled (:is-enabled row)
+   :disabled-tools (disabled-tools row)})
 
 (defn- get-mcp-server-rows
   [cfg profile-id]
@@ -490,14 +499,17 @@
    [:url [:string {:min 1 :max 2048}]]
    ;; left out: the stored token is kept; empty: it is removed
    [:token {:optional true} [:string {:max 4096}]]
-   [:is-enabled {:optional true} ::sm/boolean]])
+   [:is-enabled {:optional true} ::sm/boolean]
+   ;; left out: what was switched off stays switched off
+   [:disabled-tools {:optional true}
+    [:vector {:max 256} [:string {:min 1 :max 128}]]]])
 
 (sv/defmethod ::set-agent-mcp-server
   "Connects an MCP server under `name`, or changes the one that has it."
   {::doc/added "2.20"
    ::sm/params schema:set-agent-mcp-server
    ::db/transaction true}
-  [cfg {:keys [::rpc/profile-id name url token is-enabled] :as params}]
+  [cfg {:keys [::rpc/profile-id name url token is-enabled disabled-tools] :as params}]
   (check-mcp-enabled!)
   (when-not (re-matches mcp-server-name-re name)
     (ex/raise :type :validation
@@ -509,7 +521,13 @@
         token    (cond
                    (not (contains? params :token)) (:token existing)
                    (str/blank? token)              nil
-                   :else                           (encrypt-key cfg token))]
+                   :else                           (encrypt-key cfg token))
+        off      (cond
+                   (some? disabled-tools)        (json/encode (vec (distinct disabled-tools)))
+                   ;; another address is another server: its tools are not
+                   ;; the ones that were switched off
+                   (= url (:url existing))       (:disabled-tools existing)
+                   :else                         nil)]
     (when (and (nil? existing) (>= (count rows) max-mcp-servers))
       (ex/raise :type :restriction
                 :code :mcp-servers-limit-reached
@@ -518,6 +536,7 @@
           (db/update! cfg :profile-mcp-server
                       {:url url
                        :token token
+                       :disabled-tools off
                        :is-enabled (if (some? is-enabled) is-enabled (:is-enabled existing))
                        :updated-at (ct/now)}
                       {:id (:id existing)}
@@ -527,6 +546,7 @@
                        :name name
                        :url url
                        :token token
+                       :disabled-tools off
                        :is-enabled (if (some? is-enabled) is-enabled true)}))
         (mcp-server-row->entry))))
 
@@ -541,22 +561,30 @@
   (db/delete! cfg :profile-mcp-server {:profile-id profile-id :name name})
   nil)
 
+(defn- service-mcp-server
+  "A server as the agent service takes it, or nil when its address is no
+  longer one the backend lets a user reach: what was public when it was
+  registered may not be now."
+  [cfg {:keys [name url token] :as row}]
+  (when (try (check-mcp-url! url) true
+             (catch Throwable _ false))
+    (let [off (disabled-tools row)]
+      (cond-> {:name name :url url}
+        (seq off)
+        (assoc :disabledTools off)
+
+        (some? token)
+        (assoc :headers {"Authorization"
+                         (str "Bearer " (decrypt-key cfg name token))})))))
+
 (defn- turn-mcp-servers
   "The profile's enabled servers as the agent service takes them, in one
-  header value, or nil when there are none or the feature is off. The address
-  is checked again here: what was public when it was registered may not be
-  now."
+  header value, or nil when there are none or the feature is off."
   [cfg profile-id]
   (when (contains? cf/flags :design-agent-mcp)
     (let [servers (into []
                         (comp (filter :is-enabled)
-                              (keep (fn [{:keys [name url token]}]
-                                      (when (try (check-mcp-url! url) true
-                                                 (catch Throwable _ false))
-                                        (cond-> {:name name :url url}
-                                          (some? token)
-                                          (assoc :headers {"Authorization"
-                                                           (str "Bearer " (decrypt-key cfg name token))}))))))
+                              (keep (partial service-mcp-server cfg)))
                         (get-mcp-server-rows cfg profile-id))]
       (when (seq servers)
         (.encodeToString (java.util.Base64/getEncoder)
@@ -638,6 +666,40 @@
                 (l/inf :hint "agent service stream aborted, client gone" :events events)
                 {:events events :aborted true})
               (recur (inc events)))))))))
+
+(def ^:private schema:get-agent-mcp-server-tools
+  [:map {:title "get-agent-mcp-server-tools"}
+   [:name [:string {:min 1 :max 32}]]])
+
+(sv/defmethod ::get-agent-mcp-server-tools
+  "The tools a connected server offers right now, asked through the agent
+  service: the same path, with the same token, a turn would reach it by."
+  {::doc/added "2.20"
+   ::sm/params schema:get-agent-mcp-server-tools}
+  [cfg {:keys [::rpc/profile-id name]}]
+  (check-mcp-enabled!)
+  (let [row    (d/seek #(= name (:name %)) (get-mcp-server-rows cfg profile-id))
+        server (some->> row (service-mcp-server cfg))]
+    (when (nil? server)
+      (ex/raise :type :not-found
+                :code :mcp-server-not-found
+                :hint "no such MCP server, or its address can no longer be reached"))
+    (let [response (agent-service-req! cfg "/v1/mcp/tools"
+                                       {"x-penpot-profile-id" (str profile-id)}
+                                       (json/encode {:server (dissoc server :disabledTools)})
+                                       {})
+          _        (check-agent-service-status! response)
+          answer   (json/decode (:body response) :key-fn keyword)]
+      (when-let [error (:error answer)]
+        (ex/raise :type :validation
+                  :code :mcp-server-unreachable
+                  :hint (str error)))
+      (let [off (set (disabled-tools row))]
+        {:tools (mapv (fn [{tool :name :keys [description]}]
+                        {:name tool
+                         :description (or description "")
+                         :is-enabled (not (contains? off tool))})
+                      (:tools answer))}))))
 
 (defn- conversation-of
   "The conversation a turn payload names, or nil."

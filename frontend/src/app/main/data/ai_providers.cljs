@@ -197,3 +197,52 @@
     (watch [_ _ _]
       (->> (rp/cmd! :delete-agent-mcp-server params)
            (rx/map (fn [_] (fetch-agent-mcp-servers)))))))
+
+(defn- agent-mcp-server-tools-fetched
+  "What the server `name` answered when asked for its tools: `{:tools [...]}`,
+  `{:error hint}`, or `{:loading true}` while it is being asked."
+  [name answer]
+  (ptk/reify ::agent-mcp-server-tools-fetched
+    ptk/UpdateEvent
+    (update [_ state]
+      (assoc-in state [:agent-mcp-server-tools name] answer))))
+
+(defn fetch-agent-mcp-server-tools
+  "Asks the connected server `name` which tools it offers."
+  [name]
+  (ptk/reify ::fetch-agent-mcp-server-tools
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (rx/concat
+       (rx/of (agent-mcp-server-tools-fetched name {:loading true}))
+       (->> (rp/cmd! :get-agent-mcp-server-tools {:name name})
+            (rx/map (fn [{:keys [tools]}]
+                      (agent-mcp-server-tools-fetched name {:tools (vec tools)})))
+            (rx/catch (fn [cause]
+                        (rx/of (agent-mcp-server-tools-fetched
+                                name
+                                {:error (or (:hint (ex-data cause)) "")})))))))))
+
+(defn hide-agent-mcp-server-tools
+  [name]
+  (ptk/reify ::hide-agent-mcp-server-tools
+    ptk/UpdateEvent
+    (update [_ state]
+      (update state :agent-mcp-server-tools dissoc name))))
+
+(defn set-agent-mcp-server-tool
+  "Switches one tool of the server `name` on or off for the agent."
+  [{:keys [name url]} tool enabled?]
+  (ptk/reify ::set-agent-mcp-server-tool
+    ptk/UpdateEvent
+    (update [_ state]
+      (update-in state [:agent-mcp-server-tools name :tools]
+                 (fn [tools]
+                   (mapv #(cond-> % (= tool (:name %)) (assoc :is-enabled enabled?)) tools))))
+
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [off (into []
+                      (comp (remove :is-enabled) (map :name))
+                      (get-in state [:agent-mcp-server-tools name :tools]))]
+        (rx/of (set-agent-mcp-server {:name name :url url :disabled-tools off}))))))

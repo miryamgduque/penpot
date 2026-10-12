@@ -107,6 +107,13 @@ What such a tool returns is somebody else's text reaching a model that can
 edit the file. The prompt says so, and tells the model to treat it as data.
 That lowers the risk; it does not remove it.
 
+A user can switch single tools of a server off. `POST /v1/mcp/tools` with
+`{"server": {"url", "headers"}}` lists what a server offers, under the same
+address rules as a turn; an entry's `disabledTools` names the ones the model
+is never offered: they are dropped where the harness would register them, so
+a call to one is a call to an unknown tool. A call to a server's tool is
+reported to the panel as a `server-tool` event, like one of Penpot's own.
+
 `PENPOT_AGENT_SERVICE_MCP_ALLOW_PRIVATE=true` lifts both address rules, for a
 server on a developer's own machine. Never in a deployment.
 

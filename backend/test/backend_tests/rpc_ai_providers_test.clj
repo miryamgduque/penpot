@@ -160,7 +160,7 @@
         (let [out (mcp! profile :set-agent-mcp-server :name "notes" :url "https://mcp.example.com/mcp" :token "secret-token")
               row (db/get* th/*pool* :profile-mcp-server {:profile-id (:id profile) :name "notes"})]
           (t/is (nil? (:error out)))
-          (t/is (= {:name "notes" :url "https://mcp.example.com/mcp" :has-token true :is-enabled true}
+          (t/is (= {:name "notes" :url "https://mcp.example.com/mcp" :has-token true :is-enabled true :disabled-tools []}
                    (dissoc (:result out) :id)))
           (t/is (str/starts-with? (:token row) "enc:v1:"))
           (t/is (not (str/includes? (:token row) "secret-token")))
@@ -195,3 +195,53 @@
         (t/is (= :mcp-servers-limit-reached
                  (-> (mcp! profile :set-agent-mcp-server :name "one-too-many" :url "https://mcp.example.com/")
                      :error ex-data :code)))))))
+
+(t/deftest a-profile-sees-a-servers-tools-and-switches-them-off
+  (let [asked (atom [])]
+    (with-redefs [cf/flags (conj cf/flags :design-agent-mcp)
+                  ssrf/validate-uri identity
+                  ;; the agent service, which is who talks to the server
+                  ai-providers/agent-service-req!
+                  (fn [_ path headers body _]
+                    (swap! asked conj {:path path :headers headers :body (json/decode body :key-fn keyword)})
+                    {:status 200
+                     :body (json/encode {:tools [{:name "echo" :description "Says it back"}
+                                                 {:name "delete_everything"}]})})]
+      (let [profile (th/create-profile* 1 {:is-active true})
+            other   (th/create-profile* 2 {:is-active true})]
+        (mcp! profile :set-agent-mcp-server :name "notes" :url "https://mcp.example.com/mcp" :token "secret-token")
+
+        (t/testing "the tools are asked for with the server's token, which stays on the server"
+          (let [out (mcp! profile :get-agent-mcp-server-tools :name "notes")]
+            (t/is (nil? (:error out)))
+            (t/is (= [{:name "echo" :description "Says it back" :is-enabled true}
+                      {:name "delete_everything" :description "" :is-enabled true}]
+                     (-> out :result :tools)))
+            (t/is (= [{:path "/v1/mcp/tools"
+                       :headers {"x-penpot-profile-id" (str (:id profile))}
+                       :body {:server {:name "notes"
+                                       :url "https://mcp.example.com/mcp"
+                                       :headers {:Authorization "Bearer secret-token"}}}}]
+                     @asked))
+            (t/is (not (str/includes? (pr-str (:result out)) "secret-token")))))
+
+        (t/testing "a tool switched off is said so, and the turn is told to leave it out"
+          (let [out (mcp! profile :set-agent-mcp-server :name "notes" :url "https://mcp.example.com/mcp"
+                          :disabled-tools ["delete_everything"])]
+            (t/is (= ["delete_everything"] (-> out :result :disabled-tools))))
+          (t/is (= [true false]
+                   (->> (mcp! profile :get-agent-mcp-server-tools :name "notes") :result :tools (mapv :is-enabled))))
+          (t/is (= ["delete_everything"] (-> (turn-servers profile) first :disabledTools))))
+
+        (t/testing "it stays off through other changes, until the server is another one"
+          (mcp! profile :set-agent-mcp-server :name "notes" :url "https://mcp.example.com/mcp" :is-enabled true)
+          (t/is (= ["delete_everything"] (-> (turn-servers profile) first :disabledTools)))
+          (mcp! profile :set-agent-mcp-server :name "notes" :url "https://mcp.example.com/mcp" :disabled-tools [])
+          (t/is (nil? (-> (turn-servers profile) first :disabledTools)))
+          (mcp! profile :set-agent-mcp-server :name "notes" :url "https://mcp.example.com/mcp" :disabled-tools ["echo"])
+          (mcp! profile :set-agent-mcp-server :name "notes" :url "https://other.example.com/mcp")
+          (t/is (nil? (-> (turn-servers profile) first :disabledTools))))
+
+        (t/testing "someone else's server is no server"
+          (t/is (= :mcp-server-not-found
+                   (-> (mcp! other :get-agent-mcp-server-tools :name "notes") :error ex-data :code))))))))

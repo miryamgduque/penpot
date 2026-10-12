@@ -363,6 +363,32 @@
   white-space: nowrap;
 }
 
+.agent-mcp-tools {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s);
+  margin-block-start: var(--sp-s);
+}
+
+.agent-mcp-tool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-m);
+}
+
+.agent-mcp-tool-text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.agent-mcp-tool-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ai-provider-description {
   white-space: pre-line;
 }

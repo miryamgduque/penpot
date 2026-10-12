@@ -20,7 +20,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createHarness } from "./harness.js";
-import { turnMcpServers } from "./mcp.js";
+import { listMcpTools, turnMcpServers } from "./mcp.js";
 import { runScoutTool, scoutTools } from "./scout.js";
 
 const MAX_BODY_BYTES = 6 * 1024 * 1024;
@@ -379,6 +379,19 @@ export async function createAgentServer(options = {}) {
     }
   }
 
+  // The tools one MCP server offers, for the settings page: the user sees
+  // them there and can switch each one off.
+  async function handleMcpTools(req, res) {
+    requireString(req.headers["x-penpot-profile-id"], "profile id");
+    const body = await readJson(req);
+    try {
+      const tools = await listMcpTools(body.server, { allowPrivate: options.mcpAllowPrivate === true });
+      sendJson(res, 200, { tools });
+    } catch (cause) {
+      sendJson(res, 200, { error: cause.message });
+    }
+  }
+
   async function handleToolResult(req, res, turnId) {
     const profileId = requireString(req.headers["x-penpot-profile-id"], "profile id");
     const body = await readJson(req);
@@ -404,6 +417,7 @@ export async function createAgentServer(options = {}) {
         throw new HttpError(401, "unauthorized");
       }
       if (req.method === "POST" && url.pathname === "/v1/turns") return await handleTurn(req, res);
+      if (req.method === "POST" && url.pathname === "/v1/mcp/tools") return await handleMcpTools(req, res);
       const match = /^\/v1\/turns\/([A-Za-z0-9_-]+)\/tool-results$/.exec(url.pathname);
       if (req.method === "POST" && match) return await handleToolResult(req, res, match[1]);
       throw new HttpError(404, "not found");

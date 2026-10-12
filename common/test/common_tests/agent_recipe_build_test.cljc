@@ -197,6 +197,36 @@
         (t/is (not (contains? (token-names after) "color.on-primary")))
         (t/is (some? label))))))
 
+(t/deftest a-linked-library-gives-a-role-its-value-and-its-components
+  (let [lib-id    (uuid/next)
+        lib-page  (uuid/next)
+        empty-lib (ctf/make-file-data lib-id lib-page)
+        lib-view  (fn [data] {:file-id lib-id :page-id lib-page :data data
+                              :objects (get-in data [:pages-index lib-page :objects])
+                              :libraries {lib-id {:id lib-id :data data}} :fonts {}})
+        commit    (fn [data out] (cfc/process-changes data (:changes out)))
+        with-lib  (fn [library input]
+                    (let [out (cat/run "build_recipe"
+                                       (assoc-in (view data) [:libraries lib-id] {:id lib-id :data library})
+                                       input options)]
+                      [(commit data out) out]))]
+    (t/testing "a token of the role's name in the library: its value, in a token of this file"
+      (let [library     (commit empty-lib
+                                (cato/create-tokens (lib-view empty-lib)
+                                                    {:tokens [{:name "color.primary" :type "color" :value "#aa00aa"}]}
+                                                    options))
+            [after out] (with-lib library {:recipe "button"})]
+        (t/is (contains? (set (-> out :result :tokensCreated)) "color.primary"))
+        (t/is (= "#aa00aa" (:value (get (ctob/get-all-tokens-map (:tokens-lib after)) "color.primary"))))
+        (t/is (= "#aa00aa" (-> (main-of after {"Kind" "Primary" "Size" "Medium"}) :fills first :fill-color)))))
+    (t/testing "a library that has the component: it is placed from there and not built again"
+      (let [library     (commit empty-lib (cat/run "build_recipe" (lib-view empty-lib) {:recipe "button"} options))
+            [after out] (with-lib library {:recipe "button" :variant {:Size "Small"}})
+            placed      (shape after (-> out :result :id))]
+        (t/is (false? (-> out :result :mains first :built)))
+        (t/is (empty? (ctkl/components-seq after)))
+        (t/is (= lib-id (:component-file placed)))))))
+
 (t/deftest a-main-is-built-once
   (let [[once out1]  (build data {:recipe "button"})
         [twice out2] (build once {:recipe "button" :params {:label "Again"}})]
@@ -224,23 +254,68 @@
     (t/is (empty? (:fills (child after (:id result) "Plans"))))
     (t/is (empty? (errors after)))))
 
+(def ^:private banner
+  "A component that places another one, and takes a param that changes its
+  structure."
+  {:recipe 1
+   :name "banner"
+   :title "Banner"
+   :purpose "A line of text with a button, to test with."
+   :category "container"
+   :params [{:name "message" :type "text" :default "Something happened"}
+            {:name "actionLabel" :type "text" :default "Undo"}
+            {:name "icon" :type "boolean" :default false}]
+   :component true
+   :tree {:type "board"
+          :name "Banner"
+          :layout {:type "flex" :dir "row"}
+          :tokens {:fill "color.surface" :padding "spacing.md"}
+          :children [{:type "rect" :name "Icon" :when {:param "icon"} :width 16 :height 16}
+                     {:type "text" :name "Message" :text "{message}"}
+                     {:type "recipe" :name "Action" :use "button"
+                      :with {:label {:param "actionLabel"}}
+                      :variant {:Kind "Ghost"}}]}})
+
 (t/deftest a-component-inside-a-component-gets-its-words
+  (let [options     (assoc-in options [:recipes "banner"] banner)
+        [after out] (build data {:recipe "banner" :params {:message "Saved" :actionLabel "View"}} options)
+        result      (:result out)
+        placed      (shape after (:id result))
+        action      (child after (:id result) "Action")]
+    (t/is (= ["button" "banner"] (mapv :recipe (:mains result))))
+    (t/is (ctc/instance-head? placed))
+    (t/is (= "Saved" (words (child after (:id result) "Message"))))
+    (t/is (= "View" (words (child after (str (:id action)) "Label"))))
+    (t/is (nil? (:notes result)))
+    (t/testing "the main keeps the default words"
+      (let [main (shape after (-> result :mains second :shapeId))]
+        (t/is (ctc/main-instance? main))
+        (t/is (= "Something happened" (words (child after (str (:id main)) "Message"))))
+        (t/is (= "Undo" (words (child after (str (:id main)) "Label"))))))
+    (t/testing "a param that changes structure is not applied to an instance, and the result says so"
+      (let [[after out] (build after {:recipe "banner" :params {:icon true}} options)]
+        (t/is (re-find #"an instance keeps its main's structure" (first (-> out :result :notes))))
+        (t/is (nil? (child after (-> out :result :id) "Icon")))))
+    (t/is (empty? (errors after)))))
+
+(t/deftest a-plain-recipe-names-its-slots-and-what-repeats
   (let [[after out] (build data {:recipe "card" :params {:title "Hello" :action true :actionLabel "Read"}})
         result      (:result out)
-        card        (shape after (:id result))]
-    (t/is (= ["button" "card"] (mapv :recipe (:mains result))))
-    (t/is (ctc/instance-head? card))
-    (t/testing "a param that changes structure is not applied to an instance, and the result says so"
-      (t/is (re-find #"an instance keeps its main's structure" (first (:notes result)))))
-    (let [[after out] (build after {:recipe "card" :params {:title "Hello"}})]
-      (t/is (= "Hello" (words (child after (-> out :result :id) "Title"))))
-      (t/is (some? (-> out :result :ids))))))
-
-(t/deftest slots-are-named-in-the-result
-  (let [[after out] (build data {:recipe "card"})]
-    ;; the slot is inside the main: an instance has no slot of its own
-    (t/is (nil? (-> out :result :slots)))
-    (t/is (some? (child after (-> out :result :id) "Content")))))
+        card        (shape after (:id result))
+        body        (child after (:id result) "Body")]
+    (t/is (not (ctc/instance-head? card)))
+    (t/is (= {"content" (str (:id body))} (:slots result)))
+    (t/is (= "Hello" (words (child after (:id result) "Title"))))
+    (t/is (= "Read" (words (child after (str (:id (child after (:id result) "Action"))) "Label")))))
+  (let [[after out] (build data {:recipe "pricing-table" :params {:plans 2 :features 2}})
+        ids         (-> out :result :ids)]
+    (t/is (= #{"Pricing" "Heading" "Plans" "Plan 1" "Plan 2"
+               "Plan 1 / Plan name" "Plan 1 / Price" "Plan 1 / Features" "Plan 1 / Choose"
+               "Plan 1 / Features / Feature 1" "Plan 1 / Features / Feature 2"
+               "Plan 2 / Plan name" "Plan 2 / Price" "Plan 2 / Features" "Plan 2 / Choose"
+               "Plan 2 / Features / Feature 1" "Plan 2 / Features / Feature 2"}
+             (set (keys ids))))
+    (t/is (= "Plan 2" (words (shape after (get ids "Plan 2 / Plan name")))))))
 
 (t/deftest the-design-rules-hold
   (let [[after out] (build data {:recipe "button"} (assoc options :guard {:enforced? true :allowed #{}}))]
@@ -299,8 +374,6 @@
 
 (t/deftest the-host-can-hand-in-its-own-recipes
   (let [mine        (assoc-in (get recipes "card") [:tree :name] "Team card")
-        [after out] (build data {:recipe "card"} (assoc-in options [:recipes "card"] (assoc mine :component false)))]
+        [after out] (build data {:recipe "card"} (assoc-in options [:recipes "card"] mine))]
     (t/is (= "Team card" (:name (shape after (-> out :result :id)))))
-    (t/is (= {"content" (str (:id (child after (-> out :result :id) "Content")))}
-             (-> out :result :slots)))
     (t/is (= ["button" "card" "pricing-table"] (sort (keys (carb/catalog {})))))))

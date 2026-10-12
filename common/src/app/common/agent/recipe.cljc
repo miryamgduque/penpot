@@ -48,6 +48,8 @@
     properties are the ones a token can bind to, plus the shorthands in
     `shorthands`; the roles are the ones in `roles`.
   - `:slot \"name\"` marks a board as a place to be filled after the build.
+    A recipe that is a component has none: what gets placed is an instance,
+    and an instance cannot be given children.
   - `:when` leaves the node out unless it holds: `{:param \"icon\"}`,
     `{:param \"kind\" :is \"x\"}` or `{:variant \"Kind\" :is \"Primary\"}`.
   - `:repeat` builds the node that many times: a number, or `{:param n}`.
@@ -708,6 +710,9 @@
                        :lookup lookup
                        :self   (:name recipe)}
                       (:tree recipe))
+        (when (and (or (some? variants) (true? (:component recipe)))
+                   (some :slot (nodes (:tree recipe))))
+          "has a slot and is a component — an instance cannot be filled, so one of the two has to go")
         (when lookup (loop-problem recipe lookup)))))
 
 (defn problem

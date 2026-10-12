@@ -41,12 +41,14 @@
                       :align "center"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.2xl"
+                               :fontFamily "font-family.heading"
                                :fontWeight "font-weight.bold"}}
                      {:type "text"
                       :name "Subheading"
                       :text "{subheading}"
                       :align "center"
-                      :tokens {:fill "color.text-muted" :fontSize "font-size.lg"}}
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.lg"
+                               :fontFamily "font-family.body"}}
                      {:type "board"
                       :name "Actions"
                       :layout {:type "flex" :dir "row" :alignItems "center"}
@@ -94,6 +96,7 @@
                       :align "center"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.xl"
+                               :fontFamily "font-family.heading"
                                :fontWeight "font-weight.bold"}}
                      {:type "board"
                       :name "Grid"
@@ -131,6 +134,7 @@
                       :align "center"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.2xl"
+                               :fontFamily "font-family.heading"
                                :fontWeight "font-weight.bold"}}
                      {:type "board"
                       :name "Plans"
@@ -177,6 +181,7 @@
                       :layoutChild {:horizontalSizing "fill"}
                       :tokens {:fill "color.text"
                                :fontSize "font-size.lg"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.bold"}}
                      {:type "board"
                       :name "Fields"
@@ -286,12 +291,14 @@
                                               :text "{brand}"
                                               :tokens {:fill "color.text"
                                                        :fontSize "font-size.lg"
+                                                       :fontFamily "font-family.body"
                                                        :fontWeight "font-weight.bold"}}
                                              {:type "text"
                                               :name "Tagline"
                                               :text "What it is, in a line."
                                               :tokens {:fill "color.text-muted"
-                                                       :fontSize "font-size.sm"}}]}
+                                                       :fontSize "font-size.sm"
+                                                       :fontFamily "font-family.body"}}]}
                                  {:type "recipe"
                                   :name "Group {index}"
                                   :repeat {:param "columns"}
@@ -301,7 +308,8 @@
                      {:type "text"
                       :name "Legal"
                       :text "© {brand}. All rights reserved."
-                      :tokens {:fill "color.text-muted" :fontSize "font-size.xs"}}]}})
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.xs"
+                               :fontFamily "font-family.body"}}]}})
 
 (def empty-state
   {:recipe 1
@@ -334,12 +342,14 @@
                       :align "center"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.lg"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.bold"}}
                      {:type "text"
                       :name "Message"
                       :text "{message}"
                       :align "center"
-                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"}}
                      {:type "recipe"
                       :name "Action"
                       :use "button"
@@ -368,11 +378,13 @@
                       :text "{title}"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.medium"}}
                      {:type "text"
                       :name "Link {index}"
                       :repeat {:param "links"}
                       :text "Link {index}"
-                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}})
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"}}]}})
 
 (def all [hero feature-grid pricing-table form data-table stat-cards footer empty-state footer-group])

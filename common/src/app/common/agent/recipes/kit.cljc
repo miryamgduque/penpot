@@ -53,7 +53,11 @@
                :name nm
                :text words
                :tokens (cond-> {:fill (or fill "color.text")
-                                :fontSize (str "font-size." size)}
+                                :fontSize (str "font-size." size)
+                                ;; the big sizes are headings
+                                :fontFamily (if (contains? #{"xl" "2xl"} size)
+                                              "font-family.heading"
+                                              "font-family.body")}
                          weight (assoc :fontWeight (str "font-weight." weight)))}
         align (assoc :align align))
       (sized (when grow ["fill" nil]))

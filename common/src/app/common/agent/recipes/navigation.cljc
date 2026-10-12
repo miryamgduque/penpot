@@ -36,6 +36,7 @@
                       :text "{brand}"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.lg"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.bold"}}
                      {:type "board"
                       :name "Links"
@@ -83,6 +84,7 @@
                       :text "{brand}"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.lg"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.bold"}}
                      {:type "board"
                       :name "Items"
@@ -105,7 +107,8 @@
                       :children [{:type "text"
                                   :name "Footer text"
                                   :text "Account"
-                                  :tokens {:fill "color.text-muted" :fontSize "font-size.xs"}}]}]}})
+                                  :tokens {:fill "color.text-muted" :fontSize "font-size.xs"
+                                           :fontFamily "font-family.body"}}]}]}})
 
 (def bottom-tab-bar
   {:recipe 1
@@ -150,6 +153,7 @@
                       :text "{label}"
                       :tokens {:fill "color.text-muted"
                                :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.medium"}
                       :vary [{:on {:State "Current"} :set {:tokens {:fill "color.text"}}}]}]}})
 
@@ -186,6 +190,7 @@
                       :layoutChild {:horizontalSizing "fill"}
                       :tokens {:fill "color.text-muted"
                                :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.medium"}
                       :vary [{:on {:State "Current"} :set {:tokens {:fill "color.text"}}}]}]}})
 
@@ -216,6 +221,7 @@
                       :text "{label}"
                       :tokens {:fill "color.text-muted"
                                :fontSize "font-size.xs"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.medium"}
                       :vary [{:on {:State "Current"} :set {:tokens {:fill "color.primary"}}}]}]}})
 

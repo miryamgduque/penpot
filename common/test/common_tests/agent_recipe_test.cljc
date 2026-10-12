@@ -205,6 +205,33 @@
                         :borderRadius "radius.md" :padding "spacing.md" :gap "spacing.sm"
                         :paddingX "spacing.lg" :paddingY "spacing.xs" :rowGap "spacing.sm"}))))
 
+(t/deftest the-roles-are-one-vocabulary-of-colour-type-spacing-radius-and-shadow
+  ;; every role is of a known kind, and of that kind's token type
+  (doseq [[role {:keys [type]}] car/roles]
+    (t/is (= type (get car/role-kinds (car/role-kind role))) role))
+  ;; colour, typography (family, size, weight), spacing, radius and shadow
+  (t/is (= #{"color" "spacing" "radius" "border-width" "font-size" "font-weight" "font-family" "shadow"}
+           (into #{} (map car/role-kind) (keys car/roles))))
+  (let [named (fn [recipe]
+                (->> (tree-seq map? #(filter map? (:children %)) (:tree recipe))
+                     (mapcat (fn [node] (concat (vals (:tokens node))
+                                                (mapcat #(vals (get-in % [:set :tokens])) (:vary node)))))
+                     (set)))]
+    ;; the three example recipes name roles and nothing else
+    (doseq [recipe [cars/button cars/card cars/pricing-table]]
+      (t/is (seq (named recipe)))
+      (t/is (every? #(contains? car/roles %) (named recipe)) (:name recipe)))
+    ;; a text names its family, and what floats casts a shadow
+    (t/is (contains? (named cars/button) "font-family.body"))
+    (t/is (contains? (named cars/pricing-table) "font-family.heading"))
+    (t/is (contains? (named cars/card) "shadow.sm"))
+    ;; across the catalog, every kind of role is used
+    (t/is (= (set (keys car/role-kinds))
+             (into #{} (comp (mapcat named) (map car/role-kind)) cars/all))))
+  (t/is (re-find #"tree.tokens.shadow cannot take \"color.text\", a color role"
+                 (problem assoc-in [:tree :tokens] {:shadow "color.text"})))
+  (t/is (nil? (problem assoc-in [:tree :tokens] {:shadow "shadow.md"}))))
+
 (t/deftest param-uses-are-checked
   (let [recipe (assoc minimal :params [{:name "label" :type "text" :default "Hi"}
                                        {:name "wide" :type "boolean" :default false}
@@ -294,7 +321,8 @@
               :borderRadius "radius.md" :gap "spacing.sm"
               :paddingX "spacing.md" :paddingY "spacing.sm"}
              (:tokens small)))
-    (t/is (= {:fill "color.text" :fontSize "font-size.xs" :fontWeight "font-weight.medium"}
+    (t/is (= {:fill "color.text" :fontSize "font-size.xs" :fontWeight "font-weight.medium"
+              :fontFamily "font-family.body"}
              (:tokens (named small "Label"))))
     (t/is (not-any? #(or (contains? % :vary) (contains? % :when) (contains? % :repeat))
                     (tree-seq map? :children small)))))

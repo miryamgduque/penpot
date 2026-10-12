@@ -56,8 +56,15 @@
   [tokens]
   (into {}
         (map (fn [[nm token]]
-               [nm (if (= :color (:type token))
+               [nm (cond
+                     (= :color (:type token))
                      {:resolved-value (:value token) :color {:color (:value token) :opacity 1}}
+
+                     ;; a list of families, a list of shadows
+                     (contains? #{:font-family :shadow} (:type token))
+                     {:resolved-value (cato/resolved-value tokens token)}
+
+                     :else
                      {:resolved-value (parse-double (:value token))})]))
         tokens))
 

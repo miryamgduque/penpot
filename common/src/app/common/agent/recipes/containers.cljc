@@ -34,7 +34,8 @@
           :tokens {:fill "color.surface"
                    :strokeColor "color.border"
                    :strokeWidth "border-width.sm"
-                   :borderRadius "radius.lg"}
+                   :borderRadius "radius.lg"
+                   :shadow "shadow.sm"}
           :children [{:type "rect"
                       :name "Media"
                       :placeholder "image"
@@ -54,13 +55,15 @@
                                   :layoutChild {:horizontalSizing "fill"}
                                   :tokens {:fill "color.text"
                                            :fontSize "font-size.lg"
+                                           :fontFamily "font-family.body"
                                            :fontWeight "font-weight.bold"}}
                                  {:type "text"
                                   :name "Description"
                                   :text "{description}"
                                   :layoutChild {:horizontalSizing "fill"}
                                   :tokens {:fill "color.text-muted"
-                                           :fontSize "font-size.sm"}}
+                                           :fontSize "font-size.sm"
+                                           :fontFamily "font-family.body"}}
                                  {:type "recipe"
                                   :name "Action"
                                   :when {:param "action"}
@@ -107,12 +110,14 @@
                                   :layoutChild {:horizontalSizing "fill"}
                                   :tokens {:fill "color.text"
                                            :fontSize "font-size.sm"
+                                           :fontFamily "font-family.body"
                                            :fontWeight "font-weight.medium"}}
                                  {:type "text"
                                   :name "Subtitle"
                                   :text "{subtitle}"
                                   :layoutChild {:horizontalSizing "fill"}
-                                  :tokens {:fill "color.text-muted" :fontSize "font-size.xs"}}]}
+                                  :tokens {:fill "color.text-muted" :fontSize "font-size.xs"
+                                           :fontFamily "font-family.body"}}]}
                      {:type "recipe"
                       :name "Chevron"
                       :placeholder "icon"
@@ -155,7 +160,8 @@
                                   :name "Panel text"
                                   :text "What the open tab shows."
                                   :layoutChild {:horizontalSizing "fill"}
-                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}]}})
+                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                                           :fontFamily "font-family.body"}}]}]}})
 
 (def alert
   {:recipe 1
@@ -203,12 +209,14 @@
                                   :layoutChild {:horizontalSizing "fill"}
                                   :tokens {:fill "color.text"
                                            :fontSize "font-size.sm"
+                                           :fontFamily "font-family.body"
                                            :fontWeight "font-weight.bold"}}
                                  {:type "text"
                                   :name "Message"
                                   :text "{message}"
                                   :layoutChild {:horizontalSizing "fill"}
-                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}]}})
+                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                                           :fontFamily "font-family.body"}}]}]}})
 
 (def modal
   {:recipe 1
@@ -235,13 +243,15 @@
                    :strokeWidth "border-width.sm"
                    :borderRadius "radius.lg"
                    :padding "spacing.xl"
-                   :gap "spacing.lg"}
+                   :gap "spacing.lg"
+                   :shadow "shadow.lg"}
           :children [{:type "text"
                       :name "Title"
                       :text "{title}"
                       :layoutChild {:horizontalSizing "fill"}
                       :tokens {:fill "color.text"
                                :fontSize "font-size.lg"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.bold"}}
                      {:type "board"
                       :name "Body"
@@ -253,7 +263,8 @@
                                   :name "Description"
                                   :text "{description}"
                                   :layoutChild {:horizontalSizing "fill"}
-                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}
+                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                                           :fontFamily "font-family.body"}}]}
                      {:type "board"
                       :name "Actions"
                       :layout {:type "flex" :dir "row" :alignItems "center" :justifyContent "end"}
@@ -290,6 +301,7 @@
                       :text "{label}"
                       :tokens {:fill "color.text-muted"
                                :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.medium"}
                       :vary [{:on {:State "Current"} :set {:tokens {:fill "color.primary"}}}]}
                      {:type "rect"
@@ -333,12 +345,14 @@
                       :text "{name}"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.lg"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.bold"}}
                      {:type "text"
                       :name "Price"
                       :text "{price}"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.2xl"
+                               :fontFamily "font-family.heading"
                                :fontWeight "font-weight.bold"}}
                      {:type "board"
                       :name "Features"
@@ -350,7 +364,8 @@
                                   :repeat {:param "features"}
                                   :text "Feature {index}"
                                   :layoutChild {:horizontalSizing "fill"}
-                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}
+                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                                           :fontFamily "font-family.body"}}]}
                      {:type "recipe"
                       :name "Choose"
                       :use "button"
@@ -388,12 +403,14 @@
                       :layoutChild {:horizontalSizing "fill"}
                       :tokens {:fill "color.text"
                                :fontSize "font-size.lg"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.bold"}}
                      {:type "text"
                       :name "Description"
                       :text "{description}"
                       :layoutChild {:horizontalSizing "fill"}
-                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}})
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"}}]}})
 
 (def stat-card
   {:recipe 1
@@ -423,12 +440,14 @@
           :children [{:type "text"
                       :name "Label"
                       :text "{label}"
-                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"}}
                      {:type "text"
                       :name "Value"
                       :text "{value}"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.xl"
+                               :fontFamily "font-family.heading"
                                :fontWeight "font-weight.bold"}}
                      {:type "recipe"
                       :name "Change"
@@ -461,7 +480,8 @@
                       :repeat {:param "columns"}
                       :text "Cell"
                       :layoutChild {:horizontalSizing "fill"}
-                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"}
                       :vary [{:on {:Kind "Header"}
                               :set {:text "Column {index}"
                                     :tokens {:fill "color.text" :fontWeight "font-weight.medium"}}}]}]}})

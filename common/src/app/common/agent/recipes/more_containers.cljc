@@ -64,7 +64,8 @@
     :keywords ["dropdown" "context menu" "popover menu" "actions"]
     :params [(k/pnum "items" 4 2 8 "How many lines; the first is the one pointed at")]}
    (k/board "Menu" {:w 236 :size ["fix" "auto"]
-                    :tokens (assoc k/surface :borderRadius "radius.md" :padding "spacing.xs" :gap "spacing.xs")}
+                    :tokens (assoc k/surface :borderRadius "radius.md" :padding "spacing.xs" :gap "spacing.xs"
+                                   :shadow "shadow.md")}
             (k/place "Item {index}" "menu-item" :repeat {:param "items"} :with {:label "Item {index}"}
                      :size ["fill" nil] :vary [(k/at 1 {:variant {:State "Current"}})]))))
 
@@ -75,7 +76,7 @@
     :keywords ["flyout" "bubble" "floating panel" "hover card"]
     :params [(k/ptext "title" "Popover title" "The heading")
              (k/ptext "body" "A few words that explain or ask." "The text under it")]}
-   (k/board "Popover" {:w 280 :size ["fix" "auto"] :tokens (assoc padded :borderRadius "radius.md") :slot "content"}
+   (k/board "Popover" {:w 280 :size ["fix" "auto"] :tokens (assoc padded :borderRadius "radius.md" :shadow "shadow.md") :slot "content"}
             (k/text "Title" "{title}" "sm" :weight "bold" :grow true)
             (k/text "Body" "{body}" "sm" :fill "color.text-muted" :grow true))))
 
@@ -89,7 +90,7 @@
     :variants [(k/axis "Tone" "Neutral" "Success" "Danger")]}
    (k/board "Toast" {:dir "row" :align "center" :w 360 :size ["fix" "auto"]
                      :tokens {:fill "color.text" :borderRadius "radius.md" :gap "spacing.md"
-                              :paddingX "spacing.lg" :paddingY "spacing.md"}
+                              :paddingX "spacing.lg" :paddingY "spacing.md" :shadow "shadow.md"}
                      :vary [(k/on {:Tone "Success"} {:tokens {:fill "color.success"}})
                             (k/on {:Tone "Danger"} {:tokens {:fill "color.danger"}})]}
             (k/text "Message" "{message}" "sm" :fill "color.background" :grow true)
@@ -117,7 +118,8 @@
     :params [(k/ptext "title" "Details" "The heading")
              (k/ptext "confirmLabel" "Save" "The words on its main button")]}
    (k/board "Drawer" {:w 400 :h 800 :size ["fix" "fix"]
-                      :tokens {:fill "color.surface" :strokeColor "color.border" :strokeWidth "border-width.sm"}}
+                      :tokens {:fill "color.surface" :strokeColor "color.border" :strokeWidth "border-width.sm"
+                               :shadow "shadow.lg"}}
             (k/board "Header" {:dir "row" :align "center" :size ["fill" "auto"] :tokens {:padding "spacing.lg" :gap "spacing.md"}}
                      (k/text "Title" "{title}" "lg" :weight "bold" :grow true)
                      (k/place "Close" "icon-button"))
@@ -135,7 +137,8 @@
     :params [(k/ptext "title" "What do you want to do?" "The question")
              (k/pnum "actions" 3 1 6 "How many things to do")]}
    (k/board "Action sheet" {:w 393 :size ["fix" "auto"]
-                            :tokens {:fill "color.surface" :borderRadius "radius.lg" :padding "spacing.lg" :gap "spacing.sm"}}
+                            :tokens {:fill "color.surface" :borderRadius "radius.lg" :padding "spacing.lg" :gap "spacing.sm"
+                                     :shadow "shadow.lg"}}
             (k/rect "Grabber" 36 4 "color.border" :radius "radius.full")
             (k/text "Title" "{title}" "sm" :fill "color.text-muted" :align "center" :grow true)
             (k/place "Action {index}" "menu-item" :repeat {:param "actions"} :with {:label "Action {index}"} :size ["fill" nil])

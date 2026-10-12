@@ -256,6 +256,35 @@
         (t/is (nil? (:changes asked)))
         (t/is (= 12 (-> (get (objects (commit bound out)) row-id) :layout-gap :column-gap)))))))
 
+(t/deftest a-shadow-token-is-a-list-of-shadows
+  (let [shadow  [{:offsetX 0 :offsetY 4 :blur 12 :spread 0 :color "rgba(15, 23, 42, 0.12)"}
+                 {:x 2 :y "2px" :blur 0 :color "#11223380" :inset true}]
+        step    (fn [data tool input] (commit data (tool (view data) input (engine (atom [])))))
+        with    (step designed cato/create-tokens {:tokens [{:type "shadow" :name "shadow.md" :value shadow}]})
+        token   (get (ctob/get-tokens-in-active-sets (:tokens-lib with)) "shadow.md")
+        applied (step with cato/apply-tokens {:applications [{:shapeId (str box-id) :tokenName "shadow.md"}]})
+        box     (get-in applied [:pages-index (first (:pages applied)) :objects box-id])]
+    ;; stored as the library stores one: strings, under its own keys
+    (t/is (= [{:offset-x "0" :offset-y "4" :blur "12" :spread "0" :color "rgba(15, 23, 42, 0.12)" :inset false}
+              {:offset-x "2" :offset-y "2" :blur "0" :spread "0" :color "#11223380" :inset true}]
+             (:value token)))
+    (t/is (= "shadow.md" (-> box :applied-tokens :shadow)))
+    (t/is (= [[0.0 4.0 12.0 {:color "#0f172a" :opacity 0.12} :drop-shadow]
+              [2.0 2.0 0.0 {:color "#112233" :opacity (/ 128 255.0)} :inner-shadow]]
+             (mapv (juxt :offset-x :offset-y :blur :color :style) (:shadow box))))
+    (t/is (re-find #"a shadow's value is a list of shadows"
+                   (:problem (run designed cato/create-token {:type "shadow" :name "s" :value "0 4px 12px black"}))))
+    (t/is (re-find #"a shadow's value is a list of shadows"
+                   (:problem (run designed cato/create-token {:type "shadow" :name "s" :value [{:blur -1 :color "#000"}]}))))))
+
+(t/deftest a-font-family-token-resolves-to-its-families
+  (let [active {"font.body" {:name "font.body" :type :font-family :value ["Inter" "sans-serif"]}
+                "font.alias" {:name "font.alias" :type :font-family :value "{font.body}"}
+                "font.text" {:name "font.text" :type :font-family :value "Inter, sans-serif"}}]
+    (t/is (= ["Inter" "sans-serif"] (cato/resolved-value active (get active "font.body"))))
+    (t/is (= ["Inter" "sans-serif"] (cato/resolved-value active (get active "font.alias"))))
+    (t/is (= ["Inter" "sans-serif"] (cato/resolved-value active (get active "font.text"))))))
+
 ;; --- With the resolver library a host hands over
 
 (defn- resolver

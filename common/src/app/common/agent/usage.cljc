@@ -22,6 +22,7 @@
 
   A share is a number from 0 to 1, or nil when there is nothing to count."
   (:require
+   [app.common.agent.recipe :as car]
    [app.common.files.helpers :as cfh]
    [app.common.types.component :as ctc]
    [app.common.types.container :as ctn]
@@ -104,3 +105,62 @@
   ([objects roots] (capability-usage objects roots nil))
   ([objects roots file-id]
    (capability-usage* objects roots file-id)))
+
+;; --- The design-system measure
+;;
+;; What a design system is held against: of the values a system owns —
+;; colors, type, spacing, corners — how many come from a token, and how many
+;; from a token named as a role, which is what any token pack or theme can
+;; restyle in one step.
+
+(def ^:private kinds
+  "Kind → the token properties that carry it."
+  {:color    #{:fill :stroke-color}
+   :typeSize #{:font-size :typography}
+   :typeface #{:font-family :typography}
+   :spacing  #{:p1 :p2 :p3 :p4 :row-gap :column-gap}
+   :radius   #{:r1 :r2 :r3 :r4}})
+
+(defn- has-kind?
+  "Whether the layer has a value of that kind to take from a system."
+  [kind shape]
+  (case kind
+    :color   (colored? shape)
+    (:typeSize :typeface) (cfh/text-shape? shape)
+    :spacing (and (ctl/any-layout? shape)
+                  (or (some pos? (vals (:layout-padding shape)))
+                      (some pos? (vals (:layout-gap shape)))))
+    :radius  (some #(pos? (or (get shape %) 0)) [:r1 :r2 :r3 :r4])))
+
+(defn- tokens-on
+  [kind shape]
+  (keep (fn [[attr token-name]] (when (contains? (get kinds kind) attr) token-name))
+        (:applied-tokens shape)))
+
+(defn system-usage
+  "The design-system measure for the layers under `roots`, or for the whole
+  page → per kind (color, type size, typeface, spacing, radius): how many layers have a
+  value of that kind, how many take it from a token, and how many from a
+  token named as a role. `restyle` is the share of all those values that a
+  pack or a theme reaches: the role-bound ones."
+  [objects roots]
+  (let [ids    (if (seq roots)
+                 (into [] (comp (filter #(contains? objects %))
+                                (mapcat #(cfh/get-children-ids-with-self objects %))
+                                (distinct))
+                       roots)
+                 (remove #(= uuid/zero %) (keys objects)))
+        layers (mapv #(get objects %) ids)
+        counts (into {}
+                     (map (fn [kind]
+                            (let [with  (filterv #(has-kind? kind %) layers)
+                                  named (map #(tokens-on kind %) with)]
+                              [kind {:with (count with)
+                                     :bound (count (filter seq named))
+                                     :roleBound (count (filter #(some (fn [n] (contains? car/roles n)) %) named))}])))
+                     (keys kinds))
+        total  (fn [k] (transduce (map k) + (vals counts)))]
+    {:counts counts
+     :shares (-> (into {} (map (fn [[kind {:keys [with bound]}]] [kind (share bound with)])) counts)
+                 (assoc :all (share (total :bound) (total :with))
+                        :restyle (share (total :roleBound) (total :with))))}))

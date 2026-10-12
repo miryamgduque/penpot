@@ -105,6 +105,30 @@
             0
             asked)))
 
+(defn text-keys
+  "What each text of the recipe's tree goes by in build_recipe's `texts` and
+  `ids`, with `{index}` where a turn of a repeat goes: its layer name, behind
+  its parent's when the name is not the only one."
+  [recipe]
+  (let [tree  (:tree recipe)
+        names (frequencies (keep :name (tree-seq map? :children tree)))]
+    (letfn [(walk [node parent-key repeats]
+              (let [repeats (cond-> repeats (contains? node :repeat) inc)
+                    nm      (:name node)
+                    turns   (if (and (string? nm) (str/includes? nm "{index}")) 1 0)
+                    key     (if (and (some? parent-key)
+                                     (or (> (get names nm 0) 1) (> repeats turns)))
+                              (dm/str parent-key " / " nm)
+                              nm)]
+                (concat (when (= "text" (:type node)) [key])
+                        (mapcat #(walk % key repeats) (:children node)))))]
+      (vec (walk tree nil 0)))))
+
+(defn- placeholder-names
+  [recipe]
+  (into [] (comp (filter :placeholder) (keep :name) (distinct))
+        (tree-seq map? :children (:tree recipe))))
+
 (defn- described
   "A recipe as find_recipes answers it: what to hand build_recipe."
   [recipe]
@@ -119,6 +143,8 @@
                            (:params recipe)))
       (seq (:variants recipe)) (assoc :variants (:variants recipe))
       (seq slots)              (assoc :slots slots)
+      (seq (text-keys recipe)) (assoc :texts (text-keys recipe))
+      (seq (placeholder-names recipe)) (assoc :placeholders (placeholder-names recipe))
       (seq (car/uses recipe))  (assoc :uses (car/uses recipe)))))
 
 (def ^:private max-matches 5)
@@ -153,8 +179,12 @@
                                "use recipes for the parts that have one (button, "
                                "text-field, card…)")
                           (str "best match first. Build one with build_recipe {recipe, "
-                               "params, variant, parentId}; fill its slots and adapt it "
-                               "after. If none is what you need, build by hand."))}}))))
+                               "params, variant, parentId, texts}: `texts` sets the words "
+                               "of its layers in the same call, keyed as in `texts` here "
+                               "(a number in place of {index}); a layer that places "
+                               "another recipe takes its words too, e.g. \"Plan 2 / "
+                               "Choose\". Then replace its placeholders and fill its "
+                               "slots. If none is what you need, build by hand."))}}))))
 
 ;; --- Roles
 ;;
@@ -407,6 +437,8 @@
             (cond-> build
               (some? (:slot node)) (update :slots assoc (:slot node) (dm/str id)))
             (cond-> build
+              (some? (:placeholder node)) (update-in [:placeholders (:placeholder node)] (fnil conj []) key))
+            (cond-> build
               (and (contains? #{"board" "rect" "ellipse"} kind)
                    (not (contains? (:tokens node) :fill)))
               (unfilled at id))
@@ -436,7 +468,7 @@
   (let [at    (dm/str (:name recipe) " main")
         tree  (-> (car/expand recipe nil member)
                   (assoc :name (member-name recipe member)))
-        kept  (select-keys build [:ids :slots])
+        kept  (select-keys build [:ids :slots :placeholders])
         build (build-node (dissoc build :root) tree nil at (free-spot (:view build)) options)
         id    (:root build)
         build (cond-> build
@@ -477,8 +509,10 @@
                     [build (cond-> ids (not (stopped? build)) (conj (:main build)))]))
                 [build []]
                 members)
+        inside  (placeholder-names recipe)
         note    (fn [build built]
-                  (update build :mains conj (merge {:recipe (:name recipe)} built)))]
+                  (update build :mains conj (cond-> (merge {:recipe (:name recipe)} built)
+                                              (seq inside) (assoc :placeholders inside))))]
     (cond
       (stopped? build)
       (cond-> build (seq ids) (note {:built "in part" :memberIds ids}))
@@ -623,9 +657,70 @@
 
 ;; --- build_recipe
 
+;; --- The words, in the same call
+;;
+;; `texts` maps what a layer goes by — its key in `:ids`, or a path of layer
+;; names from the root — to its words. A layer that is not a text and holds
+;; exactly one, as an instance of a button does, takes the words for it.
+
+(defn- text-target
+  "The text shape `key` means, or nil."
+  [objects ids root key]
+  (let [parts  (str/split key #"\s*/\s*")
+        [start more]
+        (or (some (fn [n]
+                    (when-let [id (get ids (str/join " / " (take n parts)))]
+                      [(parse-uuid id) (drop n parts)]))
+                  (range (count parts) 0 -1))
+            [root parts])
+        target (reduce (fn [id part]
+                         (when (some? id)
+                           (if (= part (:name (get objects id)))
+                             id
+                             (child-named objects id part (constantly true)))))
+                       start
+                       more)
+        shape  (get objects target)]
+    (cond
+      (nil? shape)            nil
+      (cfh/text-shape? shape) target
+      :else
+      (let [inside (filter #(cfh/text-shape? (get objects %)) (cfh/get-children-ids objects target))]
+        (when (= 1 (count inside))
+          (first inside))))))
+
+(defn- fill-texts
+  [build texts {:keys [measure-text] :as options}]
+  (if (or (stopped? build) (empty? texts) (nil? (:root build)))
+    build
+    (let [objects (-> build :view :objects)
+          root    (parse-uuid (:root build))
+          found   (mapv (fn [[k words]]
+                          (let [key (name k)]
+                            [key (when (string? words) (text-target objects (:ids build) root key)) words]))
+                        texts)
+          entries (into [] (keep (fn [[_ id words]] (when (some? id) [id words]))) found)
+          missed  (into [] (keep (fn [[key id _]] (when (nil? id) key))) found)]
+      (cond-> build
+        (seq missed)
+        (assoc :texts-not-set
+               {:keys missed
+                :note (str "no text goes by these — use a key of `ids`, or a path of "
+                           "layer names from one, such as \"Plan 2 / Choose\"; set "
+                           "them with set_texts")})
+
+        (seq entries)
+        (then "texts"
+              (fn [{:keys [page-id objects]}]
+                (if (nil? measure-text)
+                  {:fallback "text cannot be measured on the server without the render engine"}
+                  {:changes (-> (caw/page-changes page-id objects)
+                                (catx/texts-into entries options)
+                                (caw/redo))})))))))
+
 (defn recipe-problem
   "Why `build_recipe` cannot run, or nil."
-  [{:keys [objects]} {:keys [recipe params variant parentId profile]} options]
+  [{:keys [objects]} {:keys [recipe params variant parentId profile texts]} options]
   (let [recipes (catalog options)
         known   (profiles options)
         found   (get recipes recipe)
@@ -655,6 +750,9 @@
       (some? (car/member-problem found variant))
       (dm/str "build_recipe: " (car/member-problem found variant))
 
+      (not (or (nil? texts) (map? texts)))
+      "build_recipe: texts is not a map of layer to words"
+
       (and (some? parentId) (nil? parent))
       (dm/str "build_recipe: no shape on this page with id " parentId
               " (the parentId) — check read_design")
@@ -682,6 +780,8 @@
                                                                        :from from}]))
                                                          notable))
                   (seq (:slots build)) (assoc :slots (:slots build))
+                  (seq (:placeholders build)) (assoc :placeholders (:placeholders build))
+                  (seq (:texts-not-set build)) (assoc :textsNotSet (:texts-not-set build))
                   (seq (:mains build)) (assoc :mains (:mains build))
                   (seq created)        (assoc :tokensCreated created)
                   (seq (:notes build)) (assoc :notes (:notes build)))]
@@ -704,16 +804,21 @@
       {:changes (:changes build)
        :result (assoc result
                       :id (:root build)
-                      :note (str "recipe built — structure only: adapt the words, "
-                                 "fill the slots and restyle through the tokens. "
-                                 "ids are keyed by layer name. Geometry settles "
-                                 "asynchronously; verify with render_board."))})))
+                      :note (str "recipe built — this is the start, not the result. "
+                                 "Still yours to do: the words you did not pass in "
+                                 "`texts` (set_texts sets many in one call); every "
+                                 "layer in `placeholders` is a grey box standing for "
+                                 "an icon or a picture — put the real one in its "
+                                 "place (insert_icon, insert_image) or tell the user "
+                                 "which you left; fill the slots; and give the "
+                                 "tokens the values this design calls for. ids are "
+                                 "keyed by layer name. Verify with render_board."))})))
 
 (defn build-recipe
   "`:recipes` in the options are the host's own recipes, over the built-in
   ones. A build that is refused part-way keeps what it made: the answer
   carries those changes and says what exists and where it stopped."
-  [view {:keys [recipe params variant parentId x y roles profile] :as input} options]
+  [view {:keys [recipe params variant parentId x y roles profile texts] :as input} options]
   (if-let [problem (recipe-problem view input options)]
     {:problem problem}
     (let [platform (get (profiles options) profile)
@@ -737,7 +842,7 @@
                              :made (:worth plan)
                              :resolve-tokens (resolver (:resolve-tokens options) (:worth plan)))
               build   (-> (cap/start view)
-                          (assoc :ids {} :slots {} :mains [] :notes [])
+                          (assoc :ids {} :slots {} :placeholders {} :mains [] :notes [])
                           (cond-> (seq (:create plan))
                             (then "tokens" #(cato/create-tokens % {:tokens (:create plan)} options)))
                           (ensure-mains all options)
@@ -753,8 +858,9 @@
                           (some? y) (assoc :y y)))
               build   (if (stopped? build)
                         build
-                        (place-recipe build found node (some-> parentId parse-uuid)
-                                      (:name found) spot options))]
+                        (-> (place-recipe build found node (some-> parentId parse-uuid)
+                                          (:name found) spot options)
+                            (fill-texts texts options)))]
           (answer build found created plan))))))
 
 (defn build-recipe-needs

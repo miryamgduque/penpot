@@ -134,6 +134,7 @@
                   :tokens {:fill "color.text" :fontSize "font-size.sm"}}
                  {:type "rect"
                   :name "Chevron"
+                  :placeholder "icon"
                   :width 12
                   :height 12
                   :tokens {:fill "color.text-muted"}}]

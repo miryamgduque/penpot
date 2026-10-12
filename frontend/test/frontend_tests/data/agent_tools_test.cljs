@@ -832,13 +832,19 @@
   (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
     (t/is (= ["ios" "web"] (get-in spec [:input-schema :properties :profile :enum]))))
   (t/is (some #(= "find_recipes" (:name %)) at/tool-specs))
-  (t/is (some #(= "save_recipe" (:name %)) at/tool-specs)))
+  (t/is (some #(= "save_recipe" (:name %)) at/tool-specs))
+  (t/is (some #(= "set_texts" (:name %)) at/tool-specs))
+  (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
+    (t/is (some? (get-in spec [:input-schema :properties :texts])))
+    (t/is (str/includes? (:description spec) "placeholders"))))
 
 (t/deftest the-agent-always-sees-the-recipe-catalog
   (t/is (str/includes? ask/inner-knowledge "## Recipes"))
   (t/is (str/includes? ask/inner-knowledge "- section: data-table (data table); empty-state (empty state)"))
   (t/is (str/includes? ask/inner-knowledge "call find_recipes"))
   (t/is (str/includes? ask/inner-knowledge "When no recipe fits, build by hand"))
+  (t/is (str/includes? ask/inner-knowledge "A built recipe is the start, not the result"))
+  (t/is (str/includes? ask/inner-knowledge "Recipes are for what is convention"))
   (t/testing "and the team's own, the ones in use"
     (t/is (nil? (ask/team-recipes-section {})))
     (let [section (ask/team-recipes-section

@@ -604,7 +604,9 @@
    [:vern {:min 0} ::sm/int]
    ;; the tool that made the changes, for the record of what the agent did
    [:tool {:optional true} [:string {:max 100}]]
-   [:changes [:vector {:max 5000} cpc/schema:change]]])
+   [:changes [:vector {:max 5000} cpc/schema:change]]
+   ;; the changes that take them back, kept so the turn can be reverted
+   [:undo-changes {:optional true} [:vector {:max 20000} cpc/schema:change]]])
 
 (sv/defmethod ::commit-agent-tool-changes
   "Commits an engine tool's changes to the turn's file, as the turn's profile.
@@ -613,7 +615,7 @@
   {::rpc/auth false
    ::doc/added "2.20"
    ::sm/params schema:commit-agent-tool-changes}
-  [cfg {:keys [token revn vern tool changes]}]
+  [cfg {:keys [token revn vern tool changes undo-changes]}]
   (let [{:keys [profile-id file-id turn-id conversation-id]} (verify-turn-token cfg token)]
     (db/tx-run! cfg
                 (fn [cfg]
@@ -639,7 +641,8 @@
                      :turn-id turn-id
                      :tool (or tool "unknown")
                      :revn revn
-                     :changes (blob/encode changes)}
+                     :changes (blob/encode changes)
+                     :undo-changes (some-> undo-changes blob/encode)}
                     {::db/return-keys false}))
       {:file-id file-id
        :revn revn})))
@@ -648,7 +651,8 @@
 
 (def ^:private sql:agent-changes
   "SELECT c.id, c.profile_id, c.conversation_id, c.turn_id, c.tool, c.revn,
-          c.changes, c.created_at
+          c.changes, c.created_at, c.reverted_at,
+          (c.undo_changes IS NOT NULL) AS can_revert
      FROM file_agent_change AS c
     WHERE c.file_id = ?
       AND (?::uuid IS NULL OR c.turn_id = ?::uuid)
@@ -681,3 +685,147 @@
                              ;; the shapes it touched, to find them on the canvas
                              (assoc :shape-ids (into [] (comp (keep :id) (distinct) (take 200)) changes)))
                    with-changes (assoc :changes changes)))))))
+
+
+;; --- Taking a turn back
+;;
+;; An edit the agent makes on the server is not in anybody's undo history: it
+;; reaches every open workspace as another collaborator's would. This is the
+;; way back. A turn's commits each carry the changes that undo them; reverting
+;; the turn applies those, newest commit first, as one change to the file.
+;;
+;; What somebody did afterwards to a shape the turn touched would be
+;; overwritten, so that is looked for first and answered instead of reverting,
+;; unless the caller says to go ahead. The file's change log is where it is
+;; looked for, and that log only reaches back about an hour: for an older
+;; turn the answer is that it cannot be told.
+
+(def ^:private sql:turn-changes
+  "SELECT c.id, c.conversation_id, c.tool, c.revn, c.changes, c.undo_changes
+     FROM file_agent_change AS c
+    WHERE c.file_id = ?
+      AND c.turn_id = ?
+      AND c.reverted_at IS NULL
+    ORDER BY c.revn ASC, c.created_at ASC")
+
+(def ^:private sql:later-file-changes
+  "SELECT c.revn, c.changes
+     FROM file_change AS c
+    WHERE c.file_id = ?
+      AND c.revn > ?
+      AND c.changes IS NOT NULL
+    ORDER BY c.revn ASC")
+
+(defn- touched-shapes
+  "The ids of the shapes a list of changes is about."
+  [changes]
+  (into #{}
+        (mapcat (fn [{:keys [id shapes]}]
+                  (cond-> (vec shapes)
+                    (uuid? id) (conj id))))
+        changes))
+
+(defn- later-edits
+  "What was done to the file after revision `revn` that touches `ids` →
+  `{:shapes ids :unknown? bool}`. `:unknown?` says the change log no longer
+  reaches back that far."
+  [cfg file-id revn current-revn ids]
+  (let [rows   (db/exec! cfg [sql:later-file-changes file-id revn])
+        logged (into #{} (map :revn) rows)]
+    {:shapes (into #{}
+                   (comp (mapcat (comp touched-shapes blob/decode :changes))
+                         (filter ids))
+                   rows)
+     ;; every revision after the turn has to be in the log, or one is missing
+     :unknown? (not (every? logged (range (inc revn) (inc current-revn))))}))
+
+(defn- shape-names
+  [cfg file-id ids]
+  (let [data (:data (load-whole-file cfg file-id))]
+    (into []
+          (comp (mapcat (comp vals :objects val))
+                (filter #(contains? ids (:id %)))
+                (map (fn [shape] {:id (:id shape) :name (:name shape)}))
+                (take 20))
+          (:pages-index data))))
+
+(def ^:private schema:revert-agent-turn
+  [:map {:title "revert-agent-turn"}
+   [:file-id ::sm/uuid]
+   [:turn-id ::sm/uuid]
+   ;; revert even if somebody edited what the turn touched since
+   [:force {:optional true} ::sm/boolean]])
+
+(sv/defmethod ::revert-agent-turn
+  "Takes back what the agent changed in one turn, as one change to the file.
+  Answers `{:conflict true …}` and changes nothing when what the turn touched
+  was edited afterwards, unless `force`. The revert is recorded as a turn of
+  its own, so it can be reverted the same way."
+  {::doc/added "2.20"
+   ::sm/params schema:revert-agent-turn}
+  [cfg {:keys [::rpc/profile-id file-id turn-id force]}]
+  (files/check-edition-permissions! cfg profile-id file-id)
+  (let [rows (db/exec! cfg [sql:turn-changes file-id turn-id])
+        file (bfc/get-file cfg file-id :read-only? true :load-data? false)]
+    (cond
+      (empty? rows)
+      (ex/raise :type :validation
+                :code :nothing-to-revert
+                :hint "this turn changed nothing, or was already reverted")
+
+      (some (comp nil? :undo-changes) rows)
+      (ex/raise :type :validation
+                :code :turn-not-revertable
+                :hint "this turn was recorded without the changes that undo it")
+
+      :else
+      (let [rows   (mapv #(-> % (update :changes blob/decode) (update :undo-changes blob/decode)) rows)
+            ids    (touched-shapes (mapcat :changes rows))
+            later  (later-edits cfg file-id (:revn (peek rows)) (:revn file) ids)]
+        (if (and (not force) (or (seq (:shapes later)) (:unknown? later)))
+          {:conflict true
+           ;; the shapes edited since, or none named when it cannot be told
+           :shapes (shape-names cfg file-id (:shapes later))
+           :unknown (:unknown? later)}
+          (let [;; newest commit first: each undoes on top of the ones after it
+                undo (into [] (mapcat :undo-changes) (rseq rows))
+                redo (into [] (mapcat :changes) rows)
+                revert-turn (uuid/next)]
+            (try
+              (db/tx-run! cfg
+                          (fn [cfg]
+                            (@update-file-fn cfg {::rpc/profile-id profile-id
+                                                  :id file-id
+                                                  :session-id (uuid/next)
+                                                  :revn (:revn file)
+                                                  :vern (:vern file)
+                                                  :features cfeat/supported-features
+                                                  :changes undo})))
+              (catch clojure.lang.ExceptionInfo cause
+                (if (= :validation (:type (ex-data cause)))
+                  (ex/raise :type :validation
+                            :code :revert-does-not-apply
+                            :hint (str "the file has changed too much since for this turn to be "
+                                       "taken back cleanly; restore a version from the history instead")
+                            :cause cause)
+                  (throw cause))))
+            (let [revn (:revn (bfc/get-file cfg file-id :read-only? true :load-data? false))]
+              (db/update! cfg :file-agent-change
+                          {:reverted-at (ct/now)}
+                          {:file-id file-id :turn-id turn-id}
+                          {::db/return-keys false})
+              ;; the revert is a change like the others: recorded, and with
+              ;; what undoes it, which is the turn itself
+              (db/insert! cfg :file-agent-change
+                          {:file-id file-id
+                           :profile-id profile-id
+                           :conversation-id (:conversation-id (first rows))
+                           :turn-id revert-turn
+                           :tool "revert_turn"
+                           :revn revn
+                           :changes (blob/encode undo)
+                           :undo-changes (blob/encode redo)}
+                          {::db/return-keys false})
+              {:reverted (count rows)
+               :turn-id revert-turn
+               :revn revn})))))))

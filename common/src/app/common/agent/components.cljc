@@ -292,7 +292,7 @@
                                               libraries)]
       {:changes (-> changes
                     (caw/reflow-all propagate [(:id shape)])
-                    :redo-changes)
+                    (caw/redo))
        :result (cond-> {:note (str "instance placed — it stays linked to its main, "
                                    "so editing the main updates it. Verify with "
                                    "read_design.")}
@@ -307,7 +307,7 @@
       {:problem problem}
       {:changes (-> (cb/empty-changes)
                     (cll/generate-detach-component id data page-id libraries)
-                    :redo-changes)
+                    (caw/redo))
        :result {:shapeId shapeId
                 :note (str "detached — these shapes are now local copies and will "
                            "NOT follow their main any more. Tell the user you did "
@@ -327,7 +327,7 @@
                     (cb/with-page-id page-id)
                     (cb/with-objects objects)
                     (caw/reflow-all propagate [(:parent-id copy)])
-                    :redo-changes)
+                    (caw/redo))
        :result {:note "reset — the copy discards its own overrides and matches its main again. Verify with read_design."}})))
 
 ;; --- swap_component / switch_variant
@@ -361,7 +361,7 @@
     (-> changes
         (fit-new-texts engine new-ids)
         (caw/reflow-all propagate (concat parents swapped-parents new-ids))
-        :redo-changes)))
+        (caw/redo))))
 
 (defn swap-component
   [{:keys [file-id objects libraries] :as view} {:keys [shapeId componentId fileId]} engine]
@@ -603,7 +603,7 @@
                              (ctm/move-modifiers (caw/position-delta objects' (get objects' new-id) {:x x}))))))))]
         {:changes (-> changes
                       (caw/reflow-all propagate [(:parent-id shape)])
-                      :redo-changes)
+                      (caw/redo))
          :result {:note (str "variant added — it starts with a placeholder value "
                              "(\"Value N\"); give it a real one with "
                              "set_variant_property. Verify with read_design.")
@@ -627,7 +627,7 @@
                         (clvp/generate-update-property-name vid pos rename))
                       (cond-> (and componentId value)
                         (clvp/generate-update-property-value (parse-uuid componentId) pos value))
-                      :redo-changes)
+                      (caw/redo))
          :result {:axis (or rename property)
                   :note (str "updated — the axis is set-wide, values are per member. "
                              "Verify with read_design.")}}))))

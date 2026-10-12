@@ -36,7 +36,7 @@
 
 (defn- start
   [view]
-  {:view view :changes []})
+  {:view view :changes (caw/with-undo [] [])})
 
 (defn- advance
   "The view after `changes`."
@@ -59,7 +59,7 @@
       (if (or (contains? answer :problem) (contains? answer :fallback) (contains? answer :pending))
         (assoc run :stopped answer)
         (-> run
-            (update :changes into (:changes answer))
+            (update :changes caw/then-changes (:changes answer))
             (assoc :view (advance view (:changes answer)))
             (assoc :last (:result answer)))))))
 
@@ -208,7 +208,7 @@
                   (caw/reflow-all propagate (if pid
                                               [pid new-root (:frame-id shape)]
                                               [new-root (:frame-id shape)]))
-                  :redo-changes)
+                  (caw/redo))
      :result {:shapeId (dm/str new-root)
               :name (or (:name clone) (:name shape))}}))
 

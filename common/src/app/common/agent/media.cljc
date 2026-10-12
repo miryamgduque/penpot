@@ -135,7 +135,7 @@
                         (caw/seat-in-grid pid))
                       (cond-> (ctl/any-layout? parent)
                         (caw/reflow-all propagate [pid]))
-                      :redo-changes)
+                      (caw/redo))
          :result {:id (dm/str (:id shape))
                   :mediaId (dm/str (:id media))
                   :width (:width geom)
@@ -247,7 +247,7 @@
         (if-let [svg-data (when (string? body) (parse-svg body))]
           (let [{:keys [id changes]}
                 (cas/import-svg view svg-data (or (:name input) icon) x y engine)]
-            {:changes (:redo-changes changes)
+            {:changes (caw/redo changes)
              :result {:id (dm/str id)
                       :icon icon
                       :size size
@@ -394,7 +394,7 @@
               {:problem problem}
               (if (nil? measure-text)
                 {:fallback "text cannot be measured on the server without the render engine"}
-                {:changes (:redo-changes
+                {:changes (caw/redo
                            (reduce #(set-font-into %1 %2 (font-attrs font variant) engine)
                                    (caw/page-changes page-id objects)
                                    ids))

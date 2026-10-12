@@ -212,7 +212,7 @@
               [changes set-id]
               ;; no sets at all: this is the case that legitimately makes one
               (add-first-set changes))]
-        {:changes (:redo-changes (add-token changes set-id input))
+        {:changes (caw/redo (add-token changes set-id input))
          :result (cond-> {:name name :type type :value value
                           :note "token created — bind it to shapes with apply_tokens"}
                    target-set (assoc :set (normalize-set target-set)))}))))
@@ -247,7 +247,7 @@
                   (if (some #(nil? (:set %)) entries)
                     (add-first-set (library-changes data))
                     [(library-changes data) nil]))]
-            {:changes (:redo-changes
+            {:changes (caw/redo
                        (reduce (fn [changes {target-set :set :as entry}]
                                  (add-token changes
                                             (if target-set (set-id-by-name lib target-set) default-id)
@@ -269,7 +269,7 @@
           token-set (ctob/make-token-set {:name nm})]
       {:changes (-> (library-changes data)
                     (cb/set-token-set (ctob/get-id token-set) token-set)
-                    :redo-changes)
+                    (caw/redo))
        :result {:set nm
                 :note (str "set created — aim tokens at it with create_token's `set` "
                            "param. A set is only live when an active theme enables "
@@ -285,7 +285,7 @@
                      group (assoc :group group)))]
         {:changes (-> (library-changes data)
                       (cb/set-token-theme (ctob/get-id theme) theme)
-                      :redo-changes)
+                      (caw/redo))
          :result {:theme name
                   :note (str "theme created — it is not active yet; activate_theme "
                              "switches which of its sets resolve")}}))))
@@ -840,7 +840,7 @@
                    applications)]
           (if (contains? run :fallback)
             run
-            {:changes (:redo-changes (:changes run))
+            {:changes (caw/redo (:changes run))
              :result {:results (:results run)
                       :note "tokens resolve asynchronously — verify with read_design or audit_file"}}))))))
 
@@ -891,25 +891,25 @@
                         " (create one with create_token_theme)")}
       (let [toggle (-> (library-changes data)
                        (clt/generate-toggle-token-theme lib (ctob/get-id match))
-                       :redo-changes)
+                       (caw/redo))
             data   (cfc/process-changes data toggle false)
             active (ctob/get-tokens-in-active-sets (:tokens-lib data))
             engine (assoc engine :fonts fonts)
             {:keys [resolved pending]} (worth active engine)]
         (if (some? pending)
           {:pending pending}
-          (let [pages (reduce
-                       (fn [redo pid]
-                         (let [changes (page-rebind pid (get-in data [:pages-index pid :objects])
-                                                    active resolved engine)]
-                           (if (contains? changes :fallback)
-                             (reduced changes)
-                             (into redo (:redo-changes changes)))))
-                       []
-                       (:pages data))]
-            (if (map? pages)
-              pages
-              {:changes (into (vec toggle) pages)
+          (let [made (reduce
+                      (fn [made pid]
+                        (let [changes (page-rebind pid (get-in data [:pages-index pid :objects])
+                                                   active resolved engine)]
+                          (if (contains? changes :fallback)
+                            (reduced changes)
+                            (caw/then-changes made (caw/redo changes)))))
+                      toggle
+                      (:pages data))]
+            (if (map? made)
+              made
+              {:changes made
                :result {:theme name
                         :note (str "theme toggled — shapes bound to a token NAME re-resolve "
                                    "automatically, so nothing needs re-applying. Verify with "

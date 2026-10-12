@@ -10,6 +10,7 @@
   versions are not file changes: the backend runs those tools itself."
   (:require
    [app.common.agent.structure :as cas]
+   [app.common.agent.write :as caw]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
@@ -27,7 +28,8 @@
                    (cfh/generate-unique-name "Page"
                                              (cfh/get-used-names (:pages-index data))
                                              :immediate-suffix? true))]
-    {:changes [{:type :add-page :id id :name named}]
+    {:changes (caw/with-undo [{:type :add-page :id id :name named}]
+                [{:type :del-page :id id}])
      :result {:pageId (dm/str id)
               :note (str "page created" (when wanted (str " named \"" wanted "\""))
                          " — you are NOT on it; the other tools still act on the current "
@@ -93,7 +95,7 @@
                   (-> (cb/empty-changes)
                       (cb/with-file-data data)
                       (cb/set-plugin-data foundations-ns (foundation-key slug) value)
-                      :redo-changes))]
+                      (caw/redo)))]
     (cond
       (str/blank? slug)
       {:problem (str "'" name "' does not make a usable foundation "

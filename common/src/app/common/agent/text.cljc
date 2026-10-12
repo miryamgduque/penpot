@@ -64,7 +64,7 @@
                       (caw/fit-text engine (:id shape))
                       (cond-> (ctl/any-layout? parent)
                         (caw/reflow-all propagate [pid]))
-                      :redo-changes)
+                      (caw/redo))
          :result {:id (dm/str (:id shape))
                   :note "text created — size settles async; verify with read_design"}}))))
 
@@ -112,7 +112,7 @@
                       (cond-> (some? align)
                         (cb/update-shapes [id] #(set-paragraph-attrs % {:text-align align})))
                       (caw/fit-text engine id)
-                      :redo-changes)
+                      (caw/redo))
          :result {:id shapeId
                   :note (str "text updated — size settles async. Font size, family and "
                              "weight are design tokens: author one with create_token "

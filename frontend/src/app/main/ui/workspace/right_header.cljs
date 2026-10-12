@@ -274,5 +274,14 @@
         (when ^boolean file-recording?
           [:span {:class (stl/css :recording-dot)
                   :role "status"
-                  :aria-label (tr "workspace.header.agent.recording")}])])]))
+                  :aria-label (tr "workspace.header.agent.recording")}])])
+
+     ;; With the agent off for this user the toggle is gone, but they must
+     ;; still be told that the file is being recorded: the dot stays, alone.
+     (when (and (not ^boolean agent-enabled?) ^boolean file-recording?)
+       [:div {:class (stl/css :recording-standalone)
+              :title (tr "workspace.header.agent.recording-title")}
+        [:span {:class (stl/css :recording-dot :recording-dot-standalone)
+                :role "status"
+                :aria-label (tr "workspace.header.agent.recording")}]])]))
 

@@ -252,6 +252,13 @@
   margin: var(--sp-s) 0;
 }
 
+// Status switch + the "for you" line under it, MCP Server's rhythm
+.ai-provider-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s);
+}
+
 .provider-card {
   display: flex;
   flex-direction: column;

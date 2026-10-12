@@ -655,6 +655,63 @@
                                         :description "role → the name of the file's token to bind it to, e.g. {\"color.primary\": \"brand.500\"}"}}
                    :required ["recipe"]}}
 
+   {:name "list_token_packs"
+    :description
+    (str "The starter design systems — token packs: neutral, bold, soft — each "
+         "with what it is for and the values that give it its look in its "
+         "light and dark themes, and what THIS file has to build on already "
+         "(`file.hasSystem`: tokens or a linked library). Call it once before "
+         "you build in a file you have not looked at: with no system, propose "
+         "one before the first shape.")
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "generate_token_pack"
+    :description
+    (str "Makes a whole token pack for THIS project from a few choices: the "
+         "brand color, the fonts, the corners, the density, the shadows. The "
+         "greys, the dark theme, the status colors and the scales follow from "
+         "them, and every pair of text and ground is moved until it can be "
+         "read. Use it when a starter does not fit — a brief, a foundation or "
+         "an imported brand says what the project is. It changes NOTHING: it "
+         "answers the pack and a summary to show the user; pass `pack` to "
+         "apply_token_pack once they agree.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string" :description "kebab-case id, e.g. relay"}
+                                :title {:type "string"}
+                                :purpose {:type "string"
+                                          :description "what the system should feel like and for whom, in a sentence"}
+                                :primary {:type "string" :description "the brand color, #rrggbb"}
+                                :bodyFont {:type "string" :description "a font family, e.g. Inter (search_fonts tells which exist)"}
+                                :headingFont {:type "string" :description "defaults to bodyFont"}
+                                :corners {:type "string" :enum ["sharp" "soft" "round"]}
+                                :density {:type "string" :enum ["compact" "regular" "roomy"]}
+                                :typeScale {:type "string" :enum ["regular" "large"]
+                                            :description "large: bigger headings"}
+                                :shadow {:type "string" :enum ["none" "soft" "hard"]
+                                         :description "hard: offset, no blur, thicker borders"}
+                                :neutral {:type "string"
+                                          :description "where the greys lean: plain, cool, warm, brand, or a #rrggbb"}}
+                   :required ["name" "title" "purpose" "primary" "bodyFont"]}}
+
+   {:name "apply_token_pack"
+    :description
+    (str "Gives the file a design system: the pack's token sets and themes, "
+         "with one theme on. `pack` is a starter's name (neutral, bold, soft) "
+         "or a whole pack as generate_token_pack answered it. Every recipe "
+         "then takes its look from these tokens, and what is already bound to "
+         "a token of the same name follows. A file that HAS tokens is not "
+         "touched: the answer says so, and you ask the user whether to merge "
+         "(theirs stay, the pack wins where both name a token), replace "
+         "(only the pack is left) or cancel, then call again with "
+         "`onExisting` — never choose for them. `theme` picks which theme is "
+         "on (the pack's default otherwise); activate_theme switches later.")
+    :input-schema {:type "object"
+                   :properties {:pack {:description "a starter's name, or a whole pack"}
+                                :theme {:type "string" :description "e.g. Dark"}
+                                :onExisting {:type "string" :enum ["merge" "replace" "cancel"]
+                                             :description "only after the user chose, in a file that has tokens"}}
+                   :required ["pack"]}}
+
    {:name "critique_design"
     :description
     (str "Shows a render of a board to a critic who did not build it and "
@@ -1241,7 +1298,8 @@
          "clone_shape"        (atx/clone-shape-tool input)
          "build_tree"         (atx/build-tree-tool input)
          ;; server only: there is no second implementation in the workspace
-         ("build_recipe" "find_recipes" "save_recipe" "set_texts" "set_icons" "critique_design")
+         ("build_recipe" "find_recipes" "save_recipe" "set_texts" "set_icons" "critique_design"
+                         "list_token_packs" "generate_token_pack" "apply_token_pack")
          (rx/of {:error (str name " runs on the server, and the server could not "
                              "run it here. Build with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)

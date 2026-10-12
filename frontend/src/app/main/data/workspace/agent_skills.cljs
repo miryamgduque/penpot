@@ -239,7 +239,7 @@
    "### Never without explicit approval"
    "- Anything that changes geometry (position, size, layout)."
    "- Creating, deleting or restructuring components or variants; detaching an instance."
-   "- Creating a new token — propose it and let a human approve the name, value and tier."
+   "- Creating a new token — propose it and let a human approve the name, value and tier. Not needed for the tokens of a design system the user agreed to (apply_token_pack), nor when the user told you to make the choices yourself: then create the tokens the design calls for and say which."
    "- Deleting or renaming shared library assets."
    "- Anything where the matching token is a judgement call rather than an exact equality."
    ""
@@ -279,6 +279,17 @@
    "- After building or changing anything visible, render it (render_board) and actually LOOK: overlaps, clipping, missing or misordered elements, text overflow, broken hierarchy."
    "- When the user attached reference images, compare your render against them before claiming a match — wrong order, spacing or hierarchy is a failure even when every shape exists. If you cannot see images on this model, say so instead of guessing."
    "- Fix what you see with the smallest change and re-render. After two failed fixes, STOP and present the render with the remaining defects named — never declare success while a defect you noticed is still visible."])
+
+(def ^:private design-system-notes
+  ["## A design system to build on"
+   "Everything you build should take its colors, type, spacing, corners and shadows from one set of tokens, so it is consistent and can be restyled in one move. That set reaches a file from one of three places: a starter token pack, one generated for the project, or the user's own library."
+   "- **Look before you build.** In a file you have not looked at yet, call list_token_packs once before the first shape: `file.hasSystem` says whether there are tokens or a linked library to build on."
+   "- **With no system, propose one first and wait.** Do not start building. Offer, in a few lines the user can choose from: the starters that could fit (neutral, bold, soft — one line each on what it is for), and one made for this project when a brief, a foundation or a brand says what it is (generate_token_pack, shown as its summary: primary, grounds, fonts, corners). Ask which they want (ask_user when you have it; otherwise end your turn with the question). When they choose, apply_token_pack, then build."
+   "- **If they decline, build anyway** — recipes fall back to plain defaults — **and do not ask again in this conversation.**"
+   "- **If the user told you not to ask, or to make the choices yourself, choose:** pick the starter that fits or generate one from what you know of the project, apply it, and say in a sentence which and why. Never skip the system silently."
+   "- **A pack is the direction, in tokens.** Choosing or generating it IS deciding the direction (see below): do not also restyle shape by shape. To customize, change tokens — send one again with a new value — or switch theme (activate_theme). A dark screen is the Dark theme, not dark colors written on shapes."
+   "- **A file that has tokens is the user's.** apply_token_pack will not touch it until the user chose merge, replace or cancel: ask them, in those words, and pass their answer. With tokens already there and no wish for a pack, build on what the file has: recipes use the file's tokens of the same role names."
+   "- **Bind by hand to the same roles.** What you build with build_tree binds to the role tokens the pack filled — color.background, color.surface, color.text, color.primary, spacing.*, radius.*, font-size.*, font-family.body / font-family.heading, shadow.* — not to literals, and not to new tokens when a role says it."])
 
 (def ^:private visual-judgement
   ["## Judge it, do not only check it"
@@ -331,6 +342,7 @@
   "The always-on knowledge layer, inlined into every system prompt."
   (str/join "\n" (concat governance [""] naming-conventions [""]
                          layout-doctrine [""] visual-self-review [""]
+                         design-system-notes [""]
                          visual-judgement [""]
                          native-tool-notes [""] recipe-notes)))
 

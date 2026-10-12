@@ -2348,13 +2348,13 @@ textarea.create-input {
     outline-offset: $b-1;
   }
 
-  // A disabled skill is dropped from the router; mute the name + description but
-  // keep the "Off" pill and the ⋯ menu legible so the state reads and it can be
-  // turned back on.
+  // A disabled skill is dropped from the router; mute the name but keep the
+  // "Off" pill and the ⋯ menu legible so the state reads and it can be turned
+  // back on. The description already sits on the secondary foreground, so the
+  // muting is carried by the name alone rather than by transparency (US #75).
   &.disabled {
-    .catalog-name,
-    .catalog-desc {
-      opacity: 0.55;
+    .catalog-name {
+      color: var(--color-foreground-secondary);
     }
   }
 }
@@ -2479,10 +2479,15 @@ textarea.create-input {
   @include scaled-body-small;
 }
 
-// Faded, with no hover feedback.
+// Muted, with no hover feedback. The DS has no foreground-disabled token; for
+// a transparent control its own answer is the secondary foreground, the same
+// one the ghost `button*` uses (US #75). It is set through the shared menu's
+// own variable rather than as a bare `color`, so the `:hover` rule below —
+// which exists to stop the row brightening — keeps resolving to it too.
 .menu-option-disabled {
+  --menu-foreground-color-rest: var(--color-foreground-secondary);
+
   cursor: default;
-  opacity: 0.5;
 
   &:hover {
     background-color: transparent;

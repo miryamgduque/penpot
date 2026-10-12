@@ -24,6 +24,8 @@
   the generated `aikit-bodies` namespace (plus the stored body for user-created
   skills)."
   (:require
+   [app.common.agent.recipe-build :as carb]
+   [app.common.agent.recipes :as cars]
    [app.main.data.workspace.aikit-bodies :as ab]
    [app.main.data.workspace.aikit-refs :as ar]
    [app.main.data.workspace.skill-state :as skst]
@@ -286,14 +288,23 @@
    "- Colour rules are enforced at the tool boundary: while `token-only-colors` is active a raw hex is rejected outright. Create or apply a token — do not try to route around the rule."
    "- Token order of operations: SETS exist before tokens, THEMES before resolution. A fresh file has no sets — create_token_set (e.g. primitives / semantic / modes/light) first, then create_token into them, then create_token_theme + activate_theme so bound values actually resolve."
    "- For broad reading — file maps, inventories, cross-shape audits — prefer ONE explore_design call over many read_design/find_shapes rounds: it sweeps in a side context and returns a digest at a fraction of the cost."
-   "- **Work in as few rounds as possible.** Reach for the composition tools first: build_tree for a new section or screen skeleton, clone_shape for copies with different content, create_tokens / update_shapes / apply_tokens for anything repeated — one call, not one per item. When separate calls ARE independent, issue them together in one response instead of one at a time."
+   "- **Work in as few rounds as possible.** Reach for the composition tools first: build_recipe for anything the recipe catalog has, build_tree for a new section or screen skeleton, clone_shape for copies with different content, create_tokens / update_shapes / apply_tokens for anything repeated — one call, not one per item. When separate calls ARE independent, issue them together in one response instead of one at a time."
    "- When you mention a shape you created or changed, link it: `[Layer name](shape:ID)` with the id your tools returned — the user can click it to select that shape on canvas. Link the shapes that MATTER (the board you just built, the layer a defect names), not every mention."])
+
+(def ^:private recipe-notes
+  ["## Recipes"
+   "A recipe is a common piece of UI built the way Penpot means it: auto-layout, values bound to tokens, real components with variants. The catalog:"
+   (carb/index cars/builtin)
+   "- **Before you build anything structural, look here first.** If a piece you are about to build is in the catalog — or might be — call find_recipes with a few words for it, then build_recipe. One call builds what would take you dozens, and builds it the same way every time."
+   "- A screen is usually several recipes: a top-bar, a hero, a form, each placed into the screen's board with `parentId`. Build the screen's board, then the recipes into it."
+   "- A recipe is structure, not content or style. After build_recipe: set the words (set_text), fill the slots it names, and restyle by editing tokens — never by overriding colors on the shapes."
+   "- When no recipe fits, build by hand with build_tree — and still use recipes for the parts that have one (button, text-field, badge…) instead of drawing them."])
 
 (def inner-knowledge
   "The always-on knowledge layer, inlined into every system prompt."
   (str/join "\n" (concat governance [""] naming-conventions [""]
                          layout-doctrine [""] visual-self-review [""]
-                         native-tool-notes)))
+                         native-tool-notes [""] recipe-notes)))
 
 ;; --- Skill bodies (load-on-demand)
 ;;

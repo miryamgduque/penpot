@@ -23,8 +23,7 @@
    [app.main.data.workspace.agent-tools.read :as atr]
    [app.main.data.workspace.agent-tools.structure :as ats]
    [app.main.data.workspace.agent-tools.tokens :as att]
-   [beicon.v2.core :as rx]
-   [cuerdas.core :as str]))
+   [beicon.v2.core :as rx]))
 
 ;; Re-exports for the production consumers (agent.cljs, ai_panel.cljs,
 ;; agent_chats.cljs) that predate the family split — they keep requiring
@@ -586,23 +585,26 @@
                                 :tree {:type "object" :description "the root node"}}
                    :required ["tree"]}}
 
+   {:name "find_recipes"
+    :description
+    (str "Looks in the recipe catalog for what you are about to build. Call "
+         "it BEFORE building any common piece of UI — a control, a card, a "
+         "navigation bar, a section of a page. Answers the recipes that fit, "
+         "best first, each with its purpose, params, variants, slots and the "
+         "recipes it uses: what build_recipe needs. No match means build by "
+         "hand.")
+    :input-schema {:type "object"
+                   :properties {:query {:type "string" :description "a few words for the piece, e.g. \"sign up form\", \"navbar\", \"pricing\""}
+                                :category {:type "string" :enum ["control" "container" "navigation" "section"]
+                                           :description "list a whole category instead of, or as well as, searching"}}}}
+
    {:name "build_recipe"
     :description
     (str "Builds a common piece of UI from a recipe in ONE call, as Penpot "
          "means it to be built: auto-layout, values bound to tokens, real "
-         "components with variants. Recipes: "
-         (str/join "; "
-                   (map (fn [{:keys [name purpose params variants]}]
-                          (str name " — " purpose
-                               (when (seq params)
-                                 (str " Params: " (str/join ", " (map :name params)) "."))
-                               (when (seq variants)
-                                 (str " Variants: "
-                                      (str/join ", " (map #(str (:name %) " (" (str/join "/" (:values %)) ")")
-                                                          variants))
-                                      "."))))
-                        (sort-by :name (vals cars/builtin))))
-         ". A recipe is structure, not style: every color, spacing, radius and "
+         "components with variants. The catalog is in your instructions; "
+         "find_recipes answers a recipe's params, variants and slots. "
+         "A recipe is structure, not style: every color, spacing, radius and "
          "type size is a role (color.primary, spacing.md…) bound to the file's "
          "token of that name, or to the token you name in `roles`, or to a new "
          "token with a default value — restyle by editing tokens. A recipe "
@@ -1112,9 +1114,9 @@
          "clone_shape"        (atx/clone-shape-tool input)
          "build_tree"         (atx/build-tree-tool input)
          ;; server only: there is no second implementation in the workspace
-         "build_recipe"       (rx/of {:error (str "build_recipe runs on the server, and the "
-                                                  "server could not run it here. Build "
-                                                  "with build_tree instead.")})
+         ("build_recipe" "find_recipes")
+         (rx/of {:error (str name " runs on the server, and the server could not "
+                             "run it here. Build with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)
          "ungroup_shapes"     (ats/ungroup-shapes input)
          "set_layout"         (atl/set-layout input)

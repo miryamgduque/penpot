@@ -269,6 +269,63 @@ test("an engine tool runs in the exporter, and the workspace catches up before i
   }
 });
 
+test("what a turn does with recipes is counted, sent with done and logged", async () => {
+  const { mkdtemp, readFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { hitRate } = await import("../src/recipes.js");
+  const recipeLog = join(await mkdtemp(join(tmpdir(), "recipes-")), "nested", "recipe-use.jsonl");
+  const answers = {
+    find_recipes: '{"matches":[{"name":"button"}]}',
+    build_recipe: '{"recipe":"button","id":"b1"}',
+    build_tree: '{"created":2}',
+  };
+  const exporter = await fakeJsonServer((n) => ({ content: Object.values(answers)[n], isError: false, revn: n + 1 }));
+  const calls = [
+    { name: "find_recipes", input: { query: "button" } },
+    { name: "build_recipe", input: { recipe: "button" } },
+    { name: "build_tree", input: { tree: {} } },
+  ];
+  const t = await setup((_req, n) => (n < calls.length ? { tool: calls[n] } : { text: "Done." }), {
+    exporterUri: exporter.uri,
+    recipeLog,
+  });
+  try {
+    const headers = { ...ENGINE_HEADERS, "x-penpot-engine-tools": "find_recipes,build_recipe,build_tree" };
+    const response = await fetch(`${t.base}/v1/turns`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...BODY, tools: calls.map((call) => tool(call.name)) }),
+    });
+    let turnId;
+    let done;
+    for await (const event of events(response)) {
+      if (event.type === "turn") turnId = event.turnId;
+      if (event.type === "done") done = event;
+      if (event.type === "tool-call") {
+        await fetch(`${t.base}/v1/turns/${turnId}/tool-results`, {
+          method: "POST",
+          headers: HEADERS,
+          body: JSON.stringify({ callId: event.callId, content: '{"pageId":"page-1"}' }),
+        });
+      }
+    }
+    const used = { searched: 1, found: 1, built: 1, byHand: 1, recipes: ["button"] };
+    assert.deepEqual(done.recipes, used);
+    const logged = (await readFile(recipeLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    assert.equal(logged.length, 1);
+    assert.deepEqual({ ...logged[0], at: undefined }, { at: undefined, turnId, sessionId: "s1", ...used });
+    assert.equal(hitRate(logged), 1);
+    assert.equal(hitRate([...logged, { sessionId: "s2", found: 2, built: 0 }, { sessionId: "s3", found: 0, built: 0 }]), 0.5);
+    // found in one turn, built in the next of the same conversation
+    assert.equal(hitRate([{ sessionId: "s4", found: 1, built: 0 }, { sessionId: "s4", found: 0, built: 1 }]), 1);
+    assert.equal(hitRate([{ found: 0, built: 1 }]), undefined);
+  } finally {
+    await t.close();
+    await exporter.close();
+  }
+});
+
 test("what the exporter does not handle yet is run by the workspace", async () => {
   const exporter = await fakeJsonServer(() => ({ fallback: "rotation is not applied on the server yet" }));
   const t = await setup(

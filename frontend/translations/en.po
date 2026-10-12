@@ -9719,7 +9719,7 @@ msgstr "The instance-wide set, seeded from the official penpot-ai-kit. Switch an
 
 #: src/app/main/ui/dashboard/skills.cljs
 msgid "dashboard.skills.create"
-msgstr "+ New skill or rule"
+msgstr "New skill or rule"
 
 #: src/app/main/ui/dashboard/skills.cljs
 msgid "dashboard.skills.empty"

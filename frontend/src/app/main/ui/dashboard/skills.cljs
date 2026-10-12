@@ -18,11 +18,20 @@
    [app.main.data.skills :as dsk]
    [app.main.store :as st]
    [app.main.ui.components.dropdown :refer [dropdown]]
-   [app.main.ui.components.forms :as fm]
    [app.main.ui.dashboard.team :refer [header*]]
+   [app.main.ui.ds.buttons.button :refer [button*]]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
+   [app.main.ui.ds.controls.checkbox :refer [checkbox*]]
+   [app.main.ui.ds.controls.switch :refer [switch*]]
+   [app.main.ui.ds.controls.utilities.label :refer [label*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
+   [app.main.ui.ds.foundations.typography :as t]
+   [app.main.ui.ds.foundations.typography.text :refer [text*]]
+   [app.main.ui.ds.layout.modal :refer [modal* modal-header* modal-content* modal-footer*]]
+   [app.main.ui.ds.tooltip :refer [tooltip*]]
+   [app.main.ui.forms :as fc]
    [app.util.dom :as dom]
+   [app.util.forms :as fm]
    [app.util.i18n :as i18n :refer [tr]]
    [beicon.v2.core :as rx]
    [okulary.core :as l]
@@ -47,23 +56,81 @@
 
 (defn- kind-options
   []
-  [{:label (tr "dashboard.skills.kind.skill") :value "skill"}
-   {:label (tr "dashboard.skills.kind.rule") :value "rule"}])
+  [{:label (tr "dashboard.skills.kind.skill") :value "skill" :id "skill"}
+   {:label (tr "dashboard.skills.kind.rule") :value "rule" :id "rule"}])
 
 (defn- enforcement-options
   []
-  [{:label (tr "dashboard.skills.enforcement.advisory") :value "advisory"}
-   {:label (tr "dashboard.skills.enforcement.triggered") :value "triggered"}
-   {:label (tr "dashboard.skills.enforcement.enforced") :value "enforced"}])
+  [{:label (tr "dashboard.skills.enforcement.advisory") :value "advisory" :id "advisory"}
+   {:label (tr "dashboard.skills.enforcement.triggered") :value "triggered" :id "triggered"}
+   {:label (tr "dashboard.skills.enforcement.enforced") :value "enforced" :id "enforced"}])
 
 (defn- trigger-options
   []
-  [{:label "—" :value ""}
-   {:label "fill-change" :value "fill-change"}
-   {:label "shape-new" :value "shape-new"}
-   {:label "rename" :value "rename"}
-   {:label "selection-change" :value "selection-change"}
-   {:label "content-save" :value "content-save"}])
+  [{:label "—" :value "" :id ""}
+   {:label "fill-change" :value "fill-change" :id "fill-change"}
+   {:label "shape-new" :value "shape-new" :id "shape-new"}
+   {:label "rename" :value "rename" :id "rename"}
+   {:label "selection-change" :value "selection-change" :id "selection-change"}
+   {:label "content-save" :value "content-save" :id "content-save"}])
+
+(defn- on-open-change
+  "DS modal* closes itself (close button, Escape, backdrop) through this
+  callback; the dialogs here live in the modal store, so hide it there."
+  [open?]
+  (when-not open?
+    (modal/hide!)))
+
+(mf/defc mandatory-field*
+  "DS checkbox* bound to the form's :is-mandatory (there is no form-aware
+  checkbox wrapper)."
+  {::mf/private true}
+  [{:keys [form]}]
+  (let [id        (mf/use-id)
+        checked   (boolean (get-in @form [:data :is-mandatory]))
+        on-change (mf/use-fn
+                   (mf/deps form)
+                   (fn [event]
+                     (fm/on-input-change form :is-mandatory
+                                         (boolean (dom/checked? (dom/get-target event))))))]
+    [:> checkbox* {:id id
+                   :label (tr "dashboard.skills.form.mandatory")
+                   :checked checked
+                   :on-change on-change}]))
+
+(mf/defc body-field*
+  "Multi-line body. The DS has no textarea, so this is a plain textarea
+  with a DS label*, styled with the DS input tokens."
+  {::mf/private true}
+  [{:keys [form]}]
+  (let [id        (mf/use-id)
+        value     (get-in @form [:data :body] "")
+        on-change (mf/use-fn
+                   (mf/deps form)
+                   (fn [event]
+                     (fm/on-input-change form :body
+                                         (dom/get-value (dom/get-target event)))))]
+    [:div {:class (stl/css :fields-row)}
+     [:> label* {:for id} (tr "dashboard.skills.form.body")]
+     [:textarea {:id id
+                 :class (stl/css :body-textarea)
+                 :rows 10
+                 :value value
+                 :placeholder (tr "dashboard.skills.form.body-hint")
+                 :on-change on-change}]]))
+
+(mf/defc select-field*
+  {::mf/private true}
+  [{:keys [name label options]}]
+  (let [id (mf/use-id)]
+    [:div {:class (stl/css :fields-row)}
+     [:> label* {:for id} label]
+     ;; select* renders a <button> with no type; inside the form it would
+     ;; default to submit and save the dialog on click.
+     [:> fc/form-select* {:id id
+                          :type "button"
+                          :name name
+                          :options options}]]))
 
 (mf/defc skill-modal
   {::mf/register modal/components
@@ -109,75 +176,82 @@
                (st/emit! (dsk/update-design-skill (with-meta (assoc params :id id) mdata)))
                (st/emit! (dsk/create-design-skill (with-meta (assoc params :scope scope) mdata)))))))]
 
-    [:div {:class (stl/css :modal-overlay)}
-     [:div {:class (stl/css :modal-container)}
-      [:& fm/form {:form form :on-submit on-submit}
-       [:div {:class (stl/css :modal-header)}
-        [:h2 {:class (stl/css :modal-title)}
-         (cond
-           (some? skill) (tr "modals.edit-design-skill.title")
-           (= scope :app) (tr "modals.create-design-skill.title-app")
-           :else (tr "modals.create-design-skill.title-team"))]
-        [:> icon-button* {:variant "ghost"
-                          :class (stl/css :modal-close-btn)
-                          :aria-label (tr "labels.close")
-                          :on-click modal/hide!
-                          :icon i/close}]]
+    [:> modal* {:is-open true
+                :size "large"
+                :on-open-change on-open-change}
+     [:> fc/form* {:form form
+                   :class (stl/css :skill-form)
+                   :on-submit on-submit}
+      [:> modal-header*
+       {:title (cond
+                 (some? skill) (tr "modals.edit-design-skill.title")
+                 (= scope :app) (tr "modals.create-design-skill.title-app")
+                 :else (tr "modals.create-design-skill.title-team"))}]
 
-       [:div {:class (stl/css :modal-content)}
-        [:div {:class (stl/css :fields-row)}
-         [:& fm/input {:type "text"
-                       :auto-focus? true
-                       :form form
-                       :name :name
-                       :label (tr "dashboard.skills.form.name")
-                       :placeholder "token-only-colors"}]]
-        [:div {:class (stl/css :fields-pair)}
-         [:div {:class (stl/css :fields-row)}
-          [:div {:class (stl/css :select-title)} (tr "dashboard.skills.form.kind")]
-          [:& fm/select {:options (kind-options)
-                         :default "skill"
-                         :name :kind}]]
-         [:div {:class (stl/css :fields-row)}
-          [:div {:class (stl/css :select-title)} (tr "dashboard.skills.form.enforcement")]
-          [:& fm/select {:options (enforcement-options)
-                         :default "advisory"
-                         :name :enforcement}]]]
-        [:div {:class (stl/css :fields-pair)}
-         [:div {:class (stl/css :fields-row)}
-          [:div {:class (stl/css :select-title)} (tr "dashboard.skills.form.trigger")]
-          [:& fm/select {:options (trigger-options)
-                         :default ""
-                         :name :trigger-on}]]
-         [:div {:class (stl/css :fields-row :fields-row-checkbox)}
-          [:& fm/input {:type "checkbox"
-                        :form form
-                        :name :is-mandatory
-                        :label (tr "dashboard.skills.form.mandatory")}]
-          [:div {:class (stl/css :hint)} (tr "dashboard.skills.form.mandatory-hint")]]]
-        [:div {:class (stl/css :fields-row)}
-         [:& fm/input {:type "text"
-                       :form form
-                       :name :description
-                       :label (tr "dashboard.skills.form.description")
-                       :placeholder (tr "dashboard.skills.form.description-hint")}]]
-        [:div {:class (stl/css :fields-row)}
-         [:& fm/textarea {:form form
-                          :name :body
-                          :rows 10
-                          :label (tr "dashboard.skills.form.body")
-                          :placeholder (tr "dashboard.skills.form.body-hint")}]]]
+      [:> modal-content* {:class (stl/css :skill-form-content)}
+       [:> fc/form-input* {:type "text"
+                           :auto-focus true
+                           :name :name
+                           :max-length 250
+                           :label (tr "dashboard.skills.form.name")
+                           :placeholder "token-only-colors"}]
+       [:div {:class (stl/css :fields-pair)}
+        [:> select-field* {:name :kind
+                           :label (tr "dashboard.skills.form.kind")
+                           :options (kind-options)}]
+        [:> select-field* {:name :enforcement
+                           :label (tr "dashboard.skills.form.enforcement")
+                           :options (enforcement-options)}]]
+       [:div {:class (stl/css :fields-pair)}
+        [:> select-field* {:name :trigger-on
+                           :label (tr "dashboard.skills.form.trigger")
+                           :options (trigger-options)}]
+        [:div {:class (stl/css :fields-row :fields-row-checkbox)}
+         [:> mandatory-field* {:form form}]
+         [:> text* {:as "div"
+                    :typography t/body-small
+                    :class (stl/css :hint)}
+          (tr "dashboard.skills.form.mandatory-hint")]]]
+       [:> fc/form-input* {:type "text"
+                           :name :description
+                           :max-length 2000
+                           :label (tr "dashboard.skills.form.description")
+                           :placeholder (tr "dashboard.skills.form.description-hint")}]
+       [:> body-field* {:form form}]]
 
-       [:div {:class (stl/css :modal-footer)}
-        [:div {:class (stl/css :action-buttons)}
-         [:input {:class (stl/css :cancel-button)
-                  :type "button"
-                  :value (tr "labels.cancel")
-                  :on-click modal/hide!}]
-         [:> fm/submit-button*
-          {:label (if skill
-                    (tr "modals.edit-design-skill.submit-label")
-                    (tr "modals.create-design-skill.submit-label"))}]]]]]]))
+      [:> modal-footer* {}
+       [:> button* {:variant "secondary"
+                    :on-click modal/hide!}
+        (tr "labels.cancel")]
+       [:> fc/form-submit* {:variant "primary"}
+        (if skill
+          (tr "modals.edit-design-skill.submit-label")
+          (tr "modals.create-design-skill.submit-label"))]]]]))
+
+(mf/defc delete-skill-dialog
+  {::mf/register modal/components
+   ::mf/register-as :design-skill-delete}
+  [{:keys [skill]}]
+  (let [on-accept
+        (mf/use-fn
+         (mf/deps skill)
+         (fn []
+           (st/emit! (dsk/delete-design-skill {:id (:id skill)})
+                     (modal/hide))))]
+    [:> modal* {:is-open true
+                :size "small"
+                :on-open-change on-open-change}
+     [:> modal-header* {:title (tr "modals.delete-design-skill.title")}]
+     [:> modal-content* {}
+      [:> text* {:as "p" :typography t/body-large}
+       (tr "modals.delete-design-skill.message")]]
+     [:> modal-footer* {}
+      [:> button* {:variant "secondary"
+                   :on-click modal/hide!}
+       (tr "labels.cancel")]
+      [:> button* {:variant "destructive"
+                   :on-click on-accept}
+       (tr "labels.delete")]]]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; LISTS
@@ -211,31 +285,29 @@
          (fn []
            (st/emit! (modal/show :design-skill {:skill skill :scope scope}))))
 
-        on-delete-accepted
+        on-delete
         (mf/use-fn
          (mf/deps skill)
          (fn []
-           (st/emit! (dsk/delete-design-skill {:id (:id skill)}))))
+           (st/emit! (modal/show :design-skill-delete {:skill skill}))))
 
-        on-delete
+        on-switch
         (mf/use-fn
-         (mf/deps on-delete-accepted)
-         (fn []
-           (st/emit! (modal/show {:type :confirm
-                                  :title (tr "modals.delete-design-skill.title")
-                                  :message (tr "modals.delete-design-skill.message")
-                                  :accept-label (tr "labels.delete")
-                                  :on-accept on-delete-accepted}))))]
+         (mf/deps skill on-toggle)
+         (fn [checked]
+           (on-toggle skill checked)))
+
+        toggle-hint
+        (if (:is-mandatory skill)
+          (tr "dashboard.skills.mandatory-toggle-hint")
+          (tr "dashboard.skills.toggle-hint"))]
 
     [:div {:class (stl/css :table-row :skill-row)}
-     [:label {:class (stl/css :skill-toggle)
-              :title (if (:is-mandatory skill)
-                       (tr "dashboard.skills.mandatory-toggle-hint")
-                       (tr "dashboard.skills.toggle-hint"))}
-      [:input {:type "checkbox"
-               :checked (boolean enabled)
-               :disabled (or (:is-mandatory skill) (not can-toggle))
-               :on-change #(on-toggle skill (not enabled))}]]
+     [:> tooltip* {:content toggle-hint}
+      [:> switch* {:default-checked (boolean enabled)
+                   :aria-label toggle-hint
+                   :disabled (boolean (or (:is-mandatory skill) (not can-toggle)))
+                   :on-change on-switch}]]
      [:div {:class (stl/css :skill-main)}
       [:div {:class (stl/css :skill-name)} (:name skill)]
       [:div {:class (stl/css :skill-desc)} (:description skill)]]
@@ -259,8 +331,9 @@
      [:h2 {:class (stl/css :section-title)} title]
      [:p {:class (stl/css :section-desc)} description]]
     (when can-edit
-      [:button {:class (stl/css :create-btn)
-                :on-click #(st/emit! (modal/show :design-skill {:scope scope}))}
+      [:> button* {:variant "primary"
+                   :icon i/add
+                   :on-click #(st/emit! (modal/show :design-skill {:scope scope}))}
        (tr "dashboard.skills.create")])]
    (if (empty? skills)
      [:div {:class (stl/css :skills-empty)}

@@ -49,6 +49,7 @@
    [app.main.ui.ds.buttons.button :refer [button*]]
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
+   [app.main.ui.ds.tooltip :refer [tooltip*]]
    [app.util.clipboard :as clipboard]
    [app.util.dom :as dom]
    [app.util.i18n :as i18n :refer [tr]]
@@ -106,7 +107,8 @@
         now*  (mf/use-state #(inst-ms (js/Date.)))
         now   (deref now*)
 
-        on-stop (mf/use-fn #(st/emit! (srec/stop-recording)))]
+        on-stop (mf/use-fn #(st/emit! (srec/stop-recording)))
+        warning-hint-id (mf/use-id)]
 
     (mf/with-effect [recording?]
       (when recording?
@@ -128,10 +130,14 @@
            (let [n (count (:events session []))]
              (tr "workspace.session-recorder.recording" (i18n/c n)))]]
 
+         ;; focusable so its DS tooltip is reachable without a mouse
          (when (:local-only? session)
-           [:span {:class (stl/css :status-warning)
-                   :title (tr "workspace.session-recorder.not-saving-title" spersist/max-flush-failures)}
-            (tr "workspace.session-recorder.not-saving")])
+           [:> tooltip* {:id warning-hint-id
+                         :content (tr "workspace.session-recorder.not-saving-title" spersist/max-flush-failures)}
+            [:span {:class (stl/css :status-warning)
+                    :tab-index 0
+                    :aria-describedby warning-hint-id}
+             (tr "workspace.session-recorder.not-saving")]])
 
          [:> button* {:variant "secondary"
                       :class (stl/css :compact-label :timer-stop)
@@ -145,7 +151,8 @@
         stopped  (:stopped-at session)
         reason   (stop-reason-label (:stop-reason session))
         events   (:event-count session 0)
-        dropped  (:raw-dropped session 0)]
+        dropped  (:raw-dropped session 0)
+        dropped-hint-id (mf/use-id)]
     [:li {:class (stl/css :session-row)}
      [:div {:class (stl/css :session-main)}
       [:span {:class (stl/css :session-when)}
@@ -161,25 +168,29 @@
      (when reason
        [:span {:class (stl/css :session-reason)} reason])
 
+     ;; focusable so its DS tooltip is reachable without a mouse
      (when (pos? dropped)
-       [:span {:class (stl/css :session-reason)
-               :title (tr "workspace.session-recorder.raw-dropped-title")}
-        (tr "workspace.session-recorder.raw-dropped" dropped)])
+       [:> tooltip* {:id dropped-hint-id
+                     :content (tr "workspace.session-recorder.raw-dropped-title")}
+        [:span {:class (stl/css :session-reason)
+                :tab-index 0
+                :aria-describedby dropped-hint-id}
+         (tr "workspace.session-recorder.raw-dropped" dropped)]])
 
      ;; only a finished session can be reviewed: critiquing a recording that is
      ;; still running would judge an unfinished process
      (when stopped
+       ;; the DS tooltip shows the accessible name, so no native title
        [:> icon-button* {:variant (if (:has-review session) "primary" "ghost")
-                         :aria-label (tr "workspace.session-recorder.review")
-                         :title (if (:has-review session)
-                                  (tr "workspace.session-recorder.review-again")
-                                  (tr "workspace.session-recorder.review-title"))
+                         :aria-label (if (:has-review session)
+                                       (tr "workspace.session-recorder.review-again")
+                                       (tr "workspace.session-recorder.review"))
                          :on-click #(on-review (:id session))
                          :icon i/feedback}])
 
+     ;; export copies the session JSON to the clipboard, so the name says so
      [:> icon-button* {:variant "ghost"
-                       :aria-label (tr "workspace.session-recorder.export")
-                       :title (tr "workspace.session-recorder.export-title")
+                       :aria-label (tr "workspace.session-recorder.export-title")
                        :on-click #(on-export (:id session))
                        :icon i/download}]]))
 
@@ -320,9 +331,6 @@
      [:> icon-button* {:variant "ghost"
                        :class (stl/css-case :rec-button true :rec-button-live recording?)
                        :aria-label (if recording? (tr "workspace.session-recorder.stop") (tr "workspace.session-recorder.record"))
-                       :title (if recording?
-                                (tr "workspace.session-recorder.stop-title")
-                                (tr "workspace.session-recorder.record"))
                        :on-click on-toggle-rec
                        :icon i/stroke-circle}]
 
@@ -330,7 +338,6 @@
      ;; beside this one and two identical glyphs are indistinguishable.
      [:> icon-button* {:variant "ghost"
                        :aria-label (tr "workspace.session-recorder.sessions")
-                       :title (tr "workspace.session-recorder.sessions")
                        :on-click on-toggle-list
                        :icon i/clock}]
 

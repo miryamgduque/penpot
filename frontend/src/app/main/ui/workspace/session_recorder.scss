@@ -143,6 +143,9 @@
   background-color: var(--color-background-error);
   color: var(--color-accent-error);
   white-space: nowrap;
+
+  // focusable (tabindex 0) so its hint is reachable by keyboard
+  @include agent-button.hint-focus-ring;
 }
 
 // --- sessions popover
@@ -238,6 +241,9 @@
 
   color: var(--color-accent-error);
   white-space: nowrap;
+
+  // the raw-dropped note is focusable (tabindex 0) so its hint is reachable
+  @include agent-button.hint-focus-ring;
 }
 
 .note {

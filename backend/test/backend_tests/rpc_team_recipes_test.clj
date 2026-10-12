@@ -15,8 +15,10 @@
    [app.common.types.shape :as cts]
    [app.common.types.text :as txt]
    [app.common.uuid :as uuid]
+   [app.config :as cf]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.agent-tools :as agent-tools]
+   [app.rpc.commands.team-recipes :as team-recipes]
    [backend-tests.helpers :as th]
    [clojure.test :as t]))
 
@@ -25,14 +27,14 @@
 
 (def ^:private chip
   {:recipe 1
-   :name "chip"
-   :title "Chip"
+   :name "pebble"
+   :title "Pebble"
    :purpose "A small rounded label, to test with."
    :category "control"
-   :tree {:type "board" :name "Chip"
+   :tree {:type "board" :name "Pebble"
           :layout {:type "flex" :dir "row"}
           :tokens {:fill "color.surface-muted"}
-          :children [{:type "text" :name "Label" :text "Chip" :tokens {:fill "color.text"}}]}})
+          :children [{:type "text" :name "Label" :text "Pebble" :tokens {:fill "color.text"}}]}})
 
 (defn- setup
   []
@@ -69,14 +71,14 @@
     (t/is (empty? (listed owner team-id)))
     (let [out (save! owner team-id chip)]
       (t/is (nil? (:error out)))
-      (t/is (= "chip" (-> out :result :name)))
+      (t/is (= "pebble" (-> out :result :name)))
       (t/is (= "team" (-> out :result :origin)))
       (t/is (false? (-> out :result :overrides-built-in))))
     (t/testing "the recipe comes back as it went in"
       (t/is (= [chip] (mapv :recipe (listed owner team-id)))))
     (t/testing "saving the same name replaces it"
-      (save! owner team-id (assoc chip :title "Chip two"))
-      (t/is (= ["Chip two"] (mapv #(-> % :recipe :title) (listed owner team-id)))))
+      (save! owner team-id (assoc chip :title "Pebble two"))
+      (t/is (= ["Pebble two"] (mapv #(-> % :recipe :title) (listed owner team-id)))))
     (let [id (:id (first (listed owner team-id)))]
       (t/testing "disabled, it stays listed"
         (th/command! {::th/type :set-team-recipe-disabled ::rpc/profile-id (:id owner) :id id :disabled true})
@@ -210,3 +212,67 @@
       (t/is (= 0.5 (-> usage :shares :tokenBound)))
       (t/is (= 0.0 (-> usage :shares :components))))
     (t/is (re-find #"none of those boards" (get-in (run {:names ["Nope"]}) [:result :content])))))
+
+;; --- The community source
+
+(def ^:private index-uri "https://recipes.example.org/index.json")
+
+(defn- with-community
+  "Runs `f` with a community index at `index-uri` that serves `files`: url →
+  text."
+  [files f]
+  (with-redefs [cf/get (let [orig cf/get]
+                         (fn [k & more]
+                           (if (= k :recipe-community-index-uri) index-uri (apply orig k more))))
+                team-recipes/fetch-text! (fn [_ uri _] (get files (str uri)))]
+    (f)))
+
+(t/deftest a-community-recipe-is-copied-in-labelled-and-disabled
+  (let [{:keys [owner other team-id token]} (setup)
+        files {index-uri (json/encode {:recipes [{:name "pebble" :title "Pebble" :purpose "A small label."
+                                                  :category "control" :author "Ada" :url "pebble.recipe.json"}
+                                                 {:name "evil" :title "Evil" :url "evil.recipe.json"}
+                                                 {:name "other-name" :title "Renamed" :url "pebble.recipe.json"}
+                                                 {:title "No name"}]})
+               "https://recipes.example.org/pebble.recipe.json" (json/encode chip)
+               "https://recipes.example.org/evil.recipe.json" (json/encode (assoc chip :name "evil" :script "alert(1)"))}
+        offered (fn [profile] (th/command! {::th/type :get-community-recipes ::rpc/profile-id (:id profile) :team-id team-id}))
+        import! (fn [profile nm] (th/command! {::th/type :import-community-recipe ::rpc/profile-id (:id profile)
+                                               :team-id team-id :name nm}))]
+    (t/testing "with no index configured there is no community source"
+      (t/is (= {:configured false :available false :source nil :recipes []} (:result (offered owner)))))
+    (with-community files
+      (fn []
+        (t/testing "the index is listed, without what is not an entry"
+          (let [result (:result (offered owner))]
+            (t/is (true? (:configured result)))
+            (t/is (= "recipes.example.org" (:source result)))
+            (t/is (= ["pebble" "evil" "other-name"] (mapv :name (:recipes result))))
+            (t/is (= {:name "pebble" :title "Pebble" :purpose "A small label." :category "control"
+                      :author "Ada" :in-team false}
+                     (first (:recipes result))))))
+        (t/testing "only who can edit the team takes one"
+          (t/is (some? (:error (import! other "pebble")))))
+        (let [out (import! owner "pebble")]
+          (t/is (nil? (:error out)))
+          (t/is (= "community" (-> out :result :origin)))
+          (t/is (= "recipes.example.org · Ada" (-> out :result :origin-note)))
+          (t/is (true? (-> out :result :disabled)))
+          (t/is (= chip (-> out :result :recipe))))
+        (t/testing "disabled, a turn is not handed it; enabled, it is"
+          (let [page (fn [] (:result (th/command! {::th/type :get-agent-tool-page :token token})))
+                id   (:id (first (listed owner team-id)))]
+            (t/is (= {} (:recipes (page))))
+            (th/command! {::th/type :set-team-recipe-disabled ::rpc/profile-id (:id owner) :id id :disabled false})
+            (t/is (= ["pebble"] (keys (:recipes (page)))))))
+        (t/testing "the index then says the team has it"
+          (t/is (true? (:in-team (first (:recipes (:result (offered owner))))))))
+        (t/testing "a file with content outside the format is refused, and named"
+          (let [out (import! owner "evil")]
+            (t/is (= :invalid-recipe (:code (ex-data (:error out)))))
+            (t/is (re-find #"\"script\", which is not part of the format" (hint out)))))
+        (t/testing "a file that is not the recipe the index says is refused"
+          (t/is (re-find #"the index calls it \"other-name\" and the file \"pebble\"" (hint (import! owner "other-name")))))
+        (t/testing "a name the index does not have"
+          (t/is (= :community-recipe-not-found (:code (ex-data (:error (import! owner "nope"))))))
+          (t/is (= 1 (count (listed owner team-id)))))))))

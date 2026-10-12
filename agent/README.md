@@ -129,6 +129,25 @@ the user wrote. The same counts are in the turn's `done` event, as `recipes`.
 The hit rate is, of the conversations that found a recipe, the share that
 built one (`hitRate` in `src/recipes.js`).
 
+## Recipes: the community source
+
+Not part of this service, but of the same feature. The backend reads
+`PENPOT_RECIPE_COMMUNITY_INDEX_URI`: the address of a public JSON index of
+recipe files, kept and reviewed wherever it is hosted.
+
+```json
+{"recipes": [{"name": "news-card", "title": "News card",
+              "purpose": "A card for a news item.", "category": "container",
+              "author": "Ada", "url": "news-card.recipe.json"}]}
+```
+
+A `url` may be relative to the index. Team dashboard › Agent Recipes lists
+the index; importing a recipe has the backend fetch its file (public
+addresses only, as for any page the agent fetches), check it against the
+recipe format and keep it for the team, labelled with the index's host and
+the author, disabled until a member enables it. Unset, there is no community
+source and the section is not shown.
+
 ## Try it without a provider key
 
 `node test/fake-anthropic-cli.js 6068` starts a scripted stand-in model.

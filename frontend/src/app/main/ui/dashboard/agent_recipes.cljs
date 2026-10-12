@@ -27,6 +27,9 @@
 (def ^:private ref:team-recipes
   (l/derived :team-recipes st/state))
 
+(def ^:private ref:community-recipes
+  (l/derived :community-recipes st/state))
+
 (defn- as-text
   "A recipe as the file and the editor show it."
   [recipe]
@@ -57,6 +60,7 @@
   (case origin
     "saved"    (tr "dashboard.agent-recipes.origin.saved" (or origin-note "—"))
     "imported" (tr "dashboard.agent-recipes.origin.imported" (or origin-note "—"))
+    "community" (tr "dashboard.agent-recipes.origin.community" (or origin-note "—"))
     (tr "dashboard.agent-recipes.origin.team")))
 
 (mf/defc recipe-row*
@@ -104,6 +108,7 @@
   (let [team-id   (:id team)
         can-edit? (boolean (get-in team [:permissions :can-edit]))
         recipes   (mf/deref ref:team-recipes)
+        community (mf/deref ref:community-recipes)
         editing*  (mf/use-state nil)
         editing   (deref editing*)
         error*    (mf/use-state nil)
@@ -145,7 +150,8 @@
 
     (mf/with-effect [team-id]
       (when team-id
-        (st/emit! (dwtr/fetch-team-recipes team-id))))
+        (st/emit! (dwtr/fetch-team-recipes team-id)
+                  (dwtr/fetch-community-recipes team-id))))
 
     [:section {:class (stl/css :agent-recipes-page)}
      (if (some? editing)
@@ -206,6 +212,31 @@
                               :danger true
                               :on-click #(st/emit! (dwtr/delete-team-recipe team-id id callbacks))}]])])]
           [:p {:class (stl/css :empty)} (tr "dashboard.agent-recipes.empty")])
+
+        ;; the community source, when this instance has one
+        (when (:configured community)
+          [:*
+           [:h3 {:class (stl/css :section-title)} (tr "dashboard.agent-recipes.community-title")]
+           [:p {:class (stl/css :hero-desc)}
+            (tr "dashboard.agent-recipes.community-desc" (or (:source community) "—"))]
+           (cond
+             (not (:available community))
+             [:p {:class (stl/css :empty)} (tr "dashboard.agent-recipes.community-unavailable")]
+
+             (empty? (:recipes community))
+             [:p {:class (stl/css :empty)} (tr "dashboard.agent-recipes.community-empty")]
+
+             :else
+             [:ul {:class (stl/css :recipe-list)}
+              (for [{:keys [name author in-team] :as offered} (:recipes community)]
+                [:> recipe-row* {:key name
+                                 :recipe offered
+                                 :tags (cond-> []
+                                         (seq author) (conj (tr "dashboard.agent-skills.by" author))
+                                         in-team      (conj (tr "dashboard.agent-recipes.community-in-team")))}
+                 (when (and can-edit? (not in-team))
+                   [:> action* {:label (tr "dashboard.agent-recipes.import")
+                                :on-click #(st/emit! (dwtr/import-community-recipe team-id name callbacks))}])])])])
 
         [:h3 {:class (stl/css :section-title)} (tr "dashboard.agent-recipes.built-in-title")]
         [:p {:class (stl/css :hero-desc)} (tr "dashboard.agent-recipes.built-in-desc")]

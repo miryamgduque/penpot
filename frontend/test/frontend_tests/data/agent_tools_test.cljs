@@ -836,6 +836,11 @@
   (t/is (some #(= "set_texts" (:name %)) at/tool-specs))
   (t/is (some #(= "set_icons" (:name %)) at/tool-specs))
   (t/is (some #(= "critique_design" (:name %)) at/tool-specs))
+  (doseq [tool ["list_token_packs" "generate_token_pack" "apply_token_pack"]]
+    (t/is (some #(= tool (:name %)) at/tool-specs) tool))
+  (t/is (str/includes? ask/inner-knowledge "With no system, propose one first and wait"))
+  (t/is (str/includes? ask/inner-knowledge "do not ask again in this conversation"))
+  (t/is (str/includes? ask/inner-knowledge "merge, replace or cancel"))
   (t/is (str/includes? ask/inner-knowledge "Judge it, do not only check it"))
   (t/is (str/includes? ask/inner-knowledge "A direction before the first shape"))
   (t/is (str/includes? ask/inner-knowledge "The critic at the first whole render, not at the end"))

@@ -56,23 +56,23 @@
 
 (defn- kind-options
   []
-  [{:label (tr "dashboard.skills.kind.skill") :value "skill" :id "skill"}
-   {:label (tr "dashboard.skills.kind.rule") :value "rule" :id "rule"}])
+  [{:label (tr "dashboard.skills.kind.skill") :id "skill"}
+   {:label (tr "dashboard.skills.kind.rule") :id "rule"}])
 
 (defn- enforcement-options
   []
-  [{:label (tr "dashboard.skills.enforcement.advisory") :value "advisory" :id "advisory"}
-   {:label (tr "dashboard.skills.enforcement.triggered") :value "triggered" :id "triggered"}
-   {:label (tr "dashboard.skills.enforcement.enforced") :value "enforced" :id "enforced"}])
+  [{:label (tr "dashboard.skills.enforcement.advisory") :id "advisory"}
+   {:label (tr "dashboard.skills.enforcement.triggered") :id "triggered"}
+   {:label (tr "dashboard.skills.enforcement.enforced") :id "enforced"}])
 
 (defn- trigger-options
   []
-  [{:label "—" :value "" :id ""}
-   {:label "fill-change" :value "fill-change" :id "fill-change"}
-   {:label "shape-new" :value "shape-new" :id "shape-new"}
-   {:label "rename" :value "rename" :id "rename"}
-   {:label "selection-change" :value "selection-change" :id "selection-change"}
-   {:label "content-save" :value "content-save" :id "content-save"}])
+  [{:label "—" :id ""}
+   {:label "fill-change" :id "fill-change"}
+   {:label "shape-new" :id "shape-new"}
+   {:label "rename" :id "rename"}
+   {:label "selection-change" :id "selection-change"}
+   {:label "content-save" :id "content-save"}])
 
 (defn- on-open-change
   "DS modal* closes itself (close button, Escape, backdrop) through this
@@ -85,7 +85,7 @@
   "DS checkbox* bound to the form's :is-mandatory (there is no form-aware
   checkbox wrapper)."
   {::mf/private true}
-  [{:keys [form]}]
+  [{:keys [form hint-id]}]
   (let [id        (mf/use-id)
         checked   (boolean (get-in @form [:data :is-mandatory]))
         on-change (mf/use-fn
@@ -96,6 +96,7 @@
     [:> checkbox* {:id id
                    :label (tr "dashboard.skills.form.mandatory")
                    :checked checked
+                   :aria-describedby hint-id
                    :on-change on-change}]))
 
 (mf/defc body-field*
@@ -153,6 +154,8 @@
         form    (fm/use-form :schema schema:skill-form
                              :initial initial)
 
+        mandatory-hint-id (mf/use-id)
+
         on-success
         (mf/use-fn
          (fn [_]
@@ -178,6 +181,8 @@
 
     [:> modal* {:is-open true
                 :size "large"
+                ;; a stray backdrop click must not discard a half-written skill
+                :is-dismissable false
                 :on-open-change on-open-change}
      [:> fc/form* {:form form
                    :class (stl/css :skill-form)
@@ -207,8 +212,9 @@
                            :label (tr "dashboard.skills.form.trigger")
                            :options (trigger-options)}]
         [:div {:class (stl/css :fields-row :fields-row-checkbox)}
-         [:> mandatory-field* {:form form}]
+         [:> mandatory-field* {:form form :hint-id mandatory-hint-id}]
          [:> text* {:as "div"
+                    :id mandatory-hint-id
                     :typography t/body-small
                     :class (stl/css :hint)}
           (tr "dashboard.skills.form.mandatory-hint")]]]
@@ -223,7 +229,8 @@
        [:> button* {:variant "secondary"
                     :on-click modal/hide!}
         (tr "labels.cancel")]
-       [:> fc/form-submit* {:variant "primary"}
+       [:> fc/form-submit* {:variant "primary"
+                            :on-submit on-submit}
         (if skill
           (tr "modals.edit-design-skill.submit-label")
           (tr "modals.create-design-skill.submit-label"))]]]]))
@@ -305,7 +312,7 @@
     [:div {:class (stl/css :table-row :skill-row)}
      [:> tooltip* {:content toggle-hint}
       [:> switch* {:default-checked (boolean enabled)
-                   :aria-label toggle-hint
+                   :aria-label (:name skill)
                    :disabled (boolean (or (:is-mandatory skill) (not can-toggle)))
                    :on-change on-switch}]]
      [:div {:class (stl/css :skill-main)}

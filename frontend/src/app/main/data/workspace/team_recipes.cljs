@@ -35,6 +35,39 @@
              (rx/catch (fn [_] (rx/of (team-recipes-fetched [])))))
         (rx/empty)))))
 
+(defn fetch-community-recipes
+  "Loads what the community index offers into app-db under
+  `[:community-recipes]`: `{:configured :available :source :recipes}`."
+  [team-id]
+  (ptk/reify ::fetch-community-recipes
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (if team-id
+        (->> (rp/cmd! :get-community-recipes {:team-id team-id})
+             (rx/catch (fn [_] (rx/of {:configured false :available false :recipes []})))
+             (rx/map (fn [found]
+                       (ptk/reify ::community-recipes-fetched
+                         ptk/UpdateEvent
+                         (update [_ state]
+                           (assoc state :community-recipes found))))))
+        (rx/empty)))))
+
+(defn import-community-recipe
+  "Copies the community recipe called `name` into the team, where it waits
+  disabled; then loads both lists again."
+  [team-id name {:keys [on-success on-error] :or {on-success identity on-error identity}}]
+  (ptk/reify ::import-community-recipe
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :import-community-recipe {:team-id team-id :name name})
+           (rx/mapcat (fn [result]
+                        (on-success result)
+                        (rx/of (fetch-team-recipes team-id)
+                               (fetch-community-recipes team-id))))
+           (rx/catch (fn [cause]
+                       (on-error (or (:hint (ex-data cause)) (ex-message cause)))
+                       (rx/empty)))))))
+
 (defn- then-refresh
   "Runs `command`, loads the list again, and tells the caller how it went:
   `on-error` gets the problem as the server named it."

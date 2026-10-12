@@ -3999,6 +3999,30 @@ msgstr "Saved from “%s”"
 msgid "dashboard.agent-recipes.origin.imported"
 msgstr "Imported from “%s”"
 
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.origin.community"
+msgstr "From the community: %s"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-title"
+msgstr "Community recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-desc"
+msgstr "Recipes shared by others, from %s. Importing one copies it into your team, labelled with where it came from and disabled until you enable it. A recipe is data: nothing in it is ever run."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-unavailable"
+msgstr "The community index could not be read just now."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-empty"
+msgstr "The community index has no recipes yet."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-in-team"
+msgstr "Already in your team"
+
 #: src/app/main/ui/onboarding/questions.cljs:53
 msgid "labels.start"
 msgstr "Start"

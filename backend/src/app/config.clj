@@ -127,6 +127,9 @@
     [:exporter-shared-key {:optional true} :string]
     [:agent-service-uri {:optional true} ::sm/uri]
     [:agent-service-shared-key {:optional true} :string]
+    ;; The public index of community recipes for the design agent: a JSON
+    ;; file listing recipe files. Unset, there is no community source.
+    [:recipe-community-index-uri {:optional true} ::sm/uri]
     [:admin-console-shared-key {:optional true} :string]
     [:nexus-shared-key {:optional true} :string]
     [:media-processor-shared-key {:optional true} :string]

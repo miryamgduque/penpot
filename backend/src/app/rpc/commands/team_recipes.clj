@@ -23,15 +23,21 @@
    [app.common.json :as json]
    [app.common.schema :as sm]
    [app.common.time :as ct]
+   [app.common.uri :as u]
+   [app.config :as cf]
    [app.db :as db]
+   [app.http.client :as http]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.teams :refer [check-read-permissions! check-edition-permissions!]]
    [app.rpc.doc :as-alias doc]
-   [app.util.services :as sv]))
+   [app.util.services :as sv]
+   [cuerdas.core :as str])
+  (:import
+   java.io.InputStream))
 
 (def ^:private max-content-chars 200000)
 
-(def origins #{"team" "saved" "imported"})
+(def origins #{"team" "saved" "imported" "community"})
 
 (defn- parse
   "The recipe a JSON text holds, or nil when it is not JSON for a map."
@@ -98,11 +104,12 @@
 (defn store!
   "Keeps `recipe` for the team, in place of the one of that name it had.
   → the row."
-  [conn team-id profile-id recipe {:keys [origin origin-note]}]
-  (let [params {:content (json/encode recipe)
-                :origin (if (contains? origins origin) origin "team")
-                :origin-note origin-note
-                :updated-at (ct/now)}]
+  [conn team-id profile-id recipe {:keys [origin origin-note disabled]}]
+  (let [params (cond-> {:content (json/encode recipe)
+                        :origin (if (contains? origins origin) origin "team")
+                        :origin-note origin-note
+                        :updated-at (ct/now)}
+                 (some? disabled) (assoc :is-disabled disabled))]
     (if-let [found (db/get* conn :team-recipe {:team-id team-id :name (:name recipe)})]
       (db/update! conn :team-recipe params {:id (:id found)} {::db/return-keys true})
       (db/insert! conn :team-recipe (assoc params
@@ -127,6 +134,8 @@
    [:team-id ::sm/uuid]
    ;; the recipe, as JSON
    [:content [:string {:min 2 :max 400000}]]
+   ;; "community" is not said by a caller: it is what import-community-recipe
+   ;; writes
    [:origin {:optional true} [:enum "team" "saved" "imported"]]
    [:origin-note {:optional true} [:maybe [:string {:max 300}]]]])
 
@@ -170,3 +179,114 @@
     (check-edition-permissions! conn profile-id (:team-id found))
     (db/delete! conn :team-recipe {:id id})
     {:id id}))
+
+;; --- The community source
+;;
+;; A public index of recipe files, curated by review where it is kept: a JSON
+;; file `{"recipes": [{"name" "title" "purpose" "category" "author" "url"}]}`,
+;; at the address the instance is configured with. With none configured there
+;; is no community source.
+;;
+;; Taking a recipe from it copies the file into the team: fetched by the
+;; server, checked like any other, labelled with where it came from, and
+;; disabled until a member who can edit the team enables it. A recipe is data
+;; and is never run, wherever it comes from.
+
+(def ^:private max-index-chars 400000)
+
+(def ^:private max-entries 500)
+
+(defn- fetch-text!
+  "GETs `uri` as text, with the client's checks on where it may reach, on
+  every hop → the text, or nil when it could not be had or is too large."
+  [cfg uri limit]
+  (try
+    (let [{:keys [status ^InputStream body]}
+          (http/req-with-redirects cfg
+                                   {:method :get
+                                    :uri (str uri)
+                                    :headers {"accept" "application/json,text/plain;q=0.9,*/*;q=0.1"}
+                                    :timeout (ct/duration "10s")}
+                                   {:response-type :input-stream :max-redirects 3})]
+      (with-open [input body]
+        (when (<= 200 status 299)
+          (let [bytes (.readNBytes input (int (inc (* 4 limit))))
+                text  (String. ^bytes bytes "UTF-8")]
+            (when (<= (count text) limit)
+              text)))))
+    (catch java.io.IOException _ nil)))
+
+(defn- index-uri
+  []
+  (cf/get :recipe-community-index-uri))
+
+(defn- entry
+  "One line of the index as it is shown, or nil when it is not one."
+  [index-uri {:keys [name title purpose category author url]}]
+  (when (and (string? name) (string? url) (not (str/blank? name)))
+    {:name name
+     :title (if (string? title) title name)
+     :purpose (if (string? purpose) purpose "")
+     :category (when (string? category) category)
+     :author (when (string? author) author)
+     ;; a file may be named next to the index
+     :url (str (u/join (u/uri (str index-uri)) url))}))
+
+(defn- community-index
+  "The entries of the community index, or nil when there is no index or it
+  cannot be read."
+  [cfg]
+  (when-let [uri (index-uri)]
+    (when-let [text (fetch-text! cfg uri max-index-chars)]
+      (let [parsed (parse text)]
+        (when (sequential? (:recipes parsed))
+          (into [] (comp (filter map?) (keep #(entry uri %)) (take max-entries)) (:recipes parsed)))))))
+
+(sv/defmethod ::get-community-recipes
+  "What the community index offers. `:configured` says whether this instance
+  has a community source at all; `:available` whether it could be read."
+  {::doc/added "2.20"
+   ::sm/params [:map {:title "get-community-recipes"}
+                [:team-id ::sm/uuid]]}
+  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id team-id]}]
+  (check-read-permissions! pool profile-id team-id)
+  (let [entries (community-index cfg)
+        mine    (into #{} (map :name) (db/exec! pool [sql:get-team-recipes team-id]))]
+    {:configured (some? (index-uri))
+     :available (some? entries)
+     :source (some-> (index-uri) str u/uri :host)
+     :recipes (mapv #(-> (dissoc % :url) (assoc :in-team (contains? mine (:name %)))) entries)}))
+
+(sv/defmethod ::import-community-recipe
+  "Copies a recipe of the community index into the team: checked, labelled
+  with where it came from, and disabled until someone enables it."
+  {::doc/added "2.20"
+   ::sm/params [:map {:title "import-community-recipe"}
+                [:team-id ::sm/uuid]
+                [:name [:string {:min 1 :max 200}]]]}
+  [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id team-id name]}]
+  (check-edition-permissions! pool profile-id team-id)
+  (let [found   (some #(when (= name (:name %)) %) (community-index cfg))
+        content (when found (fetch-text! cfg (:url found) max-content-chars))]
+    (when (nil? found)
+      (ex/raise :type :not-found
+                :code :community-recipe-not-found
+                :hint "the community index has no recipe of that name"))
+    (when (nil? content)
+      (ex/raise :type :validation
+                :code :invalid-recipe
+                :hint "the recipe's file could not be fetched, or is too large"))
+    (db/tx-run! cfg
+                (fn [{:keys [::db/conn]}]
+                  (let [recipe (check! conn team-id content)]
+                    (when (not= name (:name recipe))
+                      (ex/raise :type :validation
+                                :code :invalid-recipe
+                                :hint (str "the index calls it \"" name "\" and the file \""
+                                           (:name recipe) "\"")))
+                    (row->recipe
+                     (store! conn team-id profile-id recipe
+                             {:origin "community"
+                              :origin-note (str (some-> (index-uri) str u/uri :host)
+                                                (when (:author found) (str " · " (:author found))))
+                              :disabled true})))))))

@@ -2016,63 +2016,6 @@
   inset-inline-end: deprecated.$s-6;
 }
 
-// The real <input type=file>: kept in the DOM (the attach button clicks it)
-// but never shown.
-.composer-file-input {
-  display: none;
-}
-
-.composer-attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: deprecated.$s-8;
-  margin-block-end: deprecated.$s-8;
-}
-
-.composer-attachment {
-  position: relative;
-  inline-size: deprecated.$s-52;
-  block-size: deprecated.$s-52;
-}
-
-.composer-attachment-img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
-  border-radius: deprecated.$br-4;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-}
-
-.composer-attachment-remove {
-  position: absolute;
-  inset-block-start: calc(-1 * #{deprecated.$s-4});
-  inset-inline-end: calc(-1 * #{deprecated.$s-4});
-  inline-size: deprecated.$s-16;
-  block-size: deprecated.$s-16;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: deprecated.$fs-10;
-  background-color: var(--color-background-quaternary);
-  color: var(--color-foreground-primary);
-
-  &:hover {
-    background-color: var(--color-accent-primary);
-    color: var(--color-background-primary);
-  }
-}
-
-// Attach rejections and the can't-read-images warning.
-.composer-hint {
-  @include scaled-body-small;
-
-  margin-block-end: deprecated.$s-8;
-  color: var(--color-foreground-secondary);
-}
-
 .composer-input {
   @include scaled-body-small;
 

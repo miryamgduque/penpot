@@ -13,6 +13,7 @@
    [app.common.time :as ct]
    [app.config :as cf]
    [app.main.broadcast :as mbc]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.ai-providers :as dai]
    [app.main.data.event :as ev]
    [app.main.data.modal :as modal]
@@ -913,8 +914,10 @@
         mcp-enabled?
         (contains? cf/flags :mcp)
 
-        agent-enabled?
-        (contains? cf/flags :design-agent)]
+        ;; instance scope: provider keys stay manageable, and the agent can
+        ;; be switched back on here, while it is off for the user
+        agent-available?
+        (agent-access/instance-enabled?)]
 
     (mf/with-effect []
       (dom/set-html-title (tr "title.settings.integrations"))
@@ -934,10 +937,10 @@
      (when ^boolean mcp-enabled?
        [:hr {:class (stl/css :separator)}])
 
-     (when ^boolean agent-enabled?
+     (when ^boolean agent-available?
        [:> ai-providers-section* {}])
 
-     (when (and ^boolean agent-enabled? ^boolean access-tokens-enabled?)
+     (when (and ^boolean agent-available? ^boolean access-tokens-enabled?)
        [:hr {:class (stl/css :separator)}])
 
      (when ^boolean access-tokens-enabled?

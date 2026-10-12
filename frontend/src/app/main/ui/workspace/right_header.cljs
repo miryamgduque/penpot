@@ -121,6 +121,9 @@
         read-only?        (mf/use-ctx ctx/workspace-read-only?)
         selected-drawtool (mf/deref refs/selected-drawing-tool)
         ai-panel-open?    (mf/deref refs/ai-panel-open?)
+        agent-enabled-ref (mf/with-memo [file-id]
+                            (refs/make-agent-enabled-ref file-id))
+        agent-enabled?    (mf/deref agent-enabled-ref)
         file-recording?   (and (contains? cfg/flags :design-session-recording)
                                (mf/deref refs/file-recording?))
 
@@ -259,7 +262,7 @@
      ;; it, so the dot rides the panel toggle — the one recording-related
      ;; control that is always on screen. Someone with the panel closed is
      ;; exactly the person who would otherwise never know.
-     (when (contains? cfg/flags :design-agent)
+     (when ^boolean agent-enabled?
        [:div {:class (stl/css :agent-toggle)}
         [:button {:title (if file-recording?
                            (tr "workspace.header.agent.recording-title")

@@ -8,6 +8,7 @@
   (:require-macros [app.main.style :as stl])
   (:require
    [app.config :as cf]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.common :as dcm]
    [app.main.data.event :as ev]
    [app.main.data.modal :as modal]
@@ -127,7 +128,9 @@
 
        (when (or (contains? cf/flags :access-tokens)
                  (contains? cf/flags :mcp)
-                 (contains? cf/flags :design-agent))
+                 ;; instance scope: the agent is switched back on from
+                 ;; Integrations, so it stays reachable when it is off
+                 (agent-access/instance-enabled?))
          [:li {:class (stl/css-case :current integrations?
                                     :settings-item true)
                :on-click go-settings-integrations

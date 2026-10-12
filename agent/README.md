@@ -73,6 +73,12 @@ Every commit a server tool makes is recorded with its conversation, turn and
 tool (`get-agent-changes`). The file's design rules are checked in one place
 before any tool runs; a mandatory rule cannot be left out by the caller.
 
+A turn can be started with no workspace at all (`"workspace": false` in its
+body). The service then syncs with nobody; `render_board` goes to the
+exporter; `switch_page` changes which page the conversation's tools act on,
+remembered here per conversation; `ask_user` answers that it needs a
+workspace.
+
 Without the flag there is no turn token and every tool runs in the workspace.
 
 `PENPOT_BACKEND_URI` (default `http://localhost:6060`) and

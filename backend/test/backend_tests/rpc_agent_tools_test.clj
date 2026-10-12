@@ -387,3 +387,20 @@
       (t/is (= {:data nil}
                (font! (agent-tools/turn-token th/*system* (:id other) (:id theirs)) (:id object))))
       (t/is (= {:data nil} (font! token (uuid/random)))))))
+
+(t/deftest the-service-asks-whether-a-file-has-a-page
+  (let [profile (th/create-profile* 1 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        page-id (first (get-in file [:data :pages]))
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file))
+        check   (fn [input] (:result (run-tool! token "check_page" :input input)))]
+    (t/is (= {:pageId (str page-id) :name "Page 1"}
+             (json/decode (:content (check {:pageId (str page-id)})) :key-fn keyword)))
+    (t/is (re-find #"no page with id .* in this file" (:content (check {:pageId (str (uuid/random))}))))
+    (t/is (re-find #"pageId is required" (:content (check {}))))
+    ;; and read_design says which page the tools are on
+    (let [design (content (run-tool! token "read_design"))]
+      (t/is (= "Page 1" (:page design)))
+      (t/is (= [{:id (str page-id) :name "Page 1" :current true}] (:pages design))))))

@@ -463,3 +463,68 @@ test("with the tools on the server, the workspace is only asked for what only it
     await exporter.close();
   }
 });
+
+test("with no workspace, switching page changes which page the conversation's tools act on", async () => {
+  const { createServer } = await import("node:http");
+  const seen = [];
+  const backend = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      const body = JSON.parse(raw);
+      seen.push(body);
+      const input = JSON.parse(body.input);
+      res.writeHead(200, { "content-type": "application/json" });
+      if (body.tool === "check_page") {
+        res.end(
+          JSON.stringify(
+            input.pageId === "page-2"
+              ? { content: '{"pageId":"page-2","name":"Second"}', isError: false }
+              : { content: `switch_page: no page with id ${input.pageId} in this file — see read_design`, isError: true },
+          ),
+        );
+      } else {
+        res.end(JSON.stringify({ content: '{"file":"Stored"}', isError: false }));
+      }
+    });
+  });
+  await new Promise((r) => backend.listen(0, "127.0.0.1", r));
+  const t = await setup(
+    (_req, n) =>
+      n === 0
+        ? { tool: { name: "read_design", input: {} } }
+        : n === 1
+          ? { tool: { name: "switch_page", input: { pageId: "nope" } } }
+          : n === 2
+            ? { tool: { name: "switch_page", input: { pageId: "page-2" } } }
+            : n === 3
+              ? { tool: { name: "read_design", input: {} } }
+              : n === 5
+                ? { tool: { name: "read_design", input: {} } }
+                : { text: "Done." },
+    { backendUri: `http://127.0.0.1:${backend.address().port}` },
+  );
+  try {
+    const body = { ...BODY, workspace: false, context: '{"selectedIds":[]}', tools: [tool("read_design"), tool("switch_page")] };
+    const asked = await drive(t.base, body, ENGINE_HEADERS);
+    assert.ok(asked.every((x) => x.workspace === undefined), "nothing was asked of a workspace");
+    const reads = seen.filter((x) => x.tool === "read_design").map((x) => JSON.parse(x.context));
+    // before the switch: the caller's context, and the backend's default page
+    assert.deepEqual(reads[0], { selectedIds: [] });
+    // a page the file does not have changes nothing; the right one does
+    assert.deepEqual(reads[1], { selectedIds: [], pageId: "page-2" });
+    assert.match(JSON.stringify(t.fake.requests[2].body.messages), /no page with id nope/);
+    assert.match(JSON.stringify(t.fake.requests[3].body.messages), /the tools now act on the page .{0,8}Second/);
+
+    // the next turn of the same conversation is still on that page
+    await drive(t.base, body, ENGINE_HEADERS);
+    assert.deepEqual(JSON.parse(seen.filter((x) => x.tool === "read_design").at(-1).context), { selectedIds: [], pageId: "page-2" });
+    // another conversation is not
+    const otherBefore = seen.length;
+    await drive(t.base, { ...body, sessionId: "another" }, ENGINE_HEADERS);
+    assert.equal(seen.length, otherBefore, "the script has no more tool calls");
+  } finally {
+    await t.close();
+    await new Promise((r) => backend.close(r));
+  }
+});

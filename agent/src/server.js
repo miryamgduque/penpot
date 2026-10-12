@@ -150,6 +150,14 @@ export async function createAgentServer(options = {}) {
   /** turnId → { profileId, pending: Map<callId, {resolve}> } */
   const turns = new Map();
 
+  /**
+   * conversation → the page its tools act on, for conversations run with no
+   * workspace. With one, the page is the one the user is looking at. Kept in
+   * memory: after a restart such a conversation is back on the file's first
+   * page until it switches again.
+   */
+  const pages = new Map();
+
   async function handleTurn(req, res) {
     const profileId = requireString(req.headers["x-penpot-profile-id"], "profile id");
     const provider = requireString(req.headers["x-penpot-provider"], "provider");
@@ -240,19 +248,50 @@ export async function createAgentServer(options = {}) {
     // It is also told the revision the server last wrote, so it answers only
     // once it has received that change.
     let serverRevn;
-    const syncWorkspace = (signal) => {
-      if (tabless) {
-        // what a workspace would have said: the caller may say it instead
-        const context = typeof body.context === "string" ? body.context : "{}";
-        return Promise.resolve({ content: context, isError: false });
+    const pageKey = `${profileId}:${sessionId}`;
+    // what a workspace would have said: the caller may say it instead, and
+    // the page is the one the conversation last switched to
+    const tablessContext = () => {
+      let context = {};
+      try {
+        const parsed = JSON.parse(typeof body.context === "string" ? body.context : "{}");
+        if (parsed !== null && typeof parsed === "object") context = parsed;
+      } catch {
+        // not JSON: no context
       }
+      const pageId = pages.get(pageKey);
+      return JSON.stringify(pageId === undefined ? context : { ...context, pageId });
+    };
+    const syncWorkspace = (signal) => {
+      if (tabless) return Promise.resolve({ content: tablessContext(), isError: false });
       const input = serverRevn === undefined ? {} : { minRevn: serverRevn };
       return callTool({ callId: randomUUID(), name: SYNC_CALL, input }, signal).finally(() => toolTimings.pop());
+    };
+
+    // With no workspace there is no view to move: switching page is this
+    // service remembering which page the conversation's tools act on.
+    const switchTablessPage = async (call, signal) => {
+      const checked = await runBackendTool(backendUri, turnToken, { name: "check_page", input: call.input }, "{}", signal);
+      let result = checked;
+      if (!checked.isError) {
+        const page = JSON.parse(checked.content);
+        pages.set(pageKey, page.pageId);
+        result = {
+          content: JSON.stringify({
+            pageId: page.pageId,
+            note: `switched — the tools now act on the page "${page.name}". No workspace is connected, so nobody's view moved.`,
+          }),
+          isError: false,
+        };
+      }
+      emit({ type: "server-tool", name: call.name, input: call.input, content: result.content, isError: result.isError });
+      return result;
     };
 
     // The other direction: a tool in the workspace must not run before the
     // workspace has caught up with what the server wrote.
     const callWorkspaceTool = async (call, signal, { fallback = false } = {}) => {
+      if (tabless && call.name === "switch_page") return switchTablessPage(call, signal);
       if (tabless) {
         return { content: `${call.name} needs a connected workspace, and this turn has none`, isError: true };
       }

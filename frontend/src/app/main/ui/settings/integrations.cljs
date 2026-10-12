@@ -14,6 +14,7 @@
    [app.config :as cf]
    [app.main.broadcast :as mbc]
    [app.main.data.agent-access :as agent-access]
+   [app.main.data.agent-switch :as agent-switch]
    [app.main.data.ai-providers :as dai]
    [app.main.data.event :as ev]
    [app.main.data.modal :as modal]
@@ -821,6 +822,44 @@
                        :title (tr "integrations.ai-provider.models.vision-hint")}
                 (tr "integrations.ai-provider.models.vision")])])])]]]))
 
+(mf/defc agent-status*
+  "The account-wide agent switch. Instance scope already holds here (the
+  section renders only when the instance ships the agent), so it reads the
+  account setting alone."
+  {::mf/private true}
+  []
+  (let [profile  (mf/deref refs/profile)
+        enabled? (not (true? (-> profile :props :agent-disabled)))
+
+        on-change
+        (mf/use-fn
+         (fn [value]
+           (st/emit! (agent-switch/set-account-enabled value)
+                     (ntf/show {:level :info
+                                :type :toast
+                                :content (if (true? value)
+                                           (tr "integrations.ai-provider.notification.agent-enabled")
+                                           (tr "integrations.ai-provider.notification.agent-disabled"))
+                                :timeout notification-timeout}))))]
+
+    [:div
+     [:> text* {:as "h3"
+                :typography t/headline-small
+                :class (stl/css :color-primary)}
+      (tr "integrations.ai-provider.status")]
+
+     [:div {:class (stl/css :ai-provider-status)}
+      [:> switch* {:label (if enabled?
+                            (tr "integrations.ai-provider.status.enabled")
+                            (tr "integrations.ai-provider.status.disabled"))
+                   :default-checked enabled?
+                   :on-change on-change}]
+
+      [:> text* {:as "p"
+                 :typography t/body-medium
+                 :class (stl/css :color-secondary)}
+       (tr "integrations.ai-provider.status.hint")]]]))
+
 (mf/defc ai-providers-section*
   {::mf/private true}
   []
@@ -845,6 +884,8 @@
                  :typography t/body-medium
                  :class (stl/css :color-secondary :ai-provider-description)}
        (tr "integrations.ai-provider.description")]]
+
+     [:> agent-status* {}]
 
      (for [{:keys [id label models-hint]} ai-provider-defs]
        [:> ai-provider-card* {:key id

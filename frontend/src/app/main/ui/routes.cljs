@@ -265,6 +265,17 @@
       :else
       (on-query-navigate router token send-event-info?))))
 
+(defn- redirect-to-dashboard
+  "Send a user who has the agent off away from an agent-only route, to the
+  same team's dashboard. Replaces the history entry so Back does not land
+  on the blocked screen again."
+  [match]
+  (let [team-id (or (some-> (get-in match [:query-params :team-id]) uuid/parse*)
+                    (get-in @st/state [:profile :default-team-id]))]
+    (st/emit! (rt/nav :dashboard-recent
+                      (cond-> {} (some? team-id) (assoc :team-id team-id))
+                      {::rt/replace true}))))
+
 (defn- on-query-navigate
   [router token send-event-info?]
   (let [token-query  (if (str/starts-with? (or token "") "?")
@@ -276,8 +287,15 @@
         ;; after login.
         root?        (nil? (rt/get-query-param query-params :screen))
         match        (rt/match router token)]
-    (if (some? match)
+    (cond
+      (and (some? match)
+           (not (agent-access/route-allowed? @st/state (get-in match [:data :name]))))
+      (redirect-to-dashboard match)
+
+      (some? match)
       (handle-sso-error-and-navigate match send-event-info? (rt/get-current-href))
+
+      :else
 
       ;; We just recheck with an additional profile request; this
       ;; avoids some race conditions that causes unexpected redirects

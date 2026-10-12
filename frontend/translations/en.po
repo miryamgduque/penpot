@@ -2353,6 +2353,24 @@ msgstr "Resolved value:"
 msgid "inspect.tabs.styles.variants-panel"
 msgstr "Variant Properties"
 
+msgid "integrations.ai-provider.status"
+msgstr "Status"
+
+msgid "integrations.ai-provider.status.enabled"
+msgstr "Enabled"
+
+msgid "integrations.ai-provider.status.disabled"
+msgstr "Disabled"
+
+msgid "integrations.ai-provider.status.hint"
+msgstr "Hides the agent for you. Other people in your files can still use it."
+
+msgid "integrations.ai-provider.notification.agent-enabled"
+msgstr "Penpot Agent enabled"
+
+msgid "integrations.ai-provider.notification.agent-disabled"
+msgstr "Penpot Agent disabled"
+
 msgid "integrations.ai-provider.title"
 msgstr "Penpot Agent"
 

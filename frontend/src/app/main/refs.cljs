@@ -325,11 +325,10 @@
 
 (def ai-panel-open?
   "Whether the All-In Penpot (Agents) panel is open for the current file.
-  In-memory and file-bound: survives navigation, resets on a hard refresh."
-  (l/derived (fn [state]
-               (when-let [file-id (:current-file-id state)]
-                 (dm/get-in state [:ai-panel file-id :open?])))
-             st/state))
+  In-memory and file-bound: survives navigation, resets on a hard refresh.
+  Never true while the agent is off for the user, whatever the stored
+  state says."
+  (l/derived agent-access/panel-open? st/state))
 
 (def ai-panel-messages
   "The Agents chat transcript for the current file (in-memory, file-bound)."

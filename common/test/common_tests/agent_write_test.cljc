@@ -133,7 +133,7 @@
         shape (get (apply-changes (:changes out)) child-id)]
     (t/is (= [] @calls))
     (t/is (= "renamed" (:name shape)))
-    (t/is (= [8 8 8 8] (mapv shape [:r1 :r2 :r3 :r4])))
+    (t/is (= [8 8 8 8] (mapv #(get shape %) [:r1 :r2 :r3 :r4])))
     (t/is (= 0.5 (:opacity shape)))
     (t/is (= "#112233" (:fill-color (first (:fills shape)))))
     (t/is (= 2 (:stroke-width (first (:strokes shape)))))

@@ -49,6 +49,7 @@
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i]
+   [app.main.ui.ds.tooltip :refer [tooltip*]]
    [app.main.ui.hooks :as hooks]
    [app.main.ui.workspace.session-recorder :as session-recorder]
    [app.util.dom :as dom]
@@ -344,6 +345,7 @@
         text-type? (= "text" type)
         images     (or (:images qstate) [])
         file-ref   (mf/use-ref nil)
+        attach-hint-id (mf/use-id)
         on-pick-images
         (mf/use-fn
          (mf/deps id on-add-images)
@@ -427,15 +429,19 @@
                      :aria-label (tr "workspace.agent.form.remove-reference-image" (inc i))
                      :on-click #(on-remove-image id i)}
             [:span {:aria-hidden true} "✕"]]])
-        [:> button* {:variant "secondary"
-                     :class (stl/css :compact-label)
-                     :icon i/img
-                     :disabled (zero? room)
-                     :title (if (pos? room)
-                              (tr "workspace.agent.form.attach-reference-images")
-                              (tr "workspace.agent.form.image-limit-reached"))
-                     :on-click on-attach-click}
-         (tr "workspace.agent.form.add-reference")]])]))
+        ;; DS tooltip, not a native title; it still shows on hover while the
+        ;; button is disabled, which is when the hint matters most
+        [:> tooltip* {:id attach-hint-id
+                      :content (if (pos? room)
+                                 (tr "workspace.agent.form.attach-reference-images")
+                                 (tr "workspace.agent.form.image-limit-reached"))}
+         [:> button* {:variant "secondary"
+                      :class (stl/css :compact-label)
+                      :icon i/img
+                      :disabled (zero? room)
+                      :aria-describedby attach-hint-id
+                      :on-click on-attach-click}
+          (tr "workspace.agent.form.add-reference")]]])]))
 
 (mf/defc elicitation-form*
   "The ask_user interview, rendered at the tail of the transcript while a
@@ -782,7 +788,11 @@
         on-toggle   (mf/use-fn #(swap! expanded* not))
         ;; which rule groups have their full list shown (vs the first few)
         open-rules* (mf/use-state #{})
-        open-rules  (deref open-rules*)]
+        open-rules  (deref open-rules*)
+        ;; hooks cannot live inside the `for`s below, so the DS tooltip ids of
+        ;; the group and row hints derive from one card-level id plus indexes
+        hint-id     (mf/use-id)
+        fix-all-hint-id (dm/str hint-id "-fix-all")]
     [:div {:class (stl/css :observer-card)}
      [:div {:class (stl/css :observer-header-row)}
       ;; two lines — title over byline — no glyph; the row toggles
@@ -800,37 +810,54 @@
 
      (when expanded?
        [:div {:class (stl/css :observer-groups)}
-        (for [{:keys [rule label n] g-shapes :shapes} groups]
+        (for [[gi {:keys [rule label n] g-shapes :shapes}] (map-indexed vector groups)]
           (let [open? (contains? open-rules rule)
-                shown (if open? g-shapes (take max-row-shapes g-shapes))]
+                shown (if open? g-shapes (take max-row-shapes g-shapes))
+                fix-hint-id (dm/str hint-id "-fix-" gi)]
             [:div {:key rule :class (stl/css :observer-group)}
              [:div {:class (stl/css :observer-group-head)}
               [:span {:class (stl/css :observer-group-label)} label]
               [:span {:class (stl/css :observer-group-count)} (dm/str "· " n)]
-              [:> button* {:variant "ghost"
-                           :class (stl/css :compact-label :observer-group-fix)
-                           :title (tr "workspace.agent.observer.fix-group-title" label)
-                           ;; render-time closure, deliberately: hooks cannot live
-                           ;; inside `for`, and the group list is tiny
-                           :on-click (fn [_] (on-fix g-shapes))}
-               (tr "workspace.agent.observer.fix")]]
+              [:> tooltip* {:id fix-hint-id
+                            :class (stl/css :observer-group-fix-tip)
+                            :content (tr "workspace.agent.observer.fix-group-title" label)}
+               [:> button* {:variant "ghost"
+                            :class (stl/css :compact-label)
+                            :aria-describedby fix-hint-id
+                            ;; render-time closure, deliberately: hooks cannot live
+                            ;; inside `for`, and the group list is tiny
+                            :on-click (fn [_] (on-fix g-shapes))}
+                (tr "workspace.agent.observer.fix")]]]
              [:ul {:class (stl/css :observer-rows)}
-              (for [v shown]
-                (let [hex (parse-swatch (:reason v))]
+              (for [[ri v] (map-indexed vector shown)]
+                (let [hex     (parse-swatch (:reason v))
+                      ;; only a non-blank string becomes a tooltip
+                      reason  (let [r (:reason v)] (when (string? r) r))
+                      row-hint-id (dm/str hint-id "-row-" gi "-" ri)
+                      ;; mf/html: hiccup kept in a local is not compiled on its own
+                      row     (mf/html
+                               [:button {:type "button"
+                                         :class (stl/css :observer-row)
+                                         :aria-describedby (when-not (str/blank? reason) row-hint-id)
+                                         :data-id (:shapeId v)
+                                         :on-click on-shape-click}
+                                [:span {:class (stl/css-case :observer-swatch true
+                                                             :observer-swatch-neutral (nil? hex))
+                                        :style (when hex #js {:backgroundColor hex})}]
+                                [:span {:class (stl/css :observer-row-name)}
+                                 ;; ✦ = flagged by the semantic tick, not the native scan
+                                 (when (:semantic v)
+                                   [:span {:aria-hidden true :class (stl/css :observer-semantic)} "✦ "])
+                                 (:shapeName v)]])]
                   [:li {:key (:shapeId v)}
-                   [:button {:type "button"
-                             :class (stl/css :observer-row)
-                             :title (:reason v)
-                             :data-id (:shapeId v)
-                             :on-click on-shape-click}
-                    [:span {:class (stl/css-case :observer-swatch true
-                                                 :observer-swatch-neutral (nil? hex))
-                            :style (when hex #js {:backgroundColor hex})}]
-                    [:span {:class (stl/css :observer-row-name)}
-                     ;; ✦ = flagged by the semantic tick, not the native scan
-                     (when (:semantic v)
-                       [:span {:aria-hidden true :class (stl/css :observer-semantic)} "✦ "])
-                     (:shapeName v)]]]))
+                   ;; the flag reason as a DS tooltip; a row without one stays
+                   ;; bare (the tooltip requires content)
+                   (if (str/blank? reason)
+                     row
+                     [:> tooltip* {:id row-hint-id
+                                   :class (stl/css :observer-row-tip)
+                                   :content reason}
+                      row])]))
               (when (and (not open?) (> n max-row-shapes))
                 [:li
                  [:> button* {:variant "ghost"
@@ -844,11 +871,13 @@
                      :class (stl/css :compact-label)
                      :on-click on-dismiss}
          (tr "workspace.agent.dismiss")]
-        [:> button* {:variant "primary"
-                     :class (stl/css :compact-label)
-                     :title (tr "workspace.agent.observer.fix-all-title")
-                     :on-click (fn [_] (on-fix shapes))}
-         (tr "workspace.agent.observer.fix-all")]])]))
+        [:> tooltip* {:id fix-all-hint-id
+                      :content (tr "workspace.agent.observer.fix-all-title")}
+         [:> button* {:variant "primary"
+                      :class (stl/css :compact-label)
+                      :aria-describedby fix-all-hint-id
+                      :on-click (fn [_] (on-fix shapes))}
+          (tr "workspace.agent.observer.fix-all")]]])]))
 
 (mf/defc observer-notifications*
   "The Observer notification stack (issue #37): one calm card per affected
@@ -915,6 +944,10 @@
                       (not handoff-dismissed?))
         on-handoff (mf/use-fn #(st/emit! (dwaip/summarize-into-new-chat)))
         on-handoff-dismiss (mf/use-fn #(st/emit! (dwaip/dismiss-handoff-notice)))
+        ;; DS tooltip ids, so each trigger names its hint via aria-describedby
+        usage-hint-id   (mf/use-id)
+        clear-hint-id   (mf/use-id)
+        handoff-hint-id (mf/use-id)
         pending-fix (mf/deref refs/ai-panel-pending-fix)
         pending-form (mf/deref refs/ai-panel-pending-form)
         composer-seed (mf/deref refs/ai-panel-composer-seed)
@@ -1269,20 +1302,29 @@
      ;; Spend meter + clear, shown once there is a conversation to act on.
      (when (or (seq messages) (some-> usage :requests pos?))
        [:div {:class (stl/css :chat-status)}
-        [:span {:class (stl/css :usage-meter)
-                :title (tr "workspace.agent.usage.title")}
-         (if (some-> usage :requests pos?)
-           (usage-summary usage (:model settings))
-           (tr "workspace.agent.usage.restored"))]
+        ;; focusable so its DS tooltip is reachable without a mouse; plain
+        ;; text, so no role — the hint is its description
+        [:> tooltip* {:id usage-hint-id
+                      :class (stl/css :usage-meter-tip)
+                      :content (tr "workspace.agent.usage.title")}
+         [:span {:class (stl/css :usage-meter)
+                 :tab-index 0
+                 :aria-describedby usage-hint-id}
+          (if (some-> usage :requests pos?)
+            (usage-summary usage (:model settings))
+            (tr "workspace.agent.usage.restored"))]]
         ;; the glyph is decorative — kept out of the accessible name, which
         ;; would otherwise read "plus sign new chat"
-        [:> button* {:variant "ghost"
-                     :class (stl/css :compact-label :chat-clear)
-                     :disabled busy?
-                     :title (tr "workspace.agent.chat.new-title")
-                     :on-click on-clear}
-         [:span {:aria-hidden true} "+"]
-         (tr "workspace.agent.chat.new")]])
+        [:> tooltip* {:id clear-hint-id
+                      :class (stl/css :chat-clear-tip)
+                      :content (tr "workspace.agent.chat.new-title")}
+         [:> button* {:variant "ghost"
+                      :class (stl/css :compact-label)
+                      :disabled busy?
+                      :aria-describedby clear-hint-id
+                      :on-click on-clear}
+          [:span {:aria-hidden true} "+"]
+          (tr "workspace.agent.chat.new")]]])
 
      ;; Fresh-chat suggestion: the conversation is big enough that every reply
      ;; re-reads a lot of it. The action summarizes ALL of it (one cheap round)
@@ -1300,12 +1342,15 @@
                            :aria-label (tr "workspace.agent.handoff.dismiss")
                            :on-click on-handoff-dismiss
                            :icon i/close}]]
-        [:> button* {:variant "secondary"
-                     :class (stl/css :compact-label :handoff-action)
-                     :title (tr "workspace.agent.handoff.summarize-title")
-                     :on-click on-handoff}
-         [:span {:aria-hidden true} "✦ "]
-         (tr "workspace.agent.handoff.summarize")]])
+        [:> tooltip* {:id handoff-hint-id
+                      :class (stl/css :handoff-action-tip)
+                      :content (tr "workspace.agent.handoff.summarize-title")}
+         [:> button* {:variant "secondary"
+                      :class (stl/css :compact-label :handoff-action)
+                      :aria-describedby handoff-hint-id
+                      :on-click on-handoff}
+          [:span {:aria-hidden true} "✦ "]
+          (tr "workspace.agent.handoff.summarize")]]])
 
      ;; A Fix-it-now queued behind the running turn: visible, cancellable,
      ;; sends itself when the turn ends (drain effect above).

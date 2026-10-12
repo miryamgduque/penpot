@@ -66,6 +66,9 @@
         (concat
          (when (contains? cf/flags :admin-console)
            [:nitrate-entry])
+         (when (contains? cf/flags :design-agent)
+           [:dashboard-skills
+            :dashboard-agent-skills])
          (when *assert*
            [:debug-icons-preview
             :debug-playground]))))

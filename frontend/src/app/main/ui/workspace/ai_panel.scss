@@ -1516,9 +1516,9 @@
 
   max-block-size: 320px;
   overflow: auto;
-  padding: deprecated.$s-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
+  padding: var(--sp-s);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
   color: var(--color-foreground-secondary);
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -1527,8 +1527,8 @@
 .skill-edit {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
-  padding: deprecated.$s-8;
+  gap: var(--sp-s);
+  padding: var(--sp-s);
   overflow-y: auto;
 }
 
@@ -1537,9 +1537,9 @@
 
   width: 100%;
   min-block-size: 220px;
-  padding: deprecated.$s-8;
-  border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  padding: var(--sp-s);
+  border-radius: $br-8;
+  border: $b-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
   color: var(--color-foreground-primary);
   font-family: monospace;
@@ -1556,8 +1556,8 @@
 .foundations-view {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
-  padding: deprecated.$s-8;
+  gap: var(--sp-s);
+  padding: var(--sp-s);
   block-size: 100%;
   min-block-size: 0;
   overflow-y: auto;
@@ -1568,20 +1568,20 @@
 
   display: flex;
   align-items: center;
-  gap: deprecated.$s-8;
-  padding: deprecated.$s-4 deprecated.$s-8;
-  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+  gap: var(--sp-s);
+  padding: var(--sp-xs) var(--sp-s);
+  border-block-end: $b-1 solid var(--color-background-quaternary);
   color: var(--color-foreground-secondary);
 }
 
 .foundation-card {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-12;
+  gap: var(--sp-m);
   width: 100%;
-  padding: deprecated.$s-12;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
+  padding: var(--sp-m);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
   background-color: var(--color-background-primary);
   text-align: start;
   cursor: pointer;
@@ -1596,15 +1596,15 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  inline-size: deprecated.$s-32;
-  block-size: deprecated.$s-32;
+  inline-size: $sz-32;
+  block-size: $sz-32;
   color: var(--color-accent-primary);
 }
 
 .foundation-card-text {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-2;
+  gap: var(--sp-xxs);
   min-inline-size: 0;
 }
 
@@ -1628,8 +1628,8 @@
 .vibes-view {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
-  padding: deprecated.$s-8;
+  gap: var(--sp-s);
+  padding: var(--sp-s);
 
   // fill the panel body (a definite-height flex item) so the read view scrolls
   // instead of overflowing when a foundation doc is long
@@ -1639,9 +1639,9 @@
 }
 
 .vibes-doc {
-  padding: deprecated.$s-16;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
+  padding: var(--sp-l);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
   background-color: var(--color-background-primary);
 
   // .message-md inherits its text color; in the transcript the bubble sets
@@ -1657,7 +1657,7 @@
   h6 {
     @include scaled-headline-small;
 
-    margin-block: deprecated.$s-16 deprecated.$s-4;
+    margin-block: var(--sp-l) var(--sp-xs);
     color: var(--color-foreground-primary);
   }
 
@@ -1673,10 +1673,10 @@
 .vibes-tokens {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
-  margin-block-end: deprecated.$s-12;
-  padding-block-end: deprecated.$s-12;
-  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+  gap: var(--sp-s);
+  margin-block-end: var(--sp-m);
+  padding-block-end: var(--sp-m);
+  border-block-end: $b-1 solid var(--color-background-quaternary);
 }
 
 .vibes-tokens-name {
@@ -1695,20 +1695,20 @@
 .vibes-swatch-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
 }
 
 .vibes-swatch {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
   min-inline-size: 0;
 }
 
 .vibes-swatch-chip {
-  block-size: deprecated.$s-24;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-4;
+  block-size: $sz-24;
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-4;
 }
 
 .vibes-swatch-name {
@@ -1733,20 +1733,20 @@
 .vibes-type-rows {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
 }
 
 .vibes-type-row {
   display: flex;
   align-items: baseline;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
 }
 
 .vibes-type-row,
 .vibes-scale-row {
   display: flex;
   align-items: baseline;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
 }
 
 .vibes-token-label {
@@ -1766,15 +1766,15 @@
 .vibes-scale-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
 }
 
 .vibes-scale-chip {
   @include deprecated.body-small-typography;
 
-  padding: 0 deprecated.$s-6;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-4;
+  padding: 0 $sz-6;
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-4;
   background-color: var(--color-background-secondary);
   color: var(--color-foreground-primary);
   font-family: "robotomono", monospace;
@@ -1785,9 +1785,9 @@
 
   width: 100%;
   min-block-size: 260px;
-  padding: deprecated.$s-8;
-  border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  padding: var(--sp-s);
+  border-radius: $br-8;
+  border: $b-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
   color: var(--color-foreground-primary);
   font-family: monospace;
@@ -1803,20 +1803,20 @@
 .foundation-ask {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
 }
 
 // The structured frontmatter editor (US #38): token fields, never raw YAML.
 .vibes-form {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
 }
 
 .vibes-form-field {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
 }
 
 .vibes-form-label {
@@ -1832,9 +1832,9 @@
 
   flex: 1;
   min-inline-size: 0;
-  padding: deprecated.$s-4 deprecated.$s-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-4;
+  padding: var(--sp-xs) var(--sp-s);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-4;
   background-color: var(--color-background-primary);
   color: var(--color-foreground-primary);
 
@@ -1851,7 +1851,7 @@
 .vibes-form-section-title {
   @include deprecated.body-small-typography;
 
-  margin-block-start: deprecated.$s-8;
+  margin-block-start: var(--sp-s);
   color: var(--color-foreground-primary);
   font-weight: 600;
 }
@@ -1859,15 +1859,15 @@
 .vibes-form-row {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
 }
 
 .vibes-form-swatch {
   flex: none;
-  inline-size: deprecated.$s-24;
-  block-size: deprecated.$s-24;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-4;
+  inline-size: $sz-24;
+  block-size: $sz-24;
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-4;
 }
 
 // On the DS icon-button's tooltip wrapper, the flex item of the row.
@@ -1883,13 +1883,13 @@
 .vibes-form-type {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
 }
 
 .vibes-form-type-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
 }
 
 .vibes-form-note {
@@ -1920,15 +1920,15 @@
 .vibes-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
 }
 
 .vibes-empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: deprecated.$s-12;
-  padding: deprecated.$s-16;
+  gap: var(--sp-m);
+  padding: var(--sp-l);
 }
 
 .vibes-empty-title {

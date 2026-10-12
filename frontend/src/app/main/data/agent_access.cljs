@@ -10,10 +10,12 @@
   Every agent surface asks `agent-enabled?` instead of reading the
   `:design-agent` flag, so that switching the agent off applies to all of
   them at once. Settings are layered and the most specific one wins:
-  instance, then account, then file. The instance and account layers exist
-  today.
+  instance, then account, then file.
 
-  The account setting only hides the agent in this browser. It is not a
+  Every path that calls a model must also ask it, with file scope, and do
+  nothing when the answer is false.
+
+  The account and file settings only hide the agent in this browser. It is not a
   security check: the server does not read it, and nothing here may stand
   in for a server-side check."
   (:require
@@ -42,16 +44,34 @@
   [state]
   (not (true? (get-in state [:profile :props :agent-disabled]))))
 
+(defn file-override
+  "The user's own setting for `file-id`, as loaded when the workspace opens
+  (see `app.main.data.agent-switch`): true or false when they turned the
+  agent on or off in that file, `:account` when the file follows the
+  account, nil while it is not known."
+  [state file-id]
+  (when (some? file-id)
+    (get-in state [:agent-file-state file-id])))
+
 (defn agent-enabled?
   "Effective agent state for the current user, from the app `state`.
 
-  Without `file-id` it answers at account scope; with it, for that file.
-  The file layer does not exist yet, so both answer the same."
+  Without `file-id` it answers at account scope; with it, for that file,
+  where the user's file setting wins over the account one. While the file
+  setting is not known (still loading, or it failed to load) the agent is
+  off in that file: a file the user turned off must never call a model
+  because its setting was late."
   ([state]
    (agent-enabled? state nil))
-  ([state _file-id]
+  ([state file-id]
    (and (instance-enabled?)
-        (account-enabled? state))))
+        (if (nil? file-id)
+          (account-enabled? state)
+          (let [override (file-override state file-id)]
+            (cond
+              (boolean? override)   override
+              (= :account override) (account-enabled? state)
+              :else                 false))))))
 
 (defn route-allowed?
   "False for an agent-only route while the agent is off for the user."
@@ -68,7 +88,8 @@
          (agent-enabled? state file-id))))
 
 (def turned-off
-  "Type of the event emitted when the user switches the agent off for
-  their account. Background agent work (the panel watcher) stops on it.
-  Emitted by `app.main.data.agent-switch`."
+  "Type of the event emitted when the agent goes off for the user in the
+  file they are in (or, outside a file, for their account). The panel
+  watcher and any running agent turn stop on it. Emitted by
+  `app.main.data.agent-switch`."
   ::turned-off)

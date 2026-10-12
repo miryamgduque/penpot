@@ -323,6 +323,11 @@
   [file-id]
   (l/derived #(agent-access/agent-enabled? % file-id) st/state))
 
+(def agent-enabled-file-count
+  "How many files, still open to the user, they turned the agent on in as
+  an exception to their account setting. Nil until loaded."
+  (l/derived :agent-enabled-file-count st/state))
+
 (def ai-panel-open?
   "Whether the All-In Penpot (Agents) panel is open for the current file.
   In-memory and file-bound: survives navigation, resets on a hard refresh.

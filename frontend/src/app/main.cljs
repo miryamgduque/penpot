@@ -85,7 +85,7 @@
        (rx/of (ev/initialize)
               (mcp/initialize)
               (dp/refresh-profile)
-              (agent-switch/watch-account-switch))
+              (agent-switch/watch-agent-switches))
 
        ;; Watch for profile deletion events
        (->> stream

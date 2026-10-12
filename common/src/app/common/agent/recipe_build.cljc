@@ -293,14 +293,36 @@
   [component]
   (into {} (map (juxt :name :value)) (:variant-properties component)))
 
+;; A component is one structure. A recipe built with params that change its
+;; structure — a table row of five cells and not four — is another component,
+;; and goes by another name: "Table row (columns 5)".
+
+(defn- structural-args
+  "The args that change the structure of `recipe` away from its defaults."
+  [recipe args]
+  (let [params (into {} (map (juxt :name :default)) (:params recipe))
+        named  (car/structural-params recipe)]
+    (into (sorted-map)
+          (comp (map (fn [[k v]] [(name k) v]))
+                (filter (fn [[k v]] (and (contains? named k) (not= v (get params k))))))
+          args)))
+
+(defn- main-title
+  [recipe sargs]
+  (if (empty? sargs)
+    (:title recipe)
+    (dm/str (:title recipe) " ("
+            (str/join ", " (map (fn [[k v]] (dm/str k " " (if (and (number? v) (== v (long v))) (long v) v))) sargs))
+            ")")))
+
 (defn- find-main
-  "The component that is `recipe` in member `member`, in this file or a
-  linked library → `{:file-id :component-id}`, or nil."
-  [{:keys [file-id data libraries]} recipe member]
+  "The component called `title` that is `recipe` in member `member`, in this
+  file or a linked library → `{:file-id :component-id}`, or nil."
+  [{:keys [file-id data libraries]} recipe member title]
   (let [variants? (boolean (seq (:variants recipe)))
         in-file   (fn [id data]
                     (let [found (->> (ctkl/components-seq data)
-                                     (filter #(= (:title recipe) (:name %)))
+                                     (filter #(= title (:name %)))
                                      (filter #(= variants? (some? (:variant-id %)))))]
                       (when-let [component (if variants?
                                              (some #(when (= member (member-of %)) %) found)
@@ -458,26 +480,28 @@
 ;; --- Mains
 
 (defn- member-name
-  [recipe member]
-  (str/join " / " (cons (:title recipe) (map #(get member (:name %)) (:variants recipe)))))
+  [recipe title member]
+  (str/join " / " (cons title (map #(get member (:name %)) (:variants recipe)))))
 
 (defn- build-member
   "One member of a recipe as a main component → the build, with the main's id
   under `:main`."
-  [build recipe member options]
-  (let [at    (dm/str (:name recipe) " main")
-        tree  (-> (car/expand recipe nil member)
-                  (assoc :name (member-name recipe member)))
-        kept  (select-keys build [:ids :slots :placeholders])
-        build (build-node (dissoc build :root) tree nil at (free-spot (:view build)) options)
-        id    (:root build)
-        build (cond-> build
-                (some? id) (then at #(cas/create-component % {:shapeIds [id]} options)))]
+  [build recipe sargs title member options]
+  (let [at      (dm/str (:name recipe) " main")
+        tree    (-> (car/expand recipe sargs member)
+                    (assoc :name (member-name recipe title member)))
+        kept    (select-keys build [:ids :slots :placeholders :root])
+        ;; a main is built on the page, whatever was being built when it was
+        ;; found missing
+        options (dissoc options :parent-key :dupes)
+        build   (build-node (dissoc build :root) tree nil at (free-spot (:view build)) options)
+        id      (:root build)
+        build   (cond-> build
+                  (some? id) (then at #(cas/create-component % {:shapeIds [id]} options)))]
     ;; what is inside a main is not what the call asked for, unless the build
     ;; stopped there: then it is what exists
-    (-> build
+    (-> (dissoc build :root)
         (cond-> (not (stopped? build)) (merge kept))
-        (dissoc :root)
         (assoc :main id))))
 
 (defn- name-axes
@@ -500,18 +524,19 @@
 (defn- build-main
   "The main of `recipe`: a component, or a variant set with a member per
   combination, laid out by the engine."
-  [build recipe options]
+  [build recipe sargs title options]
   (let [at      (dm/str (:name recipe) " main")
         members (car/members recipe)
         [build ids]
         (reduce (fn [[build ids] member]
-                  (let [build (build-member build recipe member options)]
+                  (let [build (build-member build recipe sargs title member options)]
                     [build (cond-> ids (not (stopped? build)) (conj (:main build)))]))
                 [build []]
                 members)
         inside  (placeholder-names recipe)
         note    (fn [build built]
                   (update build :mains conj (cond-> (merge {:recipe (:name recipe)} built)
+                                              (not= title (:title recipe)) (assoc :component title)
                                               (seq inside) (assoc :placeholders inside))))]
     (cond
       (stopped? build)
@@ -536,24 +561,27 @@
                                               options))
               (note {:built true :variantId vid :members (count ids)})))))))
 
-(defn- ensure-mains
-  [build recipes options]
-  (reduce (fn [build recipe]
-            (cond
-              (stopped? build)
-              build
+(defn- ensure-main
+  "The main called `title` of `recipe`, built now when neither the file nor a
+  linked library has it. Said once in `:mains` either way."
+  [build recipe sargs title options]
+  (cond
+    (stopped? build)
+    build
 
-              (not (component? recipe))
-              build
+    (contains? (:seen build) title)
+    build
 
-              (some? (find-main (:view build) recipe (first (car/members recipe))))
-              (update build :mains conj {:recipe (:name recipe) :built false
-                                         :note "the file or a linked library already has it"})
+    (some? (find-main (:view build) recipe (first (car/members recipe)) title))
+    (-> build
+        (update :seen (fnil conj #{}) title)
+        (update :mains conj (cond-> {:recipe (:name recipe) :built false
+                                     :note "the file or a linked library already has it"}
+                              (not= title (:title recipe)) (assoc :component title))))
 
-              :else
-              (build-main build recipe options)))
-          build
-          recipes))
+    :else
+    (-> (build-main build recipe sargs title options)
+        (update :seen (fnil conj #{}) title))))
 
 ;; --- Placing a recipe
 
@@ -580,7 +608,7 @@
   it, each found by its layer name. The same goes for the instances inside
   it."
   [build recipe args member root-id at {:keys [lookup] :as options}]
-  (let [plain  (car/expand recipe nil member)
+  (let [plain  (car/expand recipe (structural-args recipe args) member)
         wanted (car/expand recipe args member)
         unset  (fn [build what nm]
                  (update build :notes conj
@@ -627,11 +655,21 @@
       (let [tree (cond-> (car/expand recipe args member)
                    (some? (:name node))        (assoc :name (:name node))
                    (some? (:layoutChild node)) (update :layoutChild merge (:layoutChild node)))]
-        (build-node build tree parent-id at spot
+        (build-node build tree parent-id at
+                    (when (nil? parent-id) (or spot (free-spot (:view build))))
                     (update options :dupes (fnil into #{}) (repeated-names tree))))
-      (let [main (find-main (:view build) recipe member)]
-        (if (nil? main)
+      (let [sargs (structural-args recipe args)
+            title (main-title recipe sargs)
+            build (ensure-main build recipe sargs title options)
+            main  (when-not (stopped? build) (find-main (:view build) recipe member title))]
+        (cond
+          (stopped? build)
+          build
+
+          (nil? main)
           (assoc build :stopped {:problem (dm/str "no main of \"" (:name recipe) "\" to place")} :at at)
+
+          :else
           (let [place (or spot (free-spot (:view build)))
                 build (then build at #(cac/create-instance % {:componentId (dm/str (:component-id main))
                                                               :fileId (dm/str (:file-id main))
@@ -641,7 +679,10 @@
             (if (stopped? build)
               build
               (as-> build build
-                (update build :ids assoc (key-of build node at options) id)
+                (let [key (key-of build node at options)]
+                  (cond-> (update build :ids assoc key id)
+                    (some? (:placeholder node))
+                    (update-in [:placeholders (:placeholder node)] (fnil conj []) key)))
                 (cond-> build
                   (nil? (:root build)) (assoc :root id))
                 (cond-> build
@@ -846,15 +887,15 @@
               build   (-> (cap/start view)
                           (assoc :ids {} :slots {} :placeholders {} :mains [] :notes [])
                           (cond-> (seq (:create plan))
-                            (then "tokens" #(cato/create-tokens % {:tokens (:create plan)} options)))
-                          (ensure-mains all options)
-                          (dissoc :root))
+                            (then "tokens" #(cato/create-tokens % {:tokens (:create plan)} options))))
               created (when (and (seq (:create plan)) (not= "tokens" (:at build)))
                         (mapv :name (:create plan)))
               node    (cond-> {:type "recipe" :use recipe}
                         (some? params)  (assoc :with (into {} (map (fn [[k v]] [(name k) v])) params))
                         (seq variant)   (assoc :variant variant))
-              spot    (when (nil? parentId)
+              ;; where the call says; else wherever is free once the mains
+              ;; it needs are built
+              spot    (when (and (nil? parentId) (or (some? x) (some? y)))
                         (cond-> (free-spot (:view build))
                           (some? x) (assoc :x x)
                           (some? y) (assoc :y y)))

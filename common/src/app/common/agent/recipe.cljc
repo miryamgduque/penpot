@@ -451,14 +451,15 @@
    "ellipse" (into common-keys [:width :height :tokens :vary :placeholder])
    "text"    (into common-keys [:width :height :tokens :vary :text :align])
    "image"   (into common-keys [:width :height :tokens :vary :url])
-   "recipe"  (into common-keys [:use :with :variant])})
+   "recipe"  (into common-keys [:use :with :variant :vary :placeholder])})
 
 (def ^:private set-keys
   {"board"   #{:tokens :width :height :layout :layoutChild}
    "rect"    #{:tokens :width :height :layoutChild}
    "ellipse" #{:tokens :width :height :layoutChild}
    "text"    #{:tokens :width :height :layoutChild :text}
-   "image"   #{:tokens :width :height :layoutChild}})
+   "image"   #{:tokens :width :height :layoutChild}
+   "recipe"  #{:variant :with :layoutChild}})
 
 (defn- vary-problem
   [{:keys [axes] :as ctx} where kind vary]
@@ -761,6 +762,22 @@
   [recipe]
   (into #{} (comp (keep :repeat) (filter param-ref?) (map :param)) (nodes (:tree recipe))))
 
+;; A param that changes what layers there are — how many times a node
+;; repeats, whether one is there, how big one is — and not only words.
+
+(defn structural-params
+  "The names of the params of `recipe` that change its structure."
+  [recipe]
+  (into #{}
+        (mapcat (fn [node]
+                  (concat (keep #(when (param-ref? %) (:param %))
+                                [(:repeat node) (:width node) (:height node)])
+                          (when (contains? (:when node) :param) [(:param (:when node))])
+                          (keep #(when (param-ref? %) (:param %))
+                                (mapcat (fn [entry] [(-> entry :set :width) (-> entry :set :height)])
+                                        (:vary node))))))
+        (nodes (:tree recipe))))
+
 (defn arguments-problem
   "Why `args` — param → value — cannot be handed to `recipe`, or nil."
   [recipe args]
@@ -849,7 +866,7 @@
                   (= (:at entry) index)
                   (every? (fn [[axis value]] (= value (get member (name axis)))) on))
               (reduce-kv (fn [node k v]
-                           (if (contains? #{:tokens :layout :layoutChild} k)
+                           (if (contains? #{:tokens :layout :layoutChild :variant :with} k)
                              (update node k merge v)
                              (assoc node k v)))
                          node

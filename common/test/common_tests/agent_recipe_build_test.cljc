@@ -599,7 +599,16 @@
     (t/is (= 1.0 (-> usage :shares :autoLayout)))
     (t/is (= 1.0 (-> usage :shares :colorTokenBound)))
     (t/is (< 0.1 (-> usage :shares :components) 1))
-    (t/is (< 0.9 (-> usage :shares :tokenBound))))
+    (t/is (< 0.9 (-> usage :shares :tokenBound)))
+    (t/testing "its copies are of the file's own components, not of a library's"
+      (let [root  [(parse-uuid (-> out :result :id))]
+            own   (cau/capability-usage (objects built) root (:id built))
+            ;; the same page, read as a file that only links the one the components are in
+            other (cau/capability-usage (objects built) root (uuid/next))]
+        (t/is (nil? (-> usage :shares :libraryReuse)))
+        (t/is (pos? (-> own :counts :copies)))
+        (t/is (= 0.0 (-> own :shares :libraryReuse)))
+        (t/is (= 1.0 (-> other :shares :libraryReuse))))))
   (t/testing "boxes drawn by hand use none of it"
     (let [board-id (uuid/next)
           rect-id  (uuid/next)
@@ -613,11 +622,12 @@
                                                         :parent-id board-id :frame-id board-id})))
           usage    (cau/capability-usage drawn [board-id])]
       (t/is (= {:layers 2 :insideABoard 1 :inAutoLayout 0 :tokenBound 0
-                :withAColor 2 :colorTokenBound 0 :inComponents 0}
+                :withAColor 2 :colorTokenBound 0 :inComponents 0 :copies 0 :libraryCopies 0}
                (:counts usage)))
-      (t/is (= {:autoLayout 0.0 :tokenBound 0.0 :colorTokenBound 0.0 :components 0.0} (:shares usage)))))
+      (t/is (= {:autoLayout 0.0 :tokenBound 0.0 :colorTokenBound 0.0 :components 0.0 :libraryReuse nil}
+               (:shares usage)))))
   (t/testing "nothing to count gives no share"
-    (t/is (= {:autoLayout nil :tokenBound nil :colorTokenBound nil :components nil}
+    (t/is (= {:autoLayout nil :tokenBound nil :colorTokenBound nil :components nil :libraryReuse nil}
              (:shares (cau/capability-usage {} []))))))
 
 ;; --- Content in the same call, and what is left to replace

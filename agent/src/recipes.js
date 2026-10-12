@@ -21,7 +21,7 @@ function parsed(content) {
 }
 
 export function recipeUse() {
-  const use = { searched: 0, found: 0, built: 0, byHand: 0, recipes: [] };
+  const use = { searched: 0, found: 0, built: 0, byHand: 0, recipes: [], instanced: 0, fromLibrary: 0 };
   return {
     /** Takes note of one tool call and its result. */
     note(call, result) {
@@ -35,13 +35,17 @@ export function recipeUse() {
           use.built += 1;
           use.recipes.push(String(call.input?.recipe));
         }
+      } else if (call.name === "create_instance") {
+        // a copy of a component that exists: of a linked library when the call names its file
+        use.instanced += 1;
+        if (typeof call.input?.fileId === "string" && call.input.fileId !== "") use.fromLibrary += 1;
       } else if (BY_HAND.has(call.name)) {
         use.byHand += 1;
       }
     },
     /** → the counts, or undefined when the turn neither looked for nor built anything. */
     summary() {
-      return use.searched + use.built + use.byHand > 0 ? { ...use } : undefined;
+      return use.searched + use.built + use.byHand + use.instanced > 0 ? { ...use } : undefined;
     },
   };
 }
@@ -71,4 +75,19 @@ export function hitRate(entries) {
   }
   const found = [...conversations.values()].filter((entry) => entry.found > 0);
   return found.length === 0 ? undefined : found.filter((entry) => entry.built > 0).length / found.length;
+}
+
+/**
+ * The library reuse rate of a log's entries: of the ready-made parts placed
+ * — a recipe built, or a copy of a linked library's component — the share
+ * that came from a library. Undefined when none was placed.
+ */
+export function libraryReuse(entries) {
+  let placed = 0;
+  let fromLibrary = 0;
+  for (const entry of entries) {
+    placed += (entry.built ?? 0) + (entry.fromLibrary ?? 0);
+    fromLibrary += entry.fromLibrary ?? 0;
+  }
+  return placed === 0 ? undefined : fromLibrary / placed;
 }

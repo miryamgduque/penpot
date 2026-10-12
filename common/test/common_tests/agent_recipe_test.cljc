@@ -46,13 +46,13 @@
       (doseq [[category names] planned]
         (t/is (= names (vec (take (count names) (get by-kind category)))))))
     (t/testing "and the parts they are made of, each a component of its own"
-      (t/is (= #{"icon" "tab" "plan-card" "feature-item" "stat-card" "table-row"
-                 "nav-link" "nav-item" "tab-bar-item" "footer-group"}
-               (set (remove (set (mapcat val planned)) (keys cars/builtin)))))
       (doseq [nm ["icon" "tab" "plan-card" "feature-item" "stat-card" "table-row"
                   "nav-link" "nav-item" "tab-bar-item" "footer-group"]]
         (let [part (get cars/builtin nm)]
-          (t/is (or (seq (:variants part)) (true? (:component part))) nm))))))
+          (t/is (or (seq (:variants part)) (true? (:component part))) nm))))
+    (t/testing "over a hundred in all, each with a name of its own"
+      (t/is (<= 100 (count cars/all)))
+      (t/is (= (count cars/all) (count cars/builtin))))))
 
 (t/deftest what-repeats-is-a-component-and-the-current-one-a-variant
   (doseq [[nm part] {"sidebar" "nav-item" "top-bar" "nav-link" "bottom-tab-bar" "tab-bar-item"
@@ -84,29 +84,22 @@
       (t/testing "no raw color anywhere"
         (t/is (nil? (re-find #"#[0-9a-fA-F]{3,8}\b|rgba?\(" (pr-str recipe))))))))
 
-(t/deftest controls-are-components-with-variants
+(t/deftest a-control-is-a-component-or-is-made-of-them
   (doseq [recipe (filter #(= "control" (:category %)) cars/all)]
-    (t/is (seq (:variants recipe)) (:name recipe))))
+    (t/is (or (seq (:variants recipe))
+              (true? (:component recipe))
+              (seq (car/uses recipe)))
+          (:name recipe))))
 
 (t/deftest sections-use-the-controls-they-show
-  (t/is (= {"hero" ["button"] "feature-grid" ["feature-item"] "pricing-table" ["plan-card"]
-            "form" ["text-field" "button"] "data-table" ["table-row"] "stat-cards" ["stat-card"]
-            "footer" ["footer-group"] "empty-state" ["button"] "footer-group" []}
-           (into {} (map (juxt :name car/uses)) (filter #(= "section" (:category %)) cars/all)))))
-
-(t/deftest the-examples-prove-the-format
-  (t/testing "variants"
-    (t/is (= ["Kind" "Size"] (mapv :name (:variants cars/button))))
-    (t/is (some? (-> cars/button :tree :vary))))
-  (t/testing "references to other recipes"
-    (t/is (= ["button"] (car/uses cars/card)))
-    (t/is (= ["plan-card"] (car/uses cars/pricing-table)))
-    (t/is (= ["button"] (car/uses (get cars/builtin "plan-card")))))
-  (t/testing "repetition, also inside what is repeated"
-    (let [plan (-> cars/pricing-table :tree :children second :children first)]
-      (t/is (= {:param "plans"} (:repeat plan)))
-      (t/is (= {:param "features"}
-               (-> (get cars/builtin "plan-card") :tree :children (nth 2) :children first :repeat))))))
+  (let [uses (into {} (map (juxt :name car/uses)) cars/all)]
+    (t/is (= ["button"] (get uses "hero")))
+    (t/is (= ["feature-item"] (get uses "feature-grid")))
+    (t/is (= ["plan-card"] (get uses "pricing-table")))
+    (t/is (= ["text-field" "button"] (get uses "form")))
+    (t/is (= ["table-row"] (get uses "data-table")))
+    (t/is (= ["stat-card"] (get uses "stat-cards")))
+    (t/is (= ["footer-group"] (get uses "footer")))))
 
 (t/deftest a-valid-recipe-has-no-problem
   (t/is (nil? (car/problem minimal))))

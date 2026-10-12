@@ -4,7 +4,6 @@
 //
 // Copyright (c) KALEIDOS INC Sucursal en España SL
 
-@use "refactor/common-refactor.scss" as deprecated;
 @use "common/refactor/common-dashboard";
 @use "ds/_utils.scss" as *;
 @use "ds/typography.scss" as t;
@@ -72,14 +71,6 @@
   margin: 0;
 }
 
-.create-btn {
-  @extend %button-primary;
-
-  block-size: $sz-32;
-  padding-inline: var(--sp-l);
-  white-space: nowrap;
-}
-
 .skills-empty {
   display: grid;
   place-items: center;
@@ -112,16 +103,6 @@
 .skill-row {
   grid-template-columns: auto 1fr auto auto;
   gap: var(--sp-l);
-}
-
-.skill-toggle input {
-  cursor: pointer;
-  accent-color: var(--color-accent-primary);
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.4;
-  }
 }
 
 .skill-main {
@@ -211,57 +192,18 @@
   }
 }
 
-// MODAL (same layout conventions as the webhooks modal in team.scss)
+// SKILL DIALOG (inside DS modal*)
 
-.modal-overlay {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: fixed;
-  left: 0;
-  top: 0;
-  block-size: 100%;
-  inline-size: 100%;
-  z-index: var(--z-index-set);
-  background-color: var(--overlay-color);
+// The form wraps the modal*'s header, content and footer; `contents` keeps
+// the DS modal body grid laying them out.
+.skill-form {
+  display: contents;
 }
 
-.modal-container {
-  position: relative;
-  padding: var(--sp-xxxl);
-  border-radius: $br-8;
-  background-color: var(--color-background-primary);
-  border: $b-2 solid var(--color-background-quaternary);
-  min-inline-size: $sz-512;
-  max-inline-size: px2rem(640);
-  max-block-size: 90vh;
-  overflow-y: auto;
-}
-
-.modal-header {
-  margin-bottom: var(--sp-xxl);
-}
-
-.modal-title {
-  @include t.use-typography("title-small");
-
-  color: var(--color-foreground-primary);
-}
-
-// DS icon-button in the dialog's top-right corner.
-.modal-close-btn {
-  position: absolute;
-  inset-block-start: var(--sp-s);
-  inset-inline-end: var(--sp-s);
-}
-
-.modal-content {
-  @include t.use-typography("body-small");
-
+.skill-form-content {
   display: flex;
   flex-direction: column;
   gap: var(--sp-xxl);
-  margin-bottom: var(--sp-xxl);
 }
 
 .fields-row {
@@ -269,6 +211,7 @@
   flex-direction: column;
   gap: var(--sp-xs);
   flex: 1;
+  min-inline-size: 0;
 }
 
 .fields-row-checkbox {
@@ -280,20 +223,34 @@
   gap: var(--sp-l);
 }
 
-.select-title {
-  @include t.use-typography("body-small");
-
-  color: var(--color-foreground-primary);
-}
-
 .hint {
   color: var(--color-foreground-secondary);
 }
 
-.action-buttons {
-  @extend %modal-action-btns;
+// The DS has no textarea: same tokens as the DS input field.
+.body-textarea {
+  @include t.use-typography("body-small");
 
-  .cancel-button {
-    @extend %modal-cancel-btn;
+  inline-size: 100%;
+  min-block-size: $sz-160;
+  padding: var(--sp-s);
+  border: none;
+  border-radius: $br-8;
+  outline: $b-1 solid transparent;
+  background-color: var(--color-background-tertiary);
+  color: var(--color-foreground-primary);
+  resize: vertical;
+
+  &::placeholder {
+    color: var(--color-foreground-secondary);
+  }
+
+  &:hover {
+    background-color: var(--color-background-quaternary);
+  }
+
+  &:focus-visible {
+    background-color: var(--color-background-primary);
+    outline-color: var(--color-accent-primary);
   }
 }

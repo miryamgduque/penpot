@@ -40,8 +40,9 @@ credential the tools use.
 
 | Tools | Run by | Why there |
 |---|---|---|
-| reads, audit, comments, versions, page metadata | the backend (`run-agent-tool`) | they read the stored file or call what the workspace calls, as the turn's profile |
+| reads, audit, comments, versions, page metadata, `save_recipe` | the backend (`run-agent-tool`) | they read the stored file or call what the workspace calls, as the turn's profile; a saved recipe is kept with the file's team |
 | everything that changes a page or the file's tokens, components and foundations; `screenshot_page`; `render_board` when no workspace is connected | the exporter (`POST /agent-tool`) | layout and text measurement are the render-wasm engine, which the exporter runs headless; it also keeps the browser pool. Tokens are resolved there with the workspace's library; images and a team's uploaded fonts are handed over by the backend for the turn |
+| `build_recipe`, `find_recipes` | the exporter | a recipe is built by running the page tools one after another on the engine; the backend hands over the team's own recipes with the page |
 | `explore_design`, `fetch_page` | this service, on a side conversation | a cheap model with its own prompt; the web reader holds no tools |
 | skills | the harness's own `skill` tool | the panel sends the enabled skills with the turn |
 | `generate_code` | the exporter, in the frontend's render page | the generators render the workspace's own components, so they run where those are: a page of the exporter's browser pool, handed the shapes and nothing else |

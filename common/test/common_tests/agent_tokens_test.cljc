@@ -7,6 +7,7 @@
 (ns common-tests.agent-tokens-test
   (:require
    [app.common.agent.tokens :as cato]
+   [app.common.agent.write :as caw]
    [app.common.files.changes :as cfc]
    [app.common.types.file :as ctf]
    [app.common.types.shape :as cts]
@@ -237,6 +238,9 @@
     (t/is (= ["color.brand"] (-> out :result :changed)))
     (t/is (= 2 (-> out :result :restyled)))
     (t/is (re-find #"nothing needs re-applying" (-> out :result :note)))
+    ;; each shape's changes are said once, however many of its properties follow
+    (t/is (= 2 (count (filter #(= :mod-obj (:type %)) (:changes out)))))
+    (t/is (= "#6366f1" (fill (cfc/process-changes after (caw/undo-of (:changes out))))))
     (t/testing "one token, by create_token"
       (let [out (cato/create-token (view bound) {:type "spacing" :name "space.md" :value "24"} (engine (atom [])))]
         (t/is (= 24.0 (-> (get (objects (commit bound out)) row-id) :layout-gap :column-gap)))

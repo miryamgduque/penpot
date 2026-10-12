@@ -10,6 +10,7 @@
   (:require
    [app.common.agent.recipe :as car]
    [app.common.agent.recipes :as cars]
+   [app.common.agent.recipes.profiles :as profiles]
    [clojure.test :as t]))
 
 (def ^:private minimal
@@ -286,3 +287,59 @@
     (t/is (= ["Feature 1" "Feature 2" "Feature 3"]
              (mapv :text (:children (named (second plans) "Features")))))
     (t/is (= {"label" "Choose plan 2"} (:with (named (second plans) "Choose"))))))
+
+;; --- Platform profiles
+
+(t/deftest the-built-in-profiles-are-valid
+  (t/is (= ["ios" "web"] (mapv :name profiles/all)))
+  (doseq [profile profiles/all]
+    (t/is (nil? (car/profile-problem profile cars/builtin)))
+    (t/testing "each is over the navigation recipes"
+      (t/is (every? #(contains? (:recipes profile) %) ["top-bar" "sidebar" "bottom-tab-bar"])))))
+
+(t/deftest a-profile-adjusts-and-does-not-copy
+  (let [top (car/with-profile (get cars/builtin "top-bar") profiles/ios)]
+    (t/testing "sizes and spacing"
+      (t/is (= 393 (-> top :tree :width)))
+      (t/is (= "spacing.lg" (-> top :tree :tokens :paddingX)))
+      (t/is (= "color.surface" (-> top :tree :tokens :fill))))
+    (t/testing "a default of a param"
+      (t/is (= 0 (:default (some #(when (= "links" (:name %)) %) (:params top))))))
+    (t/testing "the variant of a control it places"
+      (t/is (= {:Kind "Ghost" :Size "Small"} (:variant (named (:tree top) "Action")))))
+    (t/testing "the adjusted recipe is still a valid one"
+      (t/is (nil? (car/problem top cars/builtin))))
+    (t/testing "a profile holds no tree of its own"
+      (t/is (not (re-find #":children|:type \"board\"" (pr-str profiles/ios))))))
+  (t/testing "a layer that repeats is adjusted at every turn"
+    (let [tree (car/expand (car/with-profile (get cars/builtin "bottom-tab-bar") profiles/ios) nil nil)]
+      (t/is (= 5 (count (:children tree))))
+      (t/is (= #{28} (set (map :width (filter #(= "Icon" (:name %)) (tree-seq map? :children tree))))))))
+  (t/testing "a profile picks the variant of a component"
+    (t/is (= {"Size" "Small"} (car/profile-variant profiles/web cars/button)))
+    (t/is (nil? (car/profile-variant profiles/web cars/card)))))
+
+(t/deftest a-recipe-with-no-profile-is-unaffected
+  (doseq [recipe cars/all
+          profile profiles/all
+          :when (not (contains? (:recipes profile) (:name recipe)))]
+    (t/is (identical? recipe (car/with-profile recipe profile)))))
+
+(t/deftest profile-problems-are-named
+  (let [problem (fn [f & args] (car/profile-problem (apply f profiles/ios args) cars/builtin))]
+    (t/is (= "profile: not a profile object" (car/profile-problem [] cars/builtin)))
+    (t/is (re-find #"profile \"ios\": the profile has \"script\"" (problem assoc :script "x")))
+    (t/is (re-find #"recipes names \"nav-bar\", and there is no recipe of that name"
+                   (problem assoc-in [:recipes "nav-bar"] {})))
+    (t/is (re-find #"recipes.top-bar.params: \"links\" is at most 6"
+                   (problem assoc-in [:recipes "top-bar" :params] {:links 9})))
+    (t/is (re-find #"recipes.button.variant: \"Size\" is one of: Medium, Small"
+                   (problem assoc-in [:recipes "button" :variant] {:Size "Huge"})))
+    (t/is (re-find #"recipes.button adjusts a component"
+                   (problem assoc-in [:recipes "button" :adjust] [{:layer "Label" :set {:width 10}}])))
+    (t/is (re-find #"adjust\[0\] names the layer \"Logo\", and \"top-bar\" has none of that name — it has: Top bar, Brand"
+                   (problem assoc-in [:recipes "top-bar" :adjust] [{:layer "Logo" :set {:width 10}}])))
+    (t/is (re-find #"adjust\[0\].set has \"children\""
+                   (problem assoc-in [:recipes "top-bar" :adjust] [{:layer "Brand" :set {:children []}}])))
+    (t/is (re-find #"adjust\[0\].set.tokens.fill names \"#fff\", which is not a role"
+                   (problem assoc-in [:recipes "top-bar" :adjust] [{:layer "Brand" :set {:tokens {:fill "#fff"}}}])))))

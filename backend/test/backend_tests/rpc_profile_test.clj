@@ -1653,6 +1653,36 @@
         (t/is (th/ex-of-type? (:error out) :validation))
         (t/is (th/ex-of-code? (:error out) :props-too-large))))))
 
+(t/deftest update-profile-props-accepts-agent-disabled
+  ;; The account-wide agent switch is stored in profile props
+  (let [profile (th/create-profile* 1)
+        update! (fn [value]
+                  (th/command! {::th/type :update-profile-props
+                                ::rpc/profile-id (:id profile)
+                                :props {:agent-disabled value}}))
+        stored  (fn []
+                  (-> (th/db-get :profile {:id (:id profile)})
+                      (profile/decode-row)
+                      (get-in [:props :agent-disabled])))]
+
+    (t/is (nil? (:error (update! true))))
+    (t/is (true? (stored)))
+
+    (t/is (nil? (:error (update! false))))
+    (t/is (false? (stored)))))
+
+(t/deftest update-profile-props-rejects-invalid-agent-disabled
+  ;; The agent switch only accepts booleans
+  (let [profile (th/create-profile* 1)
+        data    {::th/type :update-profile-props
+                 ::rpc/profile-id (:id profile)
+                 :props {:agent-disabled "yes"}}
+        out     (th/command! data)]
+
+    (t/is (th/ex-info? (:error out)))
+    (t/is (th/ex-of-type? (:error out) :validation))
+    (t/is (th/ex-of-code? (:error out) :params-validation))))
+
 
 (t/deftest prepare-register-profile-password-too-short
   (let [data {::th/type :prepare-register-profile

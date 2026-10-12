@@ -111,7 +111,7 @@
   (t/is (re-find #"`name` in kebab-case" (problem assoc :name "My Thing")))
   (t/is (re-find #"recipe \"thing\": needs a `title`" (problem dissoc :title)))
   (t/is (re-find #"needs a `purpose`" (problem assoc :purpose "")))
-  (t/is (re-find #"`category`: one of container, control, navigation, section"
+  (t/is (re-find #"`category`: one of container, control, navigation, screen, section"
                  (problem assoc :category "widget")))
   (t/is (re-find #"keywords is not a list of words" (problem assoc :keywords "a b"))))
 
@@ -328,7 +328,7 @@
 ;; --- Platform profiles
 
 (t/deftest the-built-in-profiles-are-valid
-  (t/is (= ["ios" "web"] (mapv :name profiles/all)))
+  (t/is (= ["ios" "android" "web"] (mapv :name profiles/all)))
   (doseq [profile profiles/all]
     (t/is (nil? (car/profile-problem profile cars/builtin)))
     (t/testing "each is over the navigation recipes"
@@ -380,3 +380,32 @@
                    (problem assoc-in [:recipes "top-bar" :adjust] [{:layer "Brand" :set {:children []}}])))
     (t/is (re-find #"adjust\[0\].set.tokens.fill names \"#fff\", which is not a role"
                    (problem assoc-in [:recipes "top-bar" :adjust] [{:layer "Brand" :set {:tokens {:fill "#fff"}}}])))))
+
+;; --- Whole screens
+
+(t/deftest a-screen-is-made-of-other-recipes
+  (let [screens (filter #(= "screen" (:category %)) cars/all)]
+    (t/is (<= 12 (count screens)))
+    (doseq [screen screens]
+      (t/testing (:name screen)
+        (let [nodes (tree-seq map? :children (:tree screen))]
+          (t/is (<= 1 (count (filter #(= "recipe" (:type %)) nodes))))
+          (t/testing "it draws next to nothing itself"
+            (t/is (<= (count (remove #(contains? #{"recipe" "board"} (:type %)) nodes)) 1)))
+          (t/testing "and is not a component: it is to be filled and changed"
+            (t/is (not (or (seq (:variants screen)) (:component screen))))))))
+    (t/testing "the kinds of screen asked for are there"
+      (t/is (every? (set (map :name screens))
+                    ["landing-page" "dashboard-screen" "sign-in-screen" "settings-screen"])))))
+
+(t/deftest a-platform-sets-its-screens
+  (let [screen (fn [profile nm] (:tree (car/with-profile (get cars/builtin nm) profile)))]
+    (t/is (= [393 852] ((juxt :width :height) (screen profiles/ios "mobile-list-screen"))))
+    (t/is (= [360 800] ((juxt :width :height) (screen profiles/android "mobile-list-screen"))))
+    (t/is (= "spacing.3xl" (-> (screen profiles/ios "mobile-list-screen") :tokens :paddingTop)))
+    (t/is (= 3 (:default (some #(when (= "tabs" (:name %)) %)
+                               (:params (car/with-profile (get cars/builtin "mobile-list-screen") profiles/android))))))
+    (t/is (= "start" (-> (screen profiles/android "mobile-header") :layout :justifyContent)))
+    (t/testing "a screen a platform does not name is as it was"
+      (t/is (identical? (get cars/builtin "dashboard-screen")
+                        (car/with-profile (get cars/builtin "dashboard-screen") profiles/ios))))))

@@ -136,7 +136,9 @@
 
 (t/deftest the-index-names-every-recipe-by-category
   (let [index (carb/index cars/builtin)]
-    (t/is (= 4 (count (re-seq #"(?m)^- " index))))
+    (t/is (= 5 (count (re-seq #"(?m)^- " index))))
+    (t/testing "whole screens first"
+      (t/is (re-find #"^- screen: " index)))
     (t/is (re-find #"(?m)^- control: avatar \(avatar\); badge \(badge\); button \(button\)" index))
     (t/is (every? #(re-find (re-pattern (str "\\b" % " \\(")) index) (keys cars/builtin)))))
 
@@ -146,7 +148,9 @@
     (t/is (= "button" (first (names {:query "button"}))))
     (t/is (= "form" (first (names {:query "sign up form"}))))
     (t/is (= "choice-control" (first (names {:query "checkbox"}))))
-    (t/is (= "pricing-table" (first (names {:query "subscription plans"}))))
+    (t/is (contains? #{"pricing-table" "pricing-page"} (first (names {:query "subscription plans"}))))
+    (t/is (= "landing-page" (first (names {:query "landing page for a startup"}))))
+    (t/is (= "dashboard-screen" (first (names {:query "dashboard screen"}))))
     (t/is (= "top-bar" (first (names {:query "navbar"}))))
     (t/is (= "stat-cards" (first (names {:query "dashboard kpi"}))))
     (t/is (= (sort (map :name (filter #(= "navigation" (:category %)) cars/all)))
@@ -577,8 +581,8 @@
             ;; on the same file, so both place the same button
             [b out-b] (build a {:recipe "empty-state" :profile "ios"})]
         (t/is (= (outline a (-> out-a :result :id)) (outline b (-> out-b :result :id))))))
-    (t/is (re-find #"no platform profile named \"android\" — there are: ios, web"
-                   (:problem (second (build data {:recipe "top-bar" :profile "android"})))))))
+    (t/is (re-find #"no platform profile named \"windows\" — there are: android, ios, web"
+                   (:problem (second (build data {:recipe "top-bar" :profile "windows"})))))))
 
 ;; --- The measure recipes are held against
 

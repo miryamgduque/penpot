@@ -339,7 +339,8 @@
     :params [(k/ptext "title" "A setting" "What the setting is")
              (k/ptext "description" "What turning it on does." "The line about it")]
     :variants [(k/axis "State" "Off" "On")]}
-   (k/board "Settings row" {:dir "row" :align "center" :w 560 :size ["fix" "auto"]
+   ;; as narrow as a phone lets it be: placed in something wider it grows
+   (k/board "Settings row" {:dir "row" :align "center" :w 320 :size ["fix" "auto"]
                             :tokens {:fill "color.surface" :gap "spacing.lg" :paddingY "spacing.md"}}
             (k/board "Text" {:size ["fill" "auto"] :tokens {:gap "spacing.xs"}}
                      (k/text "Title" "{title}" "sm" :weight "medium" :grow true)

@@ -69,6 +69,35 @@
   (with-undo (into (vec earlier) later)
     (into (vec (undo-of later)) (undo-of earlier))))
 
+(defn- squashed
+  "`changes` with the changes to one shape that follow each other, with only
+  changes to other shapes between them, made one: what touches a shape many
+  times says so once. Changes of any other kind stay where they are, and
+  nothing moves across one."
+  [changes]
+  (loop [changes (seq changes)
+         out     []
+         at      {}]
+    (if-let [{:keys [type page-id id] :as change} (first changes)]
+      (if (= :mod-obj type)
+        (let [k [page-id (:component-id change) id]]
+          (if-let [index (get at k)]
+            (recur (next changes)
+                   (update-in out [index :operations] into (:operations change))
+                   at)
+            (recur (next changes)
+                   (conj out (update change :operations vec))
+                   (assoc at k (count out)))))
+        (recur (next changes) (conj out change) {}))
+      out)))
+
+(defn compact
+  "What a tool answers, with every shape's changes said once. A restyle of a
+  whole file touches each shape once per property; said one by one that is
+  more changes than a commit may carry."
+  [changes]
+  (with-undo (squashed changes) (squashed (undo-of changes))))
+
 ;; --- shape types
 ;;
 ;; The agent says "board"; the file model says `:frame`. Two mappings, and the

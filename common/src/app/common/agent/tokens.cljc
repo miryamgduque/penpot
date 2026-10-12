@@ -221,7 +221,7 @@
   [lib]
   (some-> lib (ctob/get-sets) (first) (ctob/get-id)))
 
-(defn- library-changes
+(defn library-changes
   [data]
   (-> (cb/empty-changes)
       (cb/with-library-data data)))
@@ -548,6 +548,10 @@
       (= :text-decoration kind)
       (or (when (string? value) (cto/valid-text-decoration value)) ::unresolved)
 
+      ;; "700", "bold", "600 italic": what a font weight token may say
+      (= :font-weight kind)
+      (if (some? (cto/valid-font-weight-variant (dm/str value))) (dm/str value) ::unresolved)
+
       ;; a list of families, as the token forms store one
       (= :font-family kind)
       (let [families (if (string? value) (cto/split-font-family value) value)]
@@ -693,7 +697,7 @@
       (reduce #(caw/fit-text %1 engine %2) changes ids)
       changes)))
 
-(defn- number-text
+(defn number-text
   "A number as a text attribute holds it: `24`, not `24.0`."
   [value]
   #?(:cljs (str value)
@@ -782,6 +786,46 @@
 
     changes))
 
+(def ^:private paint-attrs
+  "The token properties that change how a shape is painted and not where
+  anything is."
+  #{:fill :stroke-color :opacity :shadow :r1 :r2 :r3 :r4})
+
+(defn- painted
+  "`shape` with the resolved `value` on the paint properties `attrs`: what
+  `write-value` does for them, to one shape."
+  [shape attrs value]
+  (let [color  (when (and (map? value) (contains? value :color)) value)
+        number (when (number? value) value)
+        radii  (not-empty (set/intersection attrs #{:r1 :r2 :r3 :r4}))]
+    (cond-> shape
+      (and color (:fill attrs) (cfh/text-shape? shape))
+      (-> (dissoc :fills)
+          (d/update-when :content
+                         #(txt/transform-nodes
+                           text-node?
+                           (fn [node] (update node :fills types.fills/assoc 0 (fill-of color)))
+                           %)))
+
+      (and color (:fill attrs) (not (cfh/text-shape? shape)))
+      (update :fills types.fills/assoc 0 (fill-of color))
+
+      (and color (:stroke-color attrs))
+      (update :strokes
+              (fn [strokes]
+                (let [stroke (-> (stroke-style (get strokes 0))
+                                 (assoc :stroke-color (:color color) :stroke-opacity (:opacity color)))]
+                  (if (nil? strokes) [stroke] (assoc strokes 0 stroke)))))
+
+      (and number radii)
+      (ctsr/set-radius-for-corners radii (max 0 number))
+
+      (and number (:opacity attrs) (<= 0 number 1))
+      (assoc :opacity number)
+
+      (and (sequential? value) (:shadow attrs))
+      (assoc :shadow (shadows-of value)))))
+
 (def ^:private typography-order
   [:font-size :font-family :font-weight :letter-spacing :text-case :text-decoration :line-height])
 
@@ -856,7 +900,8 @@
       (and number (:rotation attrs))
       (set-geometry ids #{:rotation} number engine)
 
-      :always
+      ;; paint moves nothing: only what changes a size or a gap lays out again
+      (seq (set/difference attrs paint-attrs))
       (caw/reflow-all (:propagate engine)
                       (into (vec ids) (keep #(cfh/get-parent-id objects %)) ids)))))
 
@@ -980,7 +1025,9 @@
   is bound to those tokens."
   [page-id objects active resolved names engine]
   ;; shapes are written together by token and properties: one layout pass for
-  ;; all the shapes a token colors, not one for each
+  ;; all the shapes a token sizes, not one for each. And paint — fills,
+  ;; strokes, corners, shadows — moves nothing, so all of it goes in one pass
+  ;; over the page: a switch of theme is mostly paint.
   (let [groups (reduce
                 (fn [groups [id shape]]
                   (->> (:applied-tokens shape)
@@ -990,37 +1037,55 @@
                                  (update groups [token-name (into #{} (map key) entries)] (fnil conj []) id))
                                groups)))
                 {}
-                objects)]
+                objects)
+        valued (keep (fn [[[token-name attrs] ids]]
+                       (when-let [value (some->> (get active token-name) (token-value resolved))]
+                         {:attrs attrs :ids ids :value value}))
+                     groups)
+        paint? (fn [{:keys [attrs value]}]
+                 (and (not= ::unresolved value) (empty? (set/difference attrs paint-attrs))))
+        paints (reduce (fn [paints {:keys [attrs ids value]}]
+                         (reduce (fn [paints id] (update paints id (fnil conj []) [attrs value])) paints ids))
+                       {}
+                       (filter paint? valued))]
     (reduce
-     (fn [changes [[token-name attrs] ids]]
-       (let [token (get active token-name)
-             value (some->> token (token-value resolved))]
-         (cond
-           (nil? value)
-           changes
+     (fn [changes {:keys [attrs ids value]}]
+       (if (= ::unresolved value)
+         (reduced {:fallback "a bound token's value needs the workspace's resolver"})
+         (if-let [fallback (write-fallback objects ids attrs engine)]
+           (reduced fallback)
+           (write-value changes ids attrs value engine))))
+     (cond-> (caw/page-changes page-id objects)
+       (seq paints)
+       (cb/update-shapes (keys paints)
+                         (fn [shape]
+                           (reduce (fn [shape [attrs value]] (painted shape attrs value))
+                                   shape
+                                   (get paints (:id shape))))
+                         quiet))
+     (remove paint? valued))))
 
-           (= ::unresolved value)
-           (reduced {:fallback "a bound token's value needs the workspace's resolver"})
-
-           :else
-           (if-let [fallback (write-fallback objects ids attrs engine)]
-             (reduced fallback)
-             (write-value changes ids attrs value engine)))))
-     (caw/page-changes page-id objects)
-     groups)))
-
-(defn- rebind-pages
+(defn rebind-pages
   "After `made`, changes to the tokens ready to send: gives the shapes bound
   to a token their new value, on every page → `{:changes :shapes}`, the
   changes with the shapes' following and how many shapes that was, or
   `{:pending}`, or `{:fallback}`. With `names`, only what is bound to those
   tokens or to a token that refers to one."
   [data made names engine]
-  (let [data   (cfc/process-changes data made false)
+  (let [before (some-> (:tokens-lib data) ctob/get-tokens-in-active-sets)
+        data   (cfc/process-changes data made false)
         active (ctob/get-tokens-in-active-sets (:tokens-lib data))
-        names  (some->> names (dependents active))
+        ;; a token worth what it was worth before changes nothing on a shape:
+        ;; a switch of theme that keeps the type sizes measures no text again
+        same?  (fn [token-name]
+                 (let [was (some->> (get before token-name) (resolved-value before))
+                       now (resolved-value active (get active token-name))]
+                   (and (some? was) (not= ::unresolved was) (= was now))))
+        names  (into #{}
+                     (remove same?)
+                     (if (some? names) (dependents active names) (keys active)))
         bound? (fn [shape]
-                 (some (fn [[_ token-name]] (or (nil? names) (contains? names token-name)))
+                 (some (fn [[_ token-name]] (contains? names token-name))
                        (:applied-tokens shape)))
         pages  (keep (fn [page-id]
                        (let [objects (get-in data [:pages-index page-id :objects])
@@ -1043,7 +1108,7 @@
                      pages)]
             (if (map? out)
               out
-              {:changes out :shapes (transduce (map :shapes) + pages)})))))))
+              {:changes (caw/compact out) :shapes (transduce (map :shapes) + pages)})))))))
 
 (defn- follow
   "The answer of a tool that wrote tokens with `made`. When it gave the

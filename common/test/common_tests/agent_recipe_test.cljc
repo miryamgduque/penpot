@@ -175,3 +175,69 @@
       (t/is (re-find #"recipe \"a\": uses itself: a → b → a" (car/problem a lookup)))
       (t/is (re-find #"uses the recipe it is part of"
                      (car/problem (with-child a {:type "recipe" :use "a"}) lookup))))))
+
+;; --- What a recipe comes to
+
+(defn- named
+  [tree nm]
+  (some #(when (= nm (:name %)) %) (tree-seq map? :children tree)))
+
+(t/deftest what-a-recipe-is-handed-is-checked
+  (t/is (nil? (car/arguments-problem cars/button {:label "Save"})))
+  (t/is (nil? (car/arguments-problem cars/button nil)))
+  (t/is (re-find #"\"text\" is not a param of \"button\" — it takes: label"
+                 (car/arguments-problem cars/button {:text "Save"})))
+  (t/is (re-find #"\"label\" takes text" (car/arguments-problem cars/button {"label" 3})))
+  (t/is (re-find #"\"plans\" is at most 4" (car/arguments-problem cars/pricing-table {:plans 9})))
+  (t/is (re-find #"\"plans\" takes a whole number" (car/arguments-problem cars/pricing-table {:plans 2.5})))
+  (t/is (nil? (car/member-problem cars/button {:Kind "Ghost"})))
+  (t/is (re-find #"\"Tone\" is not a variant axis of \"button\" — it has: Kind, Size"
+                 (car/member-problem cars/button {:Tone "Calm"})))
+  (t/is (re-find #"\"Kind\" is one of: Primary, Secondary, Ghost"
+                 (car/member-problem cars/button {"Kind" "Loud"})))
+  (t/is (re-find #"has no variants" (car/member-problem cars/card {:Kind "Primary"}))))
+
+(t/deftest a-recipe-has-a-member-per-combination
+  (t/is (= [{}] (car/members cars/card)))
+  (t/is (= [{"Kind" "Primary" "Size" "Medium"} {"Kind" "Primary" "Size" "Small"}
+            {"Kind" "Secondary" "Size" "Medium"} {"Kind" "Secondary" "Size" "Small"}
+            {"Kind" "Ghost" "Size" "Medium"} {"Kind" "Ghost" "Size" "Small"}]
+           (car/members cars/button)))
+  (t/is (= {"Kind" "Ghost" "Size" "Medium"} (car/member cars/button {:Kind "Ghost"}))))
+
+(t/deftest a-member-is-the-tree-with-what-varies
+  (let [primary (car/expand cars/button {:label "Save"} nil)
+        small   (car/expand cars/button nil {:Kind "Secondary" :Size "Small"})]
+    (t/is (= "Save" (:text (named primary "Label"))))
+    (t/is (= "color.primary" (-> primary :tokens :fill)))
+    (t/is (= "spacing.lg" (-> primary :tokens :paddingX)))
+    (t/is (nil? (-> primary :tokens :strokeColor)))
+    (t/is (= "Button" (:text (named small "Label"))))
+    (t/is (= {:fill "color.surface" :strokeColor "color.border" :strokeWidth "border-width.sm"
+              :borderRadius "radius.md" :gap "spacing.sm"
+              :paddingX "spacing.md" :paddingY "spacing.sm"}
+             (:tokens small)))
+    (t/is (= {:fill "color.text" :fontSize "font-size.xs" :fontWeight "font-weight.medium"}
+             (:tokens (named small "Label"))))
+    (t/is (not-any? #(or (contains? % :vary) (contains? % :when) (contains? % :repeat))
+                    (tree-seq map? :children small)))))
+
+(t/deftest conditions-leave-nodes-out
+  (let [plain (car/expand cars/card nil nil)
+        full  (car/expand cars/card {:media true :action true :actionLabel "Read"} nil)]
+    (t/is (nil? (named plain "Media")))
+    (t/is (nil? (named plain "Action")))
+    (t/is (= "content" (:slot (named plain "Content"))))
+    (t/is (some? (named full "Media")))
+    (t/is (= {:type "recipe" :name "Action" :use "button"
+              :with {"label" "Read"} :variant {"Kind" "Secondary"}}
+             (named full "Action")))))
+
+(t/deftest repeats-count-from-one-each-on-its-own
+  (let [tree  (car/expand cars/pricing-table {:plans 2 :features 3.0 :heading "Plans"} nil)
+        plans (:children (named tree "Plans"))]
+    (t/is (= "Plans" (:text (named tree "Heading"))))
+    (t/is (= ["Plan 1" "Plan 2"] (mapv :name plans)))
+    (t/is (= ["Feature 1" "Feature 2" "Feature 3"]
+             (mapv :text (:children (named (second plans) "Features")))))
+    (t/is (= {"label" "Choose plan 2"} (:with (named (second plans) "Choose"))))))

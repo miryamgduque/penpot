@@ -613,8 +613,14 @@
          "that is a component is built once per file as a main (a variant set "
          "when it has variants), and what you get placed is an instance of "
          "it, with the words from `params`; later calls reuse the main. "
-         "Returns the placed root `id`, `ids` by layer name, `slots` (boards "
-         "left for you to fill), `mains` and `tokensCreated`. On an error you "
+         "Pass the content in the SAME call: `texts` maps a layer to its "
+         "words, keyed as find_recipes lists them with a number in place of "
+         "{index} — {\"Heading\": \"Plans\", \"Plan 2 / Price\": \"$12\", "
+         "\"Plan 2 / Choose\": \"Choose Team\"} — never one set_text per "
+         "text afterwards. Returns the placed root `id`, `ids` by layer name, "
+         "`slots` (boards left for you to fill), `placeholders` (grey boxes "
+         "standing for icons and pictures: replace them or say which you "
+         "left), `mains` and `tokensCreated`. On an error you "
          "get a PARTIAL result naming what exists — repair with targeted "
          "calls, never build the recipe again. Asynchronous: verify with "
          "render_board.")
@@ -625,6 +631,7 @@
                                                            ") or one of the team's own")}
                                 :params {:type "object" :description "param → value; what is left out takes its default"}
                                 :variant {:type "object" :description "axis → value, e.g. {\"Kind\": \"Secondary\"}"}
+                                :texts {:type "object" :description "layer → its words, set as part of the build; a key that names no text comes back in textsNotSet"}
                                 :parentId {:type "string" :description "board to place it into, at the end of its flow (optional)"}
                                 :x {:type "number" :description "where on the page, when there is no parentId (optional)"}
                                 :y {:type "number"}
@@ -637,6 +644,20 @@
                                 :roles {:type "object"
                                         :description "role → the name of the file's token to bind it to, e.g. {\"color.primary\": \"brand.500\"}"}}
                    :required ["recipe"]}}
+
+   {:name "set_texts"
+    :description
+    (str "Sets the words of MANY texts in one call — use it in place of "
+         "repeated set_text whenever more than one text changes: filling a "
+         "table, a list, the plans of a pricing section. All or nothing: if "
+         "one entry is not a text, none changes and you are told which.")
+    :input-schema {:type "object"
+                   :properties {:texts {:type "array"
+                                        :items {:type "object"
+                                                :properties {:shapeId {:type "string"}
+                                                             :text {:type "string" :description "the words"}}
+                                                :required ["shapeId" "text"]}}}
+                   :required ["texts"]}}
 
    {:name "save_recipe"
     :description
@@ -1160,7 +1181,7 @@
          "clone_shape"        (atx/clone-shape-tool input)
          "build_tree"         (atx/build-tree-tool input)
          ;; server only: there is no second implementation in the workspace
-         ("build_recipe" "find_recipes" "save_recipe")
+         ("build_recipe" "find_recipes" "save_recipe" "set_texts")
          (rx/of {:error (str name " runs on the server, and the server could not "
                              "run it here. Build with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)

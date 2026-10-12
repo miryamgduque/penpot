@@ -43,6 +43,7 @@
    "create_component" cas/create-component
    "create_text"      catx/create-text
    "set_text"         catx/set-text
+   "set_texts"        catx/set-texts
    "create_token"       cato/create-token
    "create_tokens"      cato/create-tokens
    "create_token_set"   cato/create-token-set

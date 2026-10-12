@@ -20,7 +20,8 @@
    [app.common.types.container :as ctn]
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
-   [app.common.types.text :as txt]))
+   [app.common.types.text :as txt]
+   [cuerdas.core :as str]))
 
 (def text-aligns #{"left" "center" "right" "justify"})
 
@@ -98,6 +99,53 @@
   (txt/update-text-content shape txt/is-paragraph-node?
                            (fn [node attrs] (reduce-kv assoc node attrs))
                            attrs))
+
+(def ^:private max-texts 120)
+
+(defn texts-into
+  "Appends to `changes` what gives each text of `entries` — `[id words]` —
+  its words, sized to them."
+  [changes entries engine]
+  (reduce (fn [changes [id text]]
+            (-> changes
+                (cb/update-shapes [id] #(update % :content txt/change-text text))
+                (caw/fit-text engine id)))
+          changes
+          entries))
+
+(defn set-texts
+  "The words of many texts in ONE call. All-or-nothing: every entry is checked
+  before any text changes."
+  [{:keys [page-id objects]} {:keys [texts]} {:keys [measure-text] :as engine}]
+  (let [entries  (when (sequential? texts)
+                   (mapv (fn [{:keys [shapeId text]}] [(when (string? shapeId) (parse-uuid shapeId)) text])
+                         (filter map? texts)))
+        problems (into []
+                       (keep-indexed
+                        (fn [i [id text]]
+                          (when-let [problem (or (text-problem objects id {:text text})
+                                                 (when-not (string? text) "set_text: text is not text"))]
+                            (dm/str "texts[" i "]: " (str/replace problem #"^set_text: " "")))))
+                       entries)]
+    (cond
+      (or (empty? entries) (not= (count entries) (count texts)))
+      {:problem "set_texts: pass texts — an array of {shapeId, text}"}
+
+      (> (count entries) max-texts)
+      {:problem (dm/str "set_texts: at most " max-texts " texts per call")}
+
+      (seq problems)
+      {:problem (dm/str "set_texts: " (str/join " | " problems))}
+
+      (nil? measure-text)
+      {:fallback no-measure}
+
+      :else
+      {:changes (-> (caw/page-changes page-id objects)
+                    (texts-into entries engine)
+                    (caw/redo))
+       :result {:set (count entries)
+                :note "texts updated — sizes settle async; verify with render_board"}})))
 
 (defn set-text
   [{:keys [page-id objects]} {:keys [shapeId text align]} {:keys [measure-text] :as engine}]

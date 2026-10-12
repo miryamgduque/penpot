@@ -65,6 +65,7 @@
                                   :variant {:Kind "Secondary"}}]}
                      {:type "rect"
                       :name "Media"
+                      :placeholder "image"
                       :when {:param "media"}
                       :height 420
                       :layoutChild {:horizontalSizing "fill"}
@@ -108,6 +109,7 @@
                                   :tokens {:gap "spacing.sm"}
                                   :children [{:type "rect"
                                               :name "Icon"
+                                              :placeholder "icon"
                                               :width 40
                                               :height 40
                                               :tokens {:fill "color.surface-muted"
@@ -428,6 +430,7 @@
           :tokens {:padding "spacing.3xl" :gap "spacing.lg"}
           :children [{:type "ellipse"
                       :name "Illustration"
+                      :placeholder "image"
                       :width 96
                       :height 96
                       :tokens {:fill "color.surface-muted"}}

@@ -37,6 +37,7 @@
                    :borderRadius "radius.lg"}
           :children [{:type "rect"
                       :name "Media"
+                      :placeholder "image"
                       :when {:param "media"}
                       :height 160
                       :layoutChild {:horizontalSizing "fill"}
@@ -114,6 +115,7 @@
                                   :tokens {:fill "color.text-muted" :fontSize "font-size.xs"}}]}
                      {:type "rect"
                       :name "Chevron"
+                      :placeholder "icon"
                       :width 12
                       :height 12
                       :tokens {:fill "color.text-muted"}}]}})
@@ -197,6 +199,7 @@
                  {:on {:Tone "Danger"} :set {:tokens {:strokeColor "color.danger"}}}]
           :children [{:type "ellipse"
                       :name "Icon"
+                      :placeholder "icon"
                       :width 20
                       :height 20
                       :tokens {:fill "color.info"}

@@ -155,6 +155,8 @@
   (t/is (re-find #"tree.children\[0\] has \"children\"" (problem with-child {:type "rect" :children []})))
   (t/is (re-find #"is a text and needs `text`" (problem with-child {:type "text"})))
   (t/is (re-find #"url is neither an absolute" (problem with-child {:type "image" :url "cat.png"})))
+  (t/is (re-find #"placeholder is not one of: icon, image" (problem with-child {:type "rect" :placeholder "logo"})))
+  (t/is (re-find #"has \"placeholder\"" (problem with-child {:type "text" :text "x" :placeholder "icon"})))
   (t/is (re-find #"tree.layout needs `type`: flex or grid" (problem assoc-in [:tree :layout] {:dir "row"})))
   (t/is (re-find #"tree.layout has \"gap\"" (problem assoc-in [:tree :layout] {:type "flex" :gap 4})))
   (t/is (re-find #"tree.children\[0\].width is not a number above zero"

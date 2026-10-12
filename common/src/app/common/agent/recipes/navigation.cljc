@@ -104,6 +104,7 @@
                                   :vary [{:at 1 :set {:tokens {:fill "color.surface-muted"}}}]
                                   :children [{:type "rect"
                                               :name "Icon"
+                                              :placeholder "icon"
                                               :width 16
                                               :height 16
                                               :tokens {:fill "color.text-muted"}
@@ -150,6 +151,7 @@
                       :tokens {:gap "spacing.xs" :paddingY "spacing.xs"}
                       :children [{:type "rect"
                                   :name "Icon"
+                                  :placeholder "icon"
                                   :width 24
                                   :height 24
                                   :tokens {:fill "color.text-muted" :borderRadius "radius.sm"}

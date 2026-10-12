@@ -592,3 +592,68 @@
   (t/testing "nothing to count gives no share"
     (t/is (= {:autoLayout nil :tokenBound nil :colorTokenBound nil :components nil}
              (:shares (cau/capability-usage {} []))))))
+
+;; --- Content in the same call, and what is left to replace
+
+(t/deftest the-words-are-set-in-the-call-that-builds
+  (let [[after out] (build data {:recipe "pricing-table"
+                                 :params {:plans 2 :features 2}
+                                 :texts {"Heading" "Plans for every team"
+                                         "Plan 2 / Plan name" "Team"
+                                         "Plan 2 / Price" "$12"
+                                         "Plan 2 / Features / Feature 1" "Unlimited projects"
+                                         "Plan 1 / Choose" "Start free"
+                                         "Plan 2 / Choose / Label" "Choose Team"
+                                         "Plan 9 / Price" "nowhere"}})
+        ids         (-> out :result :ids)
+        said        (fn [key] (words (shape after (get ids key))))]
+    (t/is (= "Plans for every team" (said "Heading")))
+    (t/is (= "Team" (said "Plan 2 / Plan name")))
+    (t/is (= "$12" (said "Plan 2 / Price")))
+    (t/is (= "$0" (said "Plan 1 / Price")))
+    (t/is (= "Unlimited projects" (said "Plan 2 / Features / Feature 1")))
+    (t/testing "a layer that places a recipe takes the words of its one text"
+      (t/is (= "Start free" (words (child after (get ids "Plan 1 / Choose") "Label"))))
+      (t/is (= "Choose Team" (words (child after (get ids "Plan 2 / Choose") "Label")))))
+    (t/testing "a key that names no text is said, and the rest is built"
+      (t/is (= ["Plan 9 / Price"] (-> out :result :textsNotSet :keys)))
+      (t/is (some? (-> out :result :id)))))
+  (t/testing "on an instance, by the layer's name"
+    (let [[after out] (build data {:recipe "button" :texts {:Label "Go"}})]
+      (t/is (= "Go" (words (child after (-> out :result :id) "Label"))))))
+  (t/is (re-find #"texts is not a map" (:problem (second (build data {:recipe "button" :texts ["Go"]}))))))
+
+(t/deftest what-stands-for-something-else-is-named
+  (let [[_ hero]    (build data {:recipe "hero"})
+        [_ sidebar] (build data {:recipe "sidebar" :params {:items 2}})
+        [_ item]    (build data {:recipe "list-item"})]
+    (t/is (= {"image" ["Media"]} (-> hero :result :placeholders)))
+    (t/is (= {"icon" ["Item 1 / Icon" "Item 2 / Icon"]} (-> sidebar :result :placeholders)))
+    (t/testing "inside a component, by layer name on its main"
+      (t/is (nil? (-> item :result :placeholders)))
+      (t/is (= ["Chevron"] (:placeholders (some #(when (= "list-item" (:recipe %)) %) (-> item :result :mains))))))
+    (t/is (re-find #"this is the start, not the result" (-> hero :result :note))))
+  (t/testing "find_recipes says what each text goes by, and what is a placeholder"
+    (let [found (fn [nm] (first (-> (cat/run "find_recipes" (view data) {:query nm} options) :result :matches)))]
+      (t/is (= ["Heading" "Plan {index} / Plan name" "Plan {index} / Price"
+                "Plan {index} / Features / Feature {index}"]
+               (:texts (found "pricing-table"))))
+      (t/is (= ["Label"] (:texts (found "button"))))
+      (t/is (= ["Media"] (:placeholders (found "hero")))))))
+
+(t/deftest many-texts-are-set-in-one-call
+  (let [[built out] (build data {:recipe "pricing-table" :params {:plans 2 :features 1}})
+        ids         (-> out :result :ids)
+        run         (fn [input] (cat/run "set_texts" (view built) input options))
+        answer      (run {:texts [{:shapeId (get ids "Heading") :text "Pricing"}
+                                  {:shapeId (get ids "Plan 1 / Price") :text "$5"}]})
+        after       (cfc/process-changes built (:changes answer))]
+    (t/is (= 2 (-> answer :result :set)))
+    (t/is (= "Pricing" (words (get (objects after) (parse-uuid (get ids "Heading"))))))
+    (t/is (= "$5" (words (get (objects after) (parse-uuid (get ids "Plan 1 / Price"))))))
+    (t/testing "all or nothing"
+      (let [bad (run {:texts [{:shapeId (get ids "Heading") :text "x"}
+                              {:shapeId (get ids "Plans") :text "y"}]})]
+        (t/is (re-find #"set_texts: texts\[1\]: .*is a frame, not a text shape" (:problem bad)))
+        (t/is (nil? (:changes bad)))))
+    (t/is (re-find #"pass texts" (:problem (run {}))))))

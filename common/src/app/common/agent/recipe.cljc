@@ -47,6 +47,9 @@
   - `:tokens` maps a property to a role: `{:fill \"color.primary\"}`. The
     properties are the ones a token can bind to, plus the shorthands in
     `shorthands`; the roles are the ones in `roles`.
+  - `:placeholder \"icon\"` (or image) marks a rect or an ellipse as a box
+    that stands for something a recipe cannot hold: whoever builds it puts
+    the real thing in its place.
   - `:slot \"name\"` marks a board as a place to be filled after the build.
     A recipe that is a component has none: what gets placed is an instance,
     and an instance cannot be given children.
@@ -72,6 +75,8 @@
 (def version 1)
 
 (def categories #{"control" "container" "navigation" "section"})
+
+(def placeholders #{"icon" "image"})
 
 (def max-nodes 80)
 
@@ -442,8 +447,8 @@
 
 (def ^:private node-keys
   {"board"   (into common-keys [:width :height :tokens :vary :layout :children :slot])
-   "rect"    (into common-keys [:width :height :tokens :vary])
-   "ellipse" (into common-keys [:width :height :tokens :vary])
+   "rect"    (into common-keys [:width :height :tokens :vary :placeholder])
+   "ellipse" (into common-keys [:width :height :tokens :vary :placeholder])
    "text"    (into common-keys [:width :height :tokens :vary :text :align])
    "image"   (into common-keys [:width :height :tokens :vary :url])
    "recipe"  (into common-keys [:use :with :variant])})
@@ -606,6 +611,9 @@
 
       (and (contains? node :align) (not (contains? #{"left" "center" "right"} (:align node))))
       (dm/str where ".align is not left, center or right")
+
+      (and (contains? node :placeholder) (not (contains? placeholders (:placeholder node))))
+      (dm/str where ".placeholder is not one of: " (listed placeholders))
 
       (and (contains? node :slot) (not (text? (:slot node))))
       (dm/str where ".slot is not a name")

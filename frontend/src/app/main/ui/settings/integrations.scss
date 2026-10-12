@@ -401,6 +401,11 @@
 
   --menu-max-height: #{$sz-224};
 
+  // Item text at rest: Penpot's context menu and file menu both use the
+  // primary foreground for item titles, so the shared menu's dimmer rest
+  // colour is remapped here rather than per item.
+  --menu-foreground-color-rest: var(--color-foreground-primary);
+
   top: calc(100% + var(--sp-xs));
   display: flex;
   flex-direction: column;

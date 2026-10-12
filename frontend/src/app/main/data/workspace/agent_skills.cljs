@@ -280,6 +280,13 @@
    "- When the user attached reference images, compare your render against them before claiming a match — wrong order, spacing or hierarchy is a failure even when every shape exists. If you cannot see images on this model, say so instead of guessing."
    "- Fix what you see with the smallest change and re-render. After two failed fixes, STOP and present the render with the remaining defects named — never declare success while a defect you noticed is still visible."])
 
+(def ^:private visual-judgement
+  ["## Judge it, do not only check it"
+   "Looking for defects is not the same as judging quality. A screen with nothing wrong on it can still be bland. Three habits, in this order:"
+   "- **A direction before the first shape.** For any new screen or visible redesign, decide in a few lines what it should feel like and write it down before you build: the mood in two or three words; the palette (what the primary color is and why, the surfaces, the text); the type (a family and the few sizes that make its levels); the density (roomy or compact); the shape (sharp, soft, round); and ONE signature move that makes it this product's and nobody else's. Put it in the tokens first — create or edit them — so everything you build inherits it. When the file has a design direction already (a foundation, a DESIGN.md, existing tokens), follow that instead of inventing one. Say the direction to the user in a sentence."
+   "- **Look with a rubric.** When you render, judge in this order, and fix the lowest first: hierarchy (one focal point; what matters most reads first); character (would it be mistaken for a template or a wireframe?); rhythm (spacing in a few consistent steps; related things close); contrast and legibility; alignment and density; fit to the direction you wrote."
+   "- **Ask the critic once.** Before you present a screen you built or reshaped, call critique_design with its name and your direction as the brief. Act on its weakest points — or tell the user which you left and why. Do not call it after every small change, and do not present a screen it scored at 3 or below as finished: say it is a first pass."])
+
 (def ^:private native-tool-notes
   ["## How your tools behave"
    "- Your tools are your only write path, and every change goes through Penpot's normal edit history — so anything you apply is undoable by the user."
@@ -322,6 +329,7 @@
   "The always-on knowledge layer, inlined into every system prompt."
   (str/join "\n" (concat governance [""] naming-conventions [""]
                          layout-doctrine [""] visual-self-review [""]
+                         visual-judgement [""]
                          native-tool-notes [""] recipe-notes)))
 
 ;; --- Skill bodies (load-on-demand)

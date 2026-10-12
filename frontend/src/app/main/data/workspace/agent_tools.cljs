@@ -655,6 +655,25 @@
                                         :description "role → the name of the file's token to bind it to, e.g. {\"color.primary\": \"brand.500\"}"}}
                    :required ["recipe"]}}
 
+   {:name "critique_design"
+    :description
+    (str "Shows a render of a board to a critic who did not build it and "
+         "answers what is weakest about it: a verdict with a score, the "
+         "three points that would most improve it, each with one concrete "
+         "change, and what to keep. You judge your own work kindly; the "
+         "critic is asked not to. Call it ONCE when a screen or a visible "
+         "redesign is built and before you present it — not after every "
+         "tweak. `brief` is what the screen is for, who uses it and the "
+         "direction you aimed for: the critic judges against it. Pass two "
+         "names to compare a before and an after. Then act on its points, "
+         "or say which you did not and why.")
+    :input-schema {:type "object"
+                   :properties {:names {:type "array" :items {:type "string"}
+                                        :description "the board to judge, by name or id; at most two"}
+                                :brief {:type "string"
+                                        :description "what it is for, who uses it, and the direction: mood, palette, type, density"}}
+                   :required ["names" "brief"]}}
+
    {:name "set_icons"
     :description
     (str "Puts real icons where placeholders are — MANY in one call. Use it "
@@ -1213,7 +1232,7 @@
          "clone_shape"        (atx/clone-shape-tool input)
          "build_tree"         (atx/build-tree-tool input)
          ;; server only: there is no second implementation in the workspace
-         ("build_recipe" "find_recipes" "save_recipe" "set_texts" "set_icons")
+         ("build_recipe" "find_recipes" "save_recipe" "set_texts" "set_icons" "critique_design")
          (rx/of {:error (str name " runs on the server, and the server could not "
                              "run it here. Build with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)

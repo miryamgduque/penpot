@@ -10,10 +10,12 @@
   (:require
    #?(:clj [clojure.walk :as walk])
    [app.common.agent.recipe-build :as carb]
+   [app.common.agent.recipe-save :as cars-save]
    [app.common.agent.recipes :as cars]
    [app.common.agent.tokens :as cato]
    [app.common.agent.tools :as cat]
    [app.common.files.changes :as cfc]
+   [app.common.files.helpers :as cfh]
    [app.common.files.validate :as cfv]
    [app.common.types.component :as ctc]
    [app.common.types.components-list :as ctkl]
@@ -415,3 +417,108 @@
         [after out] (build data {:recipe "card"} (assoc-in options [:recipes "card"] mine))]
     (t/is (= "Team card" (:name (shape after (-> out :result :id)))))
     (t/is (= (set (keys cars/builtin)) (set (keys (carb/catalog {})))))))
+
+;; --- A board written down as a recipe
+
+(defn- outline
+  "What a build makes of a recipe, without its ids: each layer's name, kind,
+  layout and sizing, in reading order."
+  [data id]
+  (let [objects (objects data)]
+    (letfn [(walk [id]
+              (let [shape (get objects id)
+                    kids  (if (and (:layout shape) (not (#{:row-reverse :column-reverse} (:layout-flex-dir shape))))
+                            (reverse (:shapes shape))
+                            (:shapes shape))]
+                (cond-> {:name (:name shape)
+                         :type (:type shape)
+                         :layout [(:layout shape) (:layout-flex-dir shape) (:layout-align-items shape)]
+                         :sizing [(:layout-item-h-sizing shape) (:layout-item-v-sizing shape)]
+                         :tokens (:applied-tokens shape)}
+                  (cfh/text-shape? shape)  (assoc :words (words shape))
+                  ;; what is inside a copy is its component's business
+                  (:component-id shape)    (assoc :component (:component-id shape))
+                  (and (seq kids) (nil? (:component-id shape))) (assoc :children (mapv walk kids)))))]
+      (walk (parse-uuid id)))))
+
+(defn- saved
+  [data id about]
+  (cars-save/from-board (objects data) {file-id {:id file-id :data data}} (parse-uuid id) about recipes))
+
+(t/deftest a-built-recipe-saved-and-built-again-is-the-same
+  (doseq [[nm params] [["card" {:media true :action true :title "Hello"}]
+                       ["pricing-table" {:plans 2 :features 2}]
+                       ["form" {:fields 2}]
+                       ["sidebar" {:items 3}]]]
+    (t/testing nm
+      (let [[first-data out] (build data {:recipe nm :params params})
+            {:keys [recipe notes problem]}
+            (saved first-data (-> out :result :id)
+                   {:name "mine" :purpose "Saved to test with." :category "container"})
+            [again out2] (build first-data {:recipe "mine"} (assoc-in options [:recipes "mine"] recipe))]
+        (t/is (nil? problem))
+        (t/is (empty? notes))
+        (t/is (nil? (-> out2 :result :error)))
+        (t/is (= (outline first-data (-> out :result :id))
+                 (outline again (-> out2 :result :id))))))))
+
+(t/deftest the-one-who-saves-names-it-and-marks-its-params-and-slots
+  (let [[built out] (build data {:recipe "card" :params {:media true :title "Hello"}})
+        about       {:name "news-card" :title "News card" :purpose "A card for a news item."
+                     :category "container" :keywords ["article"]
+                     :params [{:name "headline" :layer "Title" :description "The headline"}
+                              {:name "picture" :layer "Media" :type "boolean"}]
+                     :slots [{:name "body" :layer "Body"}]}
+        {:keys [recipe problem]} (saved built (-> out :result :id) about)
+        mine        (assoc-in options [:recipes "news-card"] recipe)]
+    (t/is (nil? problem))
+    (t/is (= ["news-card" "News card" "container" ["article"]]
+             ((juxt :name :title :category :keywords) recipe)))
+    (t/is (= [{:name "headline" :description "The headline" :type "text" :default "Hello"}
+              {:name "picture" :type "boolean" :default true}]
+             (:params recipe)))
+    (t/testing "built again, the params do what was marked"
+      (let [[after out] (build built {:recipe "news-card" :params {:headline "Extra!" :picture false}} mine)]
+        (t/is (= "Extra!" (words (child after (-> out :result :id) "Title"))))
+        (t/is (nil? (child after (-> out :result :id) "Media")))
+        (t/is (= ["body"] (keys (-> out :result :slots))))))
+    (t/testing "what is wrong with a mark is named"
+      (let [problem (fn [change] (:problem (saved built (-> out :result :id) (merge about change))))]
+        (t/is (re-find #"param \"headline\" names the layer \"Headline\", and there is none"
+                       (problem {:params [{:name "headline" :layer "Headline"}]})))
+        (t/is (re-find #"layers here: Title, Description" (problem {:params [{:name "x" :layer "Nope"}]})))
+        (t/is (re-find #"has type \"number\"" (problem {:params [{:name "x" :layer "Title" :type "number"}]})))
+        (t/is (re-find #"slot \"body\" names the layer \"Title\"" (problem {:slots [{:name "body" :layer "Title"}]})))
+        (t/is (re-find #"needs a `name` in kebab-case" (problem {:name "News card"})))
+        (t/is (re-find #"needs a `purpose`" (problem {:purpose nil})))))))
+
+(t/deftest what-a-recipe-cannot-hold-is-said
+  (let [board-id (uuid/next)
+        text-id  (uuid/next)
+        group-id (uuid/next)
+        loose    (assoc-in data [:pages-index page-id :objects]
+                           (-> (objects data)
+                               (assoc board-id (cts/setup-shape {:id board-id :type :frame :name "Loose"
+                                                                 :x 0 :y 0 :width 100 :height 100
+                                                                 :parent-id uuid/zero :frame-id uuid/zero
+                                                                 :shapes [text-id]})
+                                      text-id (cts/setup-shape {:id text-id :type :rect :name "Box"
+                                                                :x 0 :y 0 :width 10 :height 10
+                                                                :parent-id board-id :frame-id board-id})
+                                      group-id (cts/setup-shape {:id group-id :type :group :name "Bunch"
+                                                                 :x 0 :y 0 :width 10 :height 10
+                                                                 :parent-id uuid/zero :frame-id uuid/zero}))))
+        about    {:name "x" :purpose "x" :category "container"}]
+    (t/is (re-find #"\"Loose\" has layers and no layout" (:problem (saved loose (str board-id) about))))
+    (t/is (re-find #"\"Bunch\" is a group — a recipe is saved from a board" (:problem (saved loose (str group-id) about))))
+    (t/is (re-find #"no shape on this page" (:problem (saved loose (str (uuid/next)) about)))))
+  (t/testing "a token that is not a role is left out, and the result says so"
+    (let [own         (cfc/process-changes
+                       data
+                       (:changes (cato/create-tokens (view data)
+                                                     {:tokens [{:name "brand.500" :type "color" :value "#ff0000"}]}
+                                                     options)))
+          [built out] (build own {:recipe "empty-state" :roles {"color.surface-muted" "brand.500"}})
+          {:keys [recipe notes]} (saved built (-> out :result :id) {:name "x" :purpose "x" :category "section"})]
+      (t/is (re-find #"not roles were left out \(brand.500\)" (first notes)))
+      (t/is (nil? (:tokens (some #(when (= "Illustration" (:name %)) %) (-> recipe :tree :children))))))))

@@ -22,6 +22,7 @@
    [app.common.agent.recipe-save :as cars-save]
    [app.common.agent.recipes :as cars]
    [app.common.agent.tools :as cat]
+   [app.common.agent.usage :as cau]
    [app.common.agent.write :as caw]
    [app.common.exceptions :as ex]
    [app.common.features :as cfeat]
@@ -60,7 +61,7 @@
 (def ^:private service-tools
   "What the agent service asks for on its own account, to build a tool it
   runs itself. Not offered to the model."
-  #{"fetch_web_page" "turn_profile" "check_page"})
+  #{"fetch_web_page" "turn_profile" "check_page" "capability_usage"})
 
 (def engine-tools
   "The tools that change a file. They need the render engine to lay things
@@ -283,6 +284,19 @@
       :else
       {:pageId (str page-id)
        :name (get-in data [:pages-index page-id :name])})))
+
+;; How much of the page, or of the boards named, uses layouts, tokens and
+;; components: what the recipes are measured against. For whoever measures,
+;; not for the model.
+(defmethod run-tool "capability_usage"
+  [_ {:keys [data page-id]} {:keys [names shapeIds]} _]
+  (let [objects (get-in data [:pages-index page-id :objects])
+        named   (set (filter string? names))
+        roots   (-> (into [] (keep #(when (string? %) (uuid/parse* %))) shapeIds)
+                    (into (comp (filter #(contains? named (:name %))) (map :id)) (vals objects)))]
+    (when (and (or (seq names) (seq shapeIds)) (empty? (filter #(contains? objects %) roots)))
+      (ex/raise :type :agent-tool :hint "capability_usage: none of those boards is on this page"))
+    (cau/capability-usage objects roots)))
 
 (defmethod run-tool "turn_profile"
   [_ _ _ {:keys [::profile-id]}]

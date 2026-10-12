@@ -14,6 +14,7 @@
    [app.common.agent.recipes :as cars]
    [app.common.agent.tokens :as cato]
    [app.common.agent.tools :as cat]
+   [app.common.agent.usage :as cau]
    [app.common.files.changes :as cfc]
    [app.common.files.helpers :as cfh]
    [app.common.files.validate :as cfv]
@@ -555,3 +556,32 @@
         (t/is (= (outline a (-> out-a :result :id)) (outline b (-> out-b :result :id))))))
     (t/is (re-find #"no platform profile named \"android\" — there are: ios, web"
                    (:problem (second (build data {:recipe "top-bar" :profile "android"})))))))
+
+;; --- The measure recipes are held against
+
+(t/deftest what-a-recipe-builds-uses-what-penpot-offers
+  (let [[built out] (build data {:recipe "pricing-table"})
+        usage       (cau/capability-usage (objects built) [(parse-uuid (-> out :result :id))])]
+    (t/is (= 1.0 (-> usage :shares :autoLayout)))
+    (t/is (= 1.0 (-> usage :shares :colorTokenBound)))
+    (t/is (< 0.1 (-> usage :shares :components) 1))
+    (t/is (< 0.9 (-> usage :shares :tokenBound))))
+  (t/testing "boxes drawn by hand use none of it"
+    (let [board-id (uuid/next)
+          rect-id  (uuid/next)
+          drawn    (-> (objects data)
+                       (assoc board-id (cts/setup-shape {:id board-id :type :frame :name "Drawn"
+                                                         :x 0 :y 0 :width 100 :height 100
+                                                         :parent-id uuid/zero :frame-id uuid/zero
+                                                         :shapes [rect-id]})
+                              rect-id (cts/setup-shape {:id rect-id :type :rect :name "Box"
+                                                        :x 0 :y 0 :width 10 :height 10
+                                                        :parent-id board-id :frame-id board-id})))
+          usage    (cau/capability-usage drawn [board-id])]
+      (t/is (= {:layers 2 :insideABoard 1 :inAutoLayout 0 :tokenBound 0
+                :withAColor 2 :colorTokenBound 0 :inComponents 0}
+               (:counts usage)))
+      (t/is (= {:autoLayout 0.0 :tokenBound 0.0 :colorTokenBound 0.0 :components 0.0} (:shares usage)))))
+  (t/testing "nothing to count gives no share"
+    (t/is (= {:autoLayout nil :tokenBound nil :colorTokenBound nil :components nil}
+             (:shares (cau/capability-usage {} []))))))

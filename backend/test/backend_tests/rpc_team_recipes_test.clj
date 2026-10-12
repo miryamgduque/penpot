@@ -187,3 +187,26 @@
                 :children [{:type "text" :name "Words" :text "{words}"}]}
                (-> saved :recipe :tree)))
       (t/is (= [{:name "words" :type "text" :default "Remember this"}] (-> saved :recipe :params))))))
+
+(t/deftest the-measure-of-a-page-is-answered-to-whoever-holds-a-turn-token
+  (let [{:keys [owner file token]} (setup)
+        board-id (uuid/random)
+        rect-id  (uuid/random)
+        run      (fn [input]
+                   (th/command! {::th/type :run-agent-tool :token token :tool "capability_usage"
+                                 :input (json/encode input)}))]
+    (add-objects! owner file
+                  [(cts/setup-shape {:id board-id :type :frame :name "Row"
+                                     :x 0 :y 0 :width 240 :height 80
+                                     :parent-id uuid/zero :frame-id uuid/zero
+                                     :layout :flex :layout-flex-dir :row
+                                     :applied-tokens {:fill "color.surface"}})
+                   (cts/setup-shape {:id rect-id :type :rect :name "Box"
+                                     :x 0 :y 0 :width 10 :height 10
+                                     :parent-id board-id :frame-id board-id})])
+    (let [usage (json/decode (get-in (run {:names ["Row"]}) [:result :content]) :key-fn keyword)]
+      (t/is (= 2 (-> usage :counts :layers)))
+      (t/is (= 1.0 (-> usage :shares :autoLayout)))
+      (t/is (= 0.5 (-> usage :shares :tokenBound)))
+      (t/is (= 0.0 (-> usage :shares :components))))
+    (t/is (re-find #"none of those boards" (get-in (run {:names ["Nope"]}) [:result :content])))))

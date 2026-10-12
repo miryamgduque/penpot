@@ -661,12 +661,14 @@
          "answers what is weakest about it: a verdict with a score, the "
          "three points that would most improve it, each with one concrete "
          "change, and what to keep. You judge your own work kindly; the "
-         "critic is asked not to. Call it ONCE when a screen or a visible "
-         "redesign is built and before you present it — not after every "
-         "tweak. `brief` is what the screen is for, who uses it and the "
-         "direction you aimed for: the critic judges against it. Pass two "
-         "names to compare a before and an after. Then act on its points, "
-         "or say which you did not and why.")
+         "critic is asked not to. Call it ONCE per screen, at the FIRST "
+         "whole render — every part there, before any polish — so there is "
+         "room to act on what it says; not as a last step, and not again "
+         "after your changes. `brief` is what the screen is for, who uses it "
+         "and the direction you aimed for: the critic judges against it. "
+         "Pass two names to compare a before and an after. Its points are "
+         "work: do point 1, render, then the others; when you present, "
+         "answer each point as done or not done and why.")
     :input-schema {:type "object"
                    :properties {:names {:type "array" :items {:type "string"}
                                         :description "the board to judge, by name or id; at most two"}

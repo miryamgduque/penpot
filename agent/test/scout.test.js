@@ -29,7 +29,12 @@ test("critique_design shows the render and the brief to a critic that holds no t
     },
   );
   assert.equal(result.isError, false);
-  assert.deepEqual(JSON.parse(result.content), { critique: "**Verdict:** competent and forgettable (3/5).", boards: ["Landing", "Old landing"] });
+  const answer = JSON.parse(result.content);
+  assert.equal(answer.critique, "**Verdict:** competent and forgettable (3/5).");
+  assert.deepEqual(answer.boards, ["Landing", "Old landing"]);
+  // what the builder owes comes back with the points
+  assert.match(answer.next, /Do point 1 now and render/);
+  assert.match(answer.next, /answer each point/);
   // at most two boards, one to judge or two to compare
   assert.deepEqual(seen.rendered, ["Landing", "Old landing"]);
   // the turn's own model, the images, no tools, and the brief in the message
@@ -40,6 +45,9 @@ test("critique_design shows the render and the brief to a critic that holds no t
   assert.match(seen.side.system, /find what is weakest, not to approve/);
   assert.match(seen.side.system, /Hierarchy/);
   assert.match(seen.side.system, /mistaken for a template/);
+  // the score has anchors, and the points come in the order to do them
+  assert.match(seen.side.system, /2 a default template/);
+  assert.match(seen.side.system, /numbered 1 to 3/);
 });
 
 test("critique_design says what it lacks", async () => {

@@ -141,8 +141,9 @@
                                         :properties [(if (seq (:strokes shape)) "strokeColor" "fill")]})
                                      drawn)}
                               options)]
-                  ;; a token that does not fit leaves the icon as it came
-                  (if (contains? answer :changes) answer {:changes []}))))))))
+                  ;; a token that does not fit leaves the icon as it came;
+                  ;; what the host has to settle first is the host's
+                  (if (contains? answer :problem) {:changes []} answer))))))))
 
 (defn- inserted
   "The icon as shapes on the page → the run, its root id under `:last`."
@@ -192,7 +193,11 @@
                       id  (some-> run :last :id)]
                   (cond-> run
                     (not (stopped? run))
-                    (-> (then #(cas/create-component % {:shapeIds [id]} options))
+                    ;; an icon is drawn in a box of its own units: it takes the
+                    ;; size asked for before it becomes a component
+                    (-> (then #(caw/modify-shape % {:shapeId id :width (size-of entry) :height (size-of entry)}
+                                                 options))
+                        (then #(cas/create-component % {:shapeIds [id]} options))
                         (update :components conj (dm/str "Icon / " (icon-name icon)))))))
         made  (when-not (stopped? run) (icon-component (-> run :view :data) icon))]
     (cond
@@ -210,7 +215,10 @@
                                                   options))
             ;; the swap puts a new shape where the old one was
             new-id (when-not (stopped? run)
-                     (first (remove before (:shapes (get (-> run :view :objects) parent)))))]
+                     (let [objects (-> run :view :objects)]
+                       (or (first (remove before (:shapes (get objects parent))))
+                           ;; a swap may keep the shape and change what it is
+                           (when (contains? objects (:id target)) (:id target)))))]
         (-> run
             (colored new-id token options)
             (update :set conj (cond-> {:icon icon}

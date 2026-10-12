@@ -310,7 +310,7 @@ test("what a turn does with recipes is counted, sent with done and logged", asyn
         });
       }
     }
-    const used = { searched: 1, found: 1, built: 1, byHand: 1, recipes: ["button"] };
+    const used = { searched: 1, found: 1, built: 1, byHand: 1, recipes: ["button"], instanced: 0, fromLibrary: 0 };
     assert.deepEqual(done.recipes, used);
     const logged = (await readFile(recipeLog, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
     assert.equal(logged.length, 1);
@@ -320,6 +320,16 @@ test("what a turn does with recipes is counted, sent with done and logged", asyn
     // found in one turn, built in the next of the same conversation
     assert.equal(hitRate([{ sessionId: "s4", found: 1, built: 0 }, { sessionId: "s4", found: 0, built: 1 }]), 1);
     assert.equal(hitRate([{ found: 0, built: 1 }]), undefined);
+    // of the ready-made parts placed, the share a linked library gave
+    const { libraryReuse, recipeUse } = await import("../src/recipes.js");
+    assert.equal(libraryReuse(logged), 0);
+    assert.equal(libraryReuse([...logged, { built: 0, fromLibrary: 3 }]), 0.75);
+    assert.equal(libraryReuse([{ byHand: 4 }]), undefined);
+    const use = recipeUse();
+    use.note({ name: "create_instance", input: { componentId: "c1", fileId: "lib-1", x: 0, y: 0 } }, { content: "{}" });
+    use.note({ name: "create_instance", input: { componentId: "c2", x: 0, y: 0 } }, { content: "{}" });
+    use.note({ name: "create_instance", input: { componentId: "c3", fileId: "lib-1" } }, { content: "no", isError: true });
+    assert.deepEqual(use.summary(), { searched: 0, found: 0, built: 0, byHand: 0, recipes: [], instanced: 2, fromLibrary: 1 });
   } finally {
     await t.close();
     await exporter.close();

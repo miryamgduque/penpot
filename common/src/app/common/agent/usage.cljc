@@ -16,7 +16,9 @@
     and, of the layers that have a color of their own, the ones whose color
     is a token;
   - in components: of all the layers, the ones that are a component or part
-    of one, main or copy.
+    of one, main or copy;
+  - library reuse: of the copies of a component placed, the ones whose
+    component lives in a linked library and not in this file.
 
   A share is a number from 0 to 1, or nil when there is nothing to count."
   (:require
@@ -56,10 +58,15 @@
       (ctc/main-instance? shape)
       (some? (ctn/get-component-shape objects shape {:allow-main? true}))))
 
-(defn capability-usage
-  "The measure for the layers under `roots` (ids of boards), or for the whole
-  page when none are given → the counts and the shares."
-  [objects roots]
+(defn- copy-head?
+  "Whether the layer is a copy of a component, taken as a whole."
+  [shape]
+  (and (some? (:component-id shape))
+       (true? (:component-root shape))
+       (not (ctc/main-instance? shape))))
+
+(defn- capability-usage*
+  [objects roots file-id]
   (let [ids     (if (seq roots)
                   (into [] (comp (filter #(contains? objects %))
                                  (mapcat #(cfh/get-children-ids-with-self objects %))
@@ -69,15 +76,31 @@
         layers  (mapv #(get objects %) ids)
         inside  (filterv #(not= uuid/zero (:parent-id %)) layers)
         colored (filterv colored? layers)
+        copies  (filterv copy-head? layers)
         counts  {:layers (count layers)
                  :insideABoard (count inside)
                  :inAutoLayout (count (filter #(laid-out? objects %) inside))
                  :tokenBound (count (filter #(seq (:applied-tokens %)) layers))
                  :withAColor (count colored)
                  :colorTokenBound (count (filter color-bound? colored))
-                 :inComponents (count (filter #(in-component? objects %) layers))}]
+                 :inComponents (count (filter #(in-component? objects %) layers))
+                 :copies (count copies)
+                 :libraryCopies (if (some? file-id)
+                                  (count (filter #(not= file-id (:component-file %)) copies))
+                                  0)}]
     {:counts counts
      :shares {:autoLayout (share (:inAutoLayout counts) (:insideABoard counts))
               :tokenBound (share (:tokenBound counts) (:layers counts))
               :colorTokenBound (share (:colorTokenBound counts) (:withAColor counts))
-              :components (share (:inComponents counts) (:layers counts))}}))
+              :components (share (:inComponents counts) (:layers counts))
+              :libraryReuse (when (some? file-id)
+                              (share (:libraryCopies counts) (:copies counts)))}}))
+
+(defn capability-usage
+  "The measure for the layers under `roots` (ids of boards), or for the whole
+  page when none are given → the counts and the shares. With `file-id`, the
+  file the page is of, it also tells the copies of a linked library's
+  components from the copies of the file's own."
+  ([objects roots] (capability-usage objects roots nil))
+  ([objects roots file-id]
+   (capability-usage* objects roots file-id)))

@@ -259,6 +259,10 @@
   gap: var(--sp-s);
 }
 
+.agent-enabled-files {
+  margin-block-start: var(--sp-s);
+}
+
 .provider-card {
   display: flex;
   flex-direction: column;

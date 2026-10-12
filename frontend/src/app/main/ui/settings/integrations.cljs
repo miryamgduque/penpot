@@ -32,6 +32,7 @@
    [app.main.ui.ds.foundations.typography :as t]
    [app.main.ui.ds.foundations.typography.heading :refer [heading*]]
    [app.main.ui.ds.foundations.typography.text :refer [text*]]
+   [app.main.ui.ds.notifications.actionable :refer [actionable*]]
    [app.main.ui.ds.notifications.shared.notification-pill :refer [notification-pill*]]
    [app.main.ui.ds.tooltip :refer [tooltip*]]
    [app.main.ui.forms :as fc]
@@ -822,6 +823,28 @@
                        :title (tr "integrations.ai-provider.models.vision-hint")}
                 (tr "integrations.ai-provider.models.vision")])])])]]]))
 
+(mf/defc agent-enabled-files*
+  "While the account switch is off, the files where the user turned the
+  agent back on, as a count with one action that turns it off in all of
+  them. The files are not listed."
+  {::mf/private true}
+  []
+  (let [n (mf/deref refs/agent-enabled-file-count)
+
+        on-accept
+        (mf/use-fn
+         #(st/emit! (agent-switch/disable-in-enabled-files)))]
+
+    (mf/with-effect []
+      (st/emit! (agent-switch/fetch-enabled-file-count)))
+
+    (when (and (number? n) (pos? n))
+      [:> actionable* {:class (stl/css :agent-enabled-files)
+                       :role "status"
+                       :accept-label (tr "integrations.ai-provider.enabled-files.action")
+                       :on-accept on-accept}
+       (tr "integrations.ai-provider.enabled-files" (i18n/c n))])))
+
 (mf/defc agent-status*
   "The account-wide agent switch. Instance scope already holds here (the
   section renders only when the instance ships the agent), so it reads the
@@ -858,7 +881,11 @@
       [:> text* {:as "p"
                  :typography t/body-medium
                  :class (stl/css :color-secondary)}
-       (tr "integrations.ai-provider.status.hint")]]]))
+       (tr "integrations.ai-provider.status.hint")]
+
+      ;; only while the account switch is off; mounting it loads the count
+      (when-not ^boolean enabled?
+        [:> agent-enabled-files* {}])]]))
 
 (mf/defc ai-providers-section*
   {::mf/private true}

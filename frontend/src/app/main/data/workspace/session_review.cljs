@@ -36,6 +36,7 @@
   otherwise."
   (:require
    [app.common.data.macros :as dm]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.session-events :as se]
    [app.main.repo :as rp]
@@ -149,9 +150,17 @@
     ptk/WatchEvent
     (watch [_ state _]
       (let [events (:events session [])]
-        (if (empty? events)
+        (cond
+          (empty? events)
           (do (on-event [:note "Nothing to review — that recording captured no interactions."])
               (rx/empty))
+
+          ;; no model call while the agent is off for the user in this file
+          (not (agent-access/agent-enabled? state (:current-file-id state)))
+          (do (on-event [:error :agent-off])
+              (rx/empty))
+
+          :else
           (let [provider (dm/get-in state [:ai-panel :review-provider] "anthropic")]
             (on-event [:note (dm/str "✦ Reviewing " (count events) " recorded events…")])
             (->> (agent/run-side-turn

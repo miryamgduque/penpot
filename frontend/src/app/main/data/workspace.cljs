@@ -28,6 +28,8 @@
    [app.common.types.variant :as ctv]
    [app.common.uuid :as uuid]
    [app.config :as cf]
+   [app.main.data.agent-access :as agent-access]
+   [app.main.data.agent-switch :as agent-switch]
    [app.main.data.changes :as dch]
    [app.main.data.comments :as dcmt]
    [app.main.data.common :as dcm]
@@ -449,7 +451,13 @@
                  (rx/of (ntf/hide)
                         (dcmt/retrieve-comment-threads file-id)
                         (dcmt/fetch-profiles)
-                        (df/fetch-fonts team-id)))
+                        (df/fetch-fonts team-id))
+
+                 ;; the user's own agent setting for this file; it does not
+                 ;; hold the file back
+                 (if (agent-access/instance-enabled?)
+                   (rx/of (agent-switch/fetch-file-setting file-id))
+                   (rx/empty)))
 
                 ;; Once the essential data is fetched, lets proceed to
                 ;; fetch the file bundle

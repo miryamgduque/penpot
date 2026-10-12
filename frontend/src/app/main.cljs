@@ -79,7 +79,7 @@
       (rx/merge
        (rx/of (ev/initialize)
               (dp/refresh-profile)
-              (agent-switch/watch-account-switch))
+              (agent-switch/watch-agent-switches))
 
        ;; Watch for profile deletion events
        (->> stream

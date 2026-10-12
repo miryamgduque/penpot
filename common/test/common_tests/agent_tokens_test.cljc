@@ -207,6 +207,55 @@
     (t/is (re-find #"no theme named \"Nope\" — this file has: Dark"
                    (:problem (cato/activate-theme (view themed) {:name "Nope"} (engine (atom []))))))))
 
+(t/deftest a-token-created-again-changes-and-what-is-bound-follows
+  (let [step    (fn [data tool input] (commit data (tool (view data) input (engine (atom [])))))
+        bound   (step designed cato/apply-tokens
+                      {:applications [{:shapeId (str box-id) :tokenName "color.alias"}
+                                      {:shapeId (str text-id) :tokenName "color.brand"}
+                                      {:shapeId (str row-id) :tokenName "space.md" :properties ["columnGap"]}]})
+        objects (fn [data] (get-in data [:pages-index (first (:pages data)) :objects]))
+        fill    (fn [data] (-> (get (objects data) box-id) :fills first :fill-color))
+        id-of   (fn [data] (:id (get (ctob/get-tokens-in-active-sets (:tokens-lib data)) "color.brand")))
+        out     (cato/create-tokens (view bound)
+                                    {:tokens [{:type "color" :name "color.brand" :value "#ff0000"}
+                                              {:type "color" :name "color.new" :value "#00ff00"}
+                                              ;; the value it has already
+                                              {:type "borderRadius" :name "radius.sm" :value "4"}]}
+                                    (engine (atom [])))
+        after   (commit bound out)]
+    (t/is (= "#6366f1" (fill bound)))
+    ;; the same token, not a second one of that name
+    (t/is (= (id-of bound) (id-of after)))
+    (t/is (= (inc (count (token-names bound))) (count (token-names after))))
+    ;; the box is bound to a token that refers to the changed one, and follows
+    (t/is (= "#ff0000" (fill after)))
+    (t/is (= #{"#ff0000"} (->> (txt/node-seq txt/is-text-node? (:content (get (objects after) text-id)))
+                               (map #(-> % :fills first :fill-color))
+                               (set))))
+    ;; what is bound to another token is left alone
+    (t/is (= 16.0 (-> (get (objects after) row-id) :layout-gap :column-gap)))
+    (t/is (= ["color.brand"] (-> out :result :changed)))
+    (t/is (= 2 (-> out :result :restyled)))
+    (t/is (re-find #"nothing needs re-applying" (-> out :result :note)))
+    (t/testing "one token, by create_token"
+      (let [out (cato/create-token (view bound) {:type "spacing" :name "space.md" :value "24"} (engine (atom [])))]
+        (t/is (= 24.0 (-> (get (objects (commit bound out)) row-id) :layout-gap :column-gap)))
+        (t/is (= 1 (-> out :result :restyled)))))
+    (t/testing "a token nothing is bound to changes, and asks the host nothing"
+      (let [out (cato/create-token (view bound) {:type "opacity" :name "fade" :value "0.2"}
+                                   (assoc (engine (atom [])) :resolve-tokens (constantly nil)))]
+        (t/is (nil? (:pending out)))
+        (t/is (= 0 (-> out :result :restyled)))
+        (t/is (= "0.2" (:value (get (ctob/get-tokens-in-active-sets (:tokens-lib (commit bound out))) "fade"))))))
+    (t/testing "the host resolves the tokens as they are after the change"
+      (let [asked (cato/create-token (view bound) {:type "spacing" :name "space.md" :value "{radius.sm} * 3"}
+                                     (assoc (engine (atom [])) :resolve-tokens (constantly nil)))
+            out   (cato/create-token (view bound) {:type "spacing" :name "space.md" :value "{radius.sm} * 3"}
+                                     (assoc (engine (atom [])) :resolve-tokens (constantly {"space.md" {:resolved-value 12}})))]
+        (t/is (= "{radius.sm} * 3" (-> asked :pending :tokens (get "space.md") :value)))
+        (t/is (nil? (:changes asked)))
+        (t/is (= 12 (-> (get (objects (commit bound out)) row-id) :layout-gap :column-gap)))))))
+
 ;; --- With the resolver library a host hands over
 
 (defn- resolver

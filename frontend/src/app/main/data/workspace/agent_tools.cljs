@@ -1051,7 +1051,11 @@
          "that repeats — a spacing token on a layout's gap is as much a token as "
          "a color on a fill. A value may reference another token, e.g. "
          "\"{color.blue.500}\". For a scale or a palette use create_tokens "
-         "(plural) — one call instead of one per token.")
+         "(plural) — one call instead of one per token. A name the set has "
+         "already CHANGES that token: it takes the new value, and every shape "
+         "bound to it or to a token that refers to it follows, in components "
+         "and their copies alike. That is how a file is restyled — do not "
+         "re-apply the token or repaint the shapes.")
     :input-schema {:type "object"
                    :properties {:type {:type "string" :enum att/token-type-names
                                        :description "e.g. color, spacing, borderRadius"}
@@ -1068,7 +1072,10 @@
          "case). Entries validate together, including that each target set "
          "exists (create_token_set first on a fresh file); nothing is created "
          "unless everything passes. Values may reference other tokens, even "
-         "ones earlier in the same batch, e.g. \"{color.blue.500}\".")
+         "ones earlier in the same batch, e.g. \"{color.blue.500}\". A name "
+         "a set has already CHANGES that token, and every shape bound to it "
+         "follows (see create_token): restyle a file by sending its tokens "
+         "again with their new values.")
     :input-schema {:type "object"
                    :properties {:set {:type "string"
                                       :description "default target set for entries without their own"}

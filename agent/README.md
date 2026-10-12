@@ -44,7 +44,8 @@ credential the tools use.
 | everything that changes a page or the file's tokens, components and foundations; `screenshot_page`; `render_board` when no workspace is connected | the exporter (`POST /agent-tool`) | layout and text measurement are the render-wasm engine, which the exporter runs headless; it also keeps the browser pool. Tokens are resolved there with the workspace's library; images and a team's uploaded fonts are handed over by the backend for the turn |
 | `explore_design`, `fetch_page` | this service, on a side conversation | a cheap model with its own prompt; the web reader holds no tools |
 | skills | the harness's own `skill` tool | the panel sends the enabled skills with the turn |
-| `ask_user`, `switch_page`, `generate_code`, `render_board` | the connected workspace | only a workspace can ask the user, move their view or render its own components |
+| `generate_code` | the exporter, in the frontend's render page | the generators render the workspace's own components, so they run where those are: a page of the exporter's browser pool, handed the shapes and nothing else |
+| `ask_user`, `switch_page`, `render_board` | the connected workspace | only a workspace can ask the user or move their view; a board is rendered by the engine the user is looking at (by the exporter when no workspace is connected) |
 
 Before a server tool runs, the service asks the workspace to save what it has
 not saved and to say what the user is looking at (page, selection, active
@@ -59,6 +60,7 @@ the call. With the exporter set up as above, these are the cases left:
 | "the render engine is not enabled on this exporter" | the exporter was started without `design-agent-server-tools`, or without the render-wasm build: it has no engine to lay out or measure with |
 | "a font this text uses is not available to the server" | a font file could not be downloaded (a Google font the proxy cannot reach, a team font whose file is gone or over 8 MB): the text cannot be measured, and a guessed size would be committed as fact |
 | "the tool did not settle on the server" | a guard: a tool asked for tokens or fonts more times than it should ever need to |
+| "the code generator could not run on the server" | the exporter's browser could not load the render page or run the generator in it |
 
 The other fallbacks in `common/src/app/common/agent/` are for a host that
 does not supply something the exporter always does (the engine, the font

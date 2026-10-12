@@ -9,6 +9,7 @@
   see `app.common.agent.write` for what a tool takes and answers. Comments and
   versions are not file changes: the backend runs those tools itself."
   (:require
+   [app.common.agent.structure :as cas]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
@@ -119,3 +120,52 @@
                 :chars (count doc)
                 :note (str "foundation '" (display-name slug) "' saved "
                            "— in your instructions from the next turn on")}})))
+
+;; --- generate_code
+;;
+;; What Penpot says a design is, as markup and styles, to hold shipped code
+;; against. Which shapes a call means is decided here; generating the code is
+;; the host's, because the generator renders the frontend's own components.
+
+(def ^:private markup-types #{"html" "svg"})
+
+(defn code-problem
+  "Why `generate_code` cannot run, or nil."
+  [objects ids type]
+  (or (when (empty? ids)
+        (str "generate_code: nothing to inspect — pass shapeIds, or select the"
+             " shapes you want the markup for"))
+      (cas/ids-problem "generate_code" objects ids)
+      (when (and (some? type) (not (contains? markup-types type)))
+        (dm/str "generate_code: \"" type "\" is not a markup type — use one of: "
+                (str/join ", " (sort markup-types))))))
+
+(defn code-plan
+  "→ `{:problem}`, or what to generate: the markup `:type`, the `:roots` asked
+  for and every shape of `:shapes` to write out. `selected` stands in when no
+  shapes are named."
+  [objects selected {:keys [shapeIds type includeChildren]}]
+  (let [ids  (if (seq shapeIds)
+               (into [] (comp (keep #(when (string? %) (parse-uuid %))) (distinct)) shapeIds)
+               (vec selected))
+        type (or type "html")]
+    (if-let [problem (code-problem objects ids type)]
+      {:problem problem}
+      (let [roots (mapv #(get objects %) ids)
+            ;; with their children unless told otherwise: a component's own
+            ;; styles without its children is rarely what a review wants
+            kids? (not (false? includeChildren))]
+        {:type type
+         :roots roots
+         :shapes (cond->> (cfh/clean-loops objects roots)
+                   kids? (mapcat #(cfh/get-children-with-self objects (:id %))))}))))
+
+(defn code-result
+  [markup style shapes]
+  {:markup markup
+   :style style
+   :shapes (count shapes)
+   :note (str "Penpot's own view of these shapes — compare it against "
+              "the shipped code rather than reading the canvas. If the "
+              "result is refused as too large, inspect fewer shapes or "
+              "pass includeChildren: false.")})

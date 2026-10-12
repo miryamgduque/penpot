@@ -63,8 +63,9 @@
   out, which the backend cannot run, so they run in the exporter: it reads the
   file and commits its changes through the two commands at the end of this
   namespace, with the same turn token."
-  ;; and the one that shows the model a web page: the exporter's browser
-  (conj (set (keys cat/tools)) "screenshot_page"))
+  ;; and the two that need the exporter's browser: the screenshot of a web
+  ;; page, and handoff code, which the frontend's render page generates
+  (conj (set (keys cat/tools)) "screenshot_page" "generate_code"))
 
 ;; A tool result is capped like the workspace caps it: an oversized result is
 ;; replaced by a small, valid object saying so, never cut mid-token.

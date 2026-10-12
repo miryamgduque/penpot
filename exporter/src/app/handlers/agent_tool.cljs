@@ -13,12 +13,16 @@
   token names."
   (:require
    ["undici" :as http]
+   [app.browser :as bw]
+   [app.common.agent.document :as cad]
    [app.common.agent.tools :as cat]
    [app.common.exceptions :as ex]
+   [app.common.logging :as l]
    [app.common.transit :as t]
    [app.common.uri :as u]
    [app.config :as cf]
    [app.handlers.screenshot-url :as screenshot]
+   [app.wasm.backend :as backend]
    [app.wasm.pool :as pool]
    [promesa.core :as p]))
 
@@ -94,10 +98,91 @@
                                            (str "the capture failed" (when code (str " (" (name code) ")"))))
                                        ".")))))))))))
 
+;; --- generate_code
+;;
+;; The handoff code generators render the workspace's own components, so they
+;; run in the frontend's render page, in a browser of the pool: this side
+;; reads the page with the turn token, decides which shapes are meant, and
+;; hands them to that page. The page fetches nothing and gets no cookie.
+
+;; A tool result is capped like the workspace caps it: an oversized result is
+;; replaced by a small, valid object saying so, never cut mid-token.
+(def ^:private max-result-chars 20000)
+
+(defn- capped
+  [content]
+  (if (> (count content) max-result-chars)
+    (js/JSON.stringify
+     #js {:truncated true
+          :chars (count content)
+          :limit max-result-chars
+          :error (str "This result was " (count content) " characters, over the "
+                      max-result-chars " limit, so none of it was returned "
+                      "— a partial result would be indistinguishable from a "
+                      "complete one. Narrow the request and try again: "
+                      "read_design with a smaller depth, or find_shapes with a "
+                      "name/type query.")})
+    content))
+
+(defn- generate-in-render-page
+  "→ promise of `{:markup :style}` for the shapes of `plan`."
+  [objects {:keys [type roots shapes]} team-fonts]
+  (let [uri     (-> (cf/get-internal-uri)
+                    (u/ensure-path-slash)
+                    (u/join "render.html")
+                    (assoc :query (u/map->query-string {:route "codegen"})))
+        payload (t/encode-str {:objects objects
+                               :root-ids (mapv :id roots)
+                               :shape-ids (mapv :id shapes)
+                               :type type
+                               :team-fonts team-fonts})]
+    (bw/exec! #js {:viewport #js {:width bw/default-viewport-width
+                                  :height bw/default-viewport-height}
+                   :userAgent bw/default-user-agent}
+              (fn [page]
+                (p/do
+                  (bw/nav! page (str uri))
+                  ;; a function, not a string: only a function is called
+                  ;; with the argument. Built from source so the import is
+                  ;; the page's, not something this build tries to resolve.
+                  (->> (.evaluate ^js page
+                                  (js/Function. "payload"
+                                                "return import('./js/render.js').then((m) => m.generateCode(payload));")
+                                  payload)
+                       (p/fmap (fn [json]
+                                 (js->clj (js/JSON.parse json) :keywordize-keys true)))))))))
+
+(defn- generate-code
+  [token input context]
+  (let [input (js->clj (js/JSON.parse input) :keywordize-keys true)
+        ctx   (js->clj (js/JSON.parse context) :keywordize-keys true)]
+    (->> (backend/command! "get-agent-tool-page" {:token token :context context})
+         (p/mcat
+          (fn [{:keys [data page-id team-fonts]}]
+            (let [objects  (get-in data [:pages-index page-id :objects])
+                  selected (into [] (keep #(when (string? %) (parse-uuid %))) (:selectedIds ctx))
+                  plan     (cad/code-plan objects selected input)]
+              (if-let [problem (:problem plan)]
+                (p/resolved {:content problem :isError true})
+                (->> (generate-in-render-page objects plan team-fonts)
+                     (p/fmap (fn [{:keys [markup style]}]
+                               {:content (capped (js/JSON.stringify
+                                                  (clj->js (cad/code-result markup style (:shapes plan)))))
+                                :isError false})))))))
+         ;; the browser could not do it: a workspace still can
+         (p/merr (fn [cause]
+                   (if (= :agent-backend-refused (:code (ex-data cause)))
+                     (p/rejected cause)
+                     (do
+                       (l/warn :hint "agent tool: code generation failed in the render page"
+                               :detail (ex-message cause))
+                       (p/resolved {:fallback "the code generator could not run on the server"}))))))))
+
 (def tools
   "Every tool this service runs: the ones that change a page, the render of
-  a board for a turn with no workspace, and the screenshot of a web page."
-  (conj (set (keys cat/tools)) "render_board" "screenshot_page"))
+  a board for a turn with no workspace, handoff code, and the screenshot of
+  a web page."
+  (conj (set (keys cat/tools)) "render_board" "generate_code" "screenshot_page"))
 
 
 (defn handler
@@ -110,6 +195,11 @@
     (->> (cond
            (= "screenshot_page" tool)
            (screenshot-page token (if (string? input) input "{}"))
+
+           (= "generate_code" tool)
+           (generate-code token
+                          (if (string? input) input "{}")
+                          (if (string? context) context "{}"))
 
            (zero? (pool/capacity))
            ;; no engine here: the caller runs the tool where it used to

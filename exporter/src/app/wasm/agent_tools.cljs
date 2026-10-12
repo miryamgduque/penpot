@@ -23,40 +23,16 @@
    [app.common.data :as d]
    [app.common.fonts :as cfnt]
    [app.common.tokens.resolver :as ctr]
-   [app.common.transit :as t]
    [app.common.types.shape.images :as images]
-   [app.common.uri :as u]
    [app.config :as cf]
    [app.wasm :as wasm]
+   [app.wasm.backend :as backend]
    [app.wasm.layout :as layout]
    [app.wasm.render :as render]
    [app.wasm.serialize :as serialize]
    [app.wasm.svg-parse :as svg-parse]
    [cuerdas.core :as str]
    [promesa.core :as p]))
-
-(defn- command!
-  "Calls a backend command with transit in and out. A refusal is raised with
-  the backend's own hint."
-  [name params]
-  (let [uri (-> (cf/get-internal-uri)
-                (u/ensure-path-slash)
-                (u/join (str "api/rpc/command/" name))
-                (str))]
-    (->> (p/do (http/fetch uri #js {:method "POST"
-                                    :headers #js {"content-type" "application/transit+json"
-                                                  "accept" "application/transit+json"}
-                                    :body (t/encode-str params)}))
-         (p/mcat (fn [^js response]
-                   (->> (.text response)
-                        (p/fmap (fn [body]
-                                  (let [data (when (seq body) (t/decode-str body))]
-                                    (if (= 200 (.-status response))
-                                      data
-                                      (throw (ex-info (or (:hint data) (str name " failed"))
-                                                      {:code :agent-backend-refused
-                                                       :status (.-status response)
-                                                       :backend data}))))))))))))
 
 (defn- parse-json
   [s]
@@ -82,9 +58,9 @@
 (defn- resolve-need
   [token {:keys [kind url name]}]
   (case kind
-    :image (command! "create-agent-tool-media"
-                     (cond-> {:token token :url url}
-                       (some? name) (assoc :name name)))
+    :image (backend/command! "create-agent-tool-media"
+                             (cond-> {:token token :url url}
+                               (some? name) (assoc :name name)))
     :http  (fetch-text url)))
 
 (defn- resolve-needs
@@ -105,7 +81,7 @@
   [token team-fonts]
   {:variants team-fonts
    :fetch-asset (fn [id]
-                  (->> (command! "get-agent-tool-font" {:token token :id id})
+                  (->> (backend/command! "get-agent-tool-font" {:token token :id id})
                        (p/fmap (fn [{:keys [data]}]
                                  (when (string? data)
                                    (.-buffer (js/Uint8Array. (js/Buffer.from data "base64"))))))
@@ -227,7 +203,7 @@
   [token scene]
   (->> (remove wasm/image-cached? (images/scene-image-ids scene))
        (map (fn [id]
-              (->> (command! "get-agent-tool-media" {:token token :id id})
+              (->> (backend/command! "get-agent-tool-media" {:token token :id id})
                    (p/fmap (fn [{:keys [data]}]
                              (when (string? data)
                                (wasm/store-image! id (js/Buffer.from data "base64")))))
@@ -264,7 +240,7 @@
         input (parse-json input)
         scale (car/render-scale (:scale input))]
     (->> (p/all [(render/ensure-module!)
-                 (command! "get-agent-tool-page" {:token token :context context})])
+                 (backend/command! "get-agent-tool-page" {:token token :context context})])
          (p/mcat
           (fn [[_ {:keys [data page-id team-fonts]}]]
             (let [objects (get-in data [:pages-index page-id :objects])
@@ -297,7 +273,7 @@
   (let [ctx   (parse-json context)
         input (parse-json input)]
     (->> (p/all [(render/ensure-module!)
-                 (command! "get-agent-tool-page" {:token token :context context})
+                 (backend/command! "get-agent-tool-page" {:token token :context context})
                  (resolve-needs token tool input)])
          (p/mcat
           (fn [[_ {:keys [file-id page-id data libraries revn vern allowed-colors team-fonts enforced-rules]}
@@ -332,8 +308,8 @@
 
                         :else
                         (->> (if (seq (:changes answer))
-                               (command! "commit-agent-tool-changes"
-                                         {:token token :revn revn :vern vern :tool tool :changes (:changes answer)})
+                               (backend/command! "commit-agent-tool-changes"
+                                                 {:token token :revn revn :vern vern :tool tool :changes (:changes answer)})
                                (p/resolved nil))
                              (p/fmap (fn [committed]
                                        (cond-> {:content (js/JSON.stringify (clj->js (:result answer)))

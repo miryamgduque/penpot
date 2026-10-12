@@ -12,14 +12,17 @@
    [app.common.logging :as log]
    [app.common.math :as mth]
    [app.common.schema :as sm]
+   [app.common.transit :as t]
    [app.common.types.components-list :as ctkl]
    [app.common.uri :as u]
    [app.main.data.fonts :as df]
    [app.main.features :as features]
+   [app.main.fonts :as fonts]
    [app.main.render :as render]
    [app.main.repo :as repo]
    [app.main.store :as st]
    [app.main.ui.context :as ctx]
+   [app.util.code-gen :as cg]
    [app.util.dom :as dom]
    [app.util.globals :as glob]
    [beicon.v2.core :as rx]
@@ -301,6 +304,46 @@
 
     (catch :default cause
       (handle-render-error cause))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; CODE GENERATION
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; The handoff code generators render the workspace's own components to
+;; static markup, so they only run where those components are: here. The
+;; exporter hands this page the shapes and gets the markup and styles back,
+;; for a caller with no workspace open. Nothing is fetched: what the
+;; generators need arrives in the call.
+
+(defn- register-team-fonts!
+  "Makes a team's uploaded fonts known the way the workspace does, so text
+  set in one is written with its family and not as an unknown font."
+  [variants]
+  (fonts/register!
+   :custom
+   (->> variants
+        (group-by :font-id)
+        (mapv (fn [[font-id [item :as items]]]
+                {:id (str "custom-" font-id)
+                 :name (:font-family item)
+                 :family (:font-family item)
+                 :variants (mapv (fn [{:keys [font-style font-weight]}]
+                                   {:id (str font-style "-" font-weight)
+                                    :style font-style
+                                    :weight (str font-weight)})
+                                 items)})))))
+
+(defn ^:export generate-code
+  "`payload` is transit: `{:objects :root-ids :shape-ids :type :team-fonts}`
+  → JSON `{markup, style}`."
+  [payload]
+  (let [{:keys [objects root-ids shape-ids type team-fonts]} (t/decode-str payload)
+        shapes (mapv #(get objects %) shape-ids)
+        roots  (mapv #(get objects %) root-ids)]
+    (register-team-fonts! team-fonts)
+    (js/JSON.stringify
+     #js {:markup (cg/generate-formatted-markup-code objects type shapes)
+          :style (cg/generate-style-code objects "css" roots shapes nil)})))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; SETUP

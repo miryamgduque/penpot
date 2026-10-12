@@ -41,6 +41,28 @@ const MAX_TOKENS = 32000;
 // patience than a tool of ours.
 const MCP_TOOL_TIMEOUT_MS = 30000;
 
+// What the panel is shown of a harness tool's result: enough to see what
+// came back, not a page of it.
+const MAX_SHOWN_RESULT_CHARS = 2000;
+
+const isHarnessTool = (name) => typeof name === "string" && (name.startsWith("mcp__") || name === "skill");
+
+function parseArguments(raw) {
+  try {
+    const parsed = JSON.parse(raw ?? "{}");
+    return parsed !== null && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function resultText(content) {
+  const text = (Array.isArray(content) ? content : [])
+    .map((block) => (block?.type === "text" ? block.text : `[${block?.type ?? "content"}]`))
+    .join("\n");
+  return text.length > MAX_SHOWN_RESULT_CHARS ? `${text.slice(0, MAX_SHOWN_RESULT_CHARS)}…` : text;
+}
+
 const EXTERNAL_TOOLS_NOTE =
   "## External tools\n" +
   "Tools named mcp__<server>__<tool> belong to services the user connected to this agent; they are not part of Penpot. " +
@@ -184,6 +206,43 @@ export async function createHarness(options = {}) {
     }
   }
 
+  /**
+   * `plugin`, registering every tool but the ones named in `hidden`.
+   *
+   * The harness can take a tool away from an agent only when the agent
+   * inherited it, and a server's tools are the agent's own. So a tool the user
+   * switched off is dropped where it would be registered, each time the
+   * server's list is read.
+   */
+  function withoutTools(plugin, hidden) {
+    const only = (tools) =>
+      new Proxy(tools, {
+        get(target, key) {
+          if (key === "register") {
+            return (definition) => (hidden.has(definition.name) ? () => {} : target.register(definition));
+          }
+          const value = Reflect.get(target, key, target);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    return {
+      name: plugin.name,
+      inject: plugin.inject,
+      Config: plugin.Config,
+      apply: (pluginCtx, config) =>
+        plugin.apply(
+          new Proxy(pluginCtx, {
+            get(target, key) {
+              const value = Reflect.get(target, key, target);
+              if (key === "tools") return only(value);
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          }),
+          config,
+        ),
+    };
+  }
+
   async function openConversation(id, { provider, model, system, tools, skills = [], mcpServers = [] }) {
     const conversation = { id, provider, model, turn: undefined, idleTimer: undefined };
     // the connections to the user's MCP servers, settled or not
@@ -214,10 +273,7 @@ export async function createHarness(options = {}) {
         for (const spec of tools) agentCtx.tools.register(toolDefinition(conversation, spec));
         // registered on this conversation's scope: one user's enabled skills
         // are invisible to every other conversation
-        if (skills.length === 0) {
-          // no skills, no loader tool: a tool that can only fail is noise
-          agentCtx.tools.restrict({ deny: ["skill"] });
-        } else {
+        if (skills.length > 0) {
           agentCtx.inject(["skills"], (skillCtx) => {
             for (const skill of skills) {
               // one skill the registry will not take must not cost the
@@ -240,6 +296,13 @@ export async function createHarness(options = {}) {
         // their tools appear as mcp__<server>__<tool> and run from here, with
         // the headers the backend attached. One that does not answer costs
         // the conversation that server's tools, nothing else.
+        // the tools the user switched off, by the names the model would see
+        const switchedOff = new Set(
+          mcpServers.flatMap((server) => (server.disabledTools ?? []).map((tool) => `mcp__${server.name}__${tool}`)),
+        );
+        // …and, with no skills, the skill loader: a tool that can only fail
+        // is noise.
+        if (skills.length === 0) agentCtx.tools.restrict({ deny: ["skill"] });
         for (const server of mcpServers) {
           // Its address was checked before it got here. This holds every
           // request to it to the same rule: no redirects, public addresses
@@ -247,7 +310,7 @@ export async function createHarness(options = {}) {
           if (options.mcpAllowPrivate !== true) releases.push(guardOrigin(server.url));
           connecting.push(
             Promise.resolve(
-              agentCtx.plugin(McpClient, {
+              agentCtx.plugin(switchedOff.size > 0 ? withoutTools(McpClient, switchedOff) : McpClient, {
                 serverName: server.name,
                 transport: "streamable-http",
                 url: server.url,
@@ -278,8 +341,28 @@ export async function createHarness(options = {}) {
             });
           }
         });
+        // Tools the harness runs itself — the user's MCP servers, the skill
+        // loader — never pass through this service's own tool routing. The
+        // panel is told about them here, so a call to a connected service
+        // shows like any other tool call.
+        const ownCalls = new Map();
         agentCtx.on("session/event", (_session, event) => {
           if (event.type === "turn/end") conversation.turn?.ended(event.data.reason);
+          else if (event.type === "tool/call" && isHarnessTool(event.data.name)) {
+            ownCalls.set(event.data.callId, { name: event.data.name, input: parseArguments(event.data.arguments) });
+          } else if (event.type === "tool/result") {
+            const message = event.data.message;
+            const call = ownCalls.get(message?.toolCallId);
+            if (call === undefined) return;
+            ownCalls.delete(message.toolCallId);
+            conversation.turn?.emit?.({
+              type: "server-tool",
+              name: call.name,
+              input: call.input,
+              content: resultText(message.content),
+              isError: message.isError === true,
+            });
+          }
         });
       },
     });

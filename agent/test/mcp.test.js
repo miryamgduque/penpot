@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { MAX_MCP_SERVERS, turnMcpServers } from "../src/mcp.js";
+import { MAX_MCP_SERVERS, listMcpTools, turnMcpServers } from "../src/mcp.js";
 import { createServer } from "node:http";
 
 import { assertPublicUrl, guardOrigin, guardedFetch, isPublicAddress } from "../src/netguard.js";
@@ -56,7 +56,9 @@ test("a turn's servers are checked one by one; a bad one is left out, not fatal"
     ]),
     { resolve: async (host) => [{ address: host.startsWith("intranet") ? "10.0.0.1" : "93.184.216.34" }] },
   );
-  assert.deepEqual(servers, [{ name: "notes", url: "https://mcp.example.com/mcp", headers: { Authorization: "Bearer t" } }]);
+  assert.deepEqual(servers, [
+    { name: "notes", url: "https://mcp.example.com/mcp", headers: { Authorization: "Bearer t" }, disabledTools: [] },
+  ]);
   assert.deepEqual(refused.map((entry) => entry.name), ["notes", "bad name!", "inside", "plain"]);
   assert.match(refused[2].reason, /private or blocked/);
   assert.match(refused[3].reason, /must be https/);
@@ -212,5 +214,65 @@ test("an origin is guarded while a conversation uses it, and not after", async (
     assert.equal(await (await fetch(url)).text(), "here");
   } finally {
     await server.close();
+  }
+});
+
+const extraTool = {
+  name: "delete_everything",
+  description: "Deletes it all.",
+  inputSchema: { type: "object", properties: {} },
+  call: () => ({ content: [{ type: "text", text: "gone" }] }),
+};
+
+test("a server's tools can be listed for the user to choose from", async () => {
+  const mcp = await startFakeMcp({ tools: [extraTool] });
+  try {
+    const tools = await listMcpTools({ url: mcp.url, headers: { Authorization: "Bearer t" } }, { allowPrivate: true });
+    assert.deepEqual(tools, [
+      { name: "echo", description: "Says back what it is told." },
+      { name: "delete_everything", description: "Deletes it all." },
+    ]);
+    assert.equal(mcp.seen.find((request) => request.method === "tools/list").authorization, "Bearer t");
+    // the address rules are the turn's
+    await assert.rejects(listMcpTools({ url: mcp.url }), /must be https/);
+    await assert.rejects(listMcpTools({ url: "http://127.0.0.1:9/mcp" }, { allowPrivate: true }), /could not be reached/);
+  } finally {
+    await mcp.close();
+  }
+});
+
+test("a tool the user switched off is not offered to the model", async () => {
+  const mcp = await startFakeMcp({ tools: [extraTool] });
+  const fake = await startFakeAnthropic(() => ({ text: "Done." }));
+  const app = await createAgentServer({ providers: { anthropic: { baseURL: fake.baseURL } }, mcpAllowPrivate: true });
+  const { port } = await app.listen(0, "127.0.0.1");
+  try {
+    const listed = await (
+      await fetch(`http://127.0.0.1:${port}/v1/mcp/tools`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-penpot-profile-id": "p1" },
+        body: JSON.stringify({ server: { url: mcp.url } }),
+      })
+    ).json();
+    assert.deepEqual(listed.tools.map((tool) => tool.name), ["echo", "delete_everything"]);
+
+    const response = await fetch(`http://127.0.0.1:${port}/v1/turns`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-penpot-profile-id": "p1",
+        "x-penpot-provider": "anthropic",
+        "x-penpot-api-key": "key-one",
+        "x-penpot-mcp-servers": header([{ name: "notes", url: mcp.url, disabledTools: ["delete_everything"] }]),
+      },
+      body: JSON.stringify({ sessionId: "s-off", model: "claude-sonnet-4-5", system: "S", text: "hello", tools: [] }),
+    });
+    for await (const _event of events(response)) void _event;
+    const offered = fake.requests[0].body.tools.map((tool) => tool.name).filter((name) => name.startsWith("mcp__"));
+    assert.deepEqual(offered, ["mcp__notes__echo"]);
+  } finally {
+    await app.close();
+    await fake.close();
+    await mcp.close();
   }
 });

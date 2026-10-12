@@ -2712,6 +2712,24 @@ msgstr "Enabled"
 msgid "integrations.agent-mcp.remove"
 msgstr "Remove service"
 
+msgid "integrations.agent-mcp.tools.enabled"
+msgstr "Let the agent use %s"
+
+msgid "integrations.agent-mcp.tools.error"
+msgstr "The service did not list its tools: %s"
+
+msgid "integrations.agent-mcp.tools.hide"
+msgstr "Hide tools"
+
+msgid "integrations.agent-mcp.tools.loading"
+msgstr "Asking the service for its tools…"
+
+msgid "integrations.agent-mcp.tools.none"
+msgstr "This service offers no tools."
+
+msgid "integrations.agent-mcp.tools.show"
+msgstr "Show tools"
+
 msgid "integrations.agent-mcp.token-saved"
 msgstr "Token saved"
 

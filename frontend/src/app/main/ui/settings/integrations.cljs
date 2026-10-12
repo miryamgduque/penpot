@@ -858,12 +858,50 @@
    :ssrf-blocked-target       "integrations.agent-mcp.error.private"
    :mcp-servers-limit-reached "integrations.agent-mcp.error.limit"})
 
+(mf/defc agent-mcp-server-tools*
+  "What a connected server offers, one switch per tool: a tool switched off is
+  never offered to the agent."
+  {::mf/private true}
+  [{:keys [server answer]}]
+  (let [{:keys [tools error loading]} answer]
+    [:div {:class (stl/css :agent-mcp-tools)
+           :data-testid (dm/str "agent-mcp-tools-" (:name server))}
+     (cond
+       ^boolean loading
+       [:> text* {:as "span" :typography t/body-small :class (stl/css :color-secondary)}
+        (tr "integrations.agent-mcp.tools.loading")]
+
+       (some? error)
+       [:> text* {:as "span" :typography t/body-small :class (stl/css :color-secondary)}
+        (tr "integrations.agent-mcp.tools.error" error)]
+
+       (empty? tools)
+       [:> text* {:as "span" :typography t/body-small :class (stl/css :color-secondary)}
+        (tr "integrations.agent-mcp.tools.none")]
+
+       :else
+       (for [{:keys [name description is-enabled]} tools]
+         [:div {:key name :class (stl/css :agent-mcp-tool)}
+          [:div {:class (stl/css :agent-mcp-tool-text)}
+           [:> text* {:as "span" :typography t/body-medium :class (stl/css :color-primary)}
+            name]
+           (when-not (str/blank? description)
+             [:> text* {:as "span"
+                        :typography t/body-small
+                        :class (stl/css :color-secondary :agent-mcp-tool-description)}
+              description])]
+          [:> switch* {:aria-label (tr "integrations.agent-mcp.tools.enabled" name)
+                       :default-checked is-enabled
+                       :on-change (fn [checked]
+                                    (st/emit! (dai/set-agent-mcp-server-tool server name (boolean checked))))}]]))]))
+
 (mf/defc agent-mcp-servers-section*
   "The external MCP servers this user connected to the agent: a list, and a
   short form to add one. A server's token is typed here and never shown again."
   {::mf/private true}
   []
   (let [servers (mf/deref refs/agent-mcp-servers)
+        listed  (mf/deref refs/agent-mcp-server-tools)
         name*   (mf/use-state "")
         url*    (mf/use-state "")
         token*  (mf/use-state "")
@@ -915,7 +953,7 @@
                  :class (stl/css :color-secondary :ai-provider-description)}
        (tr "integrations.agent-mcp.description")]]
 
-     (for [{:keys [name url has-token is-enabled]} servers]
+     (for [{:keys [name url has-token is-enabled] :as server} servers]
        [:div {:key name
               :class (stl/css :provider-card)
               :data-testid (dm/str "agent-mcp-server-" name)}
@@ -945,7 +983,21 @@
                              :icon-size "s"
                              :aria-label (tr "integrations.agent-mcp.remove")
                              :icon i/delete
-                             :on-click (fn [_] (st/emit! (dai/delete-agent-mcp-server {:name name})))}]]]]])
+                             :on-click (fn [_] (st/emit! (dai/delete-agent-mcp-server {:name name})))}]]]]
+        (let [answer (get listed name)]
+          [:*
+           [:> button* {:variant "secondary"
+                        :type "button"
+                        :data-testid (dm/str "agent-mcp-show-tools-" name)
+                        :on-click (fn [_]
+                                    (st/emit! (if (some? answer)
+                                                (dai/hide-agent-mcp-server-tools name)
+                                                (dai/fetch-agent-mcp-server-tools name))))}
+            (if (some? answer)
+              (tr "integrations.agent-mcp.tools.hide")
+              (tr "integrations.agent-mcp.tools.show"))]
+           (when (some? answer)
+             [:> agent-mcp-server-tools* {:server server :answer answer}])])])
 
      [:form {:class (stl/css :provider-card)
              :on-submit on-add}

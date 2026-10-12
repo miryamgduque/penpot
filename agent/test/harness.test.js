@@ -335,7 +335,16 @@ test("a user's MCP server: its tools are the conversation's, called with the hea
   try {
     const mcpServers = [{ name: "notes", url: mcp.url, headers: { Authorization: "Bearer token-one" } }];
     const delegated = [];
-    await t.harness.runTurn(turn({ mcpServers }), { emit: () => {}, callTool: async (call) => (delegated.push(call), {}) });
+    const emitted = [];
+    await t.harness.runTurn(turn({ mcpServers }), {
+      emit: (event) => emitted.push(event),
+      callTool: async (call) => (delegated.push(call), {}),
+    });
+    // the panel is told of the call, under the name that carries the service's
+    assert.deepEqual(
+      emitted.filter((event) => event.type === "server-tool"),
+      [{ type: "server-tool", name: "mcp__notes__echo", input: { text: "hi there" }, content: "echo: hi there", isError: false }],
+    );
     const first = t.fake.requests[0].body;
     assert.ok(first.tools.some((tool) => tool.name === "mcp__notes__echo"), "the server's tool is listed to the model");
     assert.match(JSON.stringify(first.system), /belong to services the user connected/);

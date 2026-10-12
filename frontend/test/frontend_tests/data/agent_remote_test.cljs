@@ -50,3 +50,8 @@
         p      (payload {:service {:session-id (uuid/next) :skills skills}} {:role :user :text "hi"} "S")]
     (t/is (= skills (:skills p)))
     (t/is (= [] (:skills (payload {:service {:session-id (uuid/next)}} {:role :user :text "hi"} "S"))))))
+
+(t/deftest a-connected-service-tool-is-shown-with-the-service-name
+  (t/is (= "notes: echo" (ar/tool-display-name "mcp__notes__echo")))
+  (t/is (= "tracker: create__issue" (ar/tool-display-name "mcp__tracker__create__issue")))
+  (t/is (= "create_shape" (ar/tool-display-name "create_shape"))))

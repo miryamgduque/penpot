@@ -12,7 +12,9 @@
  * so neither the list nor the tokens pass through the browser. Here they are
  * checked once more before the harness connects to any of them.
  */
-import { assertPublicUrl } from "./netguard.js";
+import { Client, StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+
+import { assertPublicUrl, guardOrigin } from "./netguard.js";
 
 export const MAX_MCP_SERVERS = 8;
 
@@ -58,11 +60,41 @@ export async function turnMcpServers(header, { allowPrivate = false, resolve } =
     }
     try {
       const url = await assertPublicUrl(entry.url, { allowPrivate, resolve });
-      servers.push({ name, url: url.toString(), headers: cleanHeaders(entry.headers) });
+      servers.push({
+        name,
+        url: url.toString(),
+        headers: cleanHeaders(entry.headers),
+        // the tools of this server the user switched off
+        disabledTools: Array.isArray(entry.disabledTools) ? entry.disabledTools.filter((tool) => typeof tool === "string") : [],
+      });
       seen.add(name);
     } catch (cause) {
       refused.push({ name, reason: cause.message });
     }
   }
   return { servers, refused };
+}
+
+const LIST_TIMEOUT_MS = 15000;
+
+/**
+ * The tools one server offers → `[{name, description}]`, for the user to see
+ * and switch off. The address is held to the same rules as in a turn. Rejects
+ * with a message fit to show when the server cannot be reached or listed.
+ */
+export async function listMcpTools(entry, { allowPrivate = false, resolve } = {}) {
+  const url = await assertPublicUrl(entry?.url, { allowPrivate, resolve });
+  const release = allowPrivate ? () => {} : guardOrigin(url.toString());
+  const client = new Client({ name: "penpot-agent", version: "1.0.0" });
+  try {
+    const transport = new StreamableHTTPClientTransport(url, { requestInit: { headers: cleanHeaders(entry.headers) } });
+    await client.connect(transport, { timeout: LIST_TIMEOUT_MS });
+    const { tools } = await client.listTools(undefined, { timeout: LIST_TIMEOUT_MS });
+    return (tools ?? []).map((tool) => ({ name: String(tool.name), description: String(tool.description ?? "") }));
+  } catch (cause) {
+    throw new Error(`the server could not be reached or did not list its tools (${cause?.message ?? "no detail"})`);
+  } finally {
+    await client.close().catch(() => {});
+    release();
+  }
 }

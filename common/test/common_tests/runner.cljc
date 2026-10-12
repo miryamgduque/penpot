@@ -17,6 +17,7 @@
    [common-tests.agent-document-test]
    [common-tests.agent-layout-test]
    [common-tests.agent-media-test]
+   [common-tests.agent-pack-test]
    [common-tests.agent-read-test]
    [common-tests.agent-recipe-build-test]
    [common-tests.agent-recipe-test]
@@ -112,6 +113,7 @@
    'common-tests.agent-media-test
    'common-tests.agent-read-test
    'common-tests.agent-recipe-build-test
+   'common-tests.agent-pack-test
    'common-tests.agent-recipe-test
    'common-tests.agent-structure-test
    'common-tests.agent-tokens-test

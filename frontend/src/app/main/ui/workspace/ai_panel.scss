@@ -7,7 +7,7 @@
 // The deprecated layer is still imported for what the DS has no answer for:
 // the `%dropdown-wrapper` / `%dropdown-element-base` / `%new-scrollbar`
 // placeholders the menus and scroll areas extend, and the workspace z-index
-// scale. It goes once US #71–#76 have moved the rest of the file's sizes and
+// scale. It goes once US #76 has moved the `scaled-*` mixin bodies' sizes and
 // typography onto the DS.
 @use "refactor/common-refactor.scss" as deprecated;
 @use "ds/_utils.scss" as *;
@@ -2097,9 +2097,9 @@
 
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
   height: 100%;
-  padding: deprecated.$s-8;
+  padding: var(--sp-s);
   overflow-y: auto;
 }
 
@@ -2123,7 +2123,7 @@
   // Opens leftward (like .more-menu/.skill-menu) — the trigger sits at the
   // toolbar's trailing edge, right against the panel's own right edge, so
   // anchoring at `left: 0` pushed the panel off past the visible viewport.
-  top: calc(100% + #{deprecated.$s-4});
+  top: calc(100% + #{var(--sp-xs)});
   left: auto;
   inset-inline-end: 0;
   width: auto;
@@ -2149,14 +2149,15 @@
 }
 
 .skills-filter-item-label {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 }
 
 .skills-filter-item-icon {
-  @include deprecated.flex-center;
-
-  inline-size: deprecated.$s-24;
-  block-size: deprecated.$s-24;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  inline-size: $sz-24;
+  block-size: $sz-24;
 
   svg {
     @extend %button-icon-small;
@@ -2176,13 +2177,13 @@
 }
 
 .skills-filter-separator {
-  block-size: deprecated.$s-12;
+  block-size: $sz-12;
 }
 
 .skills-empty {
   @include scaled-body-small;
 
-  padding: deprecated.$s-16 deprecated.$s-8;
+  padding: var(--sp-l) var(--sp-s);
   color: var(--color-foreground-secondary);
   text-align: center;
 }
@@ -2196,9 +2197,9 @@
 
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
   height: 100%;
-  padding: deprecated.$s-12;
+  padding: var(--sp-m);
   overflow-y: auto;
 }
 
@@ -2212,7 +2213,7 @@
 .create-label {
   @include scaled-body-small;
 
-  margin-block-start: deprecated.$s-8;
+  margin-block-start: var(--sp-s);
   color: var(--color-foreground-primary);
   font-weight: 600;
 }
@@ -2222,10 +2223,10 @@
 
   box-sizing: border-box;
   width: 100%;
-  min-height: deprecated.$s-40;
-  padding: deprecated.$s-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
+  min-height: $sz-40;
+  padding: var(--sp-s);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
   background-color: var(--color-background-primary);
   color: var(--color-foreground-primary);
   resize: vertical;
@@ -2237,16 +2238,16 @@ textarea.create-input {
 
 .create-modes {
   display: flex;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
 }
 
 .create-mode {
   @include scaled-body-small;
 
   flex: 1;
-  padding: deprecated.$s-6 deprecated.$s-4;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-8;
+  padding: $sz-6 var(--sp-xs);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
   background-color: transparent;
   color: var(--color-foreground-secondary);
   cursor: pointer;
@@ -2276,7 +2277,7 @@ textarea.create-input {
 .create-submit,
 .create-connect {
   align-self: flex-start;
-  margin-block-start: deprecated.$s-8;
+  margin-block-start: var(--sp-s);
 }
 
 // Promote-to-team confirmation (US #12): the muted note (reactive travels,
@@ -2284,16 +2285,16 @@ textarea.create-input {
 .promote-note {
   @include scaled-body-small;
 
-  margin-block-start: deprecated.$s-8;
+  margin-block-start: var(--sp-s);
   color: var(--color-foreground-secondary);
 }
 
 .promote-actions {
   display: flex;
-  gap: deprecated.$s-12;
+  gap: var(--sp-m);
   align-items: center;
   justify-content: flex-end;
-  margin-block-start: deprecated.$s-8;
+  margin-block-start: var(--sp-s);
 }
 
 .catalog-group {
@@ -2307,7 +2308,7 @@ textarea.create-input {
 .catalog-group-label {
   @include scaled-body-small;
 
-  padding: deprecated.$s-8 deprecated.$s-4 deprecated.$s-4;
+  padding: var(--sp-s) var(--sp-xs) var(--sp-xs);
   color: var(--color-foreground-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -2317,14 +2318,14 @@ textarea.create-input {
 .catalog-card {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-1;
+  gap: $sz-1;
   width: 100%;
-  padding: deprecated.$s-8 deprecated.$s-12;
+  padding: var(--sp-s) var(--sp-m);
 
   // A divider between skills instead of a box border — same line, dropped on the
   // last row of a group. Rows sit flush (group gap is 0) so the cards' padding
   // frames the line symmetrically.
-  border-block-end: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-block-end: $b-1 solid var(--color-background-quaternary);
   background-color: transparent;
   text-align: start;
   cursor: pointer;
@@ -2343,8 +2344,8 @@ textarea.create-input {
   }
 
   &:focus-visible {
-    outline: deprecated.$s-2 solid var(--color-accent-primary);
-    outline-offset: deprecated.$s-1;
+    outline: $b-2 solid var(--color-accent-primary);
+    outline-offset: $b-1;
   }
 
   // A disabled skill is dropped from the router; mute the name + description but
@@ -2369,8 +2370,8 @@ textarea.create-input {
   @include scaled-body-small;
 
   flex-shrink: 0;
-  padding: 0 deprecated.$s-6;
-  border-radius: deprecated.$br-8;
+  padding: 0 $sz-6;
+  border-radius: $br-8;
   background-color: var(--color-accent-primary);
   color: var(--color-background-primary);
   white-space: nowrap;
@@ -2384,7 +2385,7 @@ textarea.create-input {
 .catalog-card-head {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
 }
 
 .catalog-name {
@@ -2400,8 +2401,8 @@ textarea.create-input {
   @include scaled-body-small;
 
   flex-shrink: 0;
-  padding: 0 deprecated.$s-6;
-  border-radius: deprecated.$br-8;
+  padding: 0 $sz-6;
+  border-radius: $br-8;
   background-color: var(--color-background-quaternary);
   color: var(--color-foreground-secondary);
   white-space: nowrap;
@@ -2413,8 +2414,8 @@ textarea.create-input {
   @include scaled-body-small;
 
   flex-shrink: 0;
-  padding: 0 deprecated.$s-6;
-  border-radius: deprecated.$br-8;
+  padding: 0 $sz-6;
+  border-radius: $br-8;
   background-color: var(--color-accent-select);
   color: var(--color-accent-primary);
   white-space: nowrap;
@@ -2441,8 +2442,8 @@ textarea.create-input {
   // element — the ghost variant sets its hover var on itself, so a parent-level
   // override wouldn't win; set the darker-gray hover background directly instead.
   button {
-    width: deprecated.$s-24;
-    height: deprecated.$s-24;
+    width: $sz-24;
+    height: $sz-24;
 
     &:hover {
       background-color: var(--color-background-secondary);
@@ -2464,7 +2465,7 @@ textarea.create-input {
   // colour is remapped here rather than per item.
   --menu-foreground-color-rest: var(--color-foreground-primary);
 
-  top: calc(100% + #{deprecated.$s-4});
+  top: calc(100% + #{var(--sp-xs)});
   left: auto;
   inset-inline-end: 0;
   width: auto;
@@ -2492,7 +2493,7 @@ textarea.create-input {
 .catalog-desc {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
   flex-wrap: wrap;
 }
 
@@ -2531,9 +2532,9 @@ textarea.create-input {
 
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
   height: 100%;
-  padding: deprecated.$s-12;
+  padding: var(--sp-m);
   overflow-y: auto;
 }
 
@@ -2547,7 +2548,7 @@ textarea.create-input {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
 }
 
 .detail-name {
@@ -2559,14 +2560,14 @@ textarea.create-input {
 .detail-tags {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-4;
-  margin-block: deprecated.$s-4 deprecated.$s-8;
+  gap: var(--sp-xs);
+  margin-block: var(--sp-xs) var(--sp-s);
 }
 
 .detail-section-label {
   @include scaled-body-small;
 
-  margin-block-start: deprecated.$s-8;
+  margin-block-start: var(--sp-s);
   color: var(--color-foreground-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -2576,8 +2577,8 @@ textarea.create-input {
 .detail-example {
   @include scaled-body-small;
 
-  padding: deprecated.$s-8 deprecated.$s-12;
-  border-radius: deprecated.$br-8;
+  padding: var(--sp-s) var(--sp-m);
+  border-radius: $br-8;
   background-color: var(--color-background-tertiary);
   color: var(--color-foreground-primary);
   font-style: italic;

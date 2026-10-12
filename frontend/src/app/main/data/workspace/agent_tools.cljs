@@ -11,6 +11,7 @@
   family namespaces (common / read / structure / layout / components /
   document / tokens / media / agentic / compose)."
   (:require
+   [app.common.agent.recipes :as cars]
    [app.common.data.macros :as dm]
    [app.main.data.workspace.agent-tools.agentic :as atg]
    [app.main.data.workspace.agent-tools.common :as atc]
@@ -22,7 +23,8 @@
    [app.main.data.workspace.agent-tools.read :as atr]
    [app.main.data.workspace.agent-tools.structure :as ats]
    [app.main.data.workspace.agent-tools.tokens :as att]
-   [beicon.v2.core :as rx]))
+   [beicon.v2.core :as rx]
+   [cuerdas.core :as str]))
 
 ;; Re-exports for the production consumers (agent.cljs, ai_panel.cljs,
 ;; agent_chats.cljs) that predate the family split — they keep requiring
@@ -584,6 +586,45 @@
                                 :tree {:type "object" :description "the root node"}}
                    :required ["tree"]}}
 
+   {:name "build_recipe"
+    :description
+    (str "Builds a common piece of UI from a recipe in ONE call, as Penpot "
+         "means it to be built: auto-layout, values bound to tokens, real "
+         "components with variants. Recipes: "
+         (str/join "; "
+                   (map (fn [{:keys [name purpose params variants]}]
+                          (str name " — " purpose
+                               (when (seq params)
+                                 (str " Params: " (str/join ", " (map :name params)) "."))
+                               (when (seq variants)
+                                 (str " Variants: "
+                                      (str/join ", " (map #(str (:name %) " (" (str/join "/" (:values %)) ")")
+                                                          variants))
+                                      "."))))
+                        (sort-by :name (vals cars/builtin))))
+         ". A recipe is structure, not style: every color, spacing, radius and "
+         "type size is a role (color.primary, spacing.md…) bound to the file's "
+         "token of that name, or to the token you name in `roles`, or to a new "
+         "token with a default value — restyle by editing tokens. A recipe "
+         "that is a component is built once per file as a main (a variant set "
+         "when it has variants), and what you get placed is an instance of "
+         "it, with the words from `params`; later calls reuse the main. "
+         "Returns the placed root `id`, `ids` by layer name, `slots` (boards "
+         "left for you to fill), `mains` and `tokensCreated`. On an error you "
+         "get a PARTIAL result naming what exists — repair with targeted "
+         "calls, never build the recipe again. Asynchronous: verify with "
+         "render_board.")
+    :input-schema {:type "object"
+                   :properties {:recipe {:type "string" :enum (vec (sort (keys cars/builtin)))}
+                                :params {:type "object" :description "param → value; what is left out takes its default"}
+                                :variant {:type "object" :description "axis → value, e.g. {\"Kind\": \"Secondary\"}"}
+                                :parentId {:type "string" :description "board to place it into, at the end of its flow (optional)"}
+                                :x {:type "number" :description "where on the page, when there is no parentId (optional)"}
+                                :y {:type "number"}
+                                :roles {:type "object"
+                                        :description "role → the name of the file's token to bind it to, e.g. {\"color.primary\": \"brand.500\"}"}}
+                   :required ["recipe"]}}
+
    {:name "set_layout"
     :description
     (str "Gives a board a flex or grid layout, or updates the one it has — this "
@@ -1070,6 +1111,10 @@
          "duplicate_shape"    (ats/duplicate-shape input)
          "clone_shape"        (atx/clone-shape-tool input)
          "build_tree"         (atx/build-tree-tool input)
+         ;; server only: there is no second implementation in the workspace
+         "build_recipe"       (rx/of {:error (str "build_recipe runs on the server, and the "
+                                                  "server could not run it here. Build "
+                                                  "with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)
          "ungroup_shapes"     (ats/ungroup-shapes input)
          "set_layout"         (atl/set-layout input)

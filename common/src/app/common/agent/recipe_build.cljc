@@ -64,6 +64,12 @@
 ;; names for it, else the file's token of the role's own name, else a new
 ;; token with the role's default — or with the value a linked library gives
 ;; a token of that name, as a file binds to its own tokens only.
+;;
+;; A host that resolves tokens does it between runs of the tool, and knows
+;; the tokens it resolved by what they are. A token made here is made anew on
+;; every run, so it would never be one the host has resolved: what it is
+;; worth is said here, where its value is known, and the host is asked about
+;; the file's own tokens only.
 
 (defn- roles-named
   [recipe]
@@ -77,8 +83,34 @@
   [data]
   (some-> (:tokens-lib data) ctob/get-all-tokens-map))
 
+(defn- worth-of
+  "What a plain value is worth, as a token resolver answers it."
+  [value]
+  (if (map? value)
+    {:resolved-value (:color value) :color value}
+    {:resolved-value value}))
+
+(defn- plain-worth
+  "What `tokens` are worth without a resolver: the plain ones."
+  [tokens]
+  (into {}
+        (map (fn [[nm token]]
+               (let [value (cato/resolved-value tokens token)]
+                 [nm (if (= ::cato/unresolved value) {:unresolved true} (worth-of value))])))
+        tokens))
+
+(defn- shared-value
+  "The plain value a linked library gives a token called `role`, or nil."
+  [libraries role]
+  (some (fn [tokens]
+          (when-let [token (get tokens role)]
+            (let [value (cato/resolved-value tokens token)]
+              (when (not= ::cato/unresolved value) value))))
+        libraries))
+
 (defn- token-plan
-  "→ `{:problem}` or `{:names role → token name, :create [token…]}`."
+  "→ `{:problem}` or `{:names role → token name, :create [token…], :worth
+  token name → what a created token is worth}`."
   [{:keys [file-id data libraries]} recipes given]
   (let [given   (into {} (map (fn [[k v]] [(name k) v])) given)
         own     (tokens-of data)
@@ -107,14 +139,16 @@
 
                   :else
                   (let [{:keys [type default]} (get car/roles role)
-                        value (or (some #(:value (get % role)) shared) default)]
+                        value (or (shared-value shared role)
+                                  (if (= :color type) {:color default :opacity 1} default))]
                     (-> plan
                         (assoc-in [:names role] role)
+                        (assoc-in [:worth role] (worth-of value))
                         (update :create conj
                                 {:name role
                                  :type (get cto/token-type->dtcg-token-type type)
-                                 :value (if (string? value) value (dm/str value))})))))
-              {:names {} :create []}
+                                 :value (dm/str (if (map? value) (:color value) value))})))))
+              {:names {} :create [] :worth {}}
               (into (sorted-set) (mapcat roles-named recipes))))))
 
 ;; --- Mains a file already has
@@ -165,8 +199,21 @@
       {:x (+ 200 (apply max (map :x2 rects)))
        :y (apply min (map :y1 rects))})))
 
+(defn- resolver
+  "The host's token resolver, asked about the file's own tokens only; see
+  Roles."
+  [host made]
+  (fn [active]
+    (let [own    (apply dissoc active (keys made))
+          theirs (cond
+                   (empty? own) {}
+                   (nil? host)  (plain-worth own)
+                   :else        (host own))]
+      (when (some? theirs)
+        (merge theirs (select-keys made (keys active)))))))
+
 (defn- bind-roles
-  [build at id tokens {:keys [names] :as options}]
+  [build at id tokens {:keys [names made] :as options}]
   (if (empty? tokens)
     build
     (then build at
@@ -181,8 +228,14 @@
                                  (sort-by key tokens))}
                           options)
                   failed (some #(when (false? (:ok %)) %) (-> answer :result :results))]
-              (if (some? failed)
+              (cond
+                (some? failed)
                 {:problem (dm/str "token \"" (:token failed) "\": " (:error failed))}
+
+                (contains? answer :pending)
+                (update-in answer [:pending :tokens] #(apply dissoc % (keys made)))
+
+                :else
                 answer))))))
 
 (defn- unfilled
@@ -517,7 +570,11 @@
           plan    (token-plan view all roles)]
       (if (contains? plan :problem)
         plan
-        (let [options (assoc options :lookup recipes :names (:names plan))
+        (let [options (assoc options
+                             :lookup recipes
+                             :names (:names plan)
+                             :made (:worth plan)
+                             :resolve-tokens (resolver (:resolve-tokens options) (:worth plan)))
               build   (-> (cap/start view)
                           (assoc :ids {} :slots {} :mains [] :notes [])
                           (cond-> (seq (:create plan))

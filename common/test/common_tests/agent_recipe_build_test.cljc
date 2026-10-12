@@ -265,6 +265,35 @@
       (t/is (= #{"Button / Primary / Medium" "Label"} (set (keys (:ids result)))))
       (t/is (every? #(some? (shape after %)) (vals (:ids result)))))))
 
+(defn- settle
+  "Runs build_recipe as a host that resolves tokens between runs does: it
+  knows the tokens it resolved by what they are → `[runs answer]`."
+  [data input]
+  (let [resolved (volatile! {})]
+    (loop [runs 1]
+      (let [out (second (build data input (assoc options :resolve-tokens #(get @resolved %))))]
+        (if (and (contains? out :pending) (< runs 5))
+          (do (vswap! resolved assoc (-> out :pending :tokens) (resolve-tokens (-> out :pending :tokens)))
+              (recur (inc runs)))
+          [runs out])))))
+
+(t/deftest a-host-that-resolves-tokens-between-runs-settles
+  (t/testing "a file with no tokens asks the host for nothing"
+    (let [[runs out] (settle data {:recipe "button"})]
+      (t/is (= 1 runs))
+      (t/is (some? (-> out :result :id)))))
+  (t/testing "a file with tokens of its own asks once, and only about those"
+    (let [own        (let [out (cato/create-tokens (view data)
+                                                   {:tokens [{:name "brand.500" :type "color" :value "#ff0000"}
+                                                             {:name "color.primary" :type "color" :value "#00ff00"}]}
+                                                   options)]
+                       (cfc/process-changes data (:changes out)))
+          first-out  (second (build own {:recipe "button"} (assoc options :resolve-tokens (constantly nil))))
+          [runs out] (settle own {:recipe "button"})]
+      (t/is (= #{"brand.500" "color.primary"} (set (keys (-> first-out :pending :tokens)))))
+      (t/is (= 2 runs))
+      (t/is (some? (-> out :result :id))))))
+
 (t/deftest what-the-engine-cannot-do-is-the-hosts-to-settle
   (t/is (some? (:fallback (second (build data {:recipe "button"} (dissoc options :measure-text)))))))
 

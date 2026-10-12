@@ -340,10 +340,19 @@
         (t/is (ctc/main-instance? main))
         (t/is (= "Something happened" (words (child after (str (:id main)) "Message"))))
         (t/is (= "Undo" (words (child after (str (:id main)) "Label"))))))
-    (t/testing "a param that changes structure is not applied to an instance, and the result says so"
-      (let [[after out] (build after {:recipe "banner" :params {:icon true}} options)]
-        (t/is (re-find #"an instance keeps its main's structure" (first (-> out :result :notes))))
-        (t/is (nil? (child after (-> out :result :id) "Icon")))))
+    (t/testing "a param that changes structure makes another component, named for it"
+      (let [[after out] (build after {:recipe "banner" :params {:icon true :message "Hi"}} options)
+            placed      (shape after (-> out :result :id))]
+        (t/is (nil? (-> out :result :notes)))
+        (t/is (= [{:recipe "button" :built false} {:recipe "banner" :built true :component "Banner (icon true)"}]
+                 (mapv #(select-keys % [:recipe :built :component]) (-> out :result :mains))))
+        (t/is (= "Banner (icon true)" (:name (ctkl/get-component after (:component-id placed)))))
+        (t/is (some? (child after (-> out :result :id) "Icon")))
+        (t/is (= "Hi" (words (child after (-> out :result :id) "Message"))))
+        (t/testing "and is built once, like any other"
+          (let [[again out2] (build after {:recipe "banner" :params {:icon true}} options)]
+            (t/is (= [false] (mapv :built (filter #(= "banner" (:recipe %)) (-> out2 :result :mains)))))
+            (t/is (= (count (ctkl/components-seq after)) (count (ctkl/components-seq again))))))))
     (t/is (empty? (errors after)))))
 
 (t/deftest a-plain-recipe-names-its-slots-and-what-repeats

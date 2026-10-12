@@ -212,7 +212,16 @@
     (t/is (re-find #"with.label: \"label\" takes text" (use {:with {:label 3}})))
     (t/is (re-find #"variant.Tone is not a variant axis of \"button\"" (use {:variant {:Tone "Calm"}})))
     (t/is (re-find #"variant.Kind is not one of: Primary, Secondary, Ghost" (use {:variant {:Kind "Loud"}})))
-    (t/is (re-find #"has \"vary\"" (use {:vary []})))
+    (t/testing "a placed recipe may differ at a turn: its variant, what it is handed"
+      (t/is (nil? (problem with-child {:type "recipe" :use "button" :repeat 3
+                                       :vary [{:at 1 :set {:variant {:Kind "Ghost"}}}]})))
+      (t/is (re-find #"vary\[0\].set has \"tokens\""
+                     (problem with-child {:type "recipe" :use "button" :repeat 3
+                                          :vary [{:at 1 :set {:tokens {:fill "color.text"}}}]})))
+      (t/is (= [{"Kind" "Ghost"} nil nil]
+               (mapv :variant (:children (car/expand (with-child minimal {:type "recipe" :use "button" :repeat 3
+                                                                           :vary [{:at 1 :set {:variant {:Kind "Ghost"}}}]})
+                                                     nil nil))))))
     (t/is (re-find #"has \"width\"" (use {:width 10}))))
   (t/testing "without a lookup only the shape of the use is checked"
     (t/is (nil? (car/problem (with-child minimal {:type "recipe" :use "anything" :with {:a 1}})))))

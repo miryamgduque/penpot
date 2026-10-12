@@ -827,15 +827,25 @@
 
 (t/deftest the-build-recipe-tool-names-every-recipe
   (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
-    (t/is (= 22 (count (get-in spec [:input-schema :properties :recipe :enum]))))
+    (t/is (str/includes? (get-in spec [:input-schema :properties :recipe :description]) "pricing-table"))
     (t/is (str/includes? (:description spec) "find_recipes")))
-  (t/is (some #(= "find_recipes" (:name %)) at/tool-specs)))
+  (t/is (some #(= "find_recipes" (:name %)) at/tool-specs))
+  (t/is (some #(= "save_recipe" (:name %)) at/tool-specs)))
 
 (t/deftest the-agent-always-sees-the-recipe-catalog
   (t/is (str/includes? ask/inner-knowledge "## Recipes"))
   (t/is (str/includes? ask/inner-knowledge "- section: data-table (data table); empty-state (empty state)"))
   (t/is (str/includes? ask/inner-knowledge "call find_recipes"))
-  (t/is (str/includes? ask/inner-knowledge "When no recipe fits, build by hand")))
+  (t/is (str/includes? ask/inner-knowledge "When no recipe fits, build by hand"))
+  (t/testing "and the team's own, the ones in use"
+    (t/is (nil? (ask/team-recipes-section {})))
+    (let [section (ask/team-recipes-section
+                   {:team-recipes [{:recipe {:name "news-card" :title "News card" :purpose "A card for news."}}
+                                   {:recipe {:name "button" :title "Button" :purpose "Ours."} :overrides-built-in true}
+                                   {:recipe {:name "old" :title "Old" :purpose "Gone."} :disabled true}]})]
+      (t/is (str/includes? section "- news-card (News card): A card for news."))
+      (t/is (str/includes? section "- button (Button): Ours. — used in place of the built-in one"))
+      (t/is (not (str/includes? section "old"))))))
 
 ;; ---------------------------------------------------------------------------
 ;; group-problem / ungroup-problem

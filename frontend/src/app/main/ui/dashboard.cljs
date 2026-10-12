@@ -23,6 +23,7 @@
    [app.main.store :as st]
    [app.main.ui.components.progress :refer [progress-notification-widget*]]
    [app.main.ui.context :as ctx]
+   [app.main.ui.dashboard.agent-recipes :refer [agent-recipes-page*]]
    [app.main.ui.dashboard.agent-skills :refer [agent-skills-page*]]
    [app.main.ui.dashboard.deleted :refer [deleted-section*]]
    [app.main.ui.dashboard.files :refer [files-section*]]
@@ -158,6 +159,9 @@
 
        :dashboard-agent-skills
        [:> agent-skills-page* {:team team}]
+
+       :dashboard-agent-recipes
+       [:> agent-recipes-page* {:team team}]
 
        :dashboard-settings
        [:> team-settings-page* {:team team :profile profile}]

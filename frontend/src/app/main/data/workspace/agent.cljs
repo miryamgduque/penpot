@@ -272,6 +272,9 @@
               ;; user-toggleable — see agent-skills/inner-knowledge.
               ask/inner-knowledge
               ""
+              ;; the team's own recipes that are in use; stable per team
+              (or (ask/team-recipes-section state) "")
+              ""
               ;; Enabled built-in skills (routing index); details on demand via
               ;; get_design_skills. Empty string when none are enabled.
               ;; with the agent service the harness lists them instead

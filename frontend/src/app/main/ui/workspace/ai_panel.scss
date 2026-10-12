@@ -24,11 +24,12 @@
 //
 //   6px gaps and paddings — the DS spacing scale runs 2·4·8·12·16·20·24·32,
 //     with no 6. `$sz-6` from `ds/_sizes.scss` is the same 0.375rem and stands
-//     in for it; `--sp-xs` (4) or `--sp-s` (8) would move ten gaps.
-//   11px timestamps — the DS type scale starts at 12px. `px2rem(11)` keeps the
-//     history rows' title/time hierarchy, and is the same deliberate deviation
-//     already made for the panel's button labels (see `_agent_button.scss` and
-//     the smaller-label proposal to the DS team, #83).
+//     in for it; `--sp-xs` (4) or `--sp-s` (8) would move every one of them.
+//   11px type — the DS type scale starts at 12px. `px2rem(11)` keeps the
+//     history rows' title/time hierarchy and holds the tool payload below the
+//     chips around it, and is the same deliberate deviation already made for
+//     the panel's button labels (see `_agent_button.scss` and the smaller-label
+//     proposal to the DS team, #83).
 //   The workspace z-index scale — see `.ai-panel` below.
 
 // --- Text scale
@@ -761,7 +762,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
   padding: var(--sp-m);
   overflow-y: auto;
 
@@ -780,7 +781,7 @@
 
 .jump-to-latest {
   position: absolute;
-  inset-block-end: deprecated.$s-8;
+  inset-block-end: var(--sp-s);
   inset-inline-start: 50%;
   transform: translateX(-50%);
   z-index: 1;
@@ -790,8 +791,8 @@
   @include scaled-body-small;
 
   max-width: 85%;
-  padding: deprecated.$s-8 deprecated.$s-12;
-  border-radius: deprecated.$br-8;
+  padding: var(--sp-s) var(--sp-m);
+  border-radius: $br-8;
   background-color: var(--color-background-tertiary);
   color: var(--color-foreground-primary);
   white-space: pre-wrap;
@@ -808,8 +809,8 @@
 .message-images {
   display: flex;
   flex-wrap: wrap;
-  gap: deprecated.$s-4;
-  margin-block-end: deprecated.$s-8;
+  gap: var(--sp-xs);
+  margin-block-end: var(--sp-s);
 
   // `.message` is pre-wrap; without this the flex line inherits the newline
   white-space: normal;
@@ -820,9 +821,9 @@
 }
 
 .message-image {
-  max-inline-size: deprecated.$s-120;
-  max-block-size: deprecated.$s-120;
-  border-radius: deprecated.$br-4;
+  max-inline-size: $sz-120;
+  max-block-size: $sz-120;
+  border-radius: $br-4;
 }
 
 // Rendered assistant markdown. `.message` is `pre-wrap` for plain text; once
@@ -844,7 +845,7 @@
   ol,
   pre,
   blockquote {
-    margin-block: deprecated.$s-8;
+    margin-block: var(--sp-s);
   }
 
   // The global element rule (base.scss `p { font-size: $fs12 }`) beats the
@@ -860,24 +861,24 @@
   h6 {
     @include scaled-body-small;
 
-    margin-block: deprecated.$s-8 deprecated.$s-4;
+    margin-block: var(--sp-s) var(--sp-xs);
     font-weight: 600;
   }
 
   // the global reset (reset.scss:137) drops markers on every list; a rendered
   // markdown list is meaningless without them
   ul {
-    padding-inline-start: deprecated.$s-16;
+    padding-inline-start: var(--sp-l);
     list-style: disc;
   }
 
   ol {
-    padding-inline-start: deprecated.$s-16;
+    padding-inline-start: var(--sp-l);
     list-style: decimal;
   }
 
   li {
-    margin-block: deprecated.$s-2;
+    margin-block: var(--sp-xxs);
   }
 
   a {
@@ -886,8 +887,8 @@
   }
 
   code {
-    padding: 0 deprecated.$s-4;
-    border-radius: deprecated.$br-4;
+    padding: 0 var(--sp-xs);
+    border-radius: $br-4;
     background-color: var(--color-background-quaternary);
     font-family: monospace;
   }
@@ -898,9 +899,9 @@
   // not scoped by this module.
   :global(.shape-ref) {
     display: inline;
-    padding: 0 deprecated.$s-4;
+    padding: 0 var(--sp-xs);
     border: none;
-    border-radius: deprecated.$br-4;
+    border-radius: $br-4;
     background-color: var(--color-background-quaternary);
     color: var(--color-accent-primary);
     font: inherit;
@@ -918,8 +919,8 @@
   pre {
     @extend %new-scrollbar;
 
-    padding: deprecated.$s-8;
-    border-radius: deprecated.$br-4;
+    padding: var(--sp-s);
+    border-radius: $br-4;
     background-color: var(--color-background-primary);
 
     // long lines scroll inside the block rather than widening the panel
@@ -932,8 +933,8 @@
   }
 
   blockquote {
-    padding-inline-start: deprecated.$s-8;
-    border-inline-start: deprecated.$s-2 solid var(--color-background-quaternary);
+    padding-inline-start: var(--sp-s);
+    border-inline-start: $b-2 solid var(--color-background-quaternary);
     color: var(--color-foreground-secondary);
   }
 }
@@ -959,10 +960,10 @@
 
   display: flex;
   align-items: center;
-  gap: deprecated.$s-6;
+  gap: $sz-6;
   align-self: flex-start;
-  padding: deprecated.$s-4 deprecated.$s-8;
-  border-radius: deprecated.$br-8;
+  padding: var(--sp-xs) var(--sp-s);
+  border-radius: $br-8;
   background-color: var(--color-background-tertiary);
   color: var(--color-foreground-secondary);
 }
@@ -992,7 +993,7 @@
   max-width: 100%;
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
 }
 
 .tool-group-summary {
@@ -1009,16 +1010,16 @@
 .tool-group-detail {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-8;
-  padding: deprecated.$s-8;
-  border-radius: deprecated.$br-8;
+  gap: var(--sp-s);
+  padding: var(--sp-s);
+  border-radius: $br-8;
   background-color: var(--color-background-tertiary);
 }
 
 .tool-detail-row {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-4;
+  gap: var(--sp-xs);
 }
 
 .tool-detail-name {
@@ -1032,16 +1033,16 @@
   @extend %new-scrollbar;
 
   margin: 0;
-  padding: deprecated.$s-6;
-  border-radius: deprecated.$br-4;
+  padding: $sz-6;
+  border-radius: $br-4;
   background-color: var(--color-background-primary);
   color: var(--color-foreground-secondary);
   font-family: monospace;
-  font-size: calc(#{deprecated.$fs-11} * var(--ai-font-scale, 1));
+  font-size: calc(#{px2rem(11)} * var(--ai-font-scale, 1));
 
   // a long JSON payload must scroll inside its box, never widen the panel
   overflow: auto;
-  max-height: deprecated.$s-160;
+  max-height: $sz-160;
   white-space: pre;
 }
 
@@ -1070,7 +1071,7 @@
   // wrap the lines, and never let a long round widen the panel
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: deprecated.$s-160;
+  max-height: $sz-160;
   overflow-y: auto;
 }
 
@@ -1083,7 +1084,7 @@
   // Sit the bot just above the composer, on the left.
   align-items: flex-end;
   justify-content: flex-start;
-  padding: deprecated.$s-16;
+  padding: var(--sp-l);
   text-align: center;
   color: var(--color-foreground-secondary);
 }

@@ -696,7 +696,9 @@
     (let [objects (-> build :view :objects)
           root    (parse-uuid (:root build))
           found   (mapv (fn [[k words]]
-                          (let [key (name k)]
+                          ;; a key arrives as a keyword, and one with a "/" in
+                          ;; it would lose what is before it to `name`
+                          (let [key (if (keyword? k) (subs (str k) 1) (str k))]
                             [key (when (string? words) (text-target objects (:ids build) root key)) words]))
                         texts)
           entries (into [] (keep (fn [[_ id words]] (when (some? id) [id words]))) found)

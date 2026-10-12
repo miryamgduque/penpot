@@ -45,6 +45,13 @@
                    (agent-access/agent-enabled? state file-id)))
     state))
 
+;; Every event here that calls a model checks this first, with file scope:
+;; while the agent is off for the user in this file, none of them sends a
+;; request (see `app.main.data.agent-access`).
+(defn- agent-on?
+  [state]
+  (agent-access/agent-enabled? state (:current-file-id state)))
+
 (declare start-watcher)
 (declare stop-watcher)
 
@@ -301,7 +308,7 @@
     ptk/UpdateEvent
     (update [_ state]
       (let [file-id (:current-file-id state)]
-        (if (and file-id (open? state) (seq ids))
+        (if (and file-id (agent-access/panel-open? state) (seq ids))
           (update-in state [:ai-panel file-id :dirty-ids] (fnil into #{}) ids)
           state)))))
 
@@ -334,27 +341,30 @@
   []
   (ptk/reify ::start-watcher
     ptk/WatchEvent
-    (watch [_ _ stream]
-      ;; also stops when the user switches the agent off for their account
-      (let [stopper (rx/filter #(or (ptk/type? ::stop-watcher %)
-                                    (ptk/type? agent-access/turned-off %))
-                               stream)
-            commits (->> stream
-                         (rx/filter (ptk/type? ::dch/commit))
-                         (rx/map deref))]
-        (->> (rx/merge
-              (rx/of (seed-enforced-rules) (refresh-violations))
-              (->> commits
-                   (rx/map (fn [{:keys [redo-changes]}]
-                             (track-dirty (se/touched-shape-ids redo-changes)))))
-              (->> (rx/merge commits
-                             (rx/filter (ptk/type? ::set-enforced-rules) stream))
-                   (rx/debounce watcher-debounce-ms)
-                   (rx/map (fn [_] (refresh-violations))))
-              (->> commits
-                   (rx/debounce tick-idle-ms)
-                   (rx/map (fn [_] (run-semantic-tick)))))
-             (rx/take-until stopper))))))
+    (watch [_ state stream]
+      ;; never starts while the agent is off for the user in this file, and
+      ;; stops when it is switched off (account or file)
+      (if-not (agent-on? state)
+        (rx/empty)
+        (let [stopper (rx/filter #(or (ptk/type? ::stop-watcher %)
+                                      (ptk/type? agent-access/turned-off %))
+                                 stream)
+              commits (->> stream
+                           (rx/filter (ptk/type? ::dch/commit))
+                           (rx/map deref))]
+          (->> (rx/merge
+                (rx/of (seed-enforced-rules) (refresh-violations))
+                (->> commits
+                     (rx/map (fn [{:keys [redo-changes]}]
+                               (track-dirty (se/touched-shape-ids redo-changes)))))
+                (->> (rx/merge commits
+                               (rx/filter (ptk/type? ::set-enforced-rules) stream))
+                     (rx/debounce watcher-debounce-ms)
+                     (rx/map (fn [_] (refresh-violations))))
+                (->> commits
+                     (rx/debounce tick-idle-ms)
+                     (rx/map (fn [_] (run-semantic-tick)))))
+               (rx/take-until stopper)))))))
 
 ;; --- Semantic audit tick (model-backed detection)
 ;;
@@ -491,7 +501,7 @@
             panel    (dm/get-in state [:ai-panel file-id])
             skills   (model-detect-skills state)
             settings (tick-settings state skills)]
-        (if-not (and file-id (open? state) (seq (:dirty-ids panel))
+        (if-not (and file-id (agent-access/panel-open? state) (seq (:dirty-ids panel))
                      (seq skills) settings (not (:tick-busy? panel)))
           (rx/empty)
           (let [objects (dsh/lookup-page-objects state)
@@ -663,7 +673,10 @@
   cancelled turn's history off. `seed` is a resume's cumulative
   `{:rounds :usage}` so the next checkpoint reports whole-turn figures."
   [settings history system stream seed]
-  (let [stopper (rx/filter (ptk/type? ::cancel-turn) stream)
+  ;; switching the agent off stops the turn like a cancel: no more rounds
+  (let [stopper (rx/filter #(or (ptk/type? ::cancel-turn %)
+                                (ptk/type? agent-access/turned-off %))
+                           stream)
         ;; the turn's history as it grows, so a cancel can close it off;
         ;; seeded so it survives an early stop
         latest* (atom history)
@@ -750,69 +763,71 @@
    (ptk/reify ::send-message
      ptk/WatchEvent
      (watch [_ state stream]
-       (let [file-id (:current-file-id state)
-             ;; hygiene runs HERE, at the turn boundary, not between rounds:
-             ;; stubbing old tool results and the size trim both rewrite the
-             ;; history's head, which invalidates the cached prefix — once per
-             ;; turn is the cheap place to pay that (see agent/mark-history-breakpoint)
-             prior   (-> (vec (dm/get-in state [:ai-panel file-id :history]))
-                         (agent/stub-stale-tool-results)
-                         (agent/trim-history))
-             ;; context rides on the user message (the volatile slot), while the
-             ;; system prompt stays a stable, cacheable prefix built from `state`
-             user-msg (cond-> {:role :user :text text :context context}
-                        (seq images) (assoc :images images))
-             system   (agent/build-system-prompt state)]
-         (rx/concat
-          (rx/of (append-message "user" text images)
-                 ;; a new message while a checkpoint is pending supersedes it —
-                 ;; the stored history already contains the paused turn
-                 (set-checkpoint nil)
-                 (set-busy true))
-          ;; first message of a conversation: one cheap tool-less round names
-          ;; the matching playbook and injects it INTO the user message — the
-          ;; method arrives with the task instead of gambling on a fetch (the
-          ;; NYT session ran 133 rounds without one). Any failure degrades to
-          ;; no injection.
-          (->> (if (seq prior) (rx/of {}) (agent/match-playbook state text))
-               (rx/mapcat
-                (fn [{:keys [skill body usage]}]
-                  ;; a matched BUILD playbook on a file with no standing
-                  ;; direction also gets the anti-generic nudge — same
-                  ;; volatile slot, zero extra rounds
-                  (let [nudge    (when skill (agent/direction-nudge state skill))
-                        user-msg (cond-> user-msg
-                                   skill (assoc :playbook {:skill skill :body body})
-                                   nudge (assoc :direction-nudge nudge))]
-                    (when skill (at/note-playbook-loaded!))
-                    (rx/concat
-                     (if usage (rx/of (accumulate-usage usage)) (rx/empty))
-                     (if skill
-                       (rx/of (append-message "note" (dm/str "✦ Playbook loaded: " skill)))
-                       (rx/empty))
-                     (if nudge
-                       (rx/of (append-message "note" "✦ Direction nudge: this file has no foundations yet"))
-                       (rx/empty))
-                     (if-not (agent/compact-due? prior)
-                       (turn-stream settings (conj prior user-msg) system stream nil)
-                       ;; the history outgrew the compaction threshold: one cheap
-                       ;; buffered round rewrites it as [summary + last turn]
-                       ;; before the turn runs. The turn-stream seeds from the
-                       ;; compacted history, so it is what gets stored when the
-                       ;; turn ends — later turns inherit the savings. A
-                       ;; compaction failure (no Anthropic key, provider down)
-                       ;; must never block the user's turn: it degrades to the
-                       ;; uncompacted history, which the trim backstop bounds.
-                       (->> (agent/compact-history prior)
-                            (rx/mapcat
-                             (fn [{:keys [history usage]}]
-                               (rx/concat
-                                (rx/of (accumulate-usage usage)
-                                       (append-message "note" "✦ Conversation compacted to save tokens"))
-                                (turn-stream settings (conj (vec history) user-msg) system stream nil))))
-                            (rx/catch
-                             (fn [_]
-                               (turn-stream settings (conj prior user-msg) system stream nil))))))))))))))))
+       (if-not (agent-on? state)
+         (rx/empty)
+         (let [file-id (:current-file-id state)
+               ;; hygiene runs HERE, at the turn boundary, not between rounds:
+               ;; stubbing old tool results and the size trim both rewrite the
+               ;; history's head, which invalidates the cached prefix — once per
+               ;; turn is the cheap place to pay that (see agent/mark-history-breakpoint)
+               prior   (-> (vec (dm/get-in state [:ai-panel file-id :history]))
+                           (agent/stub-stale-tool-results)
+                           (agent/trim-history))
+               ;; context rides on the user message (the volatile slot), while the
+               ;; system prompt stays a stable, cacheable prefix built from `state`
+               user-msg (cond-> {:role :user :text text :context context}
+                          (seq images) (assoc :images images))
+               system   (agent/build-system-prompt state)]
+           (rx/concat
+            (rx/of (append-message "user" text images)
+                   ;; a new message while a checkpoint is pending supersedes it —
+                   ;; the stored history already contains the paused turn
+                   (set-checkpoint nil)
+                   (set-busy true))
+            ;; first message of a conversation: one cheap tool-less round names
+            ;; the matching playbook and injects it INTO the user message — the
+            ;; method arrives with the task instead of gambling on a fetch (the
+            ;; NYT session ran 133 rounds without one). Any failure degrades to
+            ;; no injection.
+            (->> (if (seq prior) (rx/of {}) (agent/match-playbook state text))
+                 (rx/mapcat
+                  (fn [{:keys [skill body usage]}]
+                    ;; a matched BUILD playbook on a file with no standing
+                    ;; direction also gets the anti-generic nudge — same
+                    ;; volatile slot, zero extra rounds
+                    (let [nudge    (when skill (agent/direction-nudge state skill))
+                          user-msg (cond-> user-msg
+                                     skill (assoc :playbook {:skill skill :body body})
+                                     nudge (assoc :direction-nudge nudge))]
+                      (when skill (at/note-playbook-loaded!))
+                      (rx/concat
+                       (if usage (rx/of (accumulate-usage usage)) (rx/empty))
+                       (if skill
+                         (rx/of (append-message "note" (dm/str "✦ Playbook loaded: " skill)))
+                         (rx/empty))
+                       (if nudge
+                         (rx/of (append-message "note" "✦ Direction nudge: this file has no foundations yet"))
+                         (rx/empty))
+                       (if-not (agent/compact-due? prior)
+                         (turn-stream settings (conj prior user-msg) system stream nil)
+                         ;; the history outgrew the compaction threshold: one cheap
+                         ;; buffered round rewrites it as [summary + last turn]
+                         ;; before the turn runs. The turn-stream seeds from the
+                         ;; compacted history, so it is what gets stored when the
+                         ;; turn ends — later turns inherit the savings. A
+                         ;; compaction failure (no Anthropic key, provider down)
+                         ;; must never block the user's turn: it degrades to the
+                         ;; uncompacted history, which the trim backstop bounds.
+                         (->> (agent/compact-history prior)
+                              (rx/mapcat
+                               (fn [{:keys [history usage]}]
+                                 (rx/concat
+                                  (rx/of (accumulate-usage usage)
+                                         (append-message "note" "✦ Conversation compacted to save tokens"))
+                                  (turn-stream settings (conj (vec history) user-msg) system stream nil))))
+                              (rx/catch
+                               (fn [_]
+                                 (turn-stream settings (conj prior user-msg) system stream nil)))))))))))))))))
 
 (defn continue-turn
   "Resumes the turn paused at the runaway checkpoint (see
@@ -824,16 +839,18 @@
   (ptk/reify ::continue-turn
     ptk/WatchEvent
     (watch [_ state stream]
-      (let [file-id (:current-file-id state)
-            cp      (dm/get-in state [:ai-panel file-id :checkpoint])]
-        (if-not cp
-          (rx/empty)
-          (rx/concat
-           (rx/of (set-checkpoint nil)
-                  (set-busy true))
-           (turn-stream (:settings cp) (:history cp)
-                        (agent/build-system-prompt state) stream
-                        (select-keys cp [:rounds :usage]))))))))
+      (if-not (agent-on? state)
+        (rx/empty)
+        (let [file-id (:current-file-id state)
+              cp      (dm/get-in state [:ai-panel file-id :checkpoint])]
+          (if-not cp
+            (rx/empty)
+            (rx/concat
+             (rx/of (set-checkpoint nil)
+                    (set-busy true))
+             (turn-stream (:settings cp) (:history cp)
+                          (agent/build-system-prompt state) stream
+                          (select-keys cp [:rounds :usage])))))))))
 
 (defn dismiss-checkpoint
   "Declines to continue past the checkpoint. The paused turn's history was
@@ -878,26 +895,28 @@
   (ptk/reify ::summarize-into-new-chat
     ptk/WatchEvent
     (watch [_ state _]
-      (let [file-id (:current-file-id state)
-            history (vec (dm/get-in state [:ai-panel file-id :history]))]
-        (if (empty? history)
-          (rx/of (agent-chats/new-chat))
-          (rx/concat
-           (rx/of (set-busy true)
-                  ;; the old conversation's last word may be a note appended
-                  ;; after its last turn-boundary save — persist before leaving
-                  (agent-chats/persist-chat))
-           (->> (agent/summarize-history history)
-                (rx/mapcat
-                 (fn [{:keys [text usage]}]
-                   (rx/of (agent-chats/new-chat)
-                          ;; after new-chat: the seed belongs to the NEW
-                          ;; conversation, as does the summary round's spend
-                          (store-history (agent/handoff-seed text))
-                          (append-message "note" "✦ Fresh chat — carrying a summary of the previous conversation (the full version stays in your history)")
-                          (accumulate-usage usage)
-                          (set-busy false))))
-                (rx/catch
-                 (fn [_]
-                   (rx/of (append-message "note" "✦ Couldn't summarize — this conversation was left untouched")
-                          (set-busy false)))))))))))
+      (if-not (agent-on? state)
+        (rx/empty)
+        (let [file-id (:current-file-id state)
+              history (vec (dm/get-in state [:ai-panel file-id :history]))]
+          (if (empty? history)
+            (rx/of (agent-chats/new-chat))
+            (rx/concat
+             (rx/of (set-busy true)
+                    ;; the old conversation's last word may be a note appended
+                    ;; after its last turn-boundary save — persist before leaving
+                    (agent-chats/persist-chat))
+             (->> (agent/summarize-history history)
+                  (rx/mapcat
+                   (fn [{:keys [text usage]}]
+                     (rx/of (agent-chats/new-chat)
+                            ;; after new-chat: the seed belongs to the NEW
+                            ;; conversation, as does the summary round's spend
+                            (store-history (agent/handoff-seed text))
+                            (append-message "note" "✦ Fresh chat — carrying a summary of the previous conversation (the full version stays in your history)")
+                            (accumulate-usage usage)
+                            (set-busy false))))
+                  (rx/catch
+                   (fn [_]
+                     (rx/of (append-message "note" "✦ Couldn't summarize — this conversation was left untouched")
+                            (set-busy false))))))))))))

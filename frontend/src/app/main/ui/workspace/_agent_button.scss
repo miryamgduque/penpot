@@ -5,6 +5,7 @@
 // Copyright (c) KALEIDOS INC Sucursal en España SL
 
 @use "ds/_utils.scss" as *;
+@use "ds/_borders.scss" as *;
 
 // Compact labels for DS buttons in the agent UI.
 //
@@ -22,4 +23,14 @@
 // (see `compileSassAll` in frontend/scripts/_helpers.js).
 @mixin compact-label {
   font-size: px2rem(11);
+}
+
+// Focus ring for plain text made focusable (tabindex 0) so its DS tooltip
+// hint is reachable by keyboard: the usage meter and the recorder notes.
+@mixin hint-focus-ring {
+  &:focus-visible {
+    border-radius: $br-4;
+    outline: $b-2 solid var(--color-accent-primary);
+    outline-offset: $b-1;
+  }
 }

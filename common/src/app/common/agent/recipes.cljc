@@ -62,7 +62,6 @@
              :description "End with a button"}
             {:name "actionLabel" :type "text" :default "Open"
              :description "The words on that button"}]
-   :component true
    :tree {:type "board"
           :name "Card"
           :width 320
@@ -80,6 +79,7 @@
                       :tokens {:fill "color.surface-muted"}}
                      {:type "board"
                       :name "Body"
+                      :slot "content"
                       :layout {:type "flex" :dir "column"}
                       :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
                       :tokens {:padding "spacing.lg" :gap "spacing.sm"}
@@ -96,12 +96,6 @@
                                   :layoutChild {:horizontalSizing "fill"}
                                   :tokens {:fill "color.text-muted"
                                            :fontSize "font-size.sm"}}
-                                 {:type "board"
-                                  :name "Content"
-                                  :slot "content"
-                                  :layout {:type "flex" :dir "column"}
-                                  :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
-                                  :tokens {:gap "spacing.sm"}}
                                  {:type "recipe"
                                   :name "Action"
                                   :when {:param "action"}

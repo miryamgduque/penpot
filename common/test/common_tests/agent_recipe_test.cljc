@@ -115,6 +115,8 @@
   (t/is (re-find #"tree.layout has \"gap\"" (problem assoc-in [:tree :layout] {:type "flex" :gap 4})))
   (t/is (re-find #"tree.children\[0\].width is not a number above zero"
                  (problem with-child {:type "rect" :width "wide"})))
+  (t/is (re-find #"has a slot and is a component"
+                 (problem assoc :component true :tree {:type "board" :slot "body"})))
   (t/is (re-find #"two slots called \"body\""
                  (problem assoc-in [:tree :children] [{:type "board" :slot "body"} {:type "board" :slot "body"}])))
   (t/is (re-find #"deeper than 6 levels"
@@ -227,7 +229,7 @@
         full  (car/expand cars/card {:media true :action true :actionLabel "Read"} nil)]
     (t/is (nil? (named plain "Media")))
     (t/is (nil? (named plain "Action")))
-    (t/is (= "content" (:slot (named plain "Content"))))
+    (t/is (= "content" (:slot (named plain "Body"))))
     (t/is (some? (named full "Media")))
     (t/is (= {:type "recipe" :name "Action" :use "button"
               :with {"label" "Read"} :variant {"Kind" "Secondary"}}

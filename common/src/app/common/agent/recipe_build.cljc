@@ -248,6 +248,25 @@
                         (cb/update-shapes [id] #(assoc % :fills []))
                         (caw/redo))})))
 
+(defn- key-of
+  "What a node goes by in `:ids`: its layer name, behind its parent's when
+  the name is not the only one."
+  [build node at {:keys [parent-key dupes]}]
+  (let [nm  (or (:name node) at)
+        ids (:ids build)
+        key (if (and (some? parent-key) (or (contains? dupes nm) (contains? ids nm)))
+              (dm/str parent-key " / " nm)
+              nm)]
+    (if (contains? ids key)
+      (first (remove #(contains? ids %) (map #(dm/str key " #" %) (iterate inc 2))))
+      key)))
+
+(defn- repeated-names
+  [tree]
+  (into #{}
+        (keep (fn [[nm n]] (when (and (some? nm) (> n 1)) nm)))
+        (frequencies (map :name (tree-seq map? :children tree)))))
+
 (declare place-recipe)
 
 (defn- build-node
@@ -267,11 +286,12 @@
                           "text"  #(catx/create-text % (merge input (select-keys node [:text :align])) options)
                           "image" #(cam/insert-image % (assoc input :url (:url node)) options)
                           #(caw/create-shape % (assoc input :type kind) options)))
-            id    (some-> build :last :id parse-uuid)]
+            id    (some-> build :last :id parse-uuid)
+            key   (key-of build node at options)]
         (if (stopped? build)
           build
           (as-> build build
-            (update build :ids assoc (or (:name node) at) (dm/str id))
+            (update build :ids assoc key (dm/str id))
             (cond-> build
               (nil? (:root build)) (assoc :root (dm/str id)))
             (cond-> build
@@ -288,7 +308,8 @@
               (then at #(cal/set-layout-child % (assoc (:layoutChild node) :shapeId (dm/str id)) options)))
             (bind-roles build at id (:tokens node) options)
             (reduce (fn [build [i child]]
-                      (build-node build child id (dm/str at ".children[" i "]") nil options))
+                      (build-node build child id (dm/str at ".children[" i "]") nil
+                                  (assoc options :parent-key key)))
                     build
                     (map-indexed vector (:children node)))))))))
 
@@ -459,11 +480,11 @@
   (let [args   (:with node)
         member (car/member recipe (:variant node))]
     (if-not (component? recipe)
-      (build-node build
-                  (cond-> (car/expand recipe args member)
-                    (some? (:name node))        (assoc :name (:name node))
-                    (some? (:layoutChild node)) (update :layoutChild merge (:layoutChild node)))
-                  parent-id at spot options)
+      (let [tree (cond-> (car/expand recipe args member)
+                   (some? (:name node))        (assoc :name (:name node))
+                   (some? (:layoutChild node)) (update :layoutChild merge (:layoutChild node)))]
+        (build-node build tree parent-id at spot
+                    (update options :dupes (fnil into #{}) (repeated-names tree))))
       (let [main (find-main (:view build) recipe member)]
         (if (nil? main)
           (assoc build :stopped {:problem (dm/str "no main of \"" (:name recipe) "\" to place")} :at at)
@@ -476,7 +497,7 @@
             (if (stopped? build)
               build
               (as-> build build
-                (update build :ids assoc (or (:name node) at) id)
+                (update build :ids assoc (key-of build node at options) id)
                 (cond-> build
                   (nil? (:root build)) (assoc :root id))
                 (cond-> build

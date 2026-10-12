@@ -100,33 +100,11 @@
                       :layout {:type "flex" :dir "row" :alignItems "start" :wrap true}
                       :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
                       :tokens {:gap "spacing.xl"}
-                      :children [{:type "board"
+                      :children [{:type "recipe"
                                   :name "Feature {index}"
                                   :repeat {:param "features"}
-                                  :width 352
-                                  :layout {:type "flex" :dir "column"}
-                                  :layoutChild {:verticalSizing "auto"}
-                                  :tokens {:gap "spacing.sm"}
-                                  :children [{:type "rect"
-                                              :name "Icon"
-                                              :placeholder "icon"
-                                              :width 40
-                                              :height 40
-                                              :tokens {:fill "color.surface-muted"
-                                                       :borderRadius "radius.md"}}
-                                             {:type "text"
-                                              :name "Name"
-                                              :text "Feature {index}"
-                                              :layoutChild {:horizontalSizing "fill"}
-                                              :tokens {:fill "color.text"
-                                                       :fontSize "font-size.lg"
-                                                       :fontWeight "font-weight.bold"}}
-                                             {:type "text"
-                                              :name "Description"
-                                              :text "A line or two about what this does for you."
-                                              :layoutChild {:horizontalSizing "fill"}
-                                              :tokens {:fill "color.text-muted"
-                                                       :fontSize "font-size.sm"}}]}]}]}})
+                                  :use "feature-item"
+                                  :with {:title "Feature {index}"}}]}]}})
 
 (def pricing-table
   {:recipe 1
@@ -159,48 +137,15 @@
                       :layout {:type "flex" :dir "row" :alignItems "stretch"}
                       :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
                       :tokens {:gap "spacing.xl"}
-                      :children [{:type "board"
+                      :children [{:type "recipe"
                                   :name "Plan {index}"
                                   :repeat {:param "plans"}
-                                  :layout {:type "flex" :dir "column"}
-                                  :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
-                                  :tokens {:fill "color.surface"
-                                           :strokeColor "color.border"
-                                           :strokeWidth "border-width.sm"
-                                           :borderRadius "radius.lg"
-                                           :padding "spacing.xl"
-                                           :gap "spacing.lg"}
-                                  :children [{:type "text"
-                                              :name "Plan name"
-                                              :text "Plan {index}"
-                                              :tokens {:fill "color.text"
-                                                       :fontSize "font-size.lg"
-                                                       :fontWeight "font-weight.bold"}}
-                                             {:type "text"
-                                              :name "Price"
-                                              :text "$0"
-                                              :tokens {:fill "color.text"
-                                                       :fontSize "font-size.2xl"
-                                                       :fontWeight "font-weight.bold"}}
-                                             {:type "board"
-                                              :name "Features"
-                                              :layout {:type "flex" :dir "column"}
-                                              :layoutChild {:horizontalSizing "fill"
-                                                            :verticalSizing "auto"}
-                                              :tokens {:gap "spacing.sm"}
-                                              :children [{:type "text"
-                                                          :name "Feature {index}"
-                                                          :repeat {:param "features"}
-                                                          :text "Feature {index}"
-                                                          :layoutChild {:horizontalSizing "fill"}
-                                                          :tokens {:fill "color.text-muted"
-                                                                   :fontSize "font-size.sm"}}]}
-                                             {:type "recipe"
-                                              :name "Choose"
-                                              :use "button"
-                                              :with {:label "Choose plan {index}"}
-                                              :variant {:Kind "Primary"}
-                                              :layoutChild {:horizontalSizing "fill"}}]}]}]}})
+                                  :use "plan-card"
+                                  :with {:name "Plan {index}"
+                                         :cta "Choose plan {index}"
+                                         :features {:param "features"}}
+                                  :vary [{:at 2 :set {:variant {:Emphasis "Featured"}}}]
+                                  :layoutChild {:horizontalSizing "fill"}}]}]}})
 
 (def form
   {:recipe 1
@@ -272,37 +217,18 @@
                    :strokeColor "color.border"
                    :strokeWidth "border-width.sm"
                    :borderRadius "radius.lg"}
-          :children [{:type "board"
+          :children [{:type "recipe"
                       :name "Header"
-                      :layout {:type "flex" :dir "row" :alignItems "center"}
-                      :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
-                      :tokens {:fill "color.surface-muted"
-                               :gap "spacing.lg"
-                               :paddingX "spacing.lg"
-                               :paddingY "spacing.md"}
-                      :children [{:type "text"
-                                  :name "Column {index}"
-                                  :repeat {:param "columns"}
-                                  :text "Column {index}"
-                                  :layoutChild {:horizontalSizing "fill"}
-                                  :tokens {:fill "color.text"
-                                           :fontSize "font-size.sm"
-                                           :fontWeight "font-weight.medium"}}]}
-                     {:type "board"
+                      :use "table-row"
+                      :with {:columns {:param "columns"}}
+                      :variant {:Kind "Header"}
+                      :layoutChild {:horizontalSizing "fill"}}
+                     {:type "recipe"
                       :name "Row {index}"
                       :repeat {:param "rows"}
-                      :layout {:type "flex" :dir "row" :alignItems "center"}
-                      :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
-                      :tokens {:fill "color.surface"
-                               :gap "spacing.lg"
-                               :paddingX "spacing.lg"
-                               :paddingY "spacing.md"}
-                      :children [{:type "text"
-                                  :name "Cell {index}"
-                                  :repeat {:param "columns"}
-                                  :text "Cell"
-                                  :layoutChild {:horizontalSizing "fill"}
-                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}]}})
+                      :use "table-row"
+                      :with {:columns {:param "columns"}}
+                      :layoutChild {:horizontalSizing "fill"}}]}})
 
 (def stat-cards
   {:recipe 1
@@ -319,32 +245,12 @@
           :layout {:type "flex" :dir "row" :alignItems "stretch"}
           :layoutChild {:verticalSizing "auto"}
           :tokens {:gap "spacing.xl"}
-          :children [{:type "board"
+          :children [{:type "recipe"
                       :name "Stat {index}"
                       :repeat {:param "stats"}
-                      :layout {:type "flex" :dir "column" :alignItems "start"}
-                      :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
-                      :tokens {:fill "color.surface"
-                               :strokeColor "color.border"
-                               :strokeWidth "border-width.sm"
-                               :borderRadius "radius.lg"
-                               :padding "spacing.xl"
-                               :gap "spacing.sm"}
-                      :children [{:type "text"
-                                  :name "Label"
-                                  :text "Metric {index}"
-                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}
-                                 {:type "text"
-                                  :name "Value"
-                                  :text "0"
-                                  :tokens {:fill "color.text"
-                                           :fontSize "font-size.xl"
-                                           :fontWeight "font-weight.bold"}}
-                                 {:type "recipe"
-                                  :name "Change"
-                                  :use "badge"
-                                  :with {:label "+0%"}
-                                  :variant {:Tone "Success"}}]}]}})
+                      :use "stat-card"
+                      :with {:label "Metric {index}"}
+                      :layoutChild {:horizontalSizing "fill"}}]}})
 
 (def footer
   {:recipe 1
@@ -386,24 +292,12 @@
                                               :text "What it is, in a line."
                                               :tokens {:fill "color.text-muted"
                                                        :fontSize "font-size.sm"}}]}
-                                 {:type "board"
+                                 {:type "recipe"
                                   :name "Group {index}"
                                   :repeat {:param "columns"}
-                                  :layout {:type "flex" :dir "column"}
-                                  :layoutChild {:horizontalSizing "auto" :verticalSizing "auto"}
-                                  :tokens {:gap "spacing.sm"}
-                                  :children [{:type "text"
-                                              :name "Group name"
-                                              :text "Group {index}"
-                                              :tokens {:fill "color.text"
-                                                       :fontSize "font-size.sm"
-                                                       :fontWeight "font-weight.medium"}}
-                                             {:type "text"
-                                              :name "Link {index}"
-                                              :repeat {:param "links"}
-                                              :text "Link {index}"
-                                              :tokens {:fill "color.text-muted"
-                                                       :fontSize "font-size.sm"}}]}]}
+                                  :use "footer-group"
+                                  :with {:title "Group {index}"
+                                         :links {:param "links"}}}]}
                      {:type "text"
                       :name "Legal"
                       :text "© {brand}. All rights reserved."
@@ -452,4 +346,33 @@
                       :with {:label {:param "actionLabel"}}
                       :variant {:Kind "Primary"}}]}})
 
-(def all [hero feature-grid pricing-table form data-table stat-cards footer empty-state])
+(def footer-group
+  {:recipe 1
+   :name "footer-group"
+   :title "Footer group"
+   :purpose "One group of links in a footer: its name and the links under it."
+   :category "section"
+   :keywords ["footer column" "link list"]
+   :params [{:name "title" :type "text" :default "Group"
+             :description "The group's name"}
+            {:name "links" :type "number" :default 4 :min 1 :max 6
+             :description "How many links"}]
+   :component true
+   :tree {:type "board"
+          :name "Footer group"
+          :layout {:type "flex" :dir "column"}
+          :layoutChild {:horizontalSizing "auto" :verticalSizing "auto"}
+          :tokens {:gap "spacing.sm"}
+          :children [{:type "text"
+                      :name "Group name"
+                      :text "{title}"
+                      :tokens {:fill "color.text"
+                               :fontSize "font-size.sm"
+                               :fontWeight "font-weight.medium"}}
+                     {:type "text"
+                      :name "Link {index}"
+                      :repeat {:param "links"}
+                      :text "Link {index}"
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}})
+
+(def all [hero feature-grid pricing-table form data-table stat-cards footer empty-state footer-group])

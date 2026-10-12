@@ -113,12 +113,11 @@
                                   :text "{subtitle}"
                                   :layoutChild {:horizontalSizing "fill"}
                                   :tokens {:fill "color.text-muted" :fontSize "font-size.xs"}}]}
-                     {:type "rect"
+                     {:type "recipe"
                       :name "Chevron"
                       :placeholder "icon"
-                      :width 12
-                      :height 12
-                      :tokens {:fill "color.text-muted"}}]}})
+                      :use "icon"
+                      :variant {:Size "Small"}}]}})
 
 (def tabs
   {:recipe 1
@@ -140,25 +139,12 @@
                       :layout {:type "flex" :dir "row" :alignItems "end"}
                       :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
                       :tokens {:gap "spacing.xl"}
-                      :children [{:type "board"
+                      :children [{:type "recipe"
                                   :name "Tab {index}"
                                   :repeat {:param "tabs"}
-                                  :layout {:type "flex" :dir "column" :alignItems "center"}
-                                  :layoutChild {:horizontalSizing "auto" :verticalSizing "auto"}
-                                  :tokens {:gap "spacing.sm"}
-                                  :children [{:type "text"
-                                              :name "Label"
-                                              :text "Tab {index}"
-                                              :tokens {:fill "color.text-muted"
-                                                       :fontSize "font-size.sm"
-                                                       :fontWeight "font-weight.medium"}
-                                              :vary [{:at 1 :set {:tokens {:fill "color.primary"}}}]}
-                                             {:type "rect"
-                                              :name "Indicator"
-                                              :height 2
-                                              :layoutChild {:horizontalSizing "fill"}
-                                              :tokens {:fill "color.background"}
-                                              :vary [{:at 1 :set {:tokens {:fill "color.primary"}}}]}]}]}
+                                  :use "tab"
+                                  :with {:label "Tab {index}"}
+                                  :vary [{:at 1 :set {:variant {:State "Current"}}}]}]}
                      {:type "board"
                       :name "Panel"
                       :slot "panel"
@@ -284,4 +270,200 @@
                                   :with {:label {:param "confirmLabel"}}
                                   :variant {:Kind "Primary"}}]}]}})
 
-(def all [card list-item tabs alert modal])
+(def tab
+  {:recipe 1
+   :name "tab"
+   :title "Tab"
+   :purpose "One tab of a row of tabs: its label and the mark that shows it is the open one."
+   :category "container"
+   :keywords ["tab item" "segment"]
+   :params [{:name "label" :type "text" :default "Tab"
+             :description "The words on the tab"}]
+   :variants [{:name "State" :values ["Default" "Current"]}]
+   :tree {:type "board"
+          :name "Tab"
+          :layout {:type "flex" :dir "column" :alignItems "center"}
+          :layoutChild {:horizontalSizing "auto" :verticalSizing "auto"}
+          :tokens {:gap "spacing.sm"}
+          :children [{:type "text"
+                      :name "Label"
+                      :text "{label}"
+                      :tokens {:fill "color.text-muted"
+                               :fontSize "font-size.sm"
+                               :fontWeight "font-weight.medium"}
+                      :vary [{:on {:State "Current"} :set {:tokens {:fill "color.primary"}}}]}
+                     {:type "rect"
+                      :name "Indicator"
+                      :height 2
+                      :layoutChild {:horizontalSizing "fill"}
+                      :tokens {:fill "color.background"}
+                      :vary [{:on {:State "Current"} :set {:tokens {:fill "color.primary"}}}]}]}})
+
+(def plan-card
+  {:recipe 1
+   :name "plan-card"
+   :title "Plan card"
+   :purpose "One plan of a pricing section: its name, its price, what it includes and the button that chooses it."
+   :category "container"
+   :keywords ["tier" "price card"]
+   :params [{:name "name" :type "text" :default "Plan"
+             :description "The plan's name"}
+            {:name "price" :type "text" :default "$0"
+             :description "What it costs"}
+            {:name "cta" :type "text" :default "Choose plan"
+             :description "The words on its button"}
+            {:name "features" :type "number" :default 4 :min 1 :max 8
+             :description "How many lines it lists"}]
+   :variants [{:name "Emphasis" :values ["Default" "Featured"]}]
+   :tree {:type "board"
+          :name "Plan card"
+          :width 340
+          :layout {:type "flex" :dir "column"}
+          :layoutChild {:verticalSizing "auto"}
+          :tokens {:fill "color.surface"
+                   :strokeColor "color.border"
+                   :strokeWidth "border-width.sm"
+                   :borderRadius "radius.lg"
+                   :padding "spacing.xl"
+                   :gap "spacing.lg"}
+          :vary [{:on {:Emphasis "Featured"}
+                  :set {:tokens {:strokeColor "color.primary" :strokeWidth "border-width.md"}}}]
+          :children [{:type "text"
+                      :name "Plan name"
+                      :text "{name}"
+                      :tokens {:fill "color.text"
+                               :fontSize "font-size.lg"
+                               :fontWeight "font-weight.bold"}}
+                     {:type "text"
+                      :name "Price"
+                      :text "{price}"
+                      :tokens {:fill "color.text"
+                               :fontSize "font-size.2xl"
+                               :fontWeight "font-weight.bold"}}
+                     {:type "board"
+                      :name "Features"
+                      :layout {:type "flex" :dir "column"}
+                      :layoutChild {:horizontalSizing "fill" :verticalSizing "auto"}
+                      :tokens {:gap "spacing.sm"}
+                      :children [{:type "text"
+                                  :name "Feature {index}"
+                                  :repeat {:param "features"}
+                                  :text "Feature {index}"
+                                  :layoutChild {:horizontalSizing "fill"}
+                                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}
+                     {:type "recipe"
+                      :name "Choose"
+                      :use "button"
+                      :with {:label {:param "cta"}}
+                      :variant {:Kind "Secondary"}
+                      :vary [{:on {:Emphasis "Featured"} :set {:variant {:Kind "Primary"}}}]
+                      :layoutChild {:horizontalSizing "fill"}}]}})
+
+(def feature-item
+  {:recipe 1
+   :name "feature-item"
+   :title "Feature item"
+   :purpose "One feature of a product: an icon, its name and a line about it."
+   :category "container"
+   :keywords ["benefit" "highlight" "feature"]
+   :params [{:name "title" :type "text" :default "Feature"
+             :description "The feature's name"}
+            {:name "description" :type "text" :default "A line or two about what this does for you."
+             :description "The line about it"}]
+   :component true
+   :tree {:type "board"
+          :name "Feature item"
+          :width 352
+          :layout {:type "flex" :dir "column"}
+          :layoutChild {:verticalSizing "auto"}
+          :tokens {:gap "spacing.sm"}
+          :children [{:type "recipe"
+                      :name "Icon"
+                      :placeholder "icon"
+                      :use "icon"
+                      :variant {:Size "Large" :Tone "Primary"}}
+                     {:type "text"
+                      :name "Name"
+                      :text "{title}"
+                      :layoutChild {:horizontalSizing "fill"}
+                      :tokens {:fill "color.text"
+                               :fontSize "font-size.lg"
+                               :fontWeight "font-weight.bold"}}
+                     {:type "text"
+                      :name "Description"
+                      :text "{description}"
+                      :layoutChild {:horizontalSizing "fill"}
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]}})
+
+(def stat-card
+  {:recipe 1
+   :name "stat-card"
+   :title "Stat card"
+   :purpose "One key number: what it measures, the number, and how it moved."
+   :category "container"
+   :keywords ["metric" "kpi" "number" "figure"]
+   :params [{:name "label" :type "text" :default "Metric"
+             :description "What the number measures"}
+            {:name "value" :type "text" :default "0"
+             :description "The number"}
+            {:name "change" :type "text" :default "+0%"
+             :description "How it moved"}]
+   :component true
+   :tree {:type "board"
+          :name "Stat card"
+          :width 280
+          :layout {:type "flex" :dir "column" :alignItems "start"}
+          :layoutChild {:verticalSizing "auto"}
+          :tokens {:fill "color.surface"
+                   :strokeColor "color.border"
+                   :strokeWidth "border-width.sm"
+                   :borderRadius "radius.lg"
+                   :padding "spacing.xl"
+                   :gap "spacing.sm"}
+          :children [{:type "text"
+                      :name "Label"
+                      :text "{label}"
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}
+                     {:type "text"
+                      :name "Value"
+                      :text "{value}"
+                      :tokens {:fill "color.text"
+                               :fontSize "font-size.xl"
+                               :fontWeight "font-weight.bold"}}
+                     {:type "recipe"
+                      :name "Change"
+                      :use "badge"
+                      :with {:label {:param "change"}}
+                      :variant {:Tone "Success"}}]}})
+
+(def table-row
+  {:recipe 1
+   :name "table-row"
+   :title "Table row"
+   :purpose "One row of a table, or its header: a cell for each column."
+   :category "container"
+   :keywords ["row" "record" "table header" "cells"]
+   :params [{:name "columns" :type "number" :default 4 :min 2 :max 6
+             :description "How many cells"}]
+   :variants [{:name "Kind" :values ["Body" "Header"]}]
+   :tree {:type "board"
+          :name "Table row"
+          :width 960
+          :layout {:type "flex" :dir "row" :alignItems "center"}
+          :layoutChild {:verticalSizing "auto"}
+          :tokens {:fill "color.surface"
+                   :gap "spacing.lg"
+                   :paddingX "spacing.lg"
+                   :paddingY "spacing.md"}
+          :vary [{:on {:Kind "Header"} :set {:tokens {:fill "color.surface-muted"}}}]
+          :children [{:type "text"
+                      :name "Cell {index}"
+                      :repeat {:param "columns"}
+                      :text "Cell"
+                      :layoutChild {:horizontalSizing "fill"}
+                      :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}
+                      :vary [{:on {:Kind "Header"}
+                              :set {:text "Column {index}"
+                                    :tokens {:fill "color.text" :fontWeight "font-weight.medium"}}}]}]}})
+
+(def all [card list-item tabs alert modal tab plan-card feature-item stat-card table-row])

@@ -9,6 +9,7 @@
   describes, with its tokens, its components and its variants."
   (:require
    #?(:clj [clojure.walk :as walk])
+   [app.common.agent.media :as cam]
    [app.common.agent.recipe-build :as carb]
    [app.common.agent.recipe-save :as cars-save]
    [app.common.agent.recipes :as cars]
@@ -148,7 +149,8 @@
     (t/is (= "pricing-table" (first (names {:query "subscription plans"}))))
     (t/is (= "top-bar" (first (names {:query "navbar"}))))
     (t/is (= "stat-cards" (first (names {:query "dashboard kpi"}))))
-    (t/is (= ["bottom-tab-bar" "sidebar" "top-bar"] (names {:category "navigation"})))
+    (t/is (= ["bottom-tab-bar" "nav-item" "nav-link" "sidebar" "tab-bar-item" "top-bar"]
+             (names {:category "navigation"})))
     (t/is (<= (count (names {:query "a"})) 5))
     (t/testing "what build_recipe needs is in the answer"
       (let [button (first (-> (find {:query "button"}) :result :matches))]
@@ -288,16 +290,28 @@
   (let [[after out] (build data {:recipe "pricing-table" :params {:plans 2 :features 3}})
         result      (:result out)
         root        (shape after (:id result))
+        plan-1      (child after (:id result) "Plan 1")
         plan-2      (child after (:id result) "Plan 2")
-        choose      (child after (str (:id plan-2)) "Choose")]
+        choose      (child after (str (:id plan-2)) "Choose")
+        component   (fn [shape] (ctkl/get-component after (:component-id shape)))]
     (t/is (= "Pricing" (:name root)))
     (t/is (not (ctc/instance-head? root)))
-    (t/is (= [{:recipe "button" :built true :members 6}]
-             (mapv #(dissoc % :variantId) (:mains result))))
-    (t/is (= 3 (count (:shapes (child after (str (:id plan-2)) "Features")))))
+    (t/testing "what repeats is one component, built for the structure asked, and each turn an instance"
+      (t/is (= [{:recipe "button" :built true}
+                {:recipe "plan-card" :built true :component "Plan card (features 3)"}]
+               (mapv #(select-keys % [:recipe :built :component]) (:mains result))))
+      (t/is (ctc/instance-head? plan-1))
+      (t/is (ctc/instance-head? plan-2))
+      (t/is (= #{"Plan card (features 3)"} (set (map (comp :name component) [plan-1 plan-2]))))
+      (t/is (= 3 (count (:shapes (child after (str (:id plan-2)) "Features"))))))
+    (t/testing "the turn that differs is a variant"
+      (t/is (= [{"Emphasis" "Default"} {"Emphasis" "Featured"}]
+               (mapv #(into {} (map (juxt :name :value)) (:variant-properties (component %))) [plan-1 plan-2]))))
+    (t/testing "each takes its own words, down to the button inside it"
+      (t/is (= "Plan 2" (words (child after (str (:id plan-2)) "Plan name"))))
+      (t/is (ctc/instance-head? choose))
+      (t/is (= "Choose plan 2" (words (child after (str (:id choose)) "Label")))))
     (t/is (nil? (child after (:id result) "Plan 3")))
-    (t/is (ctc/instance-head? choose))
-    (t/is (= "Choose plan 2" (words (child after (str (:id choose)) "Label"))))
     (t/is (= "color.background" (-> root :applied-tokens :fill)))
     (t/is (empty? (:fills (child after (:id result) "Plans"))))
     (t/is (empty? (errors after)))))
@@ -364,15 +378,8 @@
     (t/is (= {"content" (str (:id body))} (:slots result)))
     (t/is (= "Hello" (words (child after (:id result) "Title"))))
     (t/is (= "Read" (words (child after (str (:id (child after (:id result) "Action"))) "Label")))))
-  (let [[after out] (build data {:recipe "pricing-table" :params {:plans 2 :features 2}})
-        ids         (-> out :result :ids)]
-    (t/is (= #{"Pricing" "Heading" "Plans" "Plan 1" "Plan 2"
-               "Plan 1 / Plan name" "Plan 1 / Price" "Plan 1 / Features" "Plan 1 / Choose"
-               "Plan 1 / Features / Feature 1" "Plan 1 / Features / Feature 2"
-               "Plan 2 / Plan name" "Plan 2 / Price" "Plan 2 / Features" "Plan 2 / Choose"
-               "Plan 2 / Features / Feature 1" "Plan 2 / Features / Feature 2"}
-             (set (keys ids))))
-    (t/is (= "Plan 2" (words (shape after (get ids "Plan 2 / Plan name")))))))
+  (let [[_ out] (build data {:recipe "feature-grid" :params {:features 2}})]
+    (t/is (= #{"Features" "Heading" "Grid" "Feature 1" "Feature 2"} (set (keys (-> out :result :ids)))))))
 
 (t/deftest the-design-rules-hold
   (let [[after out] (build data {:recipe "button"} (assoc options :guard {:enforced? true :allowed #{}}))]
@@ -610,28 +617,33 @@
                                  :texts {"Heading" "Plans for every team"
                                          "Plan 2 / Plan name" "Team"
                                          "Plan 2 / Price" "$12"
-                                         "Plan 2 / Features / Feature 1" "Unlimited projects"
+                                         "Plan 2 / Feature 1" "Unlimited projects"
                                          "Plan 1 / Choose" "Start free"
                                          "Plan 2 / Choose / Label" "Choose Team"
                                          "Plan 9 / Price" "nowhere"}})
         ids         (-> out :result :ids)
-        said        (fn [key] (words (shape after (get ids key))))]
+        said        (fn [key & path]
+                      (words (reduce (fn [shape nm] (child after (str (:id shape)) nm))
+                                     (shape after (get ids key))
+                                     path)))]
     (t/is (= "Plans for every team" (said "Heading")))
-    (t/is (= "Team" (said "Plan 2 / Plan name")))
-    (t/is (= "$12" (said "Plan 2 / Price")))
-    (t/is (= "$0" (said "Plan 1 / Price")))
-    (t/is (= "Unlimited projects" (said "Plan 2 / Features / Feature 1")))
+    (t/testing "inside an instance, by the path of layer names from it"
+      (t/is (= "Team" (said "Plan 2" "Plan name")))
+      (t/is (= "$12" (said "Plan 2" "Price")))
+      (t/is (= "$0" (said "Plan 1" "Price")))
+      (t/is (= "Unlimited projects" (said "Plan 2" "Feature 1"))))
     (t/testing "a layer that places a recipe takes the words of its one text"
-      (t/is (= "Start free" (words (child after (get ids "Plan 1 / Choose") "Label"))))
-      (t/is (= "Choose Team" (words (child after (get ids "Plan 2 / Choose") "Label")))))
+      (t/is (= "Start free" (said "Plan 1" "Choose" "Label")))
+      (t/is (= "Choose Team" (said "Plan 2" "Choose" "Label"))))
     (t/testing "a key that names no text is said, and the rest is built"
       (t/is (= ["Plan 9 / Price"] (-> out :result :textsNotSet :keys)))
       (t/is (some? (-> out :result :id)))))
   (t/testing "keys as they arrive from JSON, as keywords"
     (let [[after out] (build data {:recipe "pricing-table" :params {:plans 2 :features 1}
-                                   :texts {(keyword "Plan 2 / Price") "$12"}})]
+                                   :texts {(keyword "Plan 2 / Price") "$12"}})
+          plan-2      (shape after (get (-> out :result :ids) "Plan 2"))]
       (t/is (nil? (-> out :result :textsNotSet)))
-      (t/is (= "$12" (words (shape after (get (-> out :result :ids) "Plan 2 / Price")))))))
+      (t/is (= "$12" (words (child after (str (:id plan-2)) "Price"))))))
   (t/testing "on an instance, by the layer's name"
     (let [[after out] (build data {:recipe "button" :texts {:Label "Go"}})]
       (t/is (= "Go" (words (child after (-> out :result :id) "Label"))))))
@@ -644,30 +656,98 @@
     (t/is (= {"image" ["Media"]} (-> hero :result :placeholders)))
     (t/is (= {"icon" ["Item 1 / Icon" "Item 2 / Icon"]} (-> sidebar :result :placeholders)))
     (t/testing "inside a component, by layer name on its main"
-      (t/is (nil? (-> item :result :placeholders)))
+      (t/is (= {"icon" ["Chevron"]} (-> item :result :placeholders)))
       (t/is (= ["Chevron"] (:placeholders (some #(when (= "list-item" (:recipe %)) %) (-> item :result :mains))))))
     (t/is (re-find #"this is the start, not the result" (-> hero :result :note))))
   (t/testing "find_recipes says what each text goes by, and what is a placeholder"
     (let [found (fn [nm] (first (-> (cat/run "find_recipes" (view data) {:query nm} options) :result :matches)))]
       (t/is (= ["Heading" "Plan {index} / Plan name" "Plan {index} / Price"
-                "Plan {index} / Features / Feature {index}"]
+                "Plan {index} / Feature {index}" "Plan {index} / Choose"]
                (:texts (found "pricing-table"))))
+      (t/is (= ["Brand" "Item {index}" "Footer text"] (:texts (found "sidebar"))))
       (t/is (= ["Label"] (:texts (found "button"))))
       (t/is (= ["Media"] (:placeholders (found "hero")))))))
 
 (t/deftest many-texts-are-set-in-one-call
-  (let [[built out] (build data {:recipe "pricing-table" :params {:plans 2 :features 1}})
+  (let [[built out] (build data {:recipe "hero"})
         ids         (-> out :result :ids)
         run         (fn [input] (cat/run "set_texts" (view built) input options))
-        answer      (run {:texts [{:shapeId (get ids "Heading") :text "Pricing"}
-                                  {:shapeId (get ids "Plan 1 / Price") :text "$5"}]})
+        answer      (run {:texts [{:shapeId (get ids "Heading") :text "Ship faster"}
+                                  {:shapeId (get ids "Subheading") :text "With less noise."}]})
         after       (cfc/process-changes built (:changes answer))]
     (t/is (= 2 (-> answer :result :set)))
-    (t/is (= "Pricing" (words (get (objects after) (parse-uuid (get ids "Heading"))))))
-    (t/is (= "$5" (words (get (objects after) (parse-uuid (get ids "Plan 1 / Price"))))))
+    (t/is (= "Ship faster" (words (get (objects after) (parse-uuid (get ids "Heading"))))))
+    (t/is (= "With less noise." (words (get (objects after) (parse-uuid (get ids "Subheading"))))))
     (t/testing "all or nothing"
       (let [bad (run {:texts [{:shapeId (get ids "Heading") :text "x"}
-                              {:shapeId (get ids "Plans") :text "y"}]})]
+                              {:shapeId (get ids "Actions") :text "y"}]})]
         (t/is (re-find #"set_texts: texts\[1\]: .*is a frame, not a text shape" (:problem bad)))
         (t/is (nil? (:changes bad)))))
     (t/is (re-find #"pass texts" (:problem (run {}))))))
+
+;; --- Real icons where placeholders are
+
+(def ^:private icon-options
+  (assoc options
+         :parse-svg (fn [body]
+                      (when (= "<svg/>" body)
+                        {:tag :svg :attrs {:width "24" :height "24" :viewBox "0 0 24 24"}
+                         :content [{:tag :path :attrs {:d "M0 0L10 10" :stroke "#000000"} :content []}]}))
+         :resources (into {}
+                          (map (fn [icon] [(cam/icon-svg-url icon (cam/icon-size 20)) {:status 200 :body "<svg/>"}]))
+                          ["lucide:house" "lucide:folder"])))
+
+(defn- set-icons
+  [data input]
+  (let [out (cat/run "set_icons" (view data) input icon-options)]
+    [(if (seq (:changes out)) (cfc/process-changes data (:changes out)) data) out]))
+
+(t/deftest an-instance-that-stands-for-an-icon-is-swapped-for-a-component-of-it
+  (let [[built out]  (build data {:recipe "sidebar" :params {:items 2}})
+        ids          (-> out :result :ids)
+        [after done] (set-icons built {:icons [{:shapeId (get ids "Item 1") :layer "Icon" :icon "lucide:house"}
+                                               {:shapeId (get ids "Item 2") :layer "Icon" :icon "lucide:folder"}]})
+        icons        (filter #(= "Icon" (:path %)) (ctkl/components-seq after))
+        in-item      (fn [key] (some #(when (contains? (set (map :id icons)) (:component-id %)) %)
+                                     (map #(get (objects after) %)
+                                          (:shapes (shape after (get ids key))))))]
+    (t/is (= {"icon" ["Item 1 / Icon" "Item 2 / Icon"]} (-> out :result :placeholders)))
+    (t/is (nil? (:problem done)))
+    (t/is (nil? (-> done :result :error)))
+    (t/is (= ["Icon / house" "Icon / folder"] (-> done :result :componentsCreated)))
+    (t/is (= #{"house" "folder"} (set (map :name icons))))
+    (t/testing "each item now holds an instance of its own icon"
+      (t/is (= "house" (:name (ctkl/get-component after (:component-id (in-item "Item 1"))))))
+      (t/is (= "folder" (:name (ctkl/get-component after (:component-id (in-item "Item 2")))))))
+    (t/testing "the item is still an instance of the same component"
+      (t/is (= (:component-id (shape built (get ids "Item 1")))
+               (:component-id (shape after (get ids "Item 1"))))))
+    (t/testing "an icon the file has is used again, not made again"
+      (let [[built2 out2]  (build after {:recipe "sidebar" :params {:items 1}})
+            [again done2]  (set-icons built2 {:icons [{:shapeId (get (-> out2 :result :ids) "Item 1")
+                                                       :layer "Icon" :icon "lucide:house"}]})]
+        (t/is (nil? (-> done2 :result :componentsCreated)))
+        (t/is (= 2 (count (filter #(= "Icon" (:path %)) (ctkl/components-seq again)))))))
+    (t/is (empty? (errors after)))))
+
+(t/deftest a-plain-box-that-stands-for-an-icon-is-replaced-in-its-place
+  (let [box-id      (uuid/next)
+        with-box    (assoc-in data [:pages-index page-id :objects]
+                              (-> (objects data)
+                                  (assoc box-id (cts/setup-shape {:id box-id :type :rect :name "Logo mark"
+                                                                  :x 0 :y 0 :width 20 :height 20
+                                                                  :parent-id frame-id :frame-id frame-id}))
+                                  (update-in [frame-id :shapes] conj box-id)))
+        [after out] (set-icons with-box {:icons [{:shapeId (str box-id) :icon "lucide:house"}]})
+        placed      (shape after (-> out :result :set first :id))]
+    (t/is (nil? (:problem out)))
+    (t/is (nil? (get (objects after) box-id)))
+    (t/is (= "Logo mark" (:name placed)))
+    (t/is (= frame-id (:parent-id placed)))
+    (t/is (nil? (-> out :result :componentsCreated))))
+  (t/testing "what is wrong is named before anything changes"
+    (let [problem (fn [input] (:problem (second (set-icons data input))))]
+      (t/is (re-find #"pass icons" (problem {})))
+      (t/is (re-find #"icons\[0\]: .*prefix:name" (problem {:icons [{:shapeId (str frame-id) :icon "house"}]})))
+      (t/is (re-find #"icons\[0\]: no shape with that id" (problem {:icons [{:shapeId (str (uuid/next)) :icon "lucide:house"}]})))))
+  (t/is (some? (:fallback (second (set-icons data {:icons [{:shapeId (str frame-id) :icon "lucide:star"}]}))))))

@@ -132,12 +132,11 @@
                   :text "{value}"
                   :layoutChild {:horizontalSizing "fill"}
                   :tokens {:fill "color.text" :fontSize "font-size.sm"}}
-                 {:type "rect"
+                 {:type "recipe"
                   :name "Chevron"
                   :placeholder "icon"
-                  :width 12
-                  :height 12
-                  :tokens {:fill "color.text-muted"}}]
+                  :use "icon"
+                  :variant {:Size "Small"}}]
                 [{:type "board"
                   :name "Menu"
                   :when {:variant "State" :is "Open"}
@@ -295,4 +294,23 @@
                       :vary [{:on {:Size "Small"} :set {:tokens {:fontSize "font-size.xs"}}}
                              {:on {:Size "Large"} :set {:tokens {:fontSize "font-size.lg"}}}]}]}})
 
-(def all [button text-field select choice-control badge avatar])
+(def icon
+  {:recipe 1
+   :name "icon"
+   :title "Icon"
+   :purpose "The place of an icon: a box of its size and tone, which set_icons swaps for a real icon."
+   :category "control"
+   :keywords ["glyph" "symbol" "pictogram" "placeholder"]
+   :variants [{:name "Size" :values ["Small" "Medium" "Large"]}
+              {:name "Tone" :values ["Muted" "Strong" "Primary"]}]
+   :tree {:type "board"
+          :name "Icon"
+          :width 16
+          :height 16
+          :tokens {:fill "color.text-muted" :borderRadius "radius.sm"}
+          :vary [{:on {:Size "Medium"} :set {:width 20 :height 20}}
+                 {:on {:Size "Large"} :set {:width 24 :height 24}}
+                 {:on {:Tone "Strong"} :set {:tokens {:fill "color.text"}}}
+                 {:on {:Tone "Primary"} :set {:tokens {:fill "color.primary"}}}]}})
+
+(def all [button text-field select choice-control badge avatar icon])

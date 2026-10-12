@@ -142,11 +142,24 @@
   [objects libraries recipes shape]
   (when (and (ctc/instance-head? shape) (not (ctc/main-instance? shape)))
     (let [component (ctf/get-component libraries (:component-file shape) (:component-id shape))
+          ;; a component built with params that change its structure is
+          ;; named for them: "Table row (columns 5)"
+          [_ title built] (re-matches #"^(.*?)(?: \((.+)\))?$" (or (:name component) ""))
           recipe    (some (fn [recipe]
-                            (when (and (= (:title recipe) (:name component))
+                            (when (and (= (:title recipe) title)
                                        (or (seq (:variants recipe)) (true? (:component recipe))))
                               recipe))
-                          (vals recipes))]
+                          (vals recipes))
+          kinds     (into {} (map (juxt :name :type)) (:params recipe))
+          shaped    (into {}
+                          (keep (fn [part]
+                                  (when-let [[_ k v] (re-matches #"^(\S+) (.+)$" part)]
+                                    (case (get kinds k)
+                                      "number"  [(keyword k) (parse-double v)]
+                                      "boolean" [(keyword k) (= "true" v)]
+                                      "choice"  [(keyword k) v]
+                                      nil))))
+                          (when built (str/split built #", ")))]
       (when (some? recipe)
         (let [axes    (into {} (map (juxt :name :values)) (:variants recipe))
               variant (into {}
@@ -168,7 +181,7 @@
                             (param-layers recipe))]
           (cond-> {:type "recipe" :name (:name shape) :use (:name recipe)}
             (seq variant) (assoc :variant (into {} (map (fn [[k v]] [(keyword k) v])) variant))
-            (seq with)    (assoc :with with)))))))
+            (seq (merge shaped with)) (assoc :with (merge shaped with))))))))
 
 (defn- node-of
   "→ the run, with the node of shape `id` under `:node`. A run that has a

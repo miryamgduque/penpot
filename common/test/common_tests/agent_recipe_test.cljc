@@ -36,13 +36,37 @@
     (t/is (nil? (car/problem recipe cars/builtin)))))
 
 (t/deftest the-catalog-is-the-one-that-was-planned
-  (t/is (= {"control"    ["button" "text-field" "select" "choice-control" "badge" "avatar"]
-            "container"  ["card" "list-item" "tabs" "alert" "modal"]
-            "navigation" ["top-bar" "sidebar" "bottom-tab-bar"]
-            "section"    ["hero" "feature-grid" "pricing-table" "form" "data-table"
-                          "stat-cards" "footer" "empty-state"]}
-           (update-vals (group-by :category cars/all) #(mapv :name %))))
-  (t/is (= 22 (count cars/builtin))))
+  (let [planned {"control"    ["button" "text-field" "select" "choice-control" "badge" "avatar"]
+                 "container"  ["card" "list-item" "tabs" "alert" "modal"]
+                 "navigation" ["top-bar" "sidebar" "bottom-tab-bar"]
+                 "section"    ["hero" "feature-grid" "pricing-table" "form" "data-table"
+                               "stat-cards" "footer" "empty-state"]}
+        by-kind (update-vals (group-by :category cars/all) #(mapv :name %))]
+    (t/testing "the 22 that were planned, first in each category"
+      (doseq [[category names] planned]
+        (t/is (= names (vec (take (count names) (get by-kind category)))))))
+    (t/testing "and the parts they are made of, each a component of its own"
+      (t/is (= #{"icon" "tab" "plan-card" "feature-item" "stat-card" "table-row"
+                 "nav-link" "nav-item" "tab-bar-item" "footer-group"}
+               (set (remove (set (mapcat val planned)) (keys cars/builtin)))))
+      (doseq [nm ["icon" "tab" "plan-card" "feature-item" "stat-card" "table-row"
+                  "nav-link" "nav-item" "tab-bar-item" "footer-group"]]
+        (let [part (get cars/builtin nm)]
+          (t/is (or (seq (:variants part)) (true? (:component part))) nm))))))
+
+(t/deftest what-repeats-is-a-component-and-the-current-one-a-variant
+  (doseq [[nm part] {"sidebar" "nav-item" "top-bar" "nav-link" "bottom-tab-bar" "tab-bar-item"
+                     "tabs" "tab" "pricing-table" "plan-card" "feature-grid" "feature-item"
+                     "stat-cards" "stat-card" "data-table" "table-row" "footer" "footer-group"}]
+    (t/testing nm
+      (let [repeated (filter :repeat (tree-seq map? :children (:tree (get cars/builtin nm))))]
+        (t/is (seq repeated))
+        (t/is (every? #(= "recipe" (:type %)) repeated))
+        (t/is (contains? (set (map :use repeated)) part)))))
+  (doseq [nm ["sidebar" "top-bar" "bottom-tab-bar" "tabs"]]
+    (t/is (= [{:at 1 :set {:variant {:State "Current"}}}]
+             (:vary (first (filter :repeat (tree-seq map? :children (:tree (get cars/builtin nm)))))))
+          nm)))
 
 (defn- tree-nodes
   [recipe]
@@ -65,8 +89,9 @@
     (t/is (seq (:variants recipe)) (:name recipe))))
 
 (t/deftest sections-use-the-controls-they-show
-  (t/is (= {"hero" ["button"] "feature-grid" [] "pricing-table" ["button"] "form" ["text-field" "button"]
-            "data-table" [] "stat-cards" ["badge"] "footer" [] "empty-state" ["button"]}
+  (t/is (= {"hero" ["button"] "feature-grid" ["feature-item"] "pricing-table" ["plan-card"]
+            "form" ["text-field" "button"] "data-table" ["table-row"] "stat-cards" ["stat-card"]
+            "footer" ["footer-group"] "empty-state" ["button"] "footer-group" []}
            (into {} (map (juxt :name car/uses)) (filter #(= "section" (:category %)) cars/all)))))
 
 (t/deftest the-examples-prove-the-format
@@ -75,11 +100,13 @@
     (t/is (some? (-> cars/button :tree :vary))))
   (t/testing "references to other recipes"
     (t/is (= ["button"] (car/uses cars/card)))
-    (t/is (= ["button"] (car/uses cars/pricing-table))))
-  (t/testing "repetition, also nested"
+    (t/is (= ["plan-card"] (car/uses cars/pricing-table)))
+    (t/is (= ["button"] (car/uses (get cars/builtin "plan-card")))))
+  (t/testing "repetition, also inside what is repeated"
     (let [plan (-> cars/pricing-table :tree :children second :children first)]
       (t/is (= {:param "plans"} (:repeat plan)))
-      (t/is (= {:param "features"} (-> plan :children (nth 2) :children first :repeat))))))
+      (t/is (= {:param "features"}
+               (-> (get cars/builtin "plan-card") :tree :children (nth 2) :children first :repeat))))))
 
 (t/deftest a-valid-recipe-has-no-problem
   (t/is (nil? (car/problem minimal))))
@@ -220,7 +247,7 @@
                                           :vary [{:at 1 :set {:tokens {:fill "color.text"}}}]})))
       (t/is (= [{"Kind" "Ghost"} nil nil]
                (mapv :variant (:children (car/expand (with-child minimal {:type "recipe" :use "button" :repeat 3
-                                                                           :vary [{:at 1 :set {:variant {:Kind "Ghost"}}}]})
+                                                                          :vary [{:at 1 :set {:variant {:Kind "Ghost"}}}]})
                                                      nil nil))))))
     (t/is (re-find #"has \"width\"" (use {:width 10}))))
   (t/testing "without a lookup only the shape of the use is checked"
@@ -295,9 +322,15 @@
         plans (:children (named tree "Plans"))]
     (t/is (= "Plans" (:text (named tree "Heading"))))
     (t/is (= ["Plan 1" "Plan 2"] (mapv :name plans)))
-    (t/is (= ["Feature 1" "Feature 2" "Feature 3"]
-             (mapv :text (:children (named (second plans) "Features")))))
-    (t/is (= {"label" "Choose plan 2"} (:with (named (second plans) "Choose"))))))
+    (t/testing "what a placed recipe is handed is worked out at each turn"
+      (t/is (= {"name" "Plan 2" "cta" "Choose plan 2" "features" 3.0} (:with (second plans))))
+      (t/is (= [nil {"Emphasis" "Featured"}] (mapv :variant plans)))))
+  (t/testing "a repeat inside a repeat counts for itself"
+    (let [tree (car/expand (get cars/builtin "data-table") {:columns 3 :rows 2} nil)
+          card (car/expand (get cars/builtin "plan-card") {:features 2 :name "Team"} {:Emphasis "Featured"})]
+      (t/is (= ["Header" "Row 1" "Row 2"] (mapv :name (:children tree))))
+      (t/is (= ["Feature 1" "Feature 2"] (mapv :text (:children (named card "Features")))))
+      (t/is (= {"Kind" "Primary"} (:variant (named card "Choose")))))))
 
 ;; --- Platform profiles
 
@@ -322,10 +355,10 @@
       (t/is (nil? (car/problem top cars/builtin))))
     (t/testing "a profile holds no tree of its own"
       (t/is (not (re-find #":children|:type \"board\"" (pr-str profiles/ios))))))
-  (t/testing "a layer that repeats is adjusted at every turn"
+  (t/testing "a default of a param reaches what repeats"
     (let [tree (car/expand (car/with-profile (get cars/builtin "bottom-tab-bar") profiles/ios) nil nil)]
       (t/is (= 5 (count (:children tree))))
-      (t/is (= #{28} (set (map :width (filter #(= "Icon" (:name %)) (tree-seq map? :children tree))))))))
+      (t/is (= 393 (:width tree)))))
   (t/testing "a profile picks the variant of a component"
     (t/is (= {"Size" "Small"} (car/profile-variant profiles/web cars/button)))
     (t/is (nil? (car/profile-variant profiles/web cars/card)))))

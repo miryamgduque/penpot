@@ -106,10 +106,12 @@
             asked)))
 
 (defn text-keys
-  "What each text of the recipe's tree goes by in build_recipe's `texts` and
-  `ids`, with `{index}` where a turn of a repeat goes: its layer name, behind
-  its parent's when the name is not the only one."
-  [recipe]
+  "What each text of the recipe's tree goes by in build_recipe's `texts`,
+  with `{index}` where a turn of a repeat goes: its layer name, behind its
+  parent's when the name is not the only one. A layer that places another
+  recipe goes by its own name when that recipe has one text, and stands
+  before each of its texts when it has more. `lookup` is name → recipe."
+  [recipe lookup]
   (let [tree  (:tree recipe)
         names (frequencies (keep :name (tree-seq map? :children tree)))]
     (letfn [(walk [node parent-key repeats]
@@ -120,18 +122,33 @@
                                      (or (> (get names nm 0) 1) (> repeats turns)))
                               (dm/str parent-key " / " nm)
                               nm)]
-                (concat (when (= "text" (:type node)) [key])
-                        (mapcat #(walk % key repeats) (:children node)))))]
+                (cond
+                  (= "text" (:type node))
+                  [key]
+
+                  (= "recipe" (:type node))
+                  (let [inside (some-> (:use node) lookup (text-keys lookup))]
+                    (if (= 1 (count inside))
+                      [key]
+                      (mapv #(dm/str key " / " %) inside)))
+
+                  :else
+                  (mapcat #(walk % key repeats) (:children node)))))]
       (vec (walk tree nil 0)))))
+
+(defn- placeholder-layers
+  "`[kind layer-name]` of each placeholder in the recipe's tree."
+  [recipe]
+  (into [] (comp (filter :placeholder) (filter :name) (map (juxt :placeholder :name)) (distinct))
+        (tree-seq map? :children (:tree recipe))))
 
 (defn- placeholder-names
   [recipe]
-  (into [] (comp (filter :placeholder) (keep :name) (distinct))
-        (tree-seq map? :children (:tree recipe))))
+  (mapv second (placeholder-layers recipe)))
 
 (defn- described
   "A recipe as find_recipes answers it: what to hand build_recipe."
-  [recipe]
+  [recipe lookup]
   (let [slots (into [] (keep :slot) (tree-seq map? :children (:tree recipe)))]
     (cond-> {:name (:name recipe)
              :title (:title recipe)
@@ -143,7 +160,7 @@
                            (:params recipe)))
       (seq (:variants recipe)) (assoc :variants (:variants recipe))
       (seq slots)              (assoc :slots slots)
-      (seq (text-keys recipe)) (assoc :texts (text-keys recipe))
+      (seq (text-keys recipe lookup)) (assoc :texts (text-keys recipe lookup))
       (seq (placeholder-names recipe)) (assoc :placeholders (placeholder-names recipe))
       (seq (car/uses recipe))  (assoc :uses (car/uses recipe)))))
 
@@ -171,7 +188,7 @@
                        (filter (fn [[points _]] (pos? points)))
                        (sort-by (fn [[points recipe]] [(- points) (:name recipe)]))
                        (take (if (empty? asked) 100 max-matches))
-                       (mapv (comp described second)))]
+                       (mapv #(described (second %) (catalog options))))]
         {:changes []
          :result {:matches found
                   :note (if (empty? found)
@@ -349,9 +366,10 @@
       (and (stopped? next) (not (stopped? build))) (assoc :at at))))
 
 (defn- free-spot
-  "Where something new goes on the page: right of everything on it."
+  "Where something new goes on the page: right of everything on it, whatever
+  it is inside of, so that it lands in no board."
   [{:keys [objects]}]
-  (let [rects (keep #(:selrect (get objects %)) (:shapes (get objects uuid/zero)))]
+  (let [rects (keep :selrect (vals (dissoc objects uuid/zero)))]
     (if (empty? rects)
       {:x 0 :y 0}
       {:x (+ 200 (apply max (map :x2 rects)))
@@ -680,9 +698,18 @@
               build
               (as-> build build
                 (let [key (key-of build node at options)]
-                  (cond-> (update build :ids assoc key id)
-                    (some? (:placeholder node))
-                    (update-in [:placeholders (:placeholder node)] (fnil conj []) key)))
+                  (as-> (update build :ids assoc key id) build
+                    (cond-> build
+                      (some? (:placeholder node))
+                      (update-in [:placeholders (:placeholder node)] (fnil conj []) key))
+                    ;; what stands for something else inside the component:
+                    ;; found from this instance by its layer name
+                    (reduce (fn [build [kind layer]]
+                              (update-in build [:placeholders kind] (fnil conj [])
+                                         ;; what the call itself placed needs no name before it
+                                         (if (some? (:name node)) (dm/str key " / " layer) layer)))
+                            build
+                            (placeholder-layers recipe))))
                 (cond-> build
                   (nil? (:root build)) (assoc :root id))
                 (cond-> build

@@ -153,3 +153,35 @@
     (t/is (= 1 (-> (cap/build-tree view {:tree tree}
                                    (assoc (options) :apply-tokens (fn [_ _ _] {:changes [] :result {}})))
                    :result :created)))))
+
+(t/deftest build-tree-makes-a-component-and-places-instances-of-it
+  (let [tree   {:type "board" :name "Layers" :width 240 :height 300
+                :layout {:type "flex" :dir "column"}
+                :children [{:type "board" :name "Layer row" :component true :width 240 :height 28
+                            :layout {:type "flex" :dir "row"}
+                            :children [{:type "text" :name "Label" :text "Layer"}]}
+                           {:type "instance" :of "Layer row" :name "Row hero" :texts {:Label "hero"}}
+                           {:type "instance" :of "Layer row" :name "Row nav" :texts {"Label" "nav"}
+                            :layoutChild {:horizontalSizing "fill"}}]}
+        answer (cap/build-tree view {:tree tree} (options))
+        result (after (:changes answer))
+        ids    (-> answer :result :ids)
+        shape  (fn [nm] (get result (parse-uuid (get ids nm))))
+        label  (fn [nm] (some #(when (= "Label" (:name (get result %))) (get result %))
+                              (:shapes (shape nm))))]
+    (t/is (nil? (-> answer :result :error)))
+    (t/is (= ["Layer row"] (keys (-> answer :result :components))))
+    (t/is (true? (:main-instance (shape "Layer row"))))
+    (t/is (= (:component-id (shape "Layer row")) (:component-id (shape "Row hero")) (:component-id (shape "Row nav"))))
+    (t/is (not (:main-instance (shape "Row hero"))))
+    (t/is (= 3 (count (:shapes (shape "Layers")))))
+    (t/is (= "hero" (txt/content->text (:content (label "Row hero")))))
+    (t/is (= "nav" (txt/content->text (:content (label "Row nav")))))
+    (t/is (= "Layer" (txt/content->text (:content (label "Layer row")))))
+    (t/is (= :fill (:layout-item-h-sizing (shape "Row nav")))))
+  (t/is (re-find #"instance tree.children\[0\] needs `of`"
+                 (:problem (cap/build-tree view {:tree {:type "board" :children [{:type "instance" :of "Nope"}]}} (options)))))
+  (t/is (re-find #"only a board becomes a component"
+                 (:problem (cap/build-tree view {:tree {:type "board" :children [{:type "rect" :name "r" :component true}]}} (options)))))
+  (t/is (re-find #"marked component and needs a `name`"
+                 (:problem (cap/build-tree view {:tree {:type "board" :component true}} (options))))))

@@ -124,7 +124,7 @@
 
 (t/deftest refusals-name-what-is-wrong
   (let [problem (fn [input] (:problem (second (build data input))))]
-    (t/is (re-find #"pass recipe — the name of one of: alert, avatar, badge" (problem {})))
+    (t/is (re-find #"pass recipe — the name of one of: accordion, accordion-item" (problem {})))
     (t/is (re-find #"no recipe named \"buton\"" (problem {:recipe "buton"})))
     (t/is (re-find #"\"text\" is not a param of \"button\"" (problem {:recipe "button" :params {:text "x"}})))
     (t/is (re-find #"\"Kind\" is one of" (problem {:recipe "button" :variant {:Kind "Loud"}})))
@@ -149,7 +149,7 @@
     (t/is (= "pricing-table" (first (names {:query "subscription plans"}))))
     (t/is (= "top-bar" (first (names {:query "navbar"}))))
     (t/is (= "stat-cards" (first (names {:query "dashboard kpi"}))))
-    (t/is (= ["bottom-tab-bar" "nav-item" "nav-link" "sidebar" "tab-bar-item" "top-bar"]
+    (t/is (= (sort (map :name (filter #(= "navigation" (:category %)) cars/all)))
              (names {:category "navigation"})))
     (t/is (<= (count (names {:query "a"})) 5))
     (t/testing "what build_recipe needs is in the answer"

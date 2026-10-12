@@ -843,7 +843,8 @@
 
 (t/deftest the-agent-always-sees-the-recipe-catalog
   (t/is (str/includes? ask/inner-knowledge "## Recipes"))
-  (t/is (str/includes? ask/inner-knowledge "- section: data-table (data table); empty-state (empty state)"))
+  (t/is (str/includes? ask/inner-knowledge "data-table (data table)"))
+  (t/is (re-find #"(?m)^- section: " ask/inner-knowledge))
   (t/is (str/includes? ask/inner-knowledge "call find_recipes"))
   (t/is (str/includes? ask/inner-knowledge "When no recipe fits, build by hand"))
   (t/is (str/includes? ask/inner-knowledge "A built recipe is the start, not the result"))

@@ -834,6 +834,9 @@
   (t/is (some #(= "find_recipes" (:name %)) at/tool-specs))
   (t/is (some #(= "save_recipe" (:name %)) at/tool-specs))
   (t/is (some #(= "set_texts" (:name %)) at/tool-specs))
+  (t/is (some #(= "set_icons" (:name %)) at/tool-specs))
+  (t/is (str/includes? (:description (first (filter #(= "build_tree" (:name %)) at/tool-specs)))
+                       "component: true"))
   (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
     (t/is (some? (get-in spec [:input-schema :properties :texts])))
     (t/is (str/includes? (:description spec) "placeholders"))))
@@ -845,6 +848,8 @@
   (t/is (str/includes? ask/inner-knowledge "When no recipe fits, build by hand"))
   (t/is (str/includes? ask/inner-knowledge "A built recipe is the start, not the result"))
   (t/is (str/includes? ask/inner-knowledge "Recipes are for what is convention"))
+  (t/is (str/includes? ask/inner-knowledge "What repeats is a component; what has states is a variant"))
+  (t/is (str/includes? ask/inner-knowledge "A bespoke screen still has ordinary parts"))
   (t/is (str/includes? ask/inner-knowledge "What a recipe builds is yours to change"))
   (t/testing "and the team's own, the ones in use"
     (t/is (nil? (ask/team-recipes-section {})))

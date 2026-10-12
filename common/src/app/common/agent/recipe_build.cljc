@@ -230,23 +230,31 @@
       (reduce (fn [plan role]
                 (cond
                   (contains? given role)
-                  (assoc-in plan [:names role] (get given role))
+                  (-> plan
+                      (assoc-in [:names role] (get given role))
+                      (assoc-in [:from role] "the token you named"))
 
                   (contains? own role)
-                  (assoc-in plan [:names role] role)
+                  (-> plan
+                      (assoc-in [:names role] role)
+                      (assoc-in [:from role] "the file's token of that name"))
 
                   :else
                   (let [{:keys [type default]} (get car/roles role)
-                        value (or (shared-value shared role)
+                        lent  (shared-value shared role)
+                        value (or lent
                                   (if (= :color type) {:color default :opacity 1} default))]
                     (-> plan
                         (assoc-in [:names role] role)
+                        (assoc-in [:from role] (if (some? lent)
+                                                 "a new token, with the value a linked library gives it now"
+                                                 "a new token, with the role's default"))
                         (assoc-in [:worth role] (worth-of value))
                         (update :create conj
                                 {:name role
                                  :type (get cto/token-type->dtcg-token-type type)
                                  :value (dm/str (if (map? value) (:color value) value))})))))
-              {:names {} :create [] :worth {}}
+              {:names {} :from {} :create [] :worth {}}
               (into (sorted-set) (mapcat roles-named recipes))))))
 
 ;; --- Mains a file already has
@@ -656,10 +664,23 @@
               (some-> (:type parent) name) " — the parent must be a board"))))
 
 (defn- answer
-  [build recipe created]
+  [build recipe created plan]
   (let [stopped (:stopped build)
+        ;; where a role's token came from, when it is neither the file's own
+        ;; token of that name nor a new one with the default (those are in
+        ;; tokensCreated)
+        notable (into {}
+                      (remove (fn [[_ from]] (contains? #{"the file's token of that name"
+                                                         "a new token, with the role's default"}
+                                                       from)))
+                      (:from plan))
         result  (cond-> {:recipe (:name recipe)
                          :ids (:ids build)}
+                  (seq notable) (assoc :roleTokens (into {}
+                                                         (map (fn [[role from]]
+                                                                [role {:token (get-in plan [:names role])
+                                                                       :from from}]))
+                                                         notable))
                   (seq (:slots build)) (assoc :slots (:slots build))
                   (seq (:mains build)) (assoc :mains (:mains build))
                   (seq created)        (assoc :tokensCreated created)
@@ -734,7 +755,7 @@
                         build
                         (place-recipe build found node (some-> parentId parse-uuid)
                                       (:name found) spot options))]
-          (answer build found created))))))
+          (answer build found created plan))))))
 
 (defn build-recipe-needs
   "The images the recipe's tree asks for, when it is a built-in one."

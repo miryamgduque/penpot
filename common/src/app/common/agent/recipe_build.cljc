@@ -671,8 +671,8 @@
         ;; tokensCreated)
         notable (into {}
                       (remove (fn [[_ from]] (contains? #{"the file's token of that name"
-                                                         "a new token, with the role's default"}
-                                                       from)))
+                                                          "a new token, with the role's default"}
+                                                        from)))
                       (:from plan))
         result  (cond-> {:recipe (:name recipe)
                          :ids (:ids build)}

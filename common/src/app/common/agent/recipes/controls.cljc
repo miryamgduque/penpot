@@ -42,6 +42,7 @@
                       :text "{label}"
                       :tokens {:fill "color.on-primary"
                                :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.medium"}
                       :vary [{:on {:Kind "Secondary"} :set {:tokens {:fill "color.text"}}}
                              {:on {:Kind "Ghost"} :set {:tokens {:fill "color.primary"}}}
@@ -62,6 +63,7 @@
                      :text "{label}"
                      :tokens {:fill "color.text"
                               :fontSize "font-size.sm"
+                              :fontFamily "font-family.body"
                               :fontWeight "font-weight.medium"}}
                     {:type "board"
                      :name "Input"
@@ -103,11 +105,13 @@
                   :name "Value"
                   :text "{placeholder}"
                   :layoutChild {:horizontalSizing "fill"}
-                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"}}]
+                  :tokens {:fill "color.text-muted" :fontSize "font-size.sm"
+                           :fontFamily "font-family.body"}}]
                 [{:type "text"
                   :name "Helper"
                   :text "{helper}"
-                  :tokens {:fill "color.text-muted" :fontSize "font-size.xs"}
+                  :tokens {:fill "color.text-muted" :fontSize "font-size.xs"
+                           :fontFamily "font-family.body"}
                   :vary [{:on {:State "Error"} :set {:tokens {:fill "color.danger"}}}]}])})
 
 (def select
@@ -131,7 +135,8 @@
                   :name "Value"
                   :text "{value}"
                   :layoutChild {:horizontalSizing "fill"}
-                  :tokens {:fill "color.text" :fontSize "font-size.sm"}}
+                  :tokens {:fill "color.text" :fontSize "font-size.sm"
+                           :fontFamily "font-family.body"}}
                  {:type "recipe"
                   :name "Chevron"
                   :placeholder "icon"
@@ -159,7 +164,8 @@
                               :children [{:type "text"
                                           :name "Option"
                                           :text "Option {index}"
-                                          :tokens {:fill "color.text" :fontSize "font-size.sm"}}]}]}])})
+                                          :tokens {:fill "color.text" :fontSize "font-size.sm"
+                                                   :fontFamily "font-family.body"}}]}]}])})
 
 (def choice-control
   {:recipe 1
@@ -234,7 +240,8 @@
                      {:type "text"
                       :name "Label"
                       :text "{label}"
-                      :tokens {:fill "color.text" :fontSize "font-size.sm"}}]}})
+                      :tokens {:fill "color.text" :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"}}]}})
 
 (def badge
   {:recipe 1
@@ -263,6 +270,7 @@
                       :text "{label}"
                       :tokens {:fill "color.on-primary"
                                :fontSize "font-size.xs"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.medium"}
                       :vary [{:on {:Tone "Neutral"} :set {:tokens {:fill "color.text"}}}]}]}})
 
@@ -290,6 +298,7 @@
                       :text "{initials}"
                       :tokens {:fill "color.text"
                                :fontSize "font-size.sm"
+                               :fontFamily "font-family.body"
                                :fontWeight "font-weight.medium"}
                       :vary [{:on {:Size "Small"} :set {:tokens {:fontSize "font-size.xs"}}}
                              {:on {:Size "Large"} :set {:tokens {:fontSize "font-size.lg"}}}]}]}})

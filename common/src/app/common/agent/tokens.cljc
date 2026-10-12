@@ -56,6 +56,61 @@
   [name]
   (get cto/dtcg-token-type->token-type name))
 
+(declare number-text)
+
+;; --- Shadows
+;;
+;; A shadow token's value is a list of shadows. It is written with numbers
+;; and the names CSS and the tokens file format use; the library stores
+;; strings under its own keys.
+
+(def ^:private shadow-names
+  {:offsetX :offset-x :x :offset-x :offset-x :offset-x
+   :offsetY :offset-y :y :offset-y :offset-y :offset-y
+   :blur :blur :spread :spread :color :color :inset :inset})
+
+(defn- one-shadow
+  [shadow]
+  (when (map? shadow)
+    (let [shadow (into {} (keep (fn [[k v]] (when-let [k (get shadow-names (keyword k))] [k v]))) shadow)
+          number (fn [k] (let [v (get shadow k 0)]
+                           (cond (number? v) v
+                                 (string? v) (:value (cfo/parse-token-value v)))))
+          parts  (mapv number [:offset-x :offset-y :blur :spread])
+          inset  (get shadow :inset false)]
+      (when (and (every? number? parts)
+                 (not (neg? (nth parts 2)))
+                 (string? (:color shadow))
+                 (boolean? inset))
+        (-> (zipmap [:offset-x :offset-y :blur :spread] (map number-text parts))
+            (assoc :color (:color shadow) :inset inset))))))
+
+(defn shadow-value
+  "A shadow token's value as the library stores it, or nil when it is not a
+  list of shadows: each `{offsetX offsetY blur spread color inset?}`."
+  [value]
+  (when (and (sequential? value) (seq value))
+    (let [shadows (mapv one-shadow value)]
+      (when (every? some? shadows)
+        shadows))))
+
+(defn- css-color
+  "`{:color \"#rrggbb\" :opacity n}` of a hex or an rgb()/rgba() color, or nil."
+  [color]
+  (when (string? color)
+    (let [color (str/trim color)]
+      (if-let [[_ r g b a] (re-matches #"(?i)rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)" color)]
+        (let [hex (fn [n] (let [h #?(:clj (Integer/toHexString (int (min 255 (parse-long n))))
+                                     :cljs (.toString (min 255 (parse-long n)) 16))]
+                            (if (= 1 (count h)) (dm/str "0" h) h)))]
+          {:color (dm/str "#" (hex r) (hex g) (hex b))
+           :opacity (if a (min 1 (parse-double a)) 1)})
+        (if-let [[_ rgb alpha] (re-matches #"(?i)#([0-9a-f]{6})([0-9a-f]{2})" color)]
+          {:color (str/lower (dm/str "#" rgb))
+           :opacity (/ #?(:clj (Integer/parseInt alpha 16) :cljs (js/parseInt alpha 16)) 255.0)}
+          (when-let [hex (caw/normalize-hex color)]
+            {:color hex :opacity 1}))))))
+
 (defn token-problem
   "Why `create_token` cannot author this token, or nil. Pure."
   [{:keys [type name value]}]
@@ -71,6 +126,12 @@
       (nil? t)
       (dm/str "create_token: \"" type "\" is not a token type — use one of: "
               (str/join ", " token-type-names))
+
+      (= :shadow t)
+      (when (nil? (shadow-value value))
+        (dm/str "create_token: a shadow's value is a list of shadows, each "
+                "{offsetX, offsetY, blur, spread, color, inset?} with numbers and a "
+                "color like \"rgba(0, 0, 0, 0.12)\"; blur cannot be negative"))
 
       (contains? composite-token-types t)
       (dm/str "create_token: " type " tokens need a structured value, which this"
@@ -183,10 +244,16 @@
   kept as the one string the model wrote, the workspace reads it as no font at
   all. A reference to another token stays a string."
   [kind value]
-  (if (and (= :font-family kind)
-           (string? value)
-           (empty? (cto/find-token-value-references value)))
+  (cond
+    (and (= :font-family kind)
+         (string? value)
+         (empty? (cto/find-token-value-references value)))
     (cto/split-font-family value)
+
+    (and (= :shadow kind) (sequential? value))
+    (or (shadow-value value) value)
+
+    :else
     value))
 
 (defn- held
@@ -481,6 +548,24 @@
       (= :text-decoration kind)
       (or (when (string? value) (cto/valid-text-decoration value)) ::unresolved)
 
+      ;; a list of families, as the token forms store one
+      (= :font-family kind)
+      (let [families (if (string? value) (cto/split-font-family value) value)]
+        (if (and (sequential? families) (seq families) (every? string? families))
+          (vec families)
+          ::unresolved))
+
+      (= :shadow kind)
+      (let [shadows (some->> (shadow-value value)
+                             (mapv (fn [shadow]
+                                     (when-let [color (css-color (:color shadow))]
+                                       (-> (into {} (map (fn [k] [k (parse-double (get shadow k))]))
+                                                 [:offset-x :offset-y :blur :spread])
+                                           (assoc :color color :inset (:inset shadow)))))))]
+        (if (and (seq shadows) (every? some? shadows))
+          shadows
+          ::unresolved))
+
       :else
       ::unresolved)))
 
@@ -652,7 +737,8 @@
            :offset-x offset-x
            :offset-y offset-y
            :blur blur
-           :color color
+           ;; a resolver answers a CSS color; a shape holds color and opacity
+           :color (if (map? color) color (or (css-color color) {:color "#000000" :opacity 0.2}))
            :spread spread
            :style (if (true? inset) :inner-shadow :drop-shadow)})
         value))

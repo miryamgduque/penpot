@@ -129,7 +129,33 @@
    "font-size.2xl"       {:type :font-size :default 40}
    "font-weight.regular" {:type :font-weight :default 400}
    "font-weight.medium"  {:type :font-weight :default 500}
-   "font-weight.bold"    {:type :font-weight :default 700}})
+   "font-weight.bold"    {:type :font-weight :default 700}
+   "font-family.body"    {:type :font-family :default "Source Sans Pro"}
+   "font-family.heading" {:type :font-family :default "Source Sans Pro"}
+   "shadow.sm"           {:type :shadow
+                          :default [{:offsetX 0 :offsetY 1 :blur 2 :spread 0 :color "rgba(15, 23, 42, 0.08)"}]}
+   "shadow.md"           {:type :shadow
+                          :default [{:offsetX 0 :offsetY 4 :blur 12 :spread 0 :color "rgba(15, 23, 42, 0.12)"}]}
+   "shadow.lg"           {:type :shadow
+                          :default [{:offsetX 0 :offsetY 12 :blur 32 :spread 0 :color "rgba(15, 23, 42, 0.18)"}]}})
+
+(def role-kinds
+  "What the roles are about, and the token type of each kind: the whole
+  vocabulary recipes and token packs share. A pack fills every role; a
+  recipe names only roles."
+  {"color"        :color
+   "spacing"      :spacing
+   "radius"       :border-radius
+   "border-width" :stroke-width
+   "font-size"    :font-size
+   "font-weight"  :font-weight
+   "font-family"  :font-family
+   "shadow"       :shadow})
+
+(defn role-kind
+  "The kind of a role name: what comes before its first dot."
+  [role]
+  (first (str/split role #"\." 2)))
 
 (def shorthands
   "A property of `:tokens` that stands for several a token binds to."

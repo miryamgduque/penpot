@@ -245,13 +245,33 @@
         tokens))
 
 (defn- shared-value
-  "The plain value a linked library gives a token called `role`, or nil."
+  "What a linked library gives a token called `role` → `{:raw :value}`, the
+  value as it holds it and what that is worth, or nil."
   [libraries role]
   (some (fn [tokens]
           (when-let [token (get tokens role)]
             (let [value (cato/resolved-value tokens token)]
-              (when (not= ::cato/unresolved value) value))))
+              (when (not= ::cato/unresolved value)
+                {:raw (:value token) :value value}))))
         libraries))
+
+(defn- default-value
+  "A role's default → `{:raw :value}`."
+  [role {:keys [type default]}]
+  {:raw default
+   :value (case type
+            :color {:color default :opacity 1}
+            (:font-family :shadow) (cato/resolved-value {} {:name role :type type :value (cato/stored-value type default)})
+            default)})
+
+(defn- written
+  "A token's value as `create_tokens` takes it."
+  [type {:keys [raw value]}]
+  (cond
+    (= :shadow type)      raw
+    (= :font-family type) (if (sequential? raw) (str/join ", " raw) raw)
+    (map? value)          (:color value)
+    :else                 (dm/str value)))
 
 (defn- token-plan
   "→ `{:problem}` or `{:names role → token name, :create [token…], :worth
@@ -287,20 +307,19 @@
                       (assoc-in [:from role] "the file's token of that name"))
 
                   :else
-                  (let [{:keys [type default]} (get car/roles role)
+                  (let [{:keys [type] :as entry} (get car/roles role)
                         lent  (shared-value shared role)
-                        value (or lent
-                                  (if (= :color type) {:color default :opacity 1} default))]
+                        found (or lent (default-value role entry))]
                     (-> plan
                         (assoc-in [:names role] role)
                         (assoc-in [:from role] (if (some? lent)
                                                  "a new token, with the value a linked library gives it now"
                                                  "a new token, with the role's default"))
-                        (assoc-in [:worth role] (worth-of value))
+                        (assoc-in [:worth role] (worth-of (:value found)))
                         (update :create conj
                                 {:name role
                                  :type (get cto/token-type->dtcg-token-type type)
-                                 :value (dm/str (if (map? value) (:color value) value))})))))
+                                 :value (written type found)})))))
               {:names {} :from {} :create [] :worth {}}
               (into (sorted-set) (mapcat roles-named recipes))))))
 

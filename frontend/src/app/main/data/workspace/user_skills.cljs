@@ -12,6 +12,7 @@
   `get_design_skills`, and toggle through the US #8 enable/disable machinery — no
   special-casing at the call sites. This ns only fetches and creates."
   (:require
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.workspace.skill-gen :as sg]
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
@@ -67,20 +68,26 @@
   "The creation flow's one action: generate the skill doc from the guided
   answers (through `settings`' provider/model), persist it, and refetch so the
   new card appears. `on-success` gets the created skill (authoritative name/id);
-  `on-error` gets a failure (bad generation or create). Needs a connected model."
+  `on-error` gets a failure (bad generation or create). Needs a connected model.
+  While the agent is off for the user (in the current file, or for the
+  account outside a file) no model is called and `on-error` gets an
+  `:agent-off` failure."
   [settings answers {:keys [on-success on-error] :or {on-success identity on-error identity}}]
   (ptk/reify ::create-from-answers
     ptk/WatchEvent
-    (watch [_ _ _]
-      (->> (sg/generate-skill settings answers)
-           (rx/mapcat (fn [skill] (rp/cmd! :create-skill skill)))
-           ;; Refresh the catalog BEFORE closing the flow, so the list renders
-           ;; with the new skill already present rather than empty-then-populate.
-           (rx/mapcat (fn [created]
-                        (->> (rp/cmd! :get-skills {})
-                             (rx/map (fn [skills]
-                                       (on-success created)
-                                       (user-skills-fetched skills))))))
-           (rx/catch (fn [cause]
-                       (on-error cause)
-                       (rx/empty)))))))
+    (watch [_ state _]
+      (if-not (agent-access/agent-enabled? state (:current-file-id state))
+        (do (on-error (ex-info "The agent is off." {:type :restriction :code :agent-off}))
+            (rx/empty))
+        (->> (sg/generate-skill settings answers)
+             (rx/mapcat (fn [skill] (rp/cmd! :create-skill skill)))
+             ;; Refresh the catalog BEFORE closing the flow, so the list renders
+             ;; with the new skill already present rather than empty-then-populate.
+             (rx/mapcat (fn [created]
+                          (->> (rp/cmd! :get-skills {})
+                               (rx/map (fn [skills]
+                                         (on-success created)
+                                         (user-skills-fetched skills))))))
+             (rx/catch (fn [cause]
+                         (on-error cause)
+                         (rx/empty))))))))

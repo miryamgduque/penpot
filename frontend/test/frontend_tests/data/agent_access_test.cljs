@@ -17,10 +17,11 @@
 (def ^:private file-id (uuid/next))
 
 (def ^:private user-state
-  "A state carrying the context later layers read: profile props and the
-  current file."
+  "A state carrying the context later layers read: profile props, the
+  current file, and that file's setting, loaded as following the account."
   {:profile {:id (uuid/next) :props {}}
-   :current-file-id file-id})
+   :current-file-id file-id
+   :agent-file-state {file-id :account}})
 
 (defn- with-flag
   [on? f]

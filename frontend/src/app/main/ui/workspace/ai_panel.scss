@@ -1358,15 +1358,15 @@
 .eform {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-16;
-  padding: deprecated.$s-12;
-  border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  gap: var(--sp-l);
+  padding: var(--sp-m);
+  border-radius: $br-8;
+  border: $b-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-secondary);
 }
 
 .eform-title {
-  @include deprecated.body-medium-typography;
+  @include t.use-typography("body-medium");
 
   color: var(--color-foreground-primary);
   font-weight: 600;
@@ -1375,11 +1375,11 @@
 .eform-question {
   display: flex;
   flex-direction: column;
-  gap: deprecated.$s-6;
+  gap: $sz-6;
 }
 
 .eform-prompt {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-primary);
   font-weight: 600;
@@ -1391,7 +1391,7 @@
 }
 
 .eform-hint {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-secondary);
 }
@@ -1399,18 +1399,18 @@
 .eform-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: deprecated.$s-6;
+  gap: $sz-6;
 }
 
 .eform-chip {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   display: inline-flex;
   align-items: center;
-  gap: deprecated.$s-4;
-  padding: deprecated.$s-4 deprecated.$s-12;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
-  border-radius: deprecated.$br-12;
+  gap: var(--sp-xs);
+  padding: var(--sp-xs) var(--sp-m);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-12;
   background-color: transparent;
   color: var(--color-foreground-primary);
   text-align: start;
@@ -1440,12 +1440,12 @@
 
 .eform-other-input,
 .eform-textarea {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   width: 100%;
-  padding: deprecated.$s-8;
-  border-radius: deprecated.$br-8;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  padding: var(--sp-s);
+  border-radius: $br-8;
+  border: $b-1 solid var(--color-background-quaternary);
   background-color: var(--color-background-primary);
   color: var(--color-foreground-primary);
 
@@ -1466,11 +1466,11 @@
 .eform-actions {
   display: flex;
   align-items: center;
-  gap: deprecated.$s-8;
+  gap: var(--sp-s);
 }
 
 .eform-pending-hint {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
   color: var(--color-foreground-secondary);
 }
@@ -1480,7 +1480,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: deprecated.$s-6;
+  gap: $sz-6;
 }
 
 .eform-thumb {
@@ -1488,19 +1488,19 @@
 }
 
 .eform-thumb-img {
-  inline-size: 48px;
-  block-size: 48px;
+  inline-size: $sz-48;
+  block-size: $sz-48;
   object-fit: cover;
-  border-radius: deprecated.$br-4;
-  border: deprecated.$s-1 solid var(--color-background-quaternary);
+  border-radius: $br-4;
+  border: $b-1 solid var(--color-background-quaternary);
 }
 
 .eform-thumb-remove {
   position: absolute;
-  inset-block-start: calc(-1 * deprecated.$s-6);
-  inset-inline-end: calc(-1 * deprecated.$s-6);
-  inline-size: deprecated.$s-16;
-  block-size: deprecated.$s-16;
+  inset-block-start: calc(-1 * #{$sz-6});
+  inset-inline-end: calc(-1 * #{$sz-6});
+  inline-size: $sz-16;
+  block-size: $sz-16;
   border: none;
   border-radius: 50%;
   background-color: var(--color-background-quaternary);

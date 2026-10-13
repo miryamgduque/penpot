@@ -15,6 +15,7 @@
   supplies the name, label, category (classified into an existing one) and the
   playbook `body`. `reactive` is On-demand / Observer (US #14) — user-chosen too."
   (:require
+   [app.main.data.agent-access :as agent-access]
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
@@ -132,9 +133,10 @@
   returns an observable of the parsed skill map, or errors with a retryable
   ex-info when the model reply can't be parsed into a usable skill."
   [settings answers]
-  (->> (rp/cmd! :ai-agent-round
-                {:provider (:provider settings)
-                 :payload (generation-body settings answers)})
+  (->> (agent-access/guard-model-call
+        #(rp/cmd! :ai-agent-round
+                  {:provider (:provider settings)
+                   :payload (generation-body settings answers)}))
        (rx/map (fn [{:keys [body]}]
                  (let [text (extract-text (:provider settings) body)]
                    (or (parse-generation answers text)

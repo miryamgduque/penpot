@@ -837,7 +837,7 @@
   (t/is (some #(= "set_icons" (:name %)) at/tool-specs))
   (t/is (some #(= "critique_design" (:name %)) at/tool-specs))
   (doseq [tool ["list_token_packs" "generate_token_pack" "apply_token_pack"
-                "list_shared_libraries" "link_library"]]
+                "list_shared_libraries" "link_library" "reapply_tokens"]]
     (t/is (some #(= tool (:name %)) at/tool-specs) tool))
   (t/is (str/includes? ask/inner-knowledge "With no system, propose one first and wait"))
   (t/is (str/includes? ask/inner-knowledge "do not ask again in this conversation"))

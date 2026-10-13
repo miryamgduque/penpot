@@ -730,6 +730,15 @@
                                              :description "only after the user chose, in a file that has tokens"}}
                    :required []}}
 
+   {:name "reapply_tokens"
+    :description
+    (str "Gives every shape bound to a token the value the token has now, on "
+         "every page. Token changes and theme switches already do this for "
+         "what they change; use this when values have drifted from their "
+         "tokens — above all after a library update, which writes the "
+         "library's values back on the copies of its components.")
+    :input-schema {:type "object" :properties {}}}
+
    {:name "list_shared_libraries"
     :description
     (str "The shared libraries of this file's team: each with its name, "
@@ -1342,7 +1351,7 @@
          ;; server only: there is no second implementation in the workspace
          ("build_recipe" "find_recipes" "save_recipe" "set_texts" "set_icons" "critique_design"
                          "list_token_packs" "generate_token_pack" "apply_token_pack"
-                         "list_shared_libraries" "link_library")
+                         "list_shared_libraries" "link_library" "reapply_tokens")
          (rx/of {:error (str name " runs on the server, and the server could not "
                              "run it here. Build with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)

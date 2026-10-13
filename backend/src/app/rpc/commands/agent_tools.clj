@@ -19,6 +19,7 @@
   (:require
    [app.binfile.common :as bfc]
    [app.common.agent.read :as car]
+   [app.common.agent.recipe :as car-roles]
    [app.common.agent.recipe-save :as cars-save]
    [app.common.agent.recipes :as cars]
    [app.common.agent.tools :as cat]
@@ -405,6 +406,11 @@
       (cond-> {:components (count names)
                :componentNames (vec (take max-component-names names))
                :tokens (count (some-> (:tokens-lib data) ctob/get-all-tokens-map))
+               ;; how much of it speaks the roles: what a token pack, or this
+               ;; file's own tokens, can restyle in its components
+               :roleTokens (count (filter #(contains? car-roles/roles %)
+                                          (keys (some-> (:tokens-lib data) ctob/get-all-tokens-map))))
+               :roles (count car-roles/roles)
                :colors (count (:colors data))
                :typographies (count (:typographies data))}
         (< max-component-names (count names))
@@ -427,7 +433,11 @@
 
              (some :linked found)
              (str "a linked library is the design system to build on: use its components "
-                  "(read_design lists them, create_instance places one) before any recipe")
+                  "(read_design lists them, create_instance places one) before any recipe. "
+                  "`roleTokens` of `roles` says how much of a library is named as the token roles: "
+                  "with most of them, this file's tokens and themes restyle its components too; "
+                  "with few or none, its components keep the library's look whatever this file's "
+                  "theme — say so to the user rather than promise a restyle")
 
              :else
              (str "none is linked to this file. If one fits, PROPOSE linking it — name it and say "

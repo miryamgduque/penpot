@@ -552,6 +552,8 @@
         (t/is (= [(str (:id library))] (mapv :fileId (:libraries out))))
         (t/is (= [false] (mapv :linked (:libraries out))))
         (t/is (= 0 (-> out :libraries first :components)))
+        (t/is (= 0 (-> out :libraries first :roleTokens)))
+        (t/is (pos? (-> out :libraries first :roles)))
         (t/is (re-find #"only after the user says yes" (:note out)))))
     (t/testing "without the user's yes nothing is linked"
       (let [out (run-tool! token "link_library" :input {:fileId (str (:id library))})]

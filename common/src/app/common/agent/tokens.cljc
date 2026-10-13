@@ -1019,18 +1019,15 @@
           names
           (recur more))))))
 
-(defn- page-rebind
-  "The changes that give every token-bound shape of a page the value its
-  tokens have now → the changes, or `{:fallback}`. With `names`, only what
-  is bound to those tokens."
-  [page-id objects active resolved names engine]
+(defn- page-rebind*
+  [page-id objects active resolved names only engine]
   ;; shapes are written together by token and properties: one layout pass for
   ;; all the shapes a token sizes, not one for each. And paint — fills,
   ;; strokes, corners, shadows — moves nothing, so all of it goes in one pass
   ;; over the page: a switch of theme is mostly paint.
   (let [groups (reduce
                 (fn [groups [id shape]]
-                  (->> (:applied-tokens shape)
+                  (->> (when (or (nil? only) (contains? only id)) (:applied-tokens shape))
                        (filter (fn [[_ token-name]] (or (nil? names) (contains? names token-name))))
                        (group-by val)
                        (reduce (fn [groups [token-name entries]]
@@ -1064,6 +1061,15 @@
                                    (get paints (:id shape))))
                          quiet))
      (remove paint? valued))))
+
+(defn- page-rebind
+  "The changes that give every token-bound shape of a page the value its
+  tokens have now → the changes, or `{:fallback}`. With `names`, only what
+  is bound to those tokens."
+  ([page-id objects active resolved names engine]
+   (page-rebind page-id objects active resolved names nil engine))
+  ([page-id objects active resolved names only engine]
+   (page-rebind* page-id objects active resolved names only engine)))
 
 (defn rebind-pages
   "After `made`, changes to the tokens ready to send: gives the shapes bound
@@ -1109,6 +1115,54 @@
             (if (map? out)
               out
               {:changes (caw/compact out) :shapes (transduce (map :shapes) + pages)})))))))
+
+(defn rebind-shapes
+  "Gives the shapes `ids` of a page the values the file's tokens have now,
+  whatever they held → `{:changes}`, `{:pending}`, `{:fallback}`, or nil
+  when none of them is bound to a token the file has."
+  [data page-id objects ids engine]
+  (let [active (some-> (:tokens-lib data) ctob/get-tokens-in-active-sets)
+        ids    (into #{}
+                     (filter (fn [id] (some #(contains? active %) (vals (:applied-tokens (get objects id))))))
+                     ids)]
+    (when (seq ids)
+      (let [{:keys [resolved pending]} (worth active engine)]
+        (if (some? pending)
+          {:pending pending}
+          (let [changes (page-rebind page-id objects active resolved nil ids engine)]
+            (if (contains? changes :fallback)
+              changes
+              {:changes (caw/compact (caw/redo changes)) :shapes (count ids)})))))))
+
+(defn reapply-tokens
+  "reapply_tokens: gives every shape bound to a token the value the token
+  has now, on every page. For when values drifted from their tokens: after
+  a library update wrote the library's values back on its copies."
+  [{:keys [data fonts]} _ engine]
+  (let [engine (assoc engine :fonts fonts)
+        active (some-> (:tokens-lib data) ctob/get-tokens-in-active-sets)]
+    (if (empty? active)
+      {:problem "reapply_tokens: this file has no tokens that are on"}
+      (let [{:keys [resolved pending]} (worth active engine)]
+        (if (some? pending)
+          {:pending pending}
+          (let [out (reduce
+                     (fn [{:keys [changes shapes]} page-id]
+                       (let [objects (get-in data [:pages-index page-id :objects])
+                             bound   (count (filter #(seq (:applied-tokens %)) (vals objects)))
+                             page    (when (pos? bound) (page-rebind page-id objects active resolved nil engine))]
+                         (cond
+                           (nil? page)                (cond-> {:changes changes :shapes shapes})
+                           (contains? page :fallback) (reduced page)
+                           :else                      {:changes (caw/then-changes changes (caw/redo page))
+                                                       :shapes (+ shapes bound)})))
+                     {:changes (caw/redo (library-changes data)) :shapes 0}
+                     (:pages data))]
+            (if (contains? out :fallback)
+              out
+              {:changes (caw/compact (:changes out))
+               :result {:restyled (:shapes out)
+                        :note "every bound shape has its token's value again — verify with render_board"}})))))))
 
 (defn- follow
   "The answer of a tool that wrote tokens with `made`. When it gave the

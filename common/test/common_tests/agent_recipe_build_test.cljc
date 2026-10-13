@@ -622,6 +622,21 @@
       (t/is (= file-id (:component-file (copy placed))))
       (t/is (= "color.primary" (-> (copy placed) :applied-tokens :fill)))
       (t/is (= "#2563eb" (fill placed))))
+    (t/testing "placed in a file that has tokens of those names, it has the file's values at once"
+      (let [[themed _]  (run other "apply_token_pack" {:pack "bold"})
+            [placed' o] (run themed "create_instance"
+                             {:componentId (-> button :members first :componentId) :fileId (str file-id) :x 0 :y 0})
+            copy'       (get-in placed' [:pages-index other-page :objects (parse-uuid (-> o :result :shapeId))])]
+        (t/is (= "#4f2bff" (-> copy' :fills first :fill-color)))
+        (t/is (= file-id (:component-file copy')))
+        (t/is (empty? (:touched copy')))
+        (t/testing "and after its values drifted, reapply_tokens gives them back"
+          (let [drifted (assoc-in placed' [:pages-index other-page :objects (:id copy') :fills]
+                                  (:fills (copy placed)))
+                [back o] (run drifted "reapply_tokens" {})]
+            (t/is (= "#2563eb" (-> (get-in drifted [:pages-index other-page :objects (:id copy')]) :fills first :fill-color)))
+            (t/is (= "#4f2bff" (-> (get-in back [:pages-index other-page :objects (:id copy')]) :fills first :fill-color)))
+            (t/is (pos? (-> o :result :restyled)))))))
     (t/testing "the library's tokens can be taken as the file's own, themes and all"
       (let [themed-library (cfc/process-changes library (:changes (cat/run "apply_token_pack" (view library) {:pack "soft" :onExisting "replace"} options)))
             view-with      (fn [data] (assoc-in (view-of data) [:libraries file-id :data] themed-library))

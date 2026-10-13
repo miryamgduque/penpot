@@ -2802,6 +2802,69 @@ msgstr "Images"
 msgid "integrations.ai-provider.models.vision-hint"
 msgstr "This model can read images you attach in the agent chat."
 
+msgid "integrations.ai-endpoint.hint"
+msgstr "Run by your organisation"
+
+msgid "integrations.ai-endpoint.use"
+msgstr "Use this endpoint"
+
+msgid "integrations.ai-endpoint.status.in-use"
+msgstr "In use"
+
+msgid "integrations.ai-endpoint.admin.title"
+msgstr "Model endpoints of this instance"
+
+msgid "integrations.ai-endpoint.admin.description"
+msgstr "Register the models your organisation runs itself: an address that speaks the OpenAI-compatible protocol, and the models it serves. Everyone on this instance can then use them; only administrators can add an address."
+
+msgid "integrations.ai-endpoint.admin.name"
+msgstr "Name"
+
+msgid "integrations.ai-endpoint.admin.address"
+msgstr "Address"
+
+msgid "integrations.ai-endpoint.admin.address-placeholder"
+msgstr "http://models.internal:11434/v1"
+
+msgid "integrations.ai-endpoint.admin.requires-key"
+msgstr "Each user brings a key of their own"
+
+msgid "integrations.ai-endpoint.admin.models-hint"
+msgstr "The models it serves. Tick what each one can do; the agent needs tool use, and sends images only to models that read them."
+
+msgid "integrations.ai-endpoint.admin.model-id"
+msgstr "Model id"
+
+msgid "integrations.ai-endpoint.admin.context"
+msgstr "Context, in tokens"
+
+msgid "integrations.ai-endpoint.admin.tools"
+msgstr "Tool use"
+
+msgid "integrations.ai-endpoint.admin.add-model"
+msgstr "Add a model"
+
+msgid "integrations.ai-endpoint.admin.save"
+msgstr "Register endpoint"
+
+msgid "integrations.ai-endpoint.admin.remove"
+msgstr "Remove %s"
+
+msgid "integrations.ai-endpoint.error.address"
+msgstr "The address has to be an http or https URL."
+
+msgid "integrations.ai-endpoint.error.name"
+msgstr "Another endpoint has that name."
+
+msgid "integrations.ai-endpoint.error.models"
+msgstr "Two models cannot have the same id."
+
+msgid "integrations.ai-endpoint.error.limit"
+msgstr "This instance has as many endpoints as it can hold."
+
+msgid "integrations.ai-endpoint.error.generic"
+msgstr "The endpoint could not be registered."
+
 msgid "integrations.ai-provider.helper.title"
 msgstr "Helper model"
 

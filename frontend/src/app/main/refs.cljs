@@ -854,6 +854,9 @@
 (def ai-model-catalog
   (l/derived :ai-model-catalog st/state))
 
+(def ai-endpoints
+  (l/derived :ai-endpoints st/state))
+
 (def agent-mcp-servers
   (l/derived :agent-mcp-servers st/state))
 

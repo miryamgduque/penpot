@@ -107,6 +107,15 @@
                                  :propagate (engine (atom []))})]
       (t/is (some? (:changes out))))))
 
+(t/deftest create-shape-refuses-a-fill-that-is-not-a-color
+  ;; a token's name written as a fill made a shape the engine could not take
+  (let [run #(caw/create-shape view (merge {:type "rect" :x 0 :y 0 :width 10 :height 10} %)
+                               {:guard no-guard :propagate (engine (atom []))})]
+    (t/is (re-find #"\"color.bg.default\" is not a color" (:problem (run {:fill "color.bg.default"}))))
+    (t/is (re-find #"\"brand\" is not a color" (:problem (run {:fill {:type "solid" :color "brand"}}))))
+    (t/is (nil? (:problem (run {:fill "#6366f1"}))))
+    (t/is (nil? (:problem (run {:fill {:type "solid" :color "#6366f1"}}))))))
+
 (t/deftest create-shape-in-a-grid-gets-a-cell-and-flows-into-it
   (let [calls (atom [])
         out   (caw/create-shape view {:type "rect" :x 0 :y 0 :width 10 :height 10 :parentId (str grid-id)}

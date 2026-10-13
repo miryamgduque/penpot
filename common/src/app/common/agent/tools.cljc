@@ -13,6 +13,7 @@
   (the token-only-colors state) and the `:propagate` engine. A tool answers as
   described in `app.common.agent.write`."
   (:require
+   [app.common.agent.bind :as cab]
    [app.common.agent.components :as cac]
    [app.common.agent.compose :as cap]
    [app.common.agent.document :as cad]
@@ -119,8 +120,18 @@
     (when-let [message (some #(caw/color-problem guard %) (colors input))]
       {:problem message :rule caw/color-rule})))
 
+(def ^:private drawing-tools
+  "The tools that write values on shapes by hand."
+  #{"create_shape" "modify_shape" "update_shapes" "build_tree" "create_text" "set_layout"})
+
 (defn run
-  "Runs `tool`, unless a design rule refuses the call."
+  "Runs `tool`, unless a design rule refuses the call. What a drawing tool
+  wrote that is exactly a role token's value is bound to that role, unless
+  the call says to keep its values as written."
   [tool view input options]
   (or (rule-problem tool input (:guard options))
-      ((get tools tool) view input options)))
+      (let [answer ((get tools tool) view input options)]
+        (if (and (contains? drawing-tools tool)
+                 (not (true? (:keepLiterals input))))
+          (cab/with-roles view answer)
+          answer))))

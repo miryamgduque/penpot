@@ -18,6 +18,7 @@
    [app.common.data.macros :as dm]
    [app.common.uuid :as uuid]
    [app.config :as cf]
+   [app.main.data.ai-providers :as dai]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.session-actor :as sa]
@@ -382,7 +383,8 @@
   data-side twin of the panel's `provider-pool`."
   [state]
   (vec (for [[_ status] (:ai-providers state)
-             model (:enabled-models status)]
+             model (:enabled-models status)
+             :when (dai/selectable? (:provider status) model)]
          {:provider (:provider status) :model model})))
 
 (defn- tick-settings

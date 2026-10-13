@@ -180,7 +180,9 @@
   model the user enabled."
   [providers]
   (vec (for [[_ status] providers
-             model (:enabled-models status)]
+             model (:enabled-models status)
+             ;; a model that cannot call tools cannot be chosen for the agent
+             :when (dai/selectable? (:provider status) model)]
          {:provider (:provider status) :model model})))
 
 (defn- model-key

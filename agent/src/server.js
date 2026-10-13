@@ -350,6 +350,8 @@ export async function createAgentServer(options = {}) {
             model,
             declared,
             side,
+            // whether the model of this turn reads images: the critic runs on it
+            sees: harness.capabilities === undefined || harness.capabilities(provider, model).vision === true,
             fetchPage: (url) =>
               runBackendTool(backendUri, turnToken, { name: "fetch_web_page", input: { url } }, "{}", signal),
             // by the exporter when no workspace is connected, else by the

@@ -317,6 +317,74 @@ test("images reach the model from the user message and from a tool result", asyn
   }
 });
 
+test("a model that reads no images is sent none, and is told what it did not see", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { describe } = await import("../src/catalog.js");
+  const home = await mkdtemp(join(tmpdir(), "agent-attachments-"));
+  for (const vision of [false, null]) {
+    const fake = await startFakeAnthropic((_req, n) => (n === 0 ? { tool: { name: "create_shape", input: { type: "rect" } } } : { text: "I could not see it." }));
+    const harness = await createHarness({
+      providers: { anthropic: { baseURL: fake.baseURL } },
+      attachmentsHome: home,
+      capabilities: (provider, model) => ({ ...describe(provider, { id: model, name: "Blind One", type: "chat" }), vision }),
+    });
+    try {
+      await harness.runTurn(turn({ tools: [TOOL], images: [{ mediaType: "image/png", data: PNG }] }), {
+        emit: () => {},
+        callTool: async () => ({ content: "rendered", images: [{ mediaType: "image/png", data: PNG }], isError: false }),
+      });
+      const sent = JSON.stringify(fake.requests[1].body);
+      // no image goes out, from the user or from the tool
+      assert.equal((sent.match(/"type":"image"/g) ?? []).length, 0);
+      assert.match(sent, /1 image\(s\) attached to this message were not delivered: the model in use \(Blind One\) cannot read images/);
+      assert.match(sent, /1 image\(s\) returned by this tool were not delivered/);
+      // and its briefing says what that means for the user
+      const system = JSON.stringify(fake.requests[0].body.system);
+      assert.match(system, /What this model cannot do/);
+      assert.match(system, /say plainly that you cannot see the board with this model/);
+      assert.match(system, vision === false ? /does not read images/ : /is not known to read images/);
+    } finally {
+      await harness.dispose();
+      await fake.close();
+    }
+  }
+  await rm(home, { recursive: true, force: true });
+});
+
+test("a model that sees is told of no limits", async () => {
+  const t = await setup(() => ({ text: "ok" }));
+  try {
+    await t.harness.runTurn(turn(), { emit: () => {}, callTool: async () => ({ content: "", isError: false }) });
+    assert.doesNotMatch(JSON.stringify(t.fake.requests[0].body.system), /What this model cannot do/);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a model that cannot call tools cannot be the agent", async () => {
+  const { describe } = await import("../src/catalog.js");
+  const fake = await startFakeAnthropic(() => ({ text: "ok" }));
+  const harness = await createHarness({
+    providers: { anthropic: { baseURL: fake.baseURL } },
+    capabilities: (provider, model) => ({ ...describe(provider, { id: model, name: "Talker" }), tools: model === "no-tools" ? false : null }),
+  });
+  try {
+    await assert.rejects(
+      harness.runTurn(turn({ model: "no-tools" }), { emit: () => {}, callTool: async () => ({ content: "", isError: false }) }),
+      (error) => error.status === 400 && /Talker cannot call tools, which the design agent needs/.test(error.message),
+    );
+    assert.equal(fake.requests.length, 0);
+    // one whose tool use nobody stated is tried: unknown is not a no
+    await harness.runTurn(turn({ sessionId: "s2" }), { emit: () => {}, callTool: async () => ({ content: "", isError: false }) });
+    assert.equal(fake.requests.length, 1);
+  } finally {
+    await harness.dispose();
+    await fake.close();
+  }
+});
+
 test("without an image store, images are reported in words, not dropped silently", async () => {
   const t = await setup(() => ({ text: "ok" }));
   try {

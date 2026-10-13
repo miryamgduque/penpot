@@ -62,6 +62,10 @@ test("critique_design says what it lacks", async () => {
   const failed = await run({ names: ["A"], brief: "x" }, { render: async () => ({ content: "no shape named A", isError: true }) });
   assert.equal(failed.isError, true);
   assert.match(failed.content, /could not render A: no shape named A/);
+  // a model that reads no images cannot be the critic
+  const blind = await run({ names: ["A"], brief: "x" }, { sees: false });
+  assert.equal(blind.isError, true);
+  assert.match(blind.content, /needs a model that reads images/);
   const silent = await run({ names: ["A"], brief: "x" }, { side: async () => "  " });
   assert.match(silent.content, /the critic returned nothing/);
 });

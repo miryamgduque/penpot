@@ -60,6 +60,13 @@
   [provider model-id]
   (true? (:vision (model provider model-id))))
 
+(defn selectable?
+  "Whether `model` may run the agent: everything but a model KNOWN not to
+  call tools. The agent is its tools; a model without them can only talk.
+  A model whose tool use nobody stated may be tried."
+  [provider model-id]
+  (not (false? (:tools (model provider model-id)))))
+
 (defn- ai-model-catalog-fetched
   [{:keys [providers]}]
   (ptk/reify ::ai-model-catalog-fetched

@@ -640,13 +640,15 @@
         ;; the curated catalog, plus any enabled model no longer in it
         ;; (kept visible so the user can toggle it back off)
         catalog     (->> (get (mf/deref refs/ai-model-catalog) provider [])
-                         (mapv (fn [{:keys [id name contextLimit vision]}]
-                                 {:id id :label name :context contextLimit :vision (true? vision)})))
+                         (mapv (fn [{:keys [id name contextLimit vision tools]}]
+                                 {:id id :label name :context contextLimit :vision (true? vision)
+                                  :no-tools (false? tools)})))
         catalog-ids (set (map :id catalog))
         rows        (concat catalog
                             (for [m enabled
                                   :when (not (contains? catalog-ids m))]
-                              {:id m :label m :context nil :vision false}))
+                              ;; what it can do is not known: it may be tried, and is sent no images
+                              {:id m :label m :context nil :vision false :unknown true}))
 
         save-key
         (mf/use-fn
@@ -801,12 +803,13 @@
 
        (when models-open?
          [:ul {:class (stl/css :provider-models-menu)}
-          (for [{:keys [id label context vision]} rows]
+          (for [{:keys [id label context vision no-tools unknown]} rows]
             [:li {:key id :class (stl/css :provider-models-item)}
              [:> checkbox* {:id (dm/str "ai-model-" provider "-" id)
                             :label label
-                            :checked (contains? enabled-set id)
-                            :disabled (not connected?)
+                            :checked (and (contains? enabled-set id) (not no-tools))
+                            ;; the agent is its tools: a model without them cannot be chosen
+                            :disabled (or (not connected?) no-tools)
                             :data-model id
                             :on-change on-toggle-model}]
              (when-let [ctx (format-context context)]
@@ -818,7 +821,15 @@
              (when vision
                [:span {:class (stl/css :provider-models-vision)
                        :title (tr "integrations.ai-provider.models.vision-hint")}
-                (tr "integrations.ai-provider.models.vision")])])])]]]))
+                (tr "integrations.ai-provider.models.vision")])
+             (when no-tools
+               [:span {:class (stl/css :provider-models-vision)
+                       :title (tr "integrations.ai-provider.models.no-tools-hint")}
+                (tr "integrations.ai-provider.models.no-tools")])
+             (when unknown
+               [:span {:class (stl/css :provider-models-vision)
+                       :title (tr "integrations.ai-provider.models.unknown-hint")}
+                (tr "integrations.ai-provider.models.unknown")])])])]]]))
 
 (mf/defc ai-providers-section*
   {::mf/private true}

@@ -42,6 +42,15 @@
   (dai/set-catalog! {})
   (t/is (false? (dai/vision? "zhipu" "glm-5v-turbo"))))
 
+(t/deftest a-model-known-not-to-call-tools-cannot-be-chosen
+  (dai/set-catalog! (assoc-in catalog [:local 0 :tools] false))
+  (t/is (false? (dai/selectable? "local" "some-model")))
+  ;; one that does, and one nobody stated it for, can
+  (t/is (true? (dai/selectable? "zhipu" "glm-5.2")))
+  (dai/set-catalog! catalog)
+  (t/is (true? (dai/selectable? "local" "some-model")))
+  (t/is (true? (dai/selectable? "nobody" "anything"))))
+
 (t/deftest the-records-of-a-provider-are-read-by-its-id
   (t/is (= ["glm-5.2" "glm-5v-turbo"] (mapv :id (dai/models "zhipu"))))
   (t/is (= [] (dai/models "nobody")))

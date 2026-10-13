@@ -2802,6 +2802,18 @@ msgstr "Images"
 msgid "integrations.ai-provider.models.vision-hint"
 msgstr "This model can read images you attach in the agent chat."
 
+msgid "integrations.ai-provider.models.no-tools"
+msgstr "No tool use"
+
+msgid "integrations.ai-provider.models.no-tools-hint"
+msgstr "This model cannot call tools, which the agent needs for everything it does, so it cannot be chosen."
+
+msgid "integrations.ai-provider.models.unknown"
+msgstr "Unknown"
+
+msgid "integrations.ai-provider.models.unknown-hint"
+msgstr "What this model can do is not known. The agent will try it, and will not send it images."
+
 msgid "integrations.ai-provider.models.count"
 msgstr "%s models enabled"
 

@@ -445,3 +445,66 @@ test("an MCP server that does not answer costs the turn nothing but its tools", 
     await t.close();
   }
 });
+
+test("a registered endpoint is reached as an OpenAI-compatible server, with its own key", async () => {
+  const { startFakeOpenAI } = await import("./fake-openai.js");
+  const local = await startFakeOpenAI((_req, n) => (n === 0 ? { tool: { name: "create_shape", input: { type: "rect" } } } : { text: "Done, locally." }));
+  const endpoint = {
+    provider: "endpoint:lab",
+    name: "Lab",
+    baseUrl: local.baseURL,
+    models: [{ id: "qwen-local", name: "Qwen (local)", tools: true, vision: false, contextLimit: 32000, outputLimit: 4000 }],
+  };
+  const fake = await startFakeAnthropic(() => ({ text: "ok" }));
+  const harness = await createHarness({ providers: { anthropic: { baseURL: fake.baseURL } } });
+  try {
+    const run = (overrides) => {
+      const events = [];
+      return harness
+        .runTurn(turn({ provider: "endpoint:lab", model: "qwen-local", apiKey: "lab-key", tools: [TOOL], ...overrides }), {
+          emit: (event) => events.push(event),
+          callTool: async () => ({ content: "created", isError: false }),
+        })
+        .then(() => events);
+    };
+    // not registered: not called, whatever address anyone has in mind
+    await assert.rejects(run(), (error) => error.status === 400 && /neither a built-in provider nor an endpoint registered/.test(error.message));
+    assert.equal(local.requests.length, 0);
+
+    await harness.registerEndpoint(endpoint);
+    const events = await run({ sessionId: "s-local" });
+    assert.equal(local.requests.length, 2);
+    const [first, second] = local.requests;
+    assert.equal(first.path, "/v1/chat/completions");
+    assert.equal(first.key, "lab-key");
+    assert.equal(first.body.model, "qwen-local");
+    assert.deepEqual(first.body.tools.map((t) => t.function.name), ["create_shape"]);
+    // the tool ran and its result went back to the endpoint
+    assert.match(JSON.stringify(second.body.messages), /created/);
+    assert.equal(events.filter((e) => e.type === "text-delta").map((e) => e.text).join(""), "Done, locally.");
+    // its limits are what the admin declared: it does not read images
+    assert.match(JSON.stringify(first.body.messages), /What this model cannot do/);
+    assert.deepEqual(
+      { ...harness.capabilities("endpoint:lab", "qwen-local") },
+      { provider: "endpoint:lab", id: "qwen-local", name: "Qwen (local)", vision: false, tools: true, reasoning: null, promptCaching: null, contextLimit: 32000, outputLimit: 4000, price: null },
+    );
+    // the built-in providers go on as before
+    await harness.runTurn(turn({ sessionId: "s-cloud" }), { emit: () => {}, callTool: async () => ({ content: "", isError: false }) });
+    assert.equal(fake.requests.length, 1);
+  } finally {
+    await harness.dispose();
+    await fake.close();
+    await local.close();
+  }
+});
+
+test("an endpoint that is not one is told why", async () => {
+  const { endpointProblem } = await import("../src/harness.js");
+  const endpoint = { provider: "endpoint:lab", baseUrl: "http://10.0.0.5:11434/v1", models: [{ id: "m" }] };
+  assert.equal(endpointProblem(endpoint), undefined);
+  assert.match(endpointProblem({ ...endpoint, provider: "lab" }), /provider id is endpoint:<id>/);
+  assert.match(endpointProblem({ ...endpoint, baseUrl: "file:///etc/passwd" }), /an http or https address/);
+  assert.match(endpointProblem({ ...endpoint, baseUrl: "nonsense" }), /needs a baseUrl/);
+  assert.match(endpointProblem({ ...endpoint, models: [] }), /at least one model/);
+  assert.match(endpointProblem({ ...endpoint, models: [{ name: "x" }] }), /every model of an endpoint needs an id/);
+});

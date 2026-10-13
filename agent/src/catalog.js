@@ -197,3 +197,26 @@ export function limitsNote(record) {
   );
 }
 
+const stated = (value) => (value === true || value === false ? value : null);
+
+/**
+ * The record of a model of a registered endpoint: what its admin declared.
+ * Nothing is read from the endpoint and nothing is assumed, so whatever the
+ * admin left out is unknown.
+ * @param {string} provider the endpoint's provider id
+ * @param {object} declared the admin's entry for the model
+ */
+export function endpointRecord(provider, declared) {
+  return {
+    provider,
+    id: declared.id,
+    name: typeof declared.name === "string" && declared.name !== "" ? declared.name : declared.id,
+    vision: stated(declared.vision),
+    tools: stated(declared.tools),
+    reasoning: stated(declared.reasoning),
+    promptCaching: stated(declared.promptCaching),
+    contextLimit: tokens(declared.contextLimit),
+    outputLimit: tokens(declared.outputLimit),
+    price: priceOf(declared.price),
+  };
+}

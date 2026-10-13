@@ -292,3 +292,47 @@
     (t/is (= {:tokens 0 :sets [] :themes [] :linkedLibraries 0 :hasSystem false} (:file listed)))
     (let [after (commit empty-file (run empty-file "apply_token_pack" {:pack "soft"}))]
       (t/is (true? (-> (run after "list_token_packs" {}) :result :file :hasSystem))))))
+
+;; --- What is drawn by hand joins the system
+
+(defn- shape-named
+  [data shape-name]
+  (some #(when (= shape-name (:name %)) %)
+        (vals (get-in data [:pages-index (first (:pages data)) :objects]))))
+
+(t/deftest a-value-written-by-hand-that-is-a-roles-value-is-bound-to-the-role
+  (let [themed (commit empty-file (run empty-file "apply_token_pack" {:pack "neutral"}))
+        out    (run themed "build_tree"
+                    {:tree {:type "board" :name "Cell" :width 200 :height 80 :fill "#ffffff"
+                            :layout {:dir "column" :rowGap 12 :padding {:top 16 :right 16 :bottom 16 :left 16}}
+                            :children [{:type "text" :name "Status" :text "On track" :fill "#18181b"}
+                                       {:type "rect" :name "Swatch" :width 20 :height 20 :fill "#123456"}]}})
+        built  (commit themed out)
+        cell   (shape-named built "Cell")]
+    (t/testing "the board's white is the surface, its gap and padding are spacing steps"
+      (t/is (= "color.surface" (-> cell :applied-tokens :fill)))
+      (t/is (= "spacing.md" (-> cell :applied-tokens :row-gap)))
+      (t/is (= #{"spacing.lg"} (set (map #(get (:applied-tokens cell) %) [:p1 :p2 :p3 :p4])))))
+    (t/testing "a text's ink is the text color"
+      (t/is (= "color.text" (-> (shape-named built "Status") :applied-tokens :fill))))
+    (t/testing "a value no role has stays as written"
+      (t/is (nil? (-> (shape-named built "Swatch") :applied-tokens :fill))))
+    (t/testing "the answer says so"
+      (t/is (= 2 (-> out :result :boundToRoles :shapes))))
+    (t/testing "so it follows the theme, where before it was the one thing left behind"
+      (let [dark (commit built (run built "activate_theme" {:name "Dark"}))]
+        (t/is (= "#18181b" (-> (shape-named dark "Cell") :fills first :fill-color)))
+        (t/is (= "#123456" (-> (shape-named dark "Swatch") :fills first :fill-color)))))
+    (t/testing "a shape made alone, and its corner"
+      (let [made (commit themed (run themed "create_shape" {:type "rect" :name "Chip" :x 0 :y 200 :width 60 :height 24
+                                                            :fill "#2563eb"}))]
+        (t/is (= "color.primary" (-> (shape-named made "Chip") :applied-tokens :fill)))))
+    (t/testing "keepLiterals leaves every value as written"
+      (let [kept (commit themed (run themed "build_tree"
+                                     {:keepLiterals true
+                                      :tree {:type "board" :name "Poster" :width 200 :height 80 :fill "#ffffff"}}))]
+        (t/is (nil? (-> (shape-named kept "Poster") :applied-tokens :fill)))))
+    (t/testing "a file with no roles is left alone"
+      (let [out (run empty-file "create_shape" {:type "rect" :name "Chip" :x 0 :y 200 :width 60 :height 24 :fill "#ffffff"})]
+        (t/is (nil? (-> out :result :boundToRoles)))
+        (t/is (nil? (-> (shape-named (commit empty-file out) "Chip") :applied-tokens :fill)))))))

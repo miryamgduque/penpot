@@ -429,7 +429,8 @@ test("explore_design answers from a side conversation that reads with the server
     // the panel sees the one call that asked, not the scout's own reading
     assert.deepEqual(asked.filter((x) => x.server), [{ server: "explore_design", rule: undefined }]);
     const [main, scout, , after] = t.fake.requests.map((r) => r.body);
-    assert.equal(scout.model, "claude-haiku-4-5-20251001");
+    // with no helper chosen, the helper is the turn's own model
+    assert.equal(scout.model, BODY.model);
     assert.match(JSON.stringify(scout.system), /read-only scout/);
     assert.deepEqual(scout.tools.map((x) => x.name), ["read_design"]);
     assert.doesNotMatch(JSON.stringify(scout.messages), /hello/, "the scout does not see the conversation that asked");
@@ -439,6 +440,67 @@ test("explore_design answers from a side conversation that reads with the server
   } finally {
     await t.close();
     await backend.close();
+  }
+});
+
+test("a scout runs on the helper model the turn was sent with, under the helper's own key", async () => {
+  const backend = await fakeJsonServer(() => ({ content: '{"file":"Stored"}', isError: false }));
+  const t = await setup(
+    (_req, n) =>
+      n === 0 ? { tool: { name: "explore_design", input: { question: "Which boards exist?" } } } : n === 1 ? { text: "Boards: Home." } : { text: "Done." },
+    { backendUri: backend.uri },
+  );
+  try {
+    const body = { ...BODY, tools: [tool("explore_design"), tool("read_design")] };
+    await drive(t.base, body, {
+      ...SCOUT_HEADERS,
+      "x-penpot-helper-provider": "anthropic",
+      "x-penpot-helper-model": "claude-haiku-4-5-20251001",
+      "x-penpot-helper-api-key": "helper-key",
+    });
+    const [main, scout, after] = t.fake.requests;
+    assert.equal(main.body.model, BODY.model);
+    assert.equal(main.key, "key-one");
+    assert.equal(scout.body.model, "claude-haiku-4-5-20251001");
+    assert.equal(scout.key, "helper-key");
+    // and the turn goes on with the main model and its key
+    assert.equal(after.body.model, BODY.model);
+    assert.equal(after.key, "key-one");
+  } finally {
+    await t.close();
+    await backend.close();
+  }
+});
+
+test("a side round answers with the model's words and what they cost, with no tools", async () => {
+  const t = await setup(() => ({ text: "penpot-build-screen" }));
+  try {
+    const response = await fetch(`${t.base}/v1/side`, {
+      method: "POST",
+      headers: HEADERS,
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", system: "You route tasks.", text: "Task: a landing page" }),
+    });
+    assert.equal(response.status, 200);
+    const answer = await response.json();
+    assert.equal(answer.text, "penpot-build-screen");
+    assert.equal(answer.usage.requests, 1);
+    assert.ok(answer.usage.input >= 0 && answer.usage.output >= 0);
+    const [sent] = t.fake.requests;
+    assert.equal(sent.body.model, "claude-haiku-4-5-20251001");
+    assert.equal(sent.key, "key-one");
+    assert.match(JSON.stringify(sent.body.system), /You route tasks\./);
+    assert.equal((sent.body.tools ?? []).length, 0);
+    // what it lacks is said
+    const bad = await fetch(`${t.base}/v1/side`, { method: "POST", headers: HEADERS, body: JSON.stringify({ model: "m", system: "s" }) });
+    assert.equal(bad.status, 400);
+    const unknown = await fetch(`${t.base}/v1/side`, {
+      method: "POST",
+      headers: { ...HEADERS, "x-penpot-provider": "nobody" },
+      body: JSON.stringify({ model: "m", system: "s", text: "t" }),
+    });
+    assert.equal(unknown.status, 400);
+  } finally {
+    await t.close();
   }
 });
 

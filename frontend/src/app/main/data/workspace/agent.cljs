@@ -17,6 +17,7 @@
   providers). That is what lets a user switch models — even across providers —
   mid-conversation and carry the whole history."
   (:require
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.ai-providers :as dai]
    [app.main.data.helpers :as dsh]
    [app.main.data.session-actor :as sa]
@@ -817,11 +818,10 @@
     ;; constructed eagerly inside `send-message`'s watch, so a `build-round-body`
     ;; throw there would escape past the caller's `rx/catch` and surface as an
     ;; unhandled error instead of a message in the transcript.
-    (->> (rx/mapcat (fn [_]
-                      (rp/cmd! ::sse/ai-agent-round-stream
-                               {:provider (:provider settings)
-                                :payload (build-round-body settings messages system true)}))
-                    (rx/of nil))
+    (->> (agent-access/guard-model-call
+          #(rp/cmd! ::sse/ai-agent-round-stream
+                    {:provider (:provider settings)
+                     :payload (build-round-body settings messages system true)}))
          (rx/mapcat
           (fn [event]
             (case (sse/get-type event)
@@ -1155,9 +1155,10 @@
                                                   :hint "side turns are read-only"
                                                   :tools (vec bad)})))
     (letfn [(round [messages n spent]
-              (->> (rp/cmd! :ai-agent-round
-                            {:provider provider
-                             :payload (side-round-payload opts messages)})
+              (->> (agent-access/guard-model-call
+                    #(rp/cmd! :ai-agent-round
+                              {:provider provider
+                               :payload (side-round-payload opts messages)}))
                    (rx/map decode-buffered-round)
                    (rx/mapcat
                     (fn [{:keys [text tool-calls usage]}]

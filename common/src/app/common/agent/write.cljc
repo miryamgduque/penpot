@@ -225,10 +225,22 @@
                   (into [] (keep identity) [(:color fill)]))
     :else []))
 
+(defn- not-a-color
+  [value]
+  (dm/str "fill: \"" value "\" is not a color — a fill is a hex like \"#6366f1\". "
+          "To paint with a token, create the shape and bind it with apply_tokens"))
+
 (defn fill-problem
   "Why this fill cannot be written, or nil. Pure."
   [fill]
-  (when (map? fill)
+  (cond
+    ;; a token's name where a color goes is what a model that has just made
+    ;; tokens reaches for; written as it is, it makes a shape nothing accepts
+    (string? fill)
+    (when (nil? (normalize-hex fill))
+      (not-a-color fill))
+
+    (map? fill)
     (let [{:keys [type color stops imageId]} fill]
       (cond
         (not (contains? fill-types type))
@@ -237,6 +249,9 @@
 
         (and (= "solid" type) (not (string? color)))
         "fill: a solid fill needs a color, e.g. {type: \"solid\", color: \"#6366f1\"}"
+
+        (and (= "solid" type) (nil? (normalize-hex color)))
+        (not-a-color color)
 
         (and (= "gradient" type) (< (count stops) 2))
         "fill: a gradient needs at least 2 stops, e.g. {type: \"gradient\", stops: [\"#000000\", \"#ffffff\"]}"

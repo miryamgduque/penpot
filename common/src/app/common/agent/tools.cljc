@@ -131,7 +131,7 @@
   [tool view input options]
   (or (rule-problem tool input (:guard options))
       (let [answer ((get tools tool) view input options)]
-        (if (and (contains? drawing-tools tool)
-                 (not (true? (:keepLiterals input))))
-          (cab/with-roles view answer)
-          answer))))
+        (cond
+          (not (contains? drawing-tools tool)) answer
+          (true? (:keepLiterals input))        (cab/as-written view answer)
+          :else                                (cab/with-roles view answer)))))

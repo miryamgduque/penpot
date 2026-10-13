@@ -141,6 +141,25 @@
                       $
                       (merge (:layout-padding shape) (:layout-gap shape)))))))
 
+;; --- Content that keeps its values
+;;
+;; What a call drew with keepLiterals is content — a mock-up, a picture of
+;; the product — and stays so: a later call that moves or edits it must not
+;; bind it either. So it is marked, on the shape, and the mark holds for
+;; everything inside it.
+
+(def ^:private mark-path [:plugin-data :penpot-agent "keepLiterals"])
+
+(defn- kept?
+  "Whether `shape`, or a board it is inside of, was drawn to keep its values."
+  [objects shape]
+  (loop [shape shape]
+    (cond
+      (nil? shape)                       false
+      (= "true" (get-in shape mark-path)) true
+      (= (:id shape) (:parent-id shape)) false
+      :else                              (recur (get objects (:parent-id shape))))))
+
 (defn- touched-ids
   "The shapes of `page-id` that `changes` made or changed."
   [changes page-id]
@@ -165,7 +184,7 @@
                                   (when-let [shape (get objects id)]
                                     ;; a copy takes what its main has; binding
                                     ;; inside it would be an edit of the copy
-                                    (when-not (ctc/in-component-copy? shape)
+                                    (when-not (or (ctc/in-component-copy? shape) (kept? objects shape))
                                       (when-let [roles (not-empty (found worth shape))]
                                         [id roles])))))
                           (touched-ids (:changes answer) page-id))]
@@ -185,3 +204,20 @@
                                         "bound to that role, so they follow the theme. For content that "
                                         "must keep its own values whatever the theme — a mock-up inside "
                                         "a canvas, a brand's fixed color — pass keepLiterals: true.")})))))))))
+
+(defn as-written
+  "A drawing tool's `answer` to a call that said keepLiterals: what it made
+  is marked as content that keeps its values."
+  [{:keys [data page-id]} answer]
+  (let [made (into []
+                   (comp (filter #(and (= :add-obj (:type %)) (= page-id (:page-id %))))
+                         (map :id))
+                   (:changes answer))]
+    (if (empty? made)
+      answer
+      (let [after   (cfc/process-changes data (:changes answer) false)
+            objects (get-in after [:pages-index page-id :objects])
+            extra   (-> (caw/page-changes page-id objects)
+                        (cb/update-shapes made #(assoc-in % mark-path "true") {:ignore-touched true})
+                        (caw/redo))]
+        (assoc answer :changes (caw/then-changes (:changes answer) extra))))))

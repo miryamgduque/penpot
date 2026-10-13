@@ -588,10 +588,18 @@
          "already has). Returns ids keyed by node name, and `components` "
          "(name → componentId). On an error you get "
          "a PARTIAL result naming what exists — repair with targeted calls, "
-         "never re-send the tree. Asynchronous: verify with render_board.")
+         "never re-send the tree. Asynchronous: verify with render_board. "
+         "In a file with a design system, a value you write that is exactly "
+         "what a role token is worth (the surface's color, a spacing step, a "
+         "radius, a type size) is bound to that role, so it follows the "
+         "theme; `keepLiterals: true` leaves every value as written, for "
+         "content that must not follow it — a mock-up shown inside a canvas, "
+         "a photo's frame, a brand's fixed color.")
     :input-schema {:type "object"
                    :properties {:parentId {:type "string" :description "existing board to build into (optional)"}
-                                :tree {:type "object" :description "the root node"}}
+                                :tree {:type "object" :description "the root node"}
+                                :keepLiterals {:type "boolean"
+                                               :description "true: do not bind written values to role tokens"}}
                    :required ["tree"]}}
 
    {:name "find_recipes"
@@ -698,7 +706,10 @@
     (str "Gives the file a design system: the pack's token sets and themes, "
          "with one theme on. `pack` is a starter's name (neutral, bold, soft); "
          "for a generated one pass `choices` instead — the same input you gave "
-         "generate_token_pack, which makes the same pack. Every recipe "
+         "generate_token_pack, which makes the same pack; for the tokens of a "
+         "library LINKED to this file pass `library`, its fileId, and the file "
+         "takes that library's sets and themes as its own, so what you build "
+         "here and the library's components share values and themes. Every recipe "
          "then takes its look from these tokens, and what is already bound to "
          "a token of the same name follows. A file that HAS tokens is not "
          "touched: the answer says so, and you ask the user whether to merge "
@@ -710,6 +721,8 @@
                    :properties {:pack {:type "string" :description "a starter's name: neutral, bold or soft"}
                                 :choices {:type "object"
                                           :description "instead of pack: the input of generate_token_pack (name, title, purpose, primary, bodyFont, …)"}
+                                :library {:type "string"
+                                          :description "instead of pack: the fileId of a linked library whose tokens the file takes"}
                                 :theme {:type "string" :description "e.g. Dark"}
                                 :onExisting {:type "string" :enum ["merge" "replace" "cancel"]
                                              :description "only after the user chose, in a file that has tokens"}}

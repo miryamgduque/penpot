@@ -845,6 +845,8 @@
   (t/is (str/includes? ask/inner-knowledge "A generated pack starts from what the project says"))
   (t/is (str/includes? ask/inner-knowledge "With a library linked, its components before any recipe"))
   (t/is (str/includes? ask/inner-knowledge "only after the user says yes to that library"))
+  (t/is (str/includes? ask/inner-knowledge "A linked library's tokens become the file's"))
+  (t/is (str/includes? ask/inner-knowledge "What is inside a mock-up keeps its own values"))
   (t/is (str/includes? ask/inner-knowledge "Judge it, do not only check it"))
   (t/is (str/includes? ask/inner-knowledge "A direction before the first shape"))
   (t/is (str/includes? ask/inner-knowledge "The critic at the first whole render, not at the end"))

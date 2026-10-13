@@ -545,7 +545,10 @@
     :fn (mg/resource "app/migrations/sql/0166-mod-profile-mcp-server-table.sql")}
 
    {:name "0167-add-team-recipe-table"
-    :fn (mg/resource "app/migrations/sql/0167-add-team-recipe-table.sql")}])
+    :fn (mg/resource "app/migrations/sql/0167-add-team-recipe-table.sql")}
+
+   {:name "0168-mod-profile-ai-provider-table"
+    :fn (mg/resource "app/migrations/sql/0168-mod-profile-ai-provider-table.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]

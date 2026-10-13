@@ -242,6 +242,9 @@
    :key-hint (or (ex/ignoring (key-hint (decrypt-key cfg (:provider row) (:api-key row))))
                  "")
    :enabled-models (vec (:enabled-models row))
+   ;; the model of this provider chosen for side jobs, when one is
+   :helper-model (let [helper (:helper-model row)]
+                   (when (some #{helper} (:enabled-models row)) helper))
    :connected-at (:updated-at row)})
 
 ;; --- Query: connected providers (status only, never the keys)
@@ -431,6 +434,63 @@
     {:provider provider
      :status (:status response)
      :body (:body response)}))
+
+;; --- The helper model
+;;
+;; A user may choose one model for the agent's side jobs — summaries,
+;; scouting, playbook matching — apart from the main model they build with.
+;; It is one enabled model of one connected provider. With none chosen, or
+;; when the chosen one is no longer enabled, the helper is the main model.
+
+(defn- helper-row
+  "The profile's row that holds its helper model, with the key decrypted, or
+  nil: none chosen, or the chosen model is no longer enabled."
+  [{:keys [::db/pool] :as cfg} profile-id]
+  (when-let [row (->> (db/query pool :profile-ai-provider {:profile-id profile-id})
+                      (map decode-row)
+                      (filter (fn [{:keys [helper-model enabled-models]}]
+                                (and (string? helper-model) (some #{helper-model} enabled-models))))
+                      (first))]
+    (assoc row :api-key (decrypt-key cfg (:provider row) (:api-key row)))))
+
+(defn- helper-of
+  "→ `{:provider :model :api-key}` for the profile's side jobs: its helper
+  when it chose one, else the main model `provider`/`model`."
+  [cfg profile-id provider model]
+  (if-let [row (helper-row cfg profile-id)]
+    {:provider (:provider row) :model (:helper-model row) :api-key (:api-key row)}
+    (when (and (string? provider) (string? model))
+      {:provider provider :model model
+       :api-key (:api-key (connected-provider-row cfg profile-id provider))})))
+
+(def ^:private schema:set-ai-helper-model
+  [:map {:title "set-ai-helper-model"}
+   ;; both absent: no helper, the main model does the side jobs
+   [:provider {:optional true} [:maybe [::sm/one-of {:format "string"} valid-provider-ids]]]
+   [:model {:optional true} [:maybe [:string {:max 200}]]]])
+
+(sv/defmethod ::set-ai-helper-model
+  "Chooses the model for the agent's side jobs, or none."
+  {::doc/added "2.20"
+   ::sm/params schema:set-ai-helper-model
+   ::db/transaction true}
+  [{:keys [::db/conn] :as cfg} {:keys [::rpc/profile-id provider model]}]
+  (when (and (some? provider) (some? model))
+    (let [row (connected-provider-row (assoc cfg ::db/pool conn) profile-id provider)]
+      (when-not (some #{model} (:enabled-models row))
+        (ex/raise :type :validation
+                  :code :ai-model-not-enabled
+                  :hint "the helper has to be one of the models you enabled for that provider"
+                  :provider provider
+                  :model model))))
+  (db/update! conn :profile-ai-provider {:helper-model nil} {:profile-id profile-id}
+              {::db/return-keys false})
+  (when (and (some? provider) (some? model))
+    (db/update! conn :profile-ai-provider {:helper-model model}
+                {:profile-id profile-id :provider provider}
+                {::db/return-keys false}))
+  {:provider (when (some? model) provider)
+   :model (when (some? provider) model)})
 
 ;; --- External MCP servers
 ;;
@@ -770,10 +830,16 @@
         turn     {:turn-id (uuid/next)
                   :conversation-id (conversation-of payload)}
         response (agent-service-req! cfg "/v1/turns"
-                                     (cond-> {"x-penpot-profile-id" (str profile-id)
-                                              "x-penpot-file-id" (str file-id)
-                                              "x-penpot-provider" provider
-                                              "x-penpot-api-key" (:api-key row)}
+                                     (cond-> (merge {"x-penpot-profile-id" (str profile-id)
+                                                     "x-penpot-file-id" (str file-id)
+                                                     "x-penpot-provider" provider
+                                                     "x-penpot-api-key" (:api-key row)}
+                                                    ;; the model for the turn's side jobs,
+                                                    ;; when the user chose one
+                                                    (when-let [helper (helper-row cfg profile-id)]
+                                                      {"x-penpot-helper-provider" (:provider helper)
+                                                       "x-penpot-helper-model" (:helper-model helper)
+                                                       "x-penpot-helper-api-key" (:api-key helper)}))
                                        ;; with server tools on, the service
                                        ;; runs these itself, as this profile
                                        ;; on this file and nothing else
@@ -793,6 +859,44 @@
                     ;; what the turn changed
                     (events/tap :event (json/encode {:type "turn-ref" :turnRef (str (:turn-id turn))}))
                     (pump-agent-service-stream! (:body response))))))
+
+;; --- One side job
+;;
+;; The panel's side work — matching a playbook to a task, summing up a
+;; conversation, the watcher's verdicts — is one round with no tools. It runs
+;; in the agent service like everything else, on the user's helper model, so
+;; it works with whatever provider they connected.
+
+(def ^:private schema:agent-helper-round
+  [:map {:title "agent-helper-round"}
+   ;; the main model, which does the job when no helper is chosen
+   [:provider {:optional true} [:maybe [::sm/one-of {:format "string"} valid-provider-ids]]]
+   [:model {:optional true} [:maybe [:string {:max 200}]]]
+   [:system [:string {:max 20000}]]
+   [:text [:string {:max 400000}]]])
+
+(sv/defmethod ::agent-helper-round
+  "Runs one tool-less round on the profile's helper model — the main model
+  given, when it chose none — and answers its words and what they cost."
+  {::doc/added "2.20"
+   ::sm/params schema:agent-helper-round}
+  [cfg {:keys [::rpc/profile-id provider model system text]}]
+  (let [helper (or (helper-of cfg profile-id provider model)
+                   (ex/raise :type :validation
+                             :code :ai-helper-unavailable
+                             :hint "no helper model is chosen and no main model was named"))
+        response (agent-service-req! cfg "/v1/side"
+                                     {"x-penpot-profile-id" (str profile-id)
+                                      "x-penpot-provider" (:provider helper)
+                                      "x-penpot-api-key" (:api-key helper)}
+                                     (json/encode {:model (:model helper) :system system :text text})
+                                     {})
+        _        (check-agent-service-status! response)
+        answer   (json/decode (:body response) :key-fn keyword)]
+    {:provider (:provider helper)
+     :model (:model helper)
+     :text (:text answer)
+     :usage (:usage answer)}))
 
 (def ^:private schema:agent-service-tool-result
   [:map {:title "agent-service-tool-result"}

@@ -472,6 +472,31 @@ test("a scout runs on the helper model the turn was sent with, under the helper'
   }
 });
 
+test("the provider check is run on request, with the caller's key", async () => {
+  const t = await setup((request) => {
+    const sent = JSON.stringify(request.body.messages);
+    if (/single word pineapple/.test(sent)) return { text: "pineapple" };
+    if (/tool_result/.test(sent)) return { text: "done" };
+    if (/Record a measurement/.test(sent)) return { tool: { name: "record_measurement", input: { label: "width", value: 42 } } };
+    return { text: "red" };
+  });
+  try {
+    const response = await fetch(`${t.base}/v1/check`, { method: "POST", headers: HEADERS, body: JSON.stringify({ model: BODY.model }) });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.provider, "anthropic");
+    assert.equal(result.text.pass, true);
+    assert.equal(result.tools.pass, true);
+    // no image store in this setup: the vision check says what it saw instead of passing blind
+    assert.equal(typeof result.vision.saw, "string");
+    assert.ok(t.fake.requests.every((request) => request.key === "key-one"));
+    const unknown = await fetch(`${t.base}/v1/check`, { method: "POST", headers: { ...HEADERS, "x-penpot-provider": "nobody" }, body: JSON.stringify({ model: "m" }) });
+    assert.equal(unknown.status, 400);
+  } finally {
+    await t.close();
+  }
+});
+
 test("a side round answers with the model's words and what they cost, with no tools", async () => {
   const t = await setup(() => ({ text: "penpot-build-screen" }));
   try {

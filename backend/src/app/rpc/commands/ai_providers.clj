@@ -75,7 +75,34 @@
                 :ping-model "glm-4.5-air"
                 :fallback-models ["glm-4.6" "glm-4.5" "glm-4.5-air"]}
    "moonshot"  {:kind :openai
-                :base-uri "https://api.moonshot.ai/v1"}})
+                :base-uri "https://api.moonshot.ai/v1"}
+   ;; The four below are offered only once each has passed the provider
+   ;; verification check (`check-ai-model`) on this instance's version of the
+   ;; provider layer: until then they are behind the flag named in
+   ;; `preview-providers-flag`.
+   "google"    {:kind :openai
+                :preview true
+                ;; Gemini's OpenAI-compatible surface; its ids come as `models/<id>`
+                :base-uri "https://generativelanguage.googleapis.com/v1beta/openai"}
+   "xai"       {:kind :openai
+                :preview true
+                :base-uri "https://api.x.ai/v1"}
+   "mistral"   {:kind :openai
+                :preview true
+                :base-uri "https://api.mistral.ai/v1"}
+   "deepseek"  {:kind :openai
+                :preview true
+                :base-uri "https://api.deepseek.com"}})
+
+(def preview-providers-flag
+  "The flag that offers the providers not yet verified on this instance."
+  :design-agent-preview-providers)
+
+(defn- offered?
+  [provider-id]
+  (when-let [provider (get providers provider-id)]
+    (or (not (:preview provider))
+        (contains? cf/flags preview-providers-flag))))
 
 (def ^:private valid-provider-ids
   (into #{} (keys providers)))
@@ -104,11 +131,21 @@
                 :provider provider)))
 
 (defn- check-provider!
-  "Raises unless `provider` is built in or a registered endpoint."
+  "Raises unless `provider` is built in and offered here, or a registered
+  endpoint."
   [cfg provider]
-  (when-not (contains? valid-provider-ids provider)
-    (registered-endpoint cfg provider))
-  nil)
+  (cond
+    (offered? provider)
+    nil
+
+    (contains? valid-provider-ids provider)
+    (ex/raise :type :validation
+              :code :ai-provider-not-offered
+              :hint "this provider is not offered on this Penpot instance yet"
+              :provider provider)
+
+    :else
+    (do (registered-endpoint cfg provider) nil)))
 
 (defn- endpoints-header
   "The header that hands the agent service the endpoints `provider-ids`
@@ -212,11 +249,20 @@
 ;; chat models, pass everything through.
 (defn- chat-model?
   [provider-id model-id]
-  (if (= provider-id "openai")
+  (case provider-id
+    "openai"
     (and (or (str/starts-with? model-id "gpt-")
              (str/starts-with? model-id "o")
              (str/starts-with? model-id "chatgpt-"))
          (not (re-find #"embed|audio|tts|whisper|image|dall-e|moderation|transcribe|realtime|search" model-id)))
+
+    "google"
+    (and (str/includes? model-id "gemini")
+         (not (re-find #"embed|tts|image|live|audio" model-id)))
+
+    "mistral"
+    (not (re-find #"embed|moderation|ocr|transcribe|voxtral" model-id))
+
     true))
 
 (defn- fetch-models!
@@ -258,7 +304,8 @@
         (check-auth-status! provider-id (:status response))
         (let [parsed (json/decode (:body response) :key-fn keyword)]
           (->> (:data parsed)
-               (map :id)
+               ;; Gemini lists its models as `models/<id>`
+               (map #(str/replace (str (:id %)) #"^models/" ""))
                (filter #(chat-model? provider-id %))
                (sort)
                (vec)))))))
@@ -861,8 +908,9 @@
   [cfg _]
   (update (model-catalog cfg) :providers
           (fn [catalogued]
-            ;; and of a registered endpoint's models, what its admin declared
-            (into (or catalogued {})
+            ;; of the providers offered here; and of a registered endpoint's
+            ;; models, what its admin declared
+            (into (into {} (filter (fn [[provider _]] (offered? (name provider)))) catalogued)
                   (map (fn [endpoint]
                          [(keyword (endpoints/provider-id (:id endpoint))) (endpoints/records endpoint)]))
                   (endpoints/get-endpoints cfg)))))

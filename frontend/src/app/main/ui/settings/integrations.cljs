@@ -597,10 +597,17 @@
 ;; cards form the single pool that populates the chat's model picker.
 
 (def ^:private ai-provider-defs
-  [{:id "anthropic" :label "Anthropic"   :models-hint "Claude models"}
-   {:id "openai"    :label "OpenAI"      :models-hint "GPT models"}
-   {:id "zhipu"     :label "Zhipu AI"    :models-hint "GLM models"}
-   {:id "moonshot"  :label "Moonshot AI" :models-hint "Kimi models"}])
+  (into [{:id "anthropic" :label "Anthropic"   :models-hint "Claude models"}
+         {:id "openai"    :label "OpenAI"      :models-hint "GPT models"}
+         {:id "zhipu"     :label "Zhipu AI"    :models-hint "GLM models"}
+         {:id "moonshot"  :label "Moonshot AI" :models-hint "Kimi models"}]
+        ;; offered once each has passed the provider verification check on
+        ;; this instance; until then behind the same flag as on the server
+        (when (contains? cf/flags :design-agent-preview-providers)
+          [{:id "google"   :label "Google"    :models-hint "Gemini models"}
+           {:id "xai"      :label "xAI"       :models-hint "Grok models"}
+           {:id "mistral"  :label "Mistral"   :models-hint "Mistral models"}
+           {:id "deepseek" :label "DeepSeek"  :models-hint "DeepSeek models"}])))
 
 ;; What each model can do comes from the provider layer's catalog, held in
 ;; app.main.data.ai-providers: the agent reads it to decide how to encode a

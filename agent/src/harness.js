@@ -34,6 +34,10 @@ export const PROVIDER_ROUTES = {
   openai: "openai",
   zhipu: "zai",
   moonshot: "moonshotai",
+  google: "google",
+  xai: "xai",
+  mistral: "mistral",
+  deepseek: "deepseek",
 };
 
 const MAX_TOKENS = 32000;

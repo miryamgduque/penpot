@@ -443,3 +443,30 @@
             (t/is (some? (:error (endpoint! user :agent-helper-round :provider provider :model "qwen-local" :system "s" :text "t"))))
             (t/is (= before (count @asked))))))
       (reset! @#'ai-providers/catalog-cache nil))))
+
+;; --- Providers not yet verified here
+
+(t/deftest a-provider-not-yet-verified-is-offered-only-behind-its-flag
+  (let [profile (th/create-profile* 1 {:is-active true})
+        key!    (fn [provider]
+                  (th/command! {::th/type :set-ai-provider-key ::rpc/profile-id (:id profile)
+                                :provider provider :api-key "key-0123456789"}))
+        catalog (fn []
+                  (reset! @#'ai-providers/catalog-cache nil)
+                  (-> (th/command! {::th/type :get-ai-model-catalog ::rpc/profile-id (:id profile)})
+                      :result :providers keys set))]
+    (with-redefs [ai-providers/agent-service-req!
+                  (fn [& _]
+                    {:status 200
+                     :body (json/encode {:schema 1 :providers {:anthropic [] :google [] :xai [] :mistral [] :deepseek []}})})]
+      (t/testing "without the flag: not connectable, and not in the catalog"
+        (doseq [provider ["google" "xai" "mistral" "deepseek"]]
+          (t/is (th/ex-of-code? (:error (key! provider)) :ai-provider-not-offered) provider))
+        (t/is (nil? (:error (key! "anthropic"))))
+        (t/is (= #{:anthropic} (catalog))))
+      (t/testing "with it: each can be enabled with a user's own key"
+        (with-redefs [cf/flags (conj cf/flags :design-agent-preview-providers)]
+          (doseq [provider ["google" "xai" "mistral" "deepseek"]]
+            (t/is (nil? (:error (key! provider))) provider))
+          (t/is (= #{:anthropic :google :xai :mistral :deepseek} (catalog)))))
+      (reset! @#'ai-providers/catalog-cache nil))))

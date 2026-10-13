@@ -73,6 +73,18 @@ test("the catalog comes from the provider layer, for every provider Penpot offer
   }
 });
 
+test("Google, xAI, Mistral and DeepSeek are routed, and their models described", () => {
+  const { providers } = catalog(PROVIDER_ROUTES);
+  for (const provider of ["google", "xai", "mistral", "deepseek"]) {
+    assert.ok(providers[provider].length > 0, provider);
+    // what is unknown about them is a price nobody stated, and what follows from it
+    for (const record of providers[provider]) {
+      assert.deepEqual(unknowns(record).filter((key) => key !== "price" && key !== "promptCaching"), [], `${provider}/${record.id}`);
+      if (record.price !== null) assert.deepEqual(unknowns(record), [], `${provider}/${record.id}`);
+    }
+  }
+});
+
 test("a model a provider ships appears with no change here", () => {
   const shipped = [{ id: "old", type: "chat", input: ["text"] }];
   const read = () => shipped;

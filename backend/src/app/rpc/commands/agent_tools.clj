@@ -474,8 +474,9 @@
                        :name (:name library)
                        :note (str "linked. Its components are yours to place: read_design lists them with "
                                   "their ids, create_instance {componentId, fileId} places one. Prefer them "
-                                  "over recipes wherever one matches. A workspace that was open shows the "
-                                  "library after a reload.")}))))))
+                                  "over recipes wherever one matches. If this file has no tokens of its "
+                                  "own and the library has, take them: apply_token_pack {library: \""
+                                  library-id "\"}. A workspace that was open shows the library after a reload.")}))))))
 
 ;; The reverse of build_recipe: a board of the file written down as a recipe
 ;; and kept with the file's team, where every member's agent finds it.

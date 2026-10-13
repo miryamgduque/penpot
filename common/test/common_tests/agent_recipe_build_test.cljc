@@ -622,6 +622,20 @@
       (t/is (= file-id (:component-file (copy placed))))
       (t/is (= "color.primary" (-> (copy placed) :applied-tokens :fill)))
       (t/is (= "#2563eb" (fill placed))))
+    (t/testing "the library's tokens can be taken as the file's own, themes and all"
+      (let [themed-library (cfc/process-changes library (:changes (cat/run "apply_token_pack" (view library) {:pack "soft" :onExisting "replace"} options)))
+            view-with      (fn [data] (assoc-in (view-of data) [:libraries file-id :data] themed-library))
+            out            (cat/run "apply_token_pack" (view-with placed) {:library (str file-id)} options)
+            taken          (cfc/process-changes placed (:changes out))
+            lib            (:tokens-lib taken)]
+        (t/is (= {:applied true :fromLibrary true :theme "Light" :pack "Library"}
+                 (select-keys (:result out) [:applied :fromLibrary :theme :pack])))
+        (t/is (= ["core" "modes/light" "modes/dark"] (mapv ctob/get-name (ctob/get-sets lib))))
+        (t/is (= "#6d4aff" (:value (get (ctob/get-tokens-in-active-sets lib) "color.primary"))))
+        ;; the copy placed before now has the values the library's tokens have here
+        (t/is (= "#6d4aff" (fill taken)))
+        (t/is (re-find #"is the fileId of a library LINKED to this file"
+                       (:problem (cat/run "apply_token_pack" (view-with placed) {:library (str (uuid/next))} options))))))
     (t/testing "tokens of those names in the file it is in give it their values"
       (let [[themed applied] (run placed "apply_token_pack" {:pack "bold"})
             [dark _]         (run themed "activate_theme" {:name "Dark"})]

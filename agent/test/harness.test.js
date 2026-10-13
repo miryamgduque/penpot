@@ -508,3 +508,45 @@ test("an endpoint that is not one is told why", async () => {
   assert.match(endpointProblem({ ...endpoint, models: [] }), /at least one model/);
   assert.match(endpointProblem({ ...endpoint, models: [{ name: "x" }] }), /every model of an endpoint needs an id/);
 });
+
+test("an image reaches a provider that is not Anthropic, in that provider's own form", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { startFakeOpenAI } = await import("./fake-openai.js");
+  const home = await mkdtemp(join(tmpdir(), "agent-attachments-"));
+  // the providers that speak chat completions, which the stand-in speaks;
+  // the other protocols (Responses, Gemini's, Mistral's) are for the check
+  // against the providers themselves
+  for (const [provider, route, model] of [
+    ["moonshot", "moonshotai", "kimi-k3"],
+    ["deepseek", "deepseek", "deepseek-flash"],
+    ["zhipu", "zai", "glm-5.3-flash"],
+  ]) {
+    const remote = await startFakeOpenAI((_req, n) => (n === 0 ? { tool: { name: "create_shape", input: { type: "rect" } } } : { text: "I see it." }));
+    const harness = await createHarness({ providers: { [route]: { baseURL: remote.baseURL } }, attachmentsHome: home });
+    try {
+      assert.equal(harness.capabilities(provider, model).vision, true, `${provider}/${model} reads images`);
+      const events = [];
+      await harness.runTurn(turn({ provider, model, tools: [TOOL], images: [{ mediaType: "image/png", data: PNG }] }), {
+        emit: (event) => events.push(event),
+        callTool: async () => ({ content: "rendered", images: [{ mediaType: "image/png", data: PNG }], isError: false }),
+      });
+      const [first, second] = remote.requests;
+      assert.equal(first.key, "key-one", provider);
+      assert.equal(first.body.model, model);
+      // the user's image, as a data URL in an image_url part
+      assert.match(JSON.stringify(first.body.messages), /"type":"image_url".*data:image\/png;base64,/, provider);
+      // the tool was called, and what it rendered went back as an image too
+      assert.deepEqual(first.body.tools.map((t) => t.function.name), ["create_shape"]);
+      assert.ok((JSON.stringify(second.body.messages).match(/"type":"image_url"/g) ?? []).length >= 2, `${provider}: the tool's image`);
+      assert.match(JSON.stringify(second.body.messages), /rendered/);
+      assert.equal(events.filter((e) => e.type === "text-delta").map((e) => e.text).join(""), "I see it.");
+    } finally {
+      await harness.dispose();
+      await remote.close();
+    }
+  }
+  await rm(home, { recursive: true, force: true });
+});
+

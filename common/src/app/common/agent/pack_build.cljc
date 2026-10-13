@@ -92,6 +92,50 @@
       (catch #?(:clj Throwable :cljs :default) _ pack))
     pack))
 
+(defn- library-pack
+  "The tokens of a linked library, as a pack to apply: its sets with their
+  tokens as they are, its themes, and the theme that is on in it. A library
+  with no themes gives one, of the sets that are on."
+  [library]
+  (let [lib    (-> library :data :tokens-lib)
+        sets   (mapv (fn [token-set]
+                       {:name (ctob/get-name token-set)
+                        :typed (into {}
+                                     (map (fn [[token-name token]]
+                                            [token-name {:type (:type token) :value (:value token)}]))
+                                     (ctob/get-tokens lib (ctob/get-id token-set)))})
+                     (ctob/get-sets lib))
+        themes (->> (ctob/get-themes lib)
+                    (remove #(= ctob/hidden-theme-name (ctob/get-name %)))
+                    (mapv (fn [theme] {:name (ctob/get-name theme)
+                                       :group (:group theme)
+                                       :sets (vec (:sets theme))
+                                       :on (ctob/theme-active? lib (ctob/get-id theme))})))
+        themes (if (seq themes)
+                 themes
+                 [{:name "Default" :group "" :sets (vec (ctob/get-active-themes-set-names lib)) :on true}])]
+    {:name (:name library)
+     :from-library true
+     :sets sets
+     :themes themes
+     :default (:name (or (first (filter :on themes)) (first themes)))}))
+
+(defn- library-of
+  "→ `{:pack}` or `{:problem}`: the tokens of the linked library `fileId`."
+  [tool {:keys [file-id libraries]} fileId]
+  (let [id      (when (string? fileId) (parse-uuid fileId))
+        library (get libraries id)]
+    (cond
+      (or (nil? id) (= id file-id) (nil? library))
+      {:problem (dm/str tool ": `library` is the fileId of a library LINKED to this file — "
+                        "list_shared_libraries says which are, link_library links one")}
+
+      (zero? (count (some-> library :data :tokens-lib ctob/get-all-tokens-map)))
+      {:problem (dm/str tool ": the library \"" (:name library) "\" has no tokens to take")}
+
+      :else
+      {:pack (library-pack library)})))
+
 (defn- pack-of
   "→ `{:pack}` or `{:problem}`: a starter by name, a pack written out, or
   the one `choices` make (as generate_token_pack would)."
@@ -182,12 +226,13 @@
            set-id (ctob/get-id (or found made))
            held   (if found (ctob/get-tokens lib set-id) {})]
        (reduce (fn [changes [token-name {:keys [type value]}]]
+                 ;; a library's tokens come typed and stored already
                  (let [prev  (get held token-name)
                        token (ctob/make-token (cond-> {:type type :name token-name :value (written type value)}
                                                 (some? prev) (assoc :id (:id prev))))]
                    (cb/set-token changes set-id (:id token) token)))
                (cond-> changes (some? made) (cb/set-token-set set-id made))
-               (sort-by key (cak/set-tokens token-set)))))
+               (sort-by key (or (:typed token-set) (cak/set-tokens token-set))))))
    changes
    (:sets pack)))
 
@@ -218,8 +263,10 @@
   "apply_token_pack: gives the file a pack's sets, tokens and themes and
   turns one theme on. A file that has tokens already is not touched until
   the call says what to do with them."
-  [{:keys [data fonts] :as view} {:keys [pack choices theme onExisting]} engine]
-  (let [{:keys [pack problem]} (pack-of "apply_token_pack" pack choices)
+  [{:keys [data fonts] :as view} {:keys [pack choices library theme onExisting]} engine]
+  (let [{:keys [pack problem]} (if (some? library)
+                                 (library-of "apply_token_pack" view library)
+                                 (pack-of "apply_token_pack" pack choices))
         lib      (:tokens-lib data)
         state    (file-state view)
         on       (or theme (:default pack))]
@@ -270,11 +317,12 @@
                     :theme on
                     :themes (mapv :name (:themes pack))
                     :sets (mapv :name (:sets pack))
-                    :tokens (transduce (map #(count (:tokens %))) + (:sets pack))
+                    :tokens (transduce (map #(count (or (:typed %) (:tokens %)))) + (:sets pack))
                     :roles (count car/roles)
                     :restyled (:shapes out)
                     :fonts (fonts-of fonts pack)
                     :was (cond replace? "replaced" (pos? (:tokens state)) "merged" :else "empty")
+                    :fromLibrary (true? (:from-library pack))
                     :note (str "The file has a design system now: every recipe you build takes its look "
                                "from these tokens, and so should what you build by hand — bind to the "
                                "role tokens (color.primary, spacing.md, radius.md, font-family.body…), "

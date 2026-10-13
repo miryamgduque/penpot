@@ -347,3 +347,99 @@
         (th/command! {::th/type :get-ai-model-catalog ::rpc/profile-id (:id profile)})
         (t/is (= 1 @asked)))
       (reset! @#'ai-providers/catalog-cache nil))))
+
+;; --- Endpoints an instance admin registered
+
+(defn- endpoint!
+  [profile type & {:as params}]
+  (th/command! (merge {::th/type type ::rpc/profile-id (:id profile)} params)))
+
+(def ^:private lab
+  {:name "Lab"
+   :base-uri "http://models.internal:11434/v1/"
+   :models [{:id "qwen-local" :name "Qwen (local)" :tools true :vision false :context-limit 32000}
+            {:id "tiny-chat" :tools false}]})
+
+(t/deftest only-an-instance-admin-registers-an-endpoint-and-everyone-may-use-it
+  (let [asked (atom [])
+        admin (th/create-profile* 1 {:is-active true})
+        user  (th/create-profile* 2 {:is-active true})]
+    (with-redefs [cf/config (assoc cf/config :admins #{(:email admin)})
+                  ai-providers/agent-service-req!
+                  (fn [_ path headers body _]
+                    (swap! asked conj {:path path :headers headers})
+                    {:status 200 :body (json/encode (if (= "/v1/models" path)
+                                                      {:schema 1 :providers {}}
+                                                      {:text "ok" :usage {:requests 1}}))})]
+      (reset! @#'ai-providers/catalog-cache nil)
+
+      (t/testing "a user cannot add an address"
+        (let [out (apply endpoint! user :set-ai-endpoint (mapcat identity lab))]
+          (t/is (th/ex-of-code? (:error out) :instance-admin-required)))
+        (t/is (= [] (-> (endpoint! user :get-ai-endpoints) :result :endpoints))))
+
+      (t/testing "what is not an address is refused, whoever asks"
+        (doseq [address ["file:///etc/passwd" "models.internal:11434" "ftp://models.internal/v1"]]
+          (let [out (apply endpoint! admin :set-ai-endpoint (mapcat identity (assoc lab :base-uri address)))]
+            (t/is (th/ex-of-code? (:error out) :ai-endpoint-address-invalid) address))))
+
+      (let [made     (apply endpoint! admin :set-ai-endpoint (mapcat identity lab))
+            id       (-> made :result :id)
+            provider (str "endpoint:" id)]
+        (t/testing "an admin registers one, with its models and what each can do"
+          (t/is (nil? (:error made)))
+          (t/is (= "http://models.internal:11434/v1" (-> made :result :base-uri)))
+          (t/is (= [{:id "qwen-local" :name "Qwen (local)" :tools true :vision false :contextLimit 32000}
+                    ;; what the admin left out is unknown, not assumed
+                    {:id "tiny-chat" :name "tiny-chat" :tools false :vision nil :contextLimit nil}]
+                   (mapv #(select-keys % [:id :name :tools :vision :contextLimit]) (-> made :result :models)))))
+
+        (t/testing "a user sees it by name and picks it, and is not shown its address"
+          (let [out (:result (endpoint! user :get-ai-endpoints))]
+            (t/is (false? (:can-manage out)))
+            (t/is (= [{:provider provider :name "Lab" :requires-key false}]
+                     (mapv #(select-keys % [:provider :name :requires-key]) (:endpoints out))))
+            (t/is (not-any? #(contains? % :base-uri) (:endpoints out))))
+          (t/is (true? (-> (endpoint! admin :get-ai-endpoints) :result :can-manage)))
+          (let [out (endpoint! user :set-ai-provider-key :provider provider :api-key "not-needed")]
+            (t/is (nil? (:error out)))
+            ;; every model it serves is on from the start
+            (t/is (= ["qwen-local" "tiny-chat"] (-> out :result :enabled-models)))))
+
+        (t/testing "its models are in the catalog, as the admin declared them"
+          (let [records (-> (endpoint! user :get-ai-model-catalog) :result :providers (get (keyword provider)))]
+            (t/is (= ["qwen-local" "tiny-chat"] (mapv :id records)))
+            (t/is (= [true false] (mapv :tools records)))))
+
+        (t/testing "a job on it is handed to the service together with the endpoint"
+          (let [out    (endpoint! user :agent-helper-round :provider provider :model "qwen-local"
+                                  :system "You route tasks." :text "Task")
+                sent   (last @asked)
+                handed (-> (get-in sent [:headers "x-penpot-endpoints"])
+                           (#(String. (.decode (java.util.Base64/getDecoder) ^String %) "UTF-8"))
+                           (json/decode :key-fn keyword))]
+            (t/is (nil? (:error out)))
+            (t/is (= provider (get-in sent [:headers "x-penpot-provider"])))
+            (t/is (= [{:provider provider :name "Lab" :baseUrl "http://models.internal:11434/v1"}]
+                     (mapv #(select-keys % [:provider :name :baseUrl]) handed)))
+            (t/is (= ["qwen-local" "tiny-chat"] (mapv :id (:models (first handed)))))))
+
+        (t/testing "an endpoint nobody registered is not called"
+          (let [unknown (str "endpoint:" (random-uuid))
+                before  (count @asked)]
+            (t/is (th/ex-of-code? (:error (endpoint! user :set-ai-provider-key :provider unknown :api-key "not-needed"))
+                                  :ai-provider-not-registered))
+            (t/is (some? (:error (endpoint! user :agent-helper-round :provider unknown :model "m" :system "s" :text "t"))))
+            (t/is (= before (count @asked)))
+            ;; and an id of no known form is not a provider at all
+            (t/is (some? (:error (endpoint! user :set-ai-provider-key :provider "http://evil.example/v1" :api-key "not-needed"))))))
+
+        (t/testing "removed by an admin, it is gone for everyone and called no more"
+          (t/is (th/ex-of-code? (:error (endpoint! user :delete-ai-endpoint :id id)) :instance-admin-required))
+          (t/is (nil? (:error (endpoint! admin :delete-ai-endpoint :id id))))
+          (t/is (= [] (-> (endpoint! user :get-ai-endpoints) :result :endpoints)))
+          (t/is (= [] (:result (endpoint! user :get-ai-providers))))
+          (let [before (count @asked)]
+            (t/is (some? (:error (endpoint! user :agent-helper-round :provider provider :model "qwen-local" :system "s" :text "t"))))
+            (t/is (= before (count @asked))))))
+      (reset! @#'ai-providers/catalog-cache nil))))

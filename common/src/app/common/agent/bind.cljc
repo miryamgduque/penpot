@@ -205,6 +205,48 @@
                                         "must keep its own values whatever the theme — a mock-up inside "
                                         "a canvas, a brand's fixed color — pass keepLiterals: true.")})))))))))
 
+;; --- A copy placed in a file takes the file's values
+;;
+;; A copy of a linked library's component arrives with the values the
+;; library gave its main. It carries the names of the tokens, though, and
+;; when the file has tokens of those names the copy is theirs to style: at
+;; once, not at the next change of a token.
+
+(defn- foreign?
+  "Whether `shape` is, or is inside, a copy of a component of another file."
+  [objects file-id shape]
+  (loop [shape shape]
+    (cond
+      (nil? shape)                       false
+      (some? (:component-file shape))    (not= file-id (:component-file shape))
+      (= (:id shape) (:parent-id shape)) false
+      :else                              (recur (get objects (:parent-id shape))))))
+
+(defn with-file-values
+  "A placing tool's `answer`, with the copies of a linked library's
+  components it placed given the values this file's tokens have. The answer
+  is as it was when it placed none, or the file has no token they name."
+  [{:keys [file-id data page-id fonts]} answer engine]
+  (let [made (into []
+                   (comp (filter #(and (= :add-obj (:type %)) (= page-id (:page-id %))))
+                         (map :id))
+                   (:changes answer))]
+    (if (or (empty? made) (nil? (:tokens-lib data)))
+      answer
+      (let [after   (cfc/process-changes data (:changes answer) false)
+            objects (get-in after [:pages-index page-id :objects])
+            ids     (filterv (fn [id]
+                               (let [shape (get objects id)]
+                                 (and (seq (:applied-tokens shape)) (foreign? objects file-id shape))))
+                             made)
+            out     (when (seq ids)
+                      (cato/rebind-shapes after page-id objects ids (assoc engine :fonts fonts)))]
+        (cond
+          (contains? out :pending) (select-keys out [:pending])
+          (contains? out :changes) (assoc answer :changes (caw/then-changes (:changes answer) (:changes out)))
+          ;; a value this host cannot write is left as the library had it
+          :else                    answer)))))
+
 (defn as-written
   "A drawing tool's `answer` to a call that said keepLiterals: what it made
   is marked as content that keeps its values."

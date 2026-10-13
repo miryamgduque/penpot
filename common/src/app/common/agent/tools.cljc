@@ -53,6 +53,7 @@
    "create_token_theme" cato/create-token-theme
    "apply_tokens"       cato/apply-tokens
    "activate_theme"     cato/activate-theme
+   "reapply_tokens"     cato/reapply-tokens
    "create_variant"       cac/create-variant
    "create_instance"      cac/create-instance
    "detach_instance"      cac/detach-instance
@@ -124,6 +125,10 @@
   "The tools that write values on shapes by hand."
   #{"create_shape" "modify_shape" "update_shapes" "build_tree" "create_text" "set_layout"})
 
+(def ^:private placing-tools
+  "The tools that may place a copy of a linked library's component."
+  #{"create_instance" "build_tree" "build_recipe" "swap_component" "switch_variant"})
+
 (defn run
   "Runs `tool`, unless a design rule refuses the call. What a drawing tool
   wrote that is exactly a role token's value is bound to that role, unless
@@ -131,7 +136,12 @@
   [tool view input options]
   (or (rule-problem tool input (:guard options))
       (let [answer ((get tools tool) view input options)]
-        (cond
-          (not (contains? drawing-tools tool)) answer
-          (true? (:keepLiterals input))        (cab/as-written view answer)
-          :else                                (cab/with-roles view answer)))))
+        (cond-> answer
+          (and (contains? drawing-tools tool) (true? (:keepLiterals input)))
+          (->> (cab/as-written view))
+
+          (and (contains? drawing-tools tool) (not (true? (:keepLiterals input))))
+          (->> (cab/with-roles view))
+
+          (and (contains? placing-tools tool) (seq (:changes answer)))
+          (as-> $ (cab/with-file-values view $ options))))))

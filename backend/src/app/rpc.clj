@@ -385,6 +385,7 @@
           'app.rpc.commands.agent-chats
           'app.rpc.commands.agent-tools
           'app.rpc.commands.agent-web
+          'app.rpc.commands.ai-endpoints
           'app.rpc.commands.ai-providers
           'app.rpc.commands.audit
           'app.rpc.commands.auth

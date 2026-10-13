@@ -45,6 +45,7 @@
    [app.http.sse :as sse]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.agent-tools :as agent-tools]
+   [app.rpc.commands.ai-endpoints :as endpoints]
    [app.rpc.commands.files :as files]
    [app.rpc.doc :as-alias doc]
    [app.setup :as-alias setup]
@@ -78,6 +79,48 @@
 
 (def ^:private valid-provider-ids
   (into #{} (keys providers)))
+
+;; A provider is one of the built-in ones, or an endpoint an instance admin
+;; registered (`endpoint:<uuid>`, see `app.rpc.commands.ai-endpoints`). The
+;; form of the id is checked here; that an endpoint of that id IS registered
+;; is checked where the provider is used.
+(def ^:private schema:provider-id
+  [:and
+   [:string {:max 80}]
+   [:fn {:error/message "not a provider id"}
+    (fn [provider]
+      (or (contains? valid-provider-ids provider)
+          (endpoints/endpoint-provider? provider)))]])
+
+(defn- registered-endpoint
+  "The endpoint registered under `provider`; raises when it names none. The
+  server calls no address that is neither built in nor registered."
+  [cfg provider]
+  (or (endpoints/get-endpoint cfg provider)
+      (ex/raise :type :validation
+                :code :ai-provider-not-registered
+                :hint (str "this is neither a built-in provider nor an endpoint registered on this "
+                           "Penpot instance, so it is not called")
+                :provider provider)))
+
+(defn- check-provider!
+  "Raises unless `provider` is built in or a registered endpoint."
+  [cfg provider]
+  (when-not (contains? valid-provider-ids provider)
+    (registered-endpoint cfg provider))
+  nil)
+
+(defn- endpoints-header
+  "The header that hands the agent service the endpoints `provider-ids`
+  name, or nil when none of them is an endpoint."
+  [cfg provider-ids]
+  (let [found (into []
+                    (comp (filter endpoints/endpoint-provider?)
+                          (distinct)
+                          (map #(endpoints/descriptor (registered-endpoint cfg %))))
+                    provider-ids)]
+    (when (seq found)
+      {"x-penpot-endpoints" (bc/bytes->b64-str (.getBytes ^String (json/encode found) "UTF-8"))})))
 
 (defn- key-hint
   [api-key]
@@ -182,7 +225,13 @@
   and returns the curated fallback list."
   [cfg provider-id api-key]
   (let [{:keys [kind base-uri ping-model fallback-models] :as provider} (get providers provider-id)]
-    (if (some? fallback-models)
+    (cond
+      ;; a registered endpoint serves the models its admin listed: it is not
+      ;; asked, and a key is not tried against it
+      (endpoints/endpoint-provider? provider-id)
+      (mapv :id (:models (registered-endpoint cfg provider-id)))
+
+      (some? fallback-models)
       (let [response (provider-req! cfg
                                     {:method :post
                                      :uri (str base-uri "/chat/completions")
@@ -196,6 +245,7 @@
         (check-auth-status! provider-id (:status response))
         fallback-models)
 
+      :else
       (let [uri      (case kind
                        :anthropic (str base-uri "/v1/models?limit=100")
                        :openai    (str base-uri "/models"))
@@ -265,7 +315,7 @@
 
 (def ^:private schema:get-ai-provider-models
   [:map {:title "get-ai-provider-models"}
-   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]])
+   [:provider schema:provider-id]])
 
 (sv/defmethod ::get-ai-provider-models
   {::doc/added "2.20"
@@ -290,7 +340,7 @@
 
 (def ^:private schema:set-ai-provider-key
   [:map {:title "set-ai-provider-key"}
-   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
+   [:provider schema:provider-id]
    [:api-key [:string {:min 8 :max 500}]]])
 
 ;; No ORM/upsert helper in app.db — a parameterized ON CONFLICT statement
@@ -307,8 +357,13 @@
   {::doc/added "2.20"
    ::sm/params schema:set-ai-provider-key}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider api-key]}]
+  (check-provider! cfg provider)
   (let [row  (get-provider-row cfg profile-id provider)
-        kept (vec (:enabled-models row []))]
+        ;; a registered endpoint has few models and each was put there on
+        ;; purpose: all are on from the start
+        kept (if (and (nil? row) (endpoints/endpoint-provider? provider))
+               (fetch-models! cfg provider api-key)
+               (vec (:enabled-models row [])))]
     (let [stored (encrypt-key cfg api-key)]
       (db/exec-one! pool [sql:upsert-provider-key
                           profile-id provider stored (db/json kept)
@@ -325,7 +380,7 @@
 
 (def ^:private schema:connect-ai-provider
   [:map {:title "connect-ai-provider"}
-   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
+   [:provider schema:provider-id]
    [:api-key [:string {:min 8 :max 500}]]])
 
 ;; Like sql:upsert-provider-key but also rewrites enabled_models — the
@@ -360,7 +415,7 @@
 
 (def ^:private schema:set-ai-provider-models
   [:map {:title "set-ai-provider-models"}
-   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
+   [:provider schema:provider-id]
    [:models [:vector [:string {:max 200}]]]])
 
 (sv/defmethod ::set-ai-provider-models
@@ -384,7 +439,7 @@
 
 (def ^:private schema:disconnect-ai-provider
   [:map {:title "disconnect-ai-provider"}
-   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]])
+   [:provider schema:provider-id]])
 
 (sv/defmethod ::disconnect-ai-provider
   {::doc/added "2.20"
@@ -398,7 +453,7 @@
 
 (def ^:private schema:ai-agent-round
   [:map {:title "ai-agent-round"}
-   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
+   [:provider schema:provider-id]
    ;; provider-shaped JSON, built by the panel, forwarded verbatim so no
    ;; transit/JSON key mangling can corrupt it
    [:payload [:string {:max 4000000}]]])
@@ -428,6 +483,11 @@
   {::doc/added "2.20"
    ::sm/params schema:ai-agent-round}
   [cfg {:keys [::rpc/profile-id provider payload]}]
+  (when-not (contains? valid-provider-ids provider)
+    (ex/raise :type :validation
+              :code :ai-provider-not-supported
+              :hint "this command reaches the built-in providers only"
+              :provider provider))
   (let [row      (connected-provider-row cfg profile-id provider)
         request  (round-request (get providers provider) (:api-key row) payload)
         response (provider-req! cfg request provider)]
@@ -466,7 +526,7 @@
 (def ^:private schema:set-ai-helper-model
   [:map {:title "set-ai-helper-model"}
    ;; both absent: no helper, the main model does the side jobs
-   [:provider {:optional true} [:maybe [::sm/one-of {:format "string"} valid-provider-ids]]]
+   [:provider {:optional true} [:maybe schema:provider-id]]
    [:model {:optional true} [:maybe [:string {:max 200}]]]])
 
 (sv/defmethod ::set-ai-helper-model
@@ -799,7 +859,13 @@
   {::doc/added "2.20"
    ::sm/params schema:get-ai-model-catalog}
   [cfg _]
-  (model-catalog cfg))
+  (update (model-catalog cfg) :providers
+          (fn [catalogued]
+            ;; and of a registered endpoint's models, what its admin declared
+            (into (or catalogued {})
+                  (map (fn [endpoint]
+                         [(keyword (endpoints/provider-id (:id endpoint))) (endpoints/records endpoint)]))
+                  (endpoints/get-endpoints cfg)))))
 
 (defn- conversation-of
   "The conversation a turn payload names, or nil."
@@ -812,7 +878,7 @@
 
 (def ^:private schema:agent-service-turn
   [:map {:title "agent-service-turn"}
-   [:provider [::sm/one-of {:format "string"} valid-provider-ids]]
+   [:provider schema:provider-id]
    [:file-id ::sm/uuid]
    ;; JSON built by the panel and forwarded verbatim: session id, model,
    ;; system prompt, user message and the tool specs
@@ -824,7 +890,9 @@
    ::sm/params schema:agent-service-turn}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider file-id payload]}]
   (files/check-read-permissions! pool profile-id file-id)
+  (check-provider! cfg provider)
   (let [row      (connected-provider-row cfg profile-id provider)
+        helper   (helper-row cfg profile-id)
         mcp-servers (turn-mcp-servers cfg profile-id)
         ;; what this turn changes is recorded under these two
         turn     {:turn-id (uuid/next)
@@ -836,10 +904,13 @@
                                                      "x-penpot-api-key" (:api-key row)}
                                                     ;; the model for the turn's side jobs,
                                                     ;; when the user chose one
-                                                    (when-let [helper (helper-row cfg profile-id)]
+                                                    (when (some? helper)
                                                       {"x-penpot-helper-provider" (:provider helper)
                                                        "x-penpot-helper-model" (:helper-model helper)
-                                                       "x-penpot-helper-api-key" (:api-key helper)}))
+                                                       "x-penpot-helper-api-key" (:api-key helper)})
+                                                    ;; an endpoint is handed over with the turn
+                                                    ;; that uses it: the service calls no other
+                                                    (endpoints-header cfg [provider (:provider helper)]))
                                        ;; with server tools on, the service
                                        ;; runs these itself, as this profile
                                        ;; on this file and nothing else
@@ -870,7 +941,7 @@
 (def ^:private schema:agent-helper-round
   [:map {:title "agent-helper-round"}
    ;; the main model, which does the job when no helper is chosen
-   [:provider {:optional true} [:maybe [::sm/one-of {:format "string"} valid-provider-ids]]]
+   [:provider {:optional true} [:maybe schema:provider-id]]
    [:model {:optional true} [:maybe [:string {:max 200}]]]
    [:system [:string {:max 20000}]]
    [:text [:string {:max 400000}]]])
@@ -886,9 +957,10 @@
                              :code :ai-helper-unavailable
                              :hint "no helper model is chosen and no main model was named"))
         response (agent-service-req! cfg "/v1/side"
-                                     {"x-penpot-profile-id" (str profile-id)
-                                      "x-penpot-provider" (:provider helper)
-                                      "x-penpot-api-key" (:api-key helper)}
+                                     (merge {"x-penpot-profile-id" (str profile-id)
+                                             "x-penpot-provider" (:provider helper)
+                                             "x-penpot-api-key" (:api-key helper)}
+                                            (endpoints-header cfg [(:provider helper)]))
                                      (json/encode {:model (:model helper) :system system :text text})
                                      {})
         _        (check-agent-service-status! response)

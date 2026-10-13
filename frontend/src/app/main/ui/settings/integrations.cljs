@@ -25,6 +25,7 @@
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.controls.checkbox :refer [checkbox*]]
    [app.main.ui.ds.controls.input :refer [input*]]
+   [app.main.ui.ds.controls.select :refer [select*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i :refer [icon*]]
    [app.main.ui.ds.foundations.typography :as t]
@@ -831,6 +832,53 @@
                        :title (tr "integrations.ai-provider.models.unknown-hint")}
                 (tr "integrations.ai-provider.models.unknown")])])])]]]))
 
+(def ^:private same-as-main "same")
+
+(mf/defc ai-helper-model*
+  "The model for the agent's side jobs, chosen among the models the user
+  enabled; by default the one they build with."
+  {::mf/private true}
+  [{:keys [statuses]}]
+  (let [catalog (mf/deref refs/ai-model-catalog)
+        pool    (mf/with-memo [statuses catalog]
+                  (vec (for [[_ {:keys [provider enabled-models]}] statuses
+                             model enabled-models
+                             :when (dai/selectable? provider model)]
+                         {:provider provider :model model})))
+        chosen  (some (fn [[_ {:keys [provider helper-model]}]]
+                        (when (string? helper-model) (dm/str provider "/" helper-model)))
+                      statuses)
+        options (mf/with-memo [pool]
+                  (into [{:id same-as-main :label (tr "integrations.ai-provider.helper.same")}]
+                        (map (fn [{:keys [provider model]}]
+                               {:id (dm/str provider "/" model)
+                                :label (dm/str (or (:name (dai/model provider model)) model)
+                                               " · " provider)}))
+                        pool))
+        on-change
+        (mf/use-fn
+         (fn [id]
+           (if (= same-as-main id)
+             (st/emit! (dai/set-ai-helper-model {}))
+             (let [[provider model] (str/split id "/" 2)]
+               (st/emit! (dai/set-ai-helper-model {:provider provider :model model}))))))]
+    (when (seq pool)
+      [:div {:class (stl/css :ai-helper-model)}
+       [:> heading* {:level 3
+                     :typography t/headline-small
+                     :class (stl/css :color-primary)}
+        (tr "integrations.ai-provider.helper.title")]
+       [:> text* {:as "div"
+                  :typography t/body-medium
+                  :class (stl/css :color-secondary)}
+        (tr "integrations.ai-provider.helper.description")]
+       ;; keyed by what is chosen: the select reads its value once
+       [:> select* {:key (or chosen same-as-main)
+                    :aria-label (tr "integrations.ai-provider.helper.title")
+                    :options options
+                    :default-selected (or chosen same-as-main)
+                    :on-change on-change}]])))
+
 (mf/defc ai-providers-section*
   {::mf/private true}
   []
@@ -861,7 +909,9 @@
                               :provider id
                               :label label
                               :models-hint models-hint
-                              :status (get statuses id)}])]))
+                              :status (get statuses id)}])
+
+     [:> ai-helper-model* {:statuses statuses}]]))
 
 (def ^:private agent-mcp-error-keys
   {:mcp-server-name-invalid   "integrations.agent-mcp.error.name"

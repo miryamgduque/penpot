@@ -15,6 +15,7 @@
   The agent's turns themselves run in the agent service; see
   `app.main.data.workspace.agent-remote`."
   (:require
+   [app.main.data.ai-providers :as dai]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
@@ -228,26 +229,17 @@
 ;; produces, so the turn loop never learns that streaming exists — deltas are
 ;; purely a presentation channel.
 
-;; $ per million tokens (standard list price; cache read ≈ 0.1×, write ≈ 1.25×).
-(def ^:private pricing
-  {;; 5.5 list prices as published in the pi-ai model catalog. Haiku 5.5 is
-   ;; priced higher above 100k input tokens; the estimate uses the base tier.
-   "claude-opus-5-5" {:input 4 :output 20}
-   "claude-sonnet-5-5" {:input 2 :output 10}
-   "claude-haiku-5-5" {:input 0.1 :output 0.5}
-   "claude-sonnet-5" {:input 3 :output 15}
-   "claude-opus-4-8" {:input 5 :output 25}
-   "claude-haiku-4-5-20251001" {:input 1 :output 5}})
-
+;; What a model costs comes from the catalog (`app.main.data.ai-providers`):
+;; dollars per million tokens, with what reading and writing the cache cost.
 (defn estimate-cost-usd
-  "Estimated session cost in USD for Claude models; nil for anything unpriced
-  (the meter hides the figure)."
+  "Estimated session cost in USD, from the catalog's price of `model`; nil
+  when the catalog states none (the meter hides the figure)."
   [model {:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens]}]
-  (when-let [{:keys [input output]} (get pricing model)]
-    (/ (+ (* input-tokens input)
-          (* cache-read-tokens input 0.1)
-          (* cache-write-tokens input 1.25)
-          (* output-tokens output))
+  (when-let [{:keys [input output cacheRead cacheWrite]} (dai/price model)]
+    (/ (+ (* (or input-tokens 0) input)
+          (* (or cache-read-tokens 0) cacheRead)
+          (* (or cache-write-tokens 0) cacheWrite)
+          (* (or output-tokens 0) output))
        1000000)))
 
 ;; --- System prompt
@@ -689,22 +681,24 @@
 ;; --- Semantic detect round (auto-fix watcher tick)
 
 (defn detect-round
-  "One buffered, tool-less provider round for the semantic audit tick — a
-  one-round side turn. Anthropic-only by design: the tick only fires when it
-  resolves a skill's declared fix model, and those are Anthropic. Returns a
-  stream of one `{:text :usage}`; failures surface as stream errors for the
-  caller to log and drop — a background tick must never toast the user."
+  "One tool-less round on the user's HELPER model → a stream of one
+  `{:text :usage}`. It runs in the agent service, so it works with whatever
+  provider the user connected. `main` is the model the user builds with
+  (`{:provider :model}`), which does the job when they chose no helper; the
+  backend decides. Failures surface as stream errors for the caller to log
+  and drop — background work must never toast the user."
   [{:keys [provider model]} system user-text]
-  (run-side-turn {:provider provider
-                  :model model
-                  :system system
-                  :user-text user-text
-                  :tools nil
-                  :max-rounds 1
-                  ;; deliberately uncached: ticks are sporadic relative to the
-                  ;; 5-minute cache TTL, so a marker would mostly buy 1.25×
-                  ;; writes and no reads
-                  :cache? false}))
+  (->> (rp/cmd! :agent-helper-round
+                (cond-> {:system system :text user-text}
+                  (and (string? provider) (string? model))
+                  (assoc :provider provider :model model)))
+       (rx/map (fn [{:keys [text usage]}]
+                 {:text (or text "")
+                  :usage {:input-tokens (or (:input usage) 0)
+                          :output-tokens (or (:output usage) 0)
+                          :cache-read-tokens (or (:cacheRead usage) 0)
+                          :cache-write-tokens (or (:cacheWrite usage) 0)
+                          :requests (or (:requests usage) 1)}}))))
 
 ;; --- Playbook matching (turn-start injection)
 ;;
@@ -713,8 +707,6 @@
 ;; gambling on a fetch, the FIRST message of a conversation runs one cheap
 ;; tool-less round that names the matching skill, and the body is injected
 ;; into the user message itself — zero extra agent rounds, cache-compatible.
-
-(def ^:private match-model "claude-haiku-4-5-20251001")
 
 (def ^:private match-system
   (str "You route design tasks to playbooks. Given a task and a list of "
@@ -726,13 +718,14 @@
 (defn match-playbook
   "One buffered round naming the enabled skill whose playbook matches `text`
   → observable of `{:skill :body :usage}` (skill/body nil on no match).
-  Anthropic-only like the other side work; every failure degrades to no
-  injection — this is an optimization, never a blocker."
-  [state text]
+  It runs on the helper model, or on `main` when the user chose none; every
+  failure degrades to no injection — this is an optimization, never a
+  blocker."
+  [state text main]
   (let [skills (ask/catalog-manifest state)]
     (if (or (str/blank? text) (empty? skills))
       (rx/of {})
-      (->> (detect-round {:provider "anthropic" :model match-model}
+      (->> (detect-round main
                          match-system
                          (str "Task:\n"
                               (subs text 0 (min 1500 (count text)))
@@ -786,11 +779,9 @@
 
 ;; --- Auto-compaction: the summarizer round
 
-;; Hardcoded cheap model, same rationale as the watcher tick: ambient work
-;; never bills like design work. Anthropic-only like detect-round — if the
-;; profile has no Anthropic key the round errors and the caller degrades to
-;; the uncompacted history (the trim backstop still bounds it).
-(def ^:private compact-model "claude-haiku-4-5-20251001")
+;; The summary is a side job: it runs on the user's helper model, or on the
+;; model they build with when they chose none. If the round errors the caller
+;; degrades to the uncompacted history (the trim backstop still bounds it).
 
 ;; Public because the section contract is pinned by tests: Learned exists so a
 ;; compacted agent does not re-hit walls it already climbed (a rejected raw
@@ -816,8 +807,8 @@
   blank summary degrades to the original history (a no-op compaction beats a
   history replaced by nothing); provider/HTTP failures surface as stream errors
   for the caller to catch — compaction must never block the user's turn."
-  [messages]
-  (->> (detect-round {:provider "anthropic" :model compact-model}
+  [messages main]
+  (->> (detect-round main
                      compact-system
                      (compaction-transcript messages))
        (rx/map (fn [{:keys [text usage]}]
@@ -832,8 +823,8 @@
   does in place. A blank summary is thrown here (unlike compaction there is no
   sensible degrade: the caller is about to seed a new chat with this text and
   must instead stay in the current one)."
-  [messages]
-  (->> (detect-round {:provider "anthropic" :model compact-model}
+  [messages main]
+  (->> (detect-round main
                      compact-system
                      (conversation-transcript messages))
        (rx/map (fn [{:keys [text] :as out}]

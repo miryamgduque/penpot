@@ -51,6 +51,12 @@
   (t/is (true? (dai/selectable? "local" "some-model")))
   (t/is (true? (dai/selectable? "nobody" "anything"))))
 
+(t/deftest a-models-price-is-the-catalogs-or-nothing
+  (t/is (= {:input 1 :output 4 :cacheRead 0.2 :cacheWrite 0} (dai/price "glm-5v-turbo")))
+  ;; a model whose price nobody stated, and one the catalog does not have
+  (t/is (nil? (dai/price "glm-5.2")))
+  (t/is (nil? (dai/price "glm-9"))))
+
 (t/deftest the-records-of-a-provider-are-read-by-its-id
   (t/is (= ["glm-5.2" "glm-5v-turbo"] (mapv :id (dai/models "zhipu"))))
   (t/is (= [] (dai/models "nobody")))

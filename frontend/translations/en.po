@@ -2802,6 +2802,15 @@ msgstr "Images"
 msgid "integrations.ai-provider.models.vision-hint"
 msgstr "This model can read images you attach in the agent chat."
 
+msgid "integrations.ai-provider.helper.title"
+msgstr "Helper model"
+
+msgid "integrations.ai-provider.helper.description"
+msgstr "The model for the agent's side jobs: summaries, reading through the file and matching playbooks. A cheaper, faster model keeps the cost down. With none chosen, the model you build with does them."
+
+msgid "integrations.ai-provider.helper.same"
+msgstr "Same as the model I build with"
+
 msgid "integrations.ai-provider.models.no-tools"
 msgstr "No tool use"
 

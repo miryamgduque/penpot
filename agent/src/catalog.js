@@ -72,9 +72,11 @@ function priceOf(cost) {
 
 function cachingOf(model) {
   if (model.promptCache !== undefined && model.promptCache !== null) return true;
-  // a price for reading the cache says there is one; its absence says nothing
+  // a price for reading the cache says there is one
   if (typeof model.cost?.cacheRead === "number" && model.cost.cacheRead > 0) return true;
-  return null;
+  // a stated price list with nothing for the cache says there is none; with
+  // no price stated at all, nothing is said
+  return priceOf(model.cost) === null ? null : false;
 }
 
 /**

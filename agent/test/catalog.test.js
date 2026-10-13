@@ -40,9 +40,11 @@ test("what the source does not say is unknown, never assumed", () => {
   assert.deepEqual(unknowns(record), ["vision", "tools", "reasoning", "promptCaching", "contextLimit", "outputLimit", "price"]);
   // text only is known: it does not read images
   assert.equal(describe("p", { id: "m", input: ["text"] }).vision, false);
-  // a price for reading the cache says there is one; none says nothing
+  // a price for reading the cache says there is one; a price list without one says there is none
   assert.equal(describe("p", { id: "m", cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 0 } }).promptCaching, true);
-  assert.equal(describe("p", { id: "m", cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } }).promptCaching, null);
+  assert.equal(describe("p", { id: "m", cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } }).promptCaching, false);
+  // and where no price is stated at all, nothing is said
+  assert.equal(describe("p", { id: "m", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }).promptCaching, null);
   // a price of nothing is a price nobody stated
   assert.equal(describe("p", { id: "m", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }).price, null);
 });

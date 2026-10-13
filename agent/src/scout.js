@@ -6,7 +6,7 @@
 
 /**
  * The tools the service runs itself: each hands a question to a second,
- * short conversation on a cheap model and returns its answer as a digest.
+ * short conversation on the user's helper model and returns its answer as a digest.
  *
  * - `explore_design` reads the file with the read-only tools, so the main
  *   conversation does not have to carry what it read.
@@ -18,9 +18,9 @@
  *   something judges it kindly; the critic is asked for what is weakest.
  */
 
-// Side work runs on a model we choose, not on the one picked in the panel.
-// Only where we know a cheap one: elsewhere the turn's own model does it.
-const SIDE_MODELS = { anthropic: "claude-haiku-4-5-20251001" };
+// Side work — reading the file, reading a web page — runs on the user's
+// HELPER model: the one they chose for such jobs, or the turn's own model
+// when they chose none. `side({helper: true, …})` asks for it.
 
 const EXPLORE_TOOLS = ["read_design", "find_shapes", "audit_file"];
 
@@ -139,14 +139,13 @@ export function scoutTools(backendTools) {
  * `{content, isError}`, the content being the page as JSON. `render` draws
  * boards: `(names)` → `{content, images, isError}`.
  */
-export async function runScoutTool(call, { provider, model, declared, side, fetchPage, render, sees = true }) {
-  const sideModel = SIDE_MODELS[provider] ?? model;
+export async function runScoutTool(call, { model, declared, side, fetchPage, render, sees = true }) {
 
   if (call.name === "explore_design") {
     const { question } = call.input ?? {};
     if (blank(question)) return refused("explore_design needs a non-empty `question`");
     const text = await side({
-      model: sideModel,
+      helper: true,
       system: EXPLORE_SYSTEM,
       text: question,
       tools: declared.filter((tool) => EXPLORE_TOOLS.includes(tool?.name)),
@@ -173,7 +172,7 @@ export async function runScoutTool(call, { provider, model, declared, side, fetc
       return refused("fetch_page: the fetch failed.");
     }
     const text = await side({
-      model: sideModel,
+      helper: true,
       system: WEB_SYSTEM,
       text: pagePrompt({ question, url, title: page.title, text: page.text, truncated: page.truncated }),
       tools: [],

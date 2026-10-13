@@ -143,6 +143,18 @@ async function runEngineTool(exporterUri, token, call, context, signal) {
   };
 }
 
+/**
+ * The helper model a turn was sent with, or undefined: all three of its
+ * headers, and a provider this service knows.
+ */
+function helperOf(headers) {
+  const provider = headers["x-penpot-helper-provider"];
+  const model = headers["x-penpot-helper-model"];
+  const apiKey = headers["x-penpot-helper-api-key"];
+  const present = [provider, model, apiKey].every((value) => typeof value === "string" && value !== "");
+  return present && PROVIDER_ROUTES[provider] !== undefined ? { provider, model, apiKey } : undefined;
+}
+
 export async function createAgentServer(options = {}) {
   const harness = options.harness ?? (await createHarness(options));
   const sharedKey = options.sharedKey;
@@ -190,6 +202,9 @@ export async function createAgentServer(options = {}) {
     const tools =
       engineTools.size > 0 ? declared.filter((tool) => !WORKSPACE_UNDO_TOOLS.has(tool?.name)) : declared;
     const images = Array.isArray(body.images) ? body.images : [];
+    // the model for side jobs: the user's helper, with its own provider and
+    // key, or the turn's own model when they chose none
+    const helper = helperOf(req.headers) ?? { provider, model, apiKey };
     // the MCP servers the user connected, as the backend handed them over
     const mcp = await turnMcpServers(req.headers["x-penpot-mcp-servers"], {
       allowPrivate: options.mcpAllowPrivate === true,
@@ -325,9 +340,9 @@ export async function createAgentServer(options = {}) {
 
     // A side conversation reads the file with the server's tools. Its tool
     // calls are its own business: the panel shows the one call that asked.
-    const side = (request) =>
+    const side = ({ helper: asHelper, ...request }) =>
       harness.runSideTurn(
-        { profileId, provider, apiKey, ...request },
+        { profileId, ...(asHelper ? helper : { provider, apiKey }), ...request },
         {
           serverTools,
           signal: controller.signal,
@@ -424,6 +439,46 @@ export async function createAgentServer(options = {}) {
     sendJson(res, 200, { ok: true });
   }
 
+  /**
+   * One round with no tools on a model the caller names: the side jobs of the
+   * panel — matching a playbook, summing up a conversation, the watcher's
+   * verdicts. Answers `{text, usage}` when it is over.
+   */
+  async function handleSide(req, res) {
+    const profileId = requireString(req.headers["x-penpot-profile-id"], "profile id");
+    const provider = requireString(req.headers["x-penpot-provider"], "provider");
+    const apiKey = requireString(req.headers["x-penpot-api-key"], "api key");
+    const body = await readJson(req);
+    const model = requireString(body.model, "model");
+    const system = requireString(body.system, "system");
+    const text = requireString(body.text, "text");
+    if (PROVIDER_ROUTES[provider] === undefined) throw new HttpError(400, `unknown provider: ${provider}`);
+    const controller = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) controller.abort();
+    });
+    const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, requests: 0 };
+    let answer;
+    try {
+      answer = await harness.runSideTurn(
+        { profileId, provider, apiKey, model, system, text, tools: [] },
+        {
+          serverTools: new Set(),
+          signal: controller.signal,
+          callServerTool: async () => ({ content: "no tools here", isError: true }),
+          onUsage: (step) => {
+            for (const key of ["input", "output", "cacheRead", "cacheWrite"]) usage[key] += step[key] ?? 0;
+            usage.requests += 1;
+          },
+        },
+      );
+    } catch (cause) {
+      // the provider's own words are what the caller can act on
+      throw new HttpError(cause?.status === 400 ? 400 : 502, cause?.message ?? "the model request failed");
+    }
+    sendJson(res, 200, { text: answer, usage });
+  }
+
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
@@ -436,6 +491,7 @@ export async function createAgentServer(options = {}) {
       // what each model of each provider can do, as the provider layer says
       if (req.method === "GET" && url.pathname === "/v1/models") return sendJson(res, 200, catalog(PROVIDER_ROUTES));
       if (req.method === "POST" && url.pathname === "/v1/turns") return await handleTurn(req, res);
+      if (req.method === "POST" && url.pathname === "/v1/side") return await handleSide(req, res);
       if (req.method === "POST" && url.pathname === "/v1/mcp/tools") return await handleMcpTools(req, res);
       const match = /^\/v1\/turns\/([A-Za-z0-9_-]+)\/tool-results$/.exec(url.pathname);
       if (req.method === "POST" && match) return await handleToolResult(req, res, match[1]);

@@ -103,6 +103,8 @@
       (assoc state :ai-providers
              (into {} (map (juxt :provider identity)) statuses)))))
 
+(declare fetch-ai-endpoints)
+
 (defn fetch-ai-providers
   []
   (ptk/reify ::fetch-ai-providers
@@ -111,8 +113,9 @@
       (rx/merge
        (->> (rp/cmd! :get-ai-providers {})
             (rx/map ai-providers-fetched))
-       ;; whoever needs the providers needs to know what their models can do
-       (rx/of (fetch-ai-model-catalog))))))
+       ;; whoever needs the providers needs to know what their models can do,
+       ;; and which endpoints this instance offers beside them
+       (rx/of (fetch-ai-model-catalog) (fetch-ai-endpoints))))))
 
 (defn set-ai-provider-key
   "Stores (or rotates) a provider API key WITHOUT validating it against
@@ -140,6 +143,50 @@
       (->> (rp/cmd! :set-ai-provider-models params)
            (rx/map (fn [_] (fetch-ai-providers)))
            (rx/catch (fn [_] (rx/of (fetch-ai-providers))))))))
+
+;; --- Endpoints registered on this instance
+;;
+;; Models an organisation runs itself. An instance admin registers them; every
+;; user sees them by name and uses one as they use a provider, under the id
+;; `endpoint:<uuid>`.
+
+(defn- ai-endpoints-fetched
+  [answer]
+  (ptk/reify ::ai-endpoints-fetched
+    ptk/UpdateEvent
+    (update [_ state]
+      (assoc state :ai-endpoints (select-keys answer [:can-manage :endpoints])))))
+
+(defn fetch-ai-endpoints
+  []
+  (ptk/reify ::fetch-ai-endpoints
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :get-ai-endpoints {})
+           (rx/map ai-endpoints-fetched)
+           (rx/catch (fn [_] (rx/empty)))))))
+
+(defn set-ai-endpoint
+  "Registers an endpoint, or changes one (instance admins only). `params`
+  may carry `:on-success` and `:on-error` in its metadata."
+  [params]
+  (ptk/reify ::set-ai-endpoint
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (let [{:keys [on-success on-error] :or {on-success identity on-error rx/throw}} (meta params)]
+        (->> (rp/cmd! :set-ai-endpoint params)
+             (rx/tap on-success)
+             ;; its models are part of the catalog, and it is a provider to pick
+             (rx/mapcat (fn [_] (rx/of (fetch-ai-endpoints) (fetch-ai-model-catalog))))
+             (rx/catch on-error))))))
+
+(defn delete-ai-endpoint
+  [{:keys [id]}]
+  (ptk/reify ::delete-ai-endpoint
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :delete-ai-endpoint {:id id})
+           (rx/mapcat (fn [_] (rx/of (fetch-ai-endpoints) (fetch-ai-providers))))))))
 
 (defn set-ai-helper-model
   "Chooses the model for the agent's side jobs; with no `provider` and

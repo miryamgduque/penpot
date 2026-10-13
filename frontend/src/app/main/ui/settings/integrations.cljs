@@ -11,6 +11,7 @@
    [app.common.data.macros :as dm]
    [app.common.schema :as sm]
    [app.common.time :as ct]
+   [app.common.uuid :as uuid]
    [app.config :as cf]
    [app.main.broadcast :as mbc]
    [app.main.data.ai-providers :as dai]
@@ -614,9 +615,13 @@
     (>= n 1000)     (dm/str (quot n 1000) "K")
     :else           (dm/str n)))
 
+;; What stands in for a key on an endpoint that asks for none: the server
+;; keeps one value per connection, and the endpoint ignores it.
+(def ^:private no-key "not-needed")
+
 (mf/defc ai-provider-card*
   {::mf/private true}
-  [{:keys [provider label models-hint status]}]
+  [{:keys [provider label models-hint status keyless]}]
   (let [connected?  (:connected status)
         enabled     (:enabled-models status)
         enabled-set (set enabled)
@@ -749,33 +754,44 @@
           [:> text* {:as "span"
                      :typography t/body-small
                      :class (stl/css :provider-connected-tag)}
-           (tr "integrations.ai-provider.status.saved" (:key-hint status))]
+           (if keyless
+             (tr "integrations.ai-endpoint.status.in-use")
+             (tr "integrations.ai-provider.status.saved" (:key-hint status)))]
           [:> icon-button* {:variant "ghost"
                             :icon-size "s"
                             :aria-label (tr "integrations.ai-provider.disconnect")
                             :icon i/delete
                             :on-click on-disconnect}]])]]
 
-     ;; the key is autosaved on blur — no explicit connect action
-     [:div {:class (stl/css :provider-key-form)}
-      [:div {:class (stl/css :provider-key-row)}
-       [:> input* {:type "text"
-                   :value api-key
-                   :aria-label (tr "integrations.ai-provider.key.label")
-                   :placeholder (if connected?
-                                  (tr "integrations.ai-provider.key.placeholder-rotate")
-                                  (tr "integrations.ai-provider.key.placeholder"))
-                   :on-change on-key-change
-                   :on-blur on-key-blur
-                   :on-key-down on-key-down}]]
+     ;; an endpoint that asks for no key is switched on with one click
+     (when (and keyless (not connected?))
+       [:div {:class (stl/css :provider-key-form)}
+        [:> button* {:variant "secondary"
+                     :disabled pending?
+                     :on-click #(save-key no-key)}
+         (tr "integrations.ai-endpoint.use")]])
 
-      (when (or pending? saved?)
-        [:> text* {:as "div"
-                   :typography t/body-small
-                   :class (stl/css :provider-key-status)}
-         (if pending?
-           (tr "integrations.ai-provider.saving")
-           (tr "integrations.ai-provider.saved"))])]
+     ;; the key is autosaved on blur — no explicit connect action
+     (when-not keyless
+       [:div {:class (stl/css :provider-key-form)}
+        [:div {:class (stl/css :provider-key-row)}
+         [:> input* {:type "text"
+                     :value api-key
+                     :aria-label (tr "integrations.ai-provider.key.label")
+                     :placeholder (if connected?
+                                    (tr "integrations.ai-provider.key.placeholder-rotate")
+                                    (tr "integrations.ai-provider.key.placeholder"))
+                     :on-change on-key-change
+                     :on-blur on-key-blur
+                     :on-key-down on-key-down}]]
+
+        (when (or pending? saved?)
+          [:> text* {:as "div"
+                     :typography t/body-small
+                     :class (stl/css :provider-key-status)}
+           (if pending?
+             (tr "integrations.ai-provider.saving")
+             (tr "integrations.ai-provider.saved"))])])
 
      [:div {:class (stl/css :provider-models)}
       [:> text* {:as "h4"
@@ -879,10 +895,172 @@
                     :default-selected (or chosen same-as-main)
                     :on-change on-change}]])))
 
+(def ^:private ai-endpoint-error-keys
+  {:ai-endpoint-address-invalid "integrations.ai-endpoint.error.address"
+   :ai-endpoint-name-taken      "integrations.ai-endpoint.error.name"
+   :ai-endpoint-models-repeated "integrations.ai-endpoint.error.models"
+   :ai-endpoints-limit-reached  "integrations.ai-endpoint.error.limit"})
+
+(def ^:private empty-model
+  {:id "" :tools true :vision false :context ""})
+
+(mf/defc ai-endpoints-admin*
+  "Where an instance admin registers the model endpoints of the organisation:
+  an address, and the models it serves with what each can do. Users only
+  ever see the name."
+  {::mf/private true}
+  [{:keys [endpoints]}]
+  (let [form*   (mf/use-state {:name "" :base-uri "" :requires-key false :models [empty-model]})
+        form    (deref form*)
+        error*  (mf/use-state nil)
+        error   (deref error*)
+        ready?  (and (not (str/blank? (:name form)))
+                     (not (str/blank? (:base-uri form)))
+                     (some #(not (str/blank? (:id %))) (:models form)))
+
+        on-field
+        (mf/use-fn
+         (fn [event]
+           (let [node  (dom/get-target event)
+                 field (keyword (dom/get-data node "field"))]
+             (reset! error* nil)
+             (swap! form* assoc field (if (= :requires-key field)
+                                        (dom/checked? node)
+                                        (dom/get-value node))))))
+
+        on-model
+        (mf/use-fn
+         (fn [event]
+           (let [node  (dom/get-target event)
+                 index (d/parse-integer (dom/get-data node "index"))
+                 field (keyword (dom/get-data node "field"))]
+             (swap! form* assoc-in [:models index field]
+                    (if (contains? #{:tools :vision} field)
+                      (dom/checked? node)
+                      (dom/get-value node))))))
+
+        on-add-model
+        (mf/use-fn #(swap! form* update :models conj empty-model))
+
+        on-save
+        (mf/use-fn
+         (mf/deps form)
+         (fn []
+           (let [models (->> (:models form)
+                             (remove #(str/blank? (:id %)))
+                             (mapv (fn [{:keys [id tools vision context]}]
+                                     (cond-> {:id (str/trim id) :tools tools :vision vision}
+                                       (some? (d/parse-integer context))
+                                       (assoc :context-limit (d/parse-integer context))))))]
+             (st/emit!
+              (dai/set-ai-endpoint
+               (with-meta {:name (str/trim (:name form))
+                           :base-uri (str/trim (:base-uri form))
+                           :requires-key (:requires-key form)
+                           :models models}
+                 {:on-success
+                  (fn [_]
+                    (reset! form* {:name "" :base-uri "" :requires-key false :models [empty-model]}))
+                  :on-error
+                  (fn [cause]
+                    (reset! error* (tr (get ai-endpoint-error-keys (:code (ex-data cause))
+                                            "integrations.ai-endpoint.error.generic")))
+                    (rx/empty))}))))))
+
+        on-delete
+        (mf/use-fn
+         (fn [event]
+           (let [id (dom/get-data (dom/get-current-target event) "id")]
+             (st/emit! (dai/delete-ai-endpoint {:id (uuid/parse id)})))))]
+
+    [:div {:class (stl/css :ai-endpoints-admin)
+           :data-testid "ai-endpoints-admin"}
+     [:> heading* {:level 3
+                   :typography t/headline-small
+                   :class (stl/css :color-primary)}
+      (tr "integrations.ai-endpoint.admin.title")]
+     [:> text* {:as "div"
+                :typography t/body-medium
+                :class (stl/css :color-secondary)}
+      (tr "integrations.ai-endpoint.admin.description")]
+
+     (for [{:keys [id name base-uri models]} endpoints]
+       [:div {:key (dm/str id) :class (stl/css :ai-endpoint-row)}
+        [:div {:class (stl/css :ai-endpoint-row-text)}
+         [:> text* {:as "span" :typography t/body-medium :class (stl/css :color-primary)} name]
+         [:> text* {:as "span" :typography t/body-small :class (stl/css :color-secondary)}
+          (dm/str base-uri " · " (str/join ", " (map :id models)))]]
+        [:> icon-button* {:variant "ghost"
+                          :icon-size "s"
+                          :aria-label (tr "integrations.ai-endpoint.admin.remove" name)
+                          :icon i/delete
+                          :data-id (dm/str id)
+                          :on-click on-delete}]])
+
+     [:div {:class (stl/css :ai-endpoint-form)}
+      [:> input* {:type "text"
+                  :value (:name form)
+                  :data-field "name"
+                  :aria-label (tr "integrations.ai-endpoint.admin.name")
+                  :placeholder (tr "integrations.ai-endpoint.admin.name")
+                  :on-change on-field}]
+      [:> input* {:type "text"
+                  :value (:base-uri form)
+                  :data-field "base-uri"
+                  :aria-label (tr "integrations.ai-endpoint.admin.address")
+                  :placeholder (tr "integrations.ai-endpoint.admin.address-placeholder")
+                  :on-change on-field}]
+      [:> checkbox* {:id "ai-endpoint-requires-key"
+                     :label (tr "integrations.ai-endpoint.admin.requires-key")
+                     :checked (:requires-key form)
+                     :data-field "requires-key"
+                     :on-change on-field}]
+
+      [:> text* {:as "div" :typography t/body-small :class (stl/css :color-secondary)}
+       (tr "integrations.ai-endpoint.admin.models-hint")]
+      (for [[index model] (map-indexed vector (:models form))]
+        [:div {:key index :class (stl/css :ai-endpoint-model)}
+         [:> input* {:type "text"
+                     :value (:id model)
+                     :data-index index
+                     :data-field "id"
+                     :aria-label (tr "integrations.ai-endpoint.admin.model-id")
+                     :placeholder (tr "integrations.ai-endpoint.admin.model-id")
+                     :on-change on-model}]
+         [:> input* {:type "text"
+                     :value (:context model)
+                     :data-index index
+                     :data-field "context"
+                     :aria-label (tr "integrations.ai-endpoint.admin.context")
+                     :placeholder (tr "integrations.ai-endpoint.admin.context")
+                     :on-change on-model}]
+         [:> checkbox* {:id (dm/str "ai-endpoint-model-tools-" index)
+                        :label (tr "integrations.ai-endpoint.admin.tools")
+                        :checked (:tools model)
+                        :data-index index
+                        :data-field "tools"
+                        :on-change on-model}]
+         [:> checkbox* {:id (dm/str "ai-endpoint-model-vision-" index)
+                        :label (tr "integrations.ai-provider.models.vision")
+                        :checked (:vision model)
+                        :data-index index
+                        :data-field "vision"
+                        :on-change on-model}]])
+
+      (when (some? error)
+        [:> text* {:as "div" :typography t/body-small :class (stl/css :ai-endpoint-error)} error])
+
+      [:div {:class (stl/css :ai-endpoint-actions)}
+       [:> button* {:variant "ghost" :on-click on-add-model}
+        (tr "integrations.ai-endpoint.admin.add-model")]
+       [:> button* {:variant "primary" :disabled (not ready?) :on-click on-save}
+        (tr "integrations.ai-endpoint.admin.save")]]]]))
+
 (mf/defc ai-providers-section*
   {::mf/private true}
   []
-  (let [statuses (mf/deref refs/ai-providers)]
+  (let [statuses  (mf/deref refs/ai-providers)
+        endpoints (mf/deref refs/ai-endpoints)]
 
     (mf/with-effect []
       (st/emit! (dai/fetch-ai-providers)))
@@ -910,6 +1088,18 @@
                               :label label
                               :models-hint models-hint
                               :status (get statuses id)}])
+
+     ;; the models this organisation runs itself, registered by an admin
+     (for [{:keys [provider name requires-key]} (:endpoints endpoints)]
+       [:> ai-provider-card* {:key provider
+                              :provider provider
+                              :label name
+                              :models-hint (tr "integrations.ai-endpoint.hint")
+                              :keyless (not requires-key)
+                              :status (get statuses provider)}])
+
+     (when (:can-manage endpoints)
+       [:> ai-endpoints-admin* {:endpoints (:endpoints endpoints)}])
 
      [:> ai-helper-model* {:statuses statuses}]]))
 

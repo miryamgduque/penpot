@@ -22,6 +22,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { PROVIDER_ROUTES, createHarness } from "./harness.js";
 import { listMcpTools, turnMcpServers } from "./mcp.js";
 import { catalog } from "./catalog.js";
+import { checkModel } from "./check.js";
 import { recipeUse, recordRecipeUse } from "./recipes.js";
 import { runScoutTool, scoutTools } from "./scout.js";
 
@@ -516,6 +517,22 @@ export async function createAgentServer(options = {}) {
     sendJson(res, 200, { text: answer, usage });
   }
 
+  /**
+   * The provider verification check on one model, with the caller's key:
+   * text, tool use, and vision where the model claims it.
+   */
+  async function handleCheck(req, res) {
+    const profileId = requireString(req.headers["x-penpot-profile-id"], "profile id");
+    const provider = requireString(req.headers["x-penpot-provider"], "provider");
+    const apiKey = requireString(req.headers["x-penpot-api-key"], "api key");
+    const model = requireString((await readJson(req)).model, "model");
+    await registerEndpoints(req);
+    if (!callable(provider)) {
+      throw new HttpError(400, `${provider} is neither a built-in provider nor an endpoint registered on this instance`);
+    }
+    sendJson(res, 200, await checkModel(harness, { provider, model, apiKey, profileId }));
+  }
+
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
@@ -529,6 +546,7 @@ export async function createAgentServer(options = {}) {
       if (req.method === "GET" && url.pathname === "/v1/models") return sendJson(res, 200, catalog(PROVIDER_ROUTES));
       if (req.method === "POST" && url.pathname === "/v1/turns") return await handleTurn(req, res);
       if (req.method === "POST" && url.pathname === "/v1/side") return await handleSide(req, res);
+      if (req.method === "POST" && url.pathname === "/v1/check") return await handleCheck(req, res);
       if (req.method === "POST" && url.pathname === "/v1/mcp/tools") return await handleMcpTools(req, res);
       const match = /^\/v1\/turns\/([A-Za-z0-9_-]+)\/tool-results$/.exec(url.pathname);
       if (req.method === "POST" && match) return await handleToolResult(req, res, match[1]);

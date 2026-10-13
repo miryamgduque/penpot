@@ -970,6 +970,36 @@
      :text (:text answer)
      :usage (:usage answer)}))
 
+;; --- The provider verification check
+;;
+;; The same three questions put to any model before it is relied on: does it
+;; answer, does it call a tool as asked, does it read an image when it claims
+;; to. It runs in the agent service, on the path the agent uses, with the key
+;; the profile stored for that provider.
+
+(def ^:private schema:check-ai-model
+  [:map {:title "check-ai-model"}
+   [:provider schema:provider-id]
+   [:model [:string {:max 200}]]])
+
+(sv/defmethod ::check-ai-model
+  "Runs the provider verification check on one model of a provider the
+  profile connected: text, tool use, and vision where the model claims it."
+  {::doc/added "2.20"
+   ::sm/params schema:check-ai-model}
+  [cfg {:keys [::rpc/profile-id provider model]}]
+  (check-provider! cfg provider)
+  (let [row      (connected-provider-row cfg profile-id provider)
+        response (agent-service-req! cfg "/v1/check"
+                                     (merge {"x-penpot-profile-id" (str profile-id)
+                                             "x-penpot-provider" provider
+                                             "x-penpot-api-key" (:api-key row)}
+                                            (endpoints-header cfg [provider]))
+                                     (json/encode {:model model})
+                                     {})]
+    (check-agent-service-status! response)
+    (json/decode (:body response) :key-fn keyword)))
+
 (def ^:private schema:agent-service-tool-result
   [:map {:title "agent-service-tool-result"}
    [:turn-id [:string {:max 100}]]

@@ -600,11 +600,9 @@
    {:id "zhipu"     :label "Zhipu AI"    :models-hint "GLM models"}
    {:id "moonshot"  :label "Moonshot AI" :models-hint "Kimi models"}])
 
-;; Curated, hand-maintained catalog: a small subset of each provider's
-;; latest models with their context window (in tokens). Not a live fetch —
-;; edit this list as providers ship new models.
-;; The catalog now lives in app.main.data.ai-providers — the agent reads
-;; `:vision` to decide how to encode a turn, so it cannot live in a UI ns.
+;; What each model can do comes from the provider layer's catalog, held in
+;; app.main.data.ai-providers: the agent reads it to decide how to encode a
+;; turn, so it cannot live in a UI ns.
 
 (defn- format-context
   "Human-friendly context-window size, e.g. 200000 → \"200K\", 1000000 → \"1M\"."
@@ -641,7 +639,9 @@
 
         ;; the curated catalog, plus any enabled model no longer in it
         ;; (kept visible so the user can toggle it back off)
-        catalog     (get dai/ai-provider-models provider [])
+        catalog     (->> (get (mf/deref refs/ai-model-catalog) provider [])
+                         (mapv (fn [{:keys [id name contextLimit vision]}]
+                                 {:id id :label name :context contextLimit :vision (true? vision)})))
         catalog-ids (set (map :id catalog))
         rows        (concat catalog
                             (for [m enabled

@@ -616,7 +616,7 @@
   (let [uri (str (agent-service-uri) path)]
     (try
       (http/req cfg
-                {:method :post
+                {:method (if (nil? body) :get :post)
                  :uri uri
                  :headers (cond-> (merge {"content-type" "application/json"} headers)
                             (cf/get :agent-service-shared-key)
@@ -700,6 +700,46 @@
                          :description (or description "")
                          :is-enabled (not (contains? off tool))})
                       (:tools answer))}))))
+
+;; --- Query: what each model can do
+;;
+;; The catalog is the provider layer's, read from the agent service: nothing
+;; here keeps a list of models. It changes when the service is updated, so
+;; one answer is kept for a while.
+
+(def ^:private catalog-ttl (ct/duration "10m"))
+
+(defonce ^:private catalog-cache (atom nil))
+
+(defn- fetch-model-catalog!
+  [cfg]
+  (let [response (agent-service-req! cfg "/v1/models" {} nil {})]
+    (check-agent-service-status! response)
+    (json/decode (:body response) :key-fn keyword)))
+
+(defn model-catalog
+  "Provider id → the capability records of its models, as the agent service
+  describes them; see `agent/src/catalog.js` for the schema."
+  [cfg]
+  (let [{:keys [at catalog]} @catalog-cache
+        now (ct/now)]
+    (if (and (some? catalog) (ct/is-before? now (ct/plus at catalog-ttl)))
+      catalog
+      (let [catalog (fetch-model-catalog! cfg)]
+        (reset! catalog-cache {:at now :catalog catalog})
+        catalog))))
+
+(def ^:private schema:get-ai-model-catalog
+  [:map {:title "get-ai-model-catalog"}])
+
+(sv/defmethod ::get-ai-model-catalog
+  "What each model of each provider can do: vision, tool use, reasoning,
+  prompt caching, context and output limits, and price. A value that is not
+  known is null, never a guess."
+  {::doc/added "2.20"
+   ::sm/params schema:get-ai-model-catalog}
+  [cfg _]
+  (model-catalog cfg))
 
 (defn- conversation-of
   "The conversation a turn payload names, or nil."

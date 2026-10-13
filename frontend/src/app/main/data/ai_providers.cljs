@@ -20,88 +20,64 @@
 
 ;; --- Model catalog
 ;;
-;; Hand-maintained: there is no cross-provider capability API, and the one
-;; provider that does expose one (Anthropic's /v1/models) only covers its own
-;; models. Every id, context size, and `:vision` value below was verified
-;; against provider documentation on 2026-07-15; the Moonshot rows were
-;; re-verified on 2026-07-21 for the K3 launch. Nothing here is inferred.
-;; Moonshot's docs moved host in that window (platform.moonshot.ai →
-;; platform.kimi.ai); the API base URI in the backend is unchanged.
+;; What each model can do is not kept here: it is the provider layer's
+;; catalog, read from the agent service through the backend
+;; (`get-ai-model-catalog`), one capability record per model — see
+;; `agent/src/catalog.js` for the schema. A capability is true, false or nil,
+;; and nil means UNKNOWN: the source does not say.
 ;;
-;; `:vision` is the load-bearing field and the easy one to get wrong, because
-;; the answer does not follow from the model's name or reputation — and the
-;; rule differs per provider, so there is no single instinct that works:
-;;
-;;   Anthropic, OpenAI — every current model reads images. No vision SKU to
-;;     hunt for; looking for one wastes time.
-;;   Moonshot          — the CURRENT models (Kimi K2.5+ and K3) are natively
-;;     multimodal, and K3/K2.6/K2.7-code read video too. The
-;;     base/`-vision-preview` split only ever applied to the sunsetting
-;;     moonshot-v1 line.
-;;   Zhipu             — vision still ships as SEPARATE ids. `glm-5.2` is
-;;     text-only and there is no `glm-5.2v`; `glm-5v-turbo` is the vision model.
-;;
-;; Getting one wrong is not a local mistake: the model is chosen per turn, so a
-;; false `:vision true` is a provider error in the user's face mid-conversation,
-;; and a false `:vision false` silently hides the attach button.
-;; `frontend-tests.data.ai-providers-test` pins each of these down.
-;;
-;; This list will rot. Providers ship roughly quarterly and retire on ~6-month
-;; notice; three ids here were dead or dying when this pass ran. Re-verify
-;; before trusting it, and prefer deleting a row over leaving a stale one — the
-;; settings UI keeps enabled-but-uncatalogued models visible, so nobody is
-;; stranded by a removal.
+;; The catalog lives in the app state (`:ai-model-catalog`, for what renders
+;; it) and in `catalog*`, for the questions asked outside a component — how
+;; to encode a turn is decided per message, far from any view.
 
-(def ai-provider-models
-  {"anthropic"
-   ;; every current Claude model reads images (per the models overview)
-   [{:id "claude-fable-5"             :label "Claude Fable 5"   :context 1000000 :vision true}
-    {:id "claude-opus-5-5"            :label "Claude Opus 5.5"  :context 1000000 :vision true}
-    {:id "claude-sonnet-5-5"          :label "Claude Sonnet 5.5" :context 1000000 :vision true}
-    {:id "claude-haiku-5-5"           :label "Claude Haiku 5.5" :context 1000000 :vision true}
-    {:id "claude-opus-4-8"            :label "Claude Opus 4.8"  :context 1000000 :vision true}
-    {:id "claude-sonnet-5"            :label "Claude Sonnet 5"  :context 1000000 :vision true}
-    {:id "claude-haiku-4-5-20251001"  :label "Claude Haiku 4.5" :context 200000  :vision true}]
-   "openai"
-   ;; the 5.6 tiers share one generation, context, and capability set — they
-   ;; differ only on the cost/speed ladder, so switching between them cannot
-   ;; surprise the user with a capability cliff. `gpt-5.6` is an ALIAS that
-   ;; routes to Sol; the explicit id is pinned, the alias is not.
-   [{:id "gpt-5.6-sol"   :label "GPT-5.6 Sol"   :context 1050000 :vision true}
-    {:id "gpt-5.6-terra" :label "GPT-5.6 Terra" :context 1050000 :vision true}
-    {:id "gpt-5.6-luna"  :label "GPT-5.6 Luna"  :context 1050000 :vision true}
-    ;; a generation behind, but cheaper than Luna's "cheap" tier
-    ;; ($0.75/$4.50 vs $1/$6) at the cost of context
-    {:id "gpt-5.4-mini"  :label "GPT-5.4 mini"  :context 400000  :vision true}]
-   "zhipu"
-   ;; ⚠ `glm-5-turbo` (text) and `glm-5v-turbo` (vision) differ by one
-   ;; character. The `v` is the whole difference; do not "fix" a typo here.
-   [{:id "glm-5.2"      :label "GLM-5.2"      :context 1000000 :vision false}
-    {:id "glm-4.7"      :label "GLM-4.7"      :context 200000  :vision false}
-    {:id "glm-5v-turbo" :label "GLM-5V Turbo" :context 200000  :vision true}]
-   "moonshot"
-   ;; K3 is the flagship and the only Kimi with a 1M window — the rest of the
-   ;; line is 256K. There is still no plain `kimi-k2.7`: K2.7 shipped only as
-   ;; coding variants, so K2.6 stays the cheap general-purpose row.
-   ;; Note the ids use a DOT (`kimi-k2.6`, not `kimi-k2-6`).
-   ;; ⚠ `kimi-k2.5` and the whole `moonshot-v1` line sunset 2026-08-31 and are
-   ;; already closed to new accounts, so they are deliberately not offered.
-   [{:id "kimi-k3"                   :label "Kimi K3"             :context 1000000 :vision true}
-    {:id "kimi-k2.6"                 :label "Kimi K2.6"           :context 262144  :vision true}
-    {:id "kimi-k2.7-code"            :label "Kimi K2.7 Code"      :context 262144  :vision true}
-    ;; same model as k2.7-code on a faster decode path (~180 tok/s)
-    {:id "kimi-k2.7-code-highspeed"  :label "Kimi K2.7 Code Fast" :context 262144  :vision true}]})
+(defonce ^:private catalog* (atom {}))
+
+(defn set-catalog!
+  "Takes `providers`, provider id → capability records, as the catalog."
+  [providers]
+  (reset! catalog* (into {} (map (fn [[provider records]] [(name provider) (vec records)])) providers)))
+
+(defn models
+  "The capability records of a provider's models, or of all when the
+  catalog has not arrived, none."
+  [provider]
+  (get @catalog* provider []))
+
+(defn model
+  "The capability record of one model, or nil when the catalog does not
+  have it."
+  [provider model-id]
+  (some #(when (= model-id (:id %)) %) (models provider)))
 
 (defn vision?
-  "Whether `model` accepts image input.
+  "Whether `model` is KNOWN to accept image input.
 
-  A model outside the catalog answers `false`. That is the deliberate direction
-  to be wrong in: guessing `true` costs a provider error mid-conversation on
-  content the user already sent, while guessing `false` only greys out the
-  attach button on a model that might have coped."
-  [provider model]
-  (boolean (some (fn [entry] (when (= model (:id entry)) (:vision entry)))
-                 (get ai-provider-models provider))))
+  A model outside the catalog, or one whose vision is unknown, answers
+  `false`. That is the deliberate direction to be wrong in: guessing `true`
+  costs a provider error mid-conversation on content the user already sent,
+  while guessing `false` only greys out the attach button on a model that
+  might have coped."
+  [provider model-id]
+  (true? (:vision (model provider model-id))))
+
+(defn- ai-model-catalog-fetched
+  [{:keys [providers]}]
+  (ptk/reify ::ai-model-catalog-fetched
+    ptk/UpdateEvent
+    (update [_ state]
+      (set-catalog! providers)
+      (assoc state :ai-model-catalog @catalog*))))
+
+(defn fetch-ai-model-catalog
+  []
+  (ptk/reify ::fetch-ai-model-catalog
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :get-ai-model-catalog {})
+           (rx/map ai-model-catalog-fetched)
+           ;; with no catalog every model is of unknown ability: the agent
+           ;; still runs, and sends no images
+           (rx/catch (fn [_] (rx/empty)))))))
 
 (defn- ai-providers-fetched
   [statuses]
@@ -116,8 +92,11 @@
   (ptk/reify ::fetch-ai-providers
     ptk/WatchEvent
     (watch [_ _ _]
-      (->> (rp/cmd! :get-ai-providers {})
-           (rx/map ai-providers-fetched)))))
+      (rx/merge
+       (->> (rp/cmd! :get-ai-providers {})
+            (rx/map ai-providers-fetched))
+       ;; whoever needs the providers needs to know what their models can do
+       (rx/of (fetch-ai-model-catalog))))))
 
 (defn set-ai-provider-key
   "Stores (or rotates) a provider API key WITHOUT validating it against

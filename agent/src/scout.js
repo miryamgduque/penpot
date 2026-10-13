@@ -139,7 +139,7 @@ export function scoutTools(backendTools) {
  * `{content, isError}`, the content being the page as JSON. `render` draws
  * boards: `(names)` → `{content, images, isError}`.
  */
-export async function runScoutTool(call, { provider, model, declared, side, fetchPage, render }) {
+export async function runScoutTool(call, { provider, model, declared, side, fetchPage, render, sees = true }) {
   const sideModel = SIDE_MODELS[provider] ?? model;
 
   if (call.name === "explore_design") {
@@ -189,6 +189,12 @@ export async function runScoutTool(call, { provider, model, declared, side, fetc
     if (blank(brief)) {
       return refused(
         "critique_design needs a `brief`: what the screen is for, who uses it, and the direction you aimed for — the critic judges against it",
+      );
+    }
+    if (!sees) {
+      return refused(
+        "critique_design needs a model that reads images, and the model in use does not: the critic would be shown a render it cannot see. " +
+          "Tell the user you cannot judge how this looks with this model, and what you checked from the structure instead.",
       );
     }
     if (typeof render !== "function") return refused("critique_design cannot render here");

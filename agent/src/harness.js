@@ -22,6 +22,7 @@ import * as SkillTool from "@deepseek-ai/dsh-tool-skill";
 import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 
+import { capabilityReader, limitsNote } from "./catalog.js";
 import { TurnCredentials, keyRef } from "./credentials.js";
 import { guardOrigin } from "./netguard.js";
 
@@ -141,12 +142,28 @@ export async function createHarness(options = {}) {
   await ctx.plugin(TokenMeter);
   await ctx.plugin(CompactionBasic, { auto: true, ...options.compaction });
 
+  // what each model can do: the catalog's answer, unless whoever starts the
+  // harness knows better
+  const capabilities = options.capabilities ?? capabilityReader(PROVIDER_ROUTES);
+
   /**
    * Stores images and returns the blocks that carry them to the model. With
-   * no image store configured, says so in words instead of dropping them.
+   * no image store configured, or a model that does not read images, says so
+   * in words instead of dropping them: the model has to know there was
+   * something it did not see.
    */
-  async function imageBlocks(images, where) {
+  async function imageBlocks(images, where, record) {
     if (!Array.isArray(images) || images.length === 0) return [];
+    if (record !== undefined && record.vision !== true) {
+      return [
+        {
+          type: "text",
+          text:
+            `[${images.length} image(s) ${where} were not delivered: the model in use (${record.name}) cannot read images. ` +
+            "You have NOT seen them. Say so to the user; do not describe or judge what you cannot see.]",
+        },
+      ];
+    }
     const store = ctx.get("attachments");
     if (store === undefined) {
       return [{ type: "text", text: `[${images.length} image(s) ${where} were not delivered: no image store is configured.]` }];
@@ -190,7 +207,7 @@ export async function createHarness(options = {}) {
           ? await turn.callServerTool(call, exec.signal)
           : await turn.callTool(call, exec.signal);
         if (result.isError) throw new Error(result.content || "tool error");
-        const images = await imageBlocks(result.images, "returned by this tool");
+        const images = await imageBlocks(result.images, "returned by this tool", conversation.record);
         return images.length > 0 ? { content: result.content ?? "", images } : { content: result.content ?? "" };
       },
     };
@@ -244,7 +261,11 @@ export async function createHarness(options = {}) {
   }
 
   async function openConversation(id, { provider, model, system, tools, skills = [], mcpServers = [] }) {
-    const conversation = { id, provider, model, turn: undefined, idleTimer: undefined };
+    const record = capabilities(provider, model);
+    const conversation = { id, provider, model, record, turn: undefined, idleTimer: undefined };
+    // what the model is told of its own limits, after everything else it is told
+    const limits = limitsNote(record);
+    const briefing = [system, mcpServers.length > 0 ? EXTERNAL_TOOLS_NOTE : "", limits].filter((part) => part !== "").join("\n\n");
     // the connections to the user's MCP servers, settled or not
     const connecting = [];
     // what to undo when the conversation closes
@@ -266,7 +287,7 @@ export async function createHarness(options = {}) {
         agentCtx.systemPrompt.section({
           name: "penpot-design-agent",
           order: 0,
-          text: mcpServers.length > 0 ? `${system}\n\n${EXTERNAL_TOOLS_NOTE}` : system,
+          text: briefing,
           interpolate: false,
           complete: true,
         });
@@ -388,6 +409,14 @@ export async function createHarness(options = {}) {
   async function runTurn(request, { emit, callTool, callServerTool, serverTools, signal }) {
     const { sessionId, profileId, provider, apiKey, text } = request;
     if (PROVIDER_ROUTES[provider] === undefined) throw new Error(`unknown provider: ${provider}`);
+    // the agent is its tools: a model that cannot call them cannot be the agent
+    const record = capabilities(provider, request.model);
+    if (record.tools === false) {
+      throw Object.assign(
+        new Error(`${record.name} cannot call tools, which the design agent needs for everything it does. Choose another model.`),
+        { status: 400 },
+      );
+    }
 
     const id = sessionIdOf(profileId, sessionId);
     let conversation = conversations.get(id);
@@ -411,7 +440,7 @@ export async function createHarness(options = {}) {
     const onAbort = () => agent.cancel({ kind: "user" });
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
-      const attached = await imageBlocks(request.images, "attached to this message");
+      const attached = await imageBlocks(request.images, "attached to this message", conversation.record);
       agent.followup(
         createUserMessage({ content: [...attached, { type: "text", text }], source: { kind: "user" } }),
       );
@@ -469,5 +498,5 @@ export async function createHarness(options = {}) {
     await ctx.fiber.dispose();
   }
 
-  return { ctx, runTurn, runSideTurn, dispose, conversations };
+  return { ctx, runTurn, runSideTurn, dispose, conversations, capabilities };
 }

@@ -149,3 +149,51 @@ export function catalog(routes, models = getBuiltinModels) {
   }
   return { schema: SCHEMA_VERSION, providers };
 }
+
+/**
+ * A reader of the catalog: `(provider, model)` → the model's record. A model
+ * the catalog does not have gets a record that knows nothing about it, so
+ * whoever asks treats every capability as unknown.
+ * @param {Record<string, string>} routes Penpot provider id → the provider layer's route
+ */
+export function capabilityReader(routes) {
+  const byProvider = new Map(
+    Object.entries(catalog(routes).providers).map(([provider, records]) => [
+      provider,
+      new Map(records.map((record) => [record.id, record])),
+    ]),
+  );
+  return (provider, model) => byProvider.get(provider)?.get(model) ?? describe(provider, { id: model });
+}
+
+/**
+ * What the agent is told about the limits of the model it runs on, so it
+ * copes and says so instead of failing without a word. Empty when the
+ * model has none that matter to it.
+ * @param {object} record a capability record
+ */
+export function limitsNote(record) {
+  const lines = [];
+  if (record.vision !== true) {
+    lines.push(
+      `- **You cannot see images.** The model you run on (${record.name}) ${
+        record.vision === false ? "does not read images" : "is not known to read images, so none are sent to it"
+      }. ` +
+        "Pictures the user attaches and the renders render_board and screenshot_page return are NOT delivered to you: " +
+        "you get a line saying so in their place. Never describe, judge or compare what you have not seen. " +
+        "When a request depends on seeing — review how it looks, match a screenshot, check a render — " +
+        "say plainly that you cannot see the board with this model, do what can be done from the structure " +
+        "(read_design, find_shapes, audit_file tell you sizes, colors, tokens and layout), " +
+        "and tell the user that a model that reads images would let you look. " +
+        "Do not call critique_design: its critic has to see.",
+    );
+  }
+  if (lines.length === 0) return "";
+  return (
+    "## What this model cannot do\n" +
+    "Work within these limits, and whenever one of them changes what you could do for a request, " +
+    "say what you could not do and why — never leave the user guessing.\n" +
+    lines.join("\n")
+  );
+}
+

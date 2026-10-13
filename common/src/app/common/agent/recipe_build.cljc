@@ -279,7 +279,11 @@
   [{:keys [file-id data libraries]} recipes given]
   (let [given   (into {} (map (fn [[k v]] [(name k) v])) given)
         own     (tokens-of data)
-        shared  (keep (fn [[id library]] (when (not= id file-id) (tokens-of (:data library))))
+        ;; of a library, the tokens that are on: with a light and a dark set
+        ;; the last one written is not the one its components show
+        shared  (keep (fn [[id library]]
+                        (when (not= id file-id)
+                          (some-> library :data :tokens-lib ctob/get-tokens-in-active-sets)))
                       libraries)
         unknown (first (remove #(contains? car/roles %) (keys given)))
         missing (first (remove #(contains? own %) (vals given)))]

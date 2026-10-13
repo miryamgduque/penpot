@@ -19,8 +19,9 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { createHarness } from "./harness.js";
+import { PROVIDER_ROUTES, createHarness } from "./harness.js";
 import { listMcpTools, turnMcpServers } from "./mcp.js";
+import { catalog } from "./catalog.js";
 import { recipeUse, recordRecipeUse } from "./recipes.js";
 import { runScoutTool, scoutTools } from "./scout.js";
 
@@ -430,6 +431,8 @@ export async function createAgentServer(options = {}) {
       if (sharedKey && req.headers["x-penpot-shared-key"] !== sharedKey) {
         throw new HttpError(401, "unauthorized");
       }
+      // what each model of each provider can do, as the provider layer says
+      if (req.method === "GET" && url.pathname === "/v1/models") return sendJson(res, 200, catalog(PROVIDER_ROUTES));
       if (req.method === "POST" && url.pathname === "/v1/turns") return await handleTurn(req, res);
       if (req.method === "POST" && url.pathname === "/v1/mcp/tools") return await handleMcpTools(req, res);
       const match = /^\/v1\/turns\/([A-Za-z0-9_-]+)\/tool-results$/.exec(url.pathname);

@@ -100,6 +100,24 @@ test("closing the connection cancels the turn upstream", async () => {
   }
 });
 
+test("the catalog of what each model can do is served, behind the shared key", async () => {
+  const t = await setup(() => ({ text: "ok" }), { sharedKey: "secret" });
+  try {
+    assert.equal((await fetch(`${t.base}/v1/models`)).status, 401);
+    const response = await fetch(`${t.base}/v1/models`, { headers: { "x-penpot-shared-key": "secret" } });
+    assert.equal(response.status, 200);
+    const { schema, providers } = await response.json();
+    assert.equal(schema, 1);
+    assert.ok(providers.anthropic.length > 0);
+    const model = providers.anthropic[0];
+    assert.deepEqual(Object.keys(model).sort(), [
+      "contextLimit", "id", "name", "outputLimit", "price", "promptCaching", "provider", "reasoning", "tools", "vision",
+    ]);
+  } finally {
+    await t.close();
+  }
+});
+
 test("the shared key is required when configured", async () => {
   const t = await setup(() => ({ text: "ok" }), { sharedKey: "secret" });
   try {

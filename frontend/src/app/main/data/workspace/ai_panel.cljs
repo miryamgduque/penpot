@@ -387,16 +387,25 @@
              :when (dai/selectable? (:provider status) model)]
          {:provider (:provider status) :model model})))
 
+(defn- helper-entry
+  "The user's helper model as a pool entry, or nil when they chose none."
+  [state]
+  (some (fn [[_ {:keys [provider helper-model]}]]
+          (when (string? helper-model) {:provider provider :model helper-model}))
+        (:ai-providers state)))
+
 (defn- tick-settings
-  "The pool entry for the first model a model-detect skill declares; nil when
-  none is connected+enabled — and then no tick fires at all: the semantic
+  "The model the watcher's tick runs on: the user's helper when they chose
+  one, else the pool entry for the first model a model-detect skill declares.
+  Nil when there is neither — and then no tick fires at all: the semantic
   tier never silently falls back to an expensive chat model."
   [state skills]
-  (->> skills
-       (keep :model)
-       (distinct)
-       (keep (fn [m] (some #(when (= m (:model %)) %) (state-pool state))))
-       (first)))
+  (or (helper-entry state)
+      (->> skills
+           (keep :model)
+           (distinct)
+           (keep (fn [m] (some #(when (= m (:model %)) %) (state-pool state))))
+           (first))))
 
 (def ^:private tick-system
   (str "You audit design-file shapes against rules. Judge only; never chat. "
@@ -875,7 +884,7 @@
           ;; method arrives with the task instead of gambling on a fetch (the
           ;; NYT session ran 133 rounds without one). Any failure degrades to
           ;; no injection.
-          (->> (if (seq prior) (rx/of {}) (agent/match-playbook state text))
+          (->> (if (seq prior) (rx/of {}) (agent/match-playbook state text settings))
                (rx/mapcat
                 (fn [{:keys [skill body usage]}]
                   ;; a matched BUILD playbook on a file with no standing
@@ -904,7 +913,7 @@
                        ;; compaction failure (no Anthropic key, provider down)
                        ;; must never block the user's turn: it degrades to the
                        ;; uncompacted history, which the trim backstop bounds.
-                       (->> (agent/compact-history prior)
+                       (->> (agent/compact-history prior settings)
                             (rx/mapcat
                              (fn [{:keys [history usage]}]
                                (rx/concat
@@ -989,7 +998,7 @@
                   ;; the old conversation's last word may be a note appended
                   ;; after its last turn-boundary save — persist before leaving
                   (agent-chats/persist-chat))
-           (->> (agent/summarize-history history)
+           (->> (agent/summarize-history history (first (state-pool state)))
                 (rx/mapcat
                  (fn [{:keys [text usage]}]
                    (rx/of (agent-chats/new-chat)

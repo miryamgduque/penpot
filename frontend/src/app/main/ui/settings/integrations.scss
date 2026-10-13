@@ -393,6 +393,13 @@
   white-space: pre-line;
 }
 
+.ai-helper-model {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s);
+  margin-block-start: var(--sp-l);
+}
+
 .provider-models-combobox {
   position: relative;
 }

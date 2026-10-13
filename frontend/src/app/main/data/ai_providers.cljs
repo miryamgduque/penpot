@@ -60,6 +60,15 @@
   [provider model-id]
   (true? (:vision (model provider model-id))))
 
+(defn price
+  "The catalog's price of the model with this id, whoever its provider:
+  `{:input :output :cacheRead :cacheWrite}` in dollars per million tokens, or
+  nil when the catalog does not have the model or states no price."
+  [model-id]
+  (some (fn [[_ records]]
+          (some #(when (= model-id (:id %)) (:price %)) records))
+        @catalog*))
+
 (defn selectable?
   "Whether `model` may run the agent: everything but a model KNOWN not to
   call tools. The agent is its tools; a model without them can only talk.
@@ -131,6 +140,17 @@
       (->> (rp/cmd! :set-ai-provider-models params)
            (rx/map (fn [_] (fetch-ai-providers)))
            (rx/catch (fn [_] (rx/of (fetch-ai-providers))))))))
+
+(defn set-ai-helper-model
+  "Chooses the model for the agent's side jobs; with no `provider` and
+  `model`, none: the main model does them."
+  [{:keys [provider model]}]
+  (ptk/reify ::set-ai-helper-model
+    ptk/WatchEvent
+    (watch [_ _ _]
+      (->> (rp/cmd! :set-ai-helper-model (cond-> {}
+                                           (and provider model) (assoc :provider provider :model model)))
+           (rx/map (fn [_] (fetch-ai-providers)))))))
 
 (defn disconnect-ai-provider
   [params]

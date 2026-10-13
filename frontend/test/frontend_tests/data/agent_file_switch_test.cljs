@@ -20,6 +20,7 @@
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
+   [frontend-tests.helpers.agent-opt-out :as opt-out]
    [frontend-tests.helpers.mock :as mock]
    [potok.v2.core :as ptk]))
 
@@ -46,7 +47,10 @@
   "Events the `ev` watch emits synchronously for `state`."
   [ev state]
   (let [out (atom [])]
-    (rx/sub! (ptk/watch ev state (rx/empty)) #(swap! out conj %))
+    (opt-out/with-store-state
+      state
+      (fn []
+        (rx/sub! (ptk/watch ev state (rx/empty)) (fn [e] (swap! out conj e)))))
     @out))
 
 (defn- model-calls
@@ -270,10 +274,12 @@
                                            (swap! calls conj cmd)
                                            ;; a round that never answers
                                            (rx/subject)))]
-          (rx/sub! (ptk/watch (ai-panel/send-message settings "go on" nil) on stream)
-                   #(swap! out conj %)
-                   (constantly nil)
-                   #(reset! done? true))
+          (opt-out/with-store-state
+            on
+            #(rx/sub! (ptk/watch (ai-panel/send-message settings "go on" nil) on stream)
+                      (fn [ev] (swap! out conj ev))
+                      (constantly nil)
+                      (fn [] (reset! done? true))))
           (t/is (= 1 (count @calls)))
           (t/is (false? @done?))
           (rx/push! stream (ptk/data-event agent-access/turned-off))

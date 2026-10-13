@@ -47,6 +47,7 @@ Workspace behavior:
 App shell and product flows:
 - Routing, root app shell, websocket, and global errors: `mem:frontend/routing-app-shell-subtleties`.
 - Dashboard and viewer flows: `mem:frontend/dashboard-viewer-subtleties`.
+- Design agent opt-out (account and file switches): every agent surface, every model-call path, the rules for adding one, and known gaps: `mem:frontend/agent-opt-out`.
 - Plugin JS API runtime inside the frontend app: `mem:frontend/plugin-api-to-cljs-binding`.
 
 Diagnostics and validation:

@@ -245,3 +245,105 @@
         (t/testing "someone else's server is no server"
           (t/is (= :mcp-server-not-found
                    (-> (mcp! other :get-agent-mcp-server-tools :name "notes") :error ex-data :code))))))))
+
+;; --- The helper model and what each model can do
+
+(defn- connect!
+  "Stores a key for `provider` and enables `models`, with no call to the provider."
+  [profile provider models]
+  (th/command! {::th/type :set-ai-provider-key ::rpc/profile-id (:id profile)
+                :provider provider :api-key (str "key-of-" provider)})
+  (db/update! th/*pool* :profile-ai-provider
+              {:enabled-models (db/json models)}
+              {:profile-id (:id profile) :provider provider}))
+
+(t/deftest side-jobs-run-on-the-helper-and-on-the-main-model-when-there-is-none
+  (let [asked (atom [])]
+    (with-redefs [ai-providers/agent-service-req!
+                  (fn [_ path headers body _]
+                    (swap! asked conj {:path path :headers headers :body (some-> body (json/decode :key-fn keyword))})
+                    {:status 200 :body (json/encode {:text "penpot-build-screen" :usage {:input 12 :output 3 :requests 1}})})]
+      (let [profile (th/create-profile* 1 {:is-active true})
+            round!  (fn [& {:as params}]
+                      (th/command! (merge {::th/type :agent-helper-round ::rpc/profile-id (:id profile)
+                                           :system "You route tasks." :text "Task: a landing page"}
+                                          params)))
+            helper! (fn [& {:as params}]
+                      (th/command! (merge {::th/type :set-ai-helper-model ::rpc/profile-id (:id profile)} params)))
+            status  (fn [] (->> (:result (th/command! {::th/type :get-ai-providers ::rpc/profile-id (:id profile)}))
+                                (map (juxt :provider :helper-model))
+                                (into {})))]
+        ;; a user with no Anthropic key at all
+        (connect! profile "moonshot" ["kimi-k3" "kimi-k2.6"])
+        (connect! profile "zhipu" ["glm-5.2"])
+
+        (t/testing "with no helper chosen, the side job runs on the main model, whoever its provider is"
+          (let [out (round! :provider "moonshot" :model "kimi-k3")]
+            (t/is (nil? (:error out)))
+            (t/is (= {:provider "moonshot" :model "kimi-k3" :text "penpot-build-screen"}
+                     (select-keys (:result out) [:provider :model :text])))
+            (t/is (= {:path "/v1/side"
+                      :headers {"x-penpot-profile-id" (str (:id profile))
+                                "x-penpot-provider" "moonshot"
+                                "x-penpot-api-key" "key-of-moonshot"}
+                      :body {:model "kimi-k3" :system "You route tasks." :text "Task: a landing page"}}
+                     (last @asked)))))
+
+        (t/testing "with neither a helper nor a main model named, it says so"
+          (t/is (th/ex-of-code? (:error (round!)) :ai-helper-unavailable)))
+
+        (t/testing "a helper has to be a model the user enabled"
+          (t/is (th/ex-of-code? (:error (helper! :provider "zhipu" :model "glm-4.7")) :ai-model-not-enabled))
+          (t/is (th/ex-of-code? (:error (helper! :provider "openai" :model "gpt-5")) :ai-provider-not-connected))
+          (t/is (= {"moonshot" nil "zhipu" nil} (status))))
+
+        (t/testing "the helper chosen does the side jobs, under its own provider's key"
+          (t/is (nil? (:error (helper! :provider "zhipu" :model "glm-5.2"))))
+          (t/is (= {"moonshot" nil "zhipu" "glm-5.2"} (status)))
+          (let [out (round! :provider "moonshot" :model "kimi-k3")]
+            (t/is (= {:provider "zhipu" :model "glm-5.2"} (select-keys (:result out) [:provider :model])))
+            (t/is (= "key-of-zhipu" (get-in (last @asked) [:headers "x-penpot-api-key"])))))
+
+        (t/testing "one helper at a time: choosing another moves it"
+          (helper! :provider "moonshot" :model "kimi-k2.6")
+          (t/is (= {"moonshot" "kimi-k2.6" "zhipu" nil} (status))))
+
+        (t/testing "a helper that is no longer enabled is no helper"
+          (db/update! th/*pool* :profile-ai-provider {:enabled-models (db/json ["kimi-k3"])}
+                      {:profile-id (:id profile) :provider "moonshot"})
+          (t/is (= {"moonshot" nil "zhipu" nil} (status)))
+          (t/is (= "kimi-k3" (-> (round! :provider "moonshot" :model "kimi-k3") :result :model))))
+
+        (t/testing "and none can be chosen again"
+          (helper! :provider "zhipu" :model "glm-5.2")
+          (helper!)
+          (t/is (= {"moonshot" nil "zhipu" nil} (status))))))))
+
+(t/deftest the-catalog-of-what-models-can-do-is-the-services
+  (let [asked (atom 0)]
+    (with-redefs [ai-providers/agent-service-req!
+                  (fn [_ path _ body _]
+                    (swap! asked inc)
+                    (t/is (= "/v1/models" path))
+                    (t/is (nil? body))
+                    {:status 200
+                     :body (json/encode {:schema 1
+                                         :providers {:zhipu [{:provider "zhipu" :id "glm-5.2" :name "GLM-5.2"
+                                                              :vision false :tools true :reasoning true
+                                                              :promptCaching nil :contextLimit 1000000
+                                                              :outputLimit 128000 :price nil}]}})})]
+      (reset! @#'ai-providers/catalog-cache nil)
+      (let [profile (th/create-profile* 1 {:is-active true})
+            out     (th/command! {::th/type :get-ai-model-catalog ::rpc/profile-id (:id profile)})
+            model   (-> out :result :providers :zhipu first)]
+        (t/is (nil? (:error out)))
+        (t/is (= 1 (-> out :result :schema)))
+        (t/is (false? (:vision model)))
+        ;; what the source does not say stays unknown all the way here
+        (t/is (contains? model :promptCaching))
+        (t/is (nil? (:promptCaching model)))
+        (t/is (nil? (:price model)))
+        ;; one answer is kept for a while: the service is not asked again
+        (th/command! {::th/type :get-ai-model-catalog ::rpc/profile-id (:id profile)})
+        (t/is (= 1 @asked)))
+      (reset! @#'ai-providers/catalog-cache nil))))

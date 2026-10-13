@@ -673,8 +673,8 @@
          "them, and every pair of text and ground is moved until it can be "
          "read. Use it when a starter does not fit — a brief, a foundation or "
          "an imported brand says what the project is. It changes NOTHING: it "
-         "answers the pack and a summary to show the user; pass `pack` to "
-         "apply_token_pack once they agree.")
+         "answers the pack and a summary to show the user; once they agree, "
+         "call apply_token_pack with `choices`: this same input.")
     :input-schema {:type "object"
                    :properties {:name {:type "string" :description "kebab-case id, e.g. relay"}
                                 :title {:type "string"}
@@ -696,8 +696,9 @@
    {:name "apply_token_pack"
     :description
     (str "Gives the file a design system: the pack's token sets and themes, "
-         "with one theme on. `pack` is a starter's name (neutral, bold, soft) "
-         "or a whole pack as generate_token_pack answered it. Every recipe "
+         "with one theme on. `pack` is a starter's name (neutral, bold, soft); "
+         "for a generated one pass `choices` instead — the same input you gave "
+         "generate_token_pack, which makes the same pack. Every recipe "
          "then takes its look from these tokens, and what is already bound to "
          "a token of the same name follows. A file that HAS tokens is not "
          "touched: the answer says so, and you ask the user whether to merge "
@@ -706,11 +707,13 @@
          "`onExisting` — never choose for them. `theme` picks which theme is "
          "on (the pack's default otherwise); activate_theme switches later.")
     :input-schema {:type "object"
-                   :properties {:pack {:description "a starter's name, or a whole pack"}
+                   :properties {:pack {:type "string" :description "a starter's name: neutral, bold or soft"}
+                                :choices {:type "object"
+                                          :description "instead of pack: the input of generate_token_pack (name, title, purpose, primary, bodyFont, …)"}
                                 :theme {:type "string" :description "e.g. Dark"}
                                 :onExisting {:type "string" :enum ["merge" "replace" "cancel"]
                                              :description "only after the user chose, in a file that has tokens"}}
-                   :required ["pack"]}}
+                   :required []}}
 
    {:name "list_shared_libraries"
     :description

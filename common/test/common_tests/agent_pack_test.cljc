@@ -6,6 +6,7 @@
 
 (ns common-tests.agent-pack-test
   (:require
+   #?(:clj [app.common.json :as json])
    [app.common.agent.pack :as cak]
    [app.common.agent.pack-make :as cakm]
    [app.common.agent.packs :as caks]
@@ -260,6 +261,19 @@
     (t/is (re-find #"NOTHING is applied yet" (:note made)))
     (let [after (commit empty-file (run empty-file "apply_token_pack" {:pack (:pack made)}))]
       (t/is (= "#4338ca" (:value (get (active after) "color.primary")))))
+    (t/testing "the choices that made it apply it too, with nothing sent back"
+      (let [out   (run empty-file "apply_token_pack" {:choices choices})
+            after (commit empty-file out)]
+        (t/is (= "relay" (-> out :result :pack)))
+        (t/is (= "#4338ca" (:value (get (active after) "color.primary")))))
+      (t/is (re-find #"apply_token_pack: choices needs `primary`"
+                     (:problem (run empty-file "apply_token_pack" {:choices (dissoc choices :primary)})))))
+    (t/testing "a whole pack sent as a string of JSON is read as the pack it is"
+      (let [text  #?(:clj (json/encode (:pack made)) :cljs (js/JSON.stringify (clj->js (:pack made))))
+            after (commit empty-file (run empty-file "apply_token_pack" {:pack text}))]
+        (t/is (= "#4338ca" (:value (get (active after) "color.primary")))))
+      (t/is (re-find #"no starter pack is called \"\{not json\""
+                     (:problem (run empty-file "apply_token_pack" {:pack "{not json"})))))
     (t/is (re-find #"apply_token_pack: the pack theme \"Dark\" leaves 1 role"
                    (:problem (run empty-file "apply_token_pack"
                                   {:pack (update-in (:pack made) [:sets 2 :tokens] dissoc "color.info")}))))

@@ -18,6 +18,7 @@
    [app.common.agent.write :as caw]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
+   [app.common.json :as json]
    [app.common.types.tokens-lib :as ctob]
    [cuerdas.core :as str]))
 
@@ -80,10 +81,30 @@
 
 ;; --- Reading the pack a call names
 
+(defn- written-out
+  "A pack that arrived as text: a model asked for \"a name or a whole pack\"
+  often sends the whole pack as a string of JSON."
+  [pack]
+  (if (and (string? pack) (str/starts-with? (str/trim pack) "{"))
+    (try
+      (let [parsed (json/decode pack :key-fn keyword)]
+        (if (map? parsed) parsed pack))
+      (catch #?(:clj Throwable :cljs :default) _ pack))
+    pack))
+
 (defn- pack-of
-  "→ `{:pack}` or `{:problem}`: a starter by name, or a pack written out."
-  [tool pack]
+  "→ `{:pack}` or `{:problem}`: a starter by name, a pack written out, or
+  the one `choices` make (as generate_token_pack would)."
+  [tool pack choices]
   (cond
+    (and (nil? pack) (map? choices))
+    (if-let [problem (cakm/choices-problem choices)]
+      {:problem (dm/str tool ": choices " problem)}
+      (pack-of tool (cakm/make choices) nil))
+
+    (not= pack (written-out pack))
+    (pack-of tool (written-out pack) nil)
+
     (string? pack)
     (if-let [found (get caks/builtin pack)]
       {:pack found}
@@ -106,7 +127,7 @@
 
     :else
     {:problem (dm/str tool ": pass `pack`: the name of a starter (" (str/join ", " (map :name caks/all))
-                      ") or a whole pack")}))
+                      ") or a whole pack — or `choices`: what you gave generate_token_pack")}))
 
 ;; --- Making one
 
@@ -128,7 +149,8 @@
                   :summary (summary pack)
                   :note (str "NOTHING is applied yet. Show the user what this is — the primary, the "
                              "grounds and the text of both themes, the fonts, the corners — and, once "
-                             "they agree, pass `pack` as it is to apply_token_pack. The brand color "
+                             "they agree, call apply_token_pack with `choices`: the same input you "
+                             "gave here (it makes the same pack; no need to send it back). The brand color "
                              "may have been moved a little so text on it can be read: say so if the "
                              "summary's primary is not the one you gave.")}}))))
 
@@ -190,14 +212,14 @@
           {:family family :available (some? (cam/find-font-family fonts family))})
         (:fonts pack)))
 
-(def ^:private choices #{"merge" "replace" "cancel"})
+(def ^:private existing-choices #{"merge" "replace" "cancel"})
 
 (defn apply-pack
   "apply_token_pack: gives the file a pack's sets, tokens and themes and
   turns one theme on. A file that has tokens already is not touched until
   the call says what to do with them."
-  [{:keys [data fonts] :as view} {:keys [pack theme onExisting]} engine]
-  (let [{:keys [pack problem]} (pack-of "apply_token_pack" pack)
+  [{:keys [data fonts] :as view} {:keys [pack choices theme onExisting]} engine]
+  (let [{:keys [pack problem]} (pack-of "apply_token_pack" pack choices)
         lib      (:tokens-lib data)
         state    (file-state view)
         on       (or theme (:default pack))]
@@ -209,7 +231,7 @@
       {:problem (dm/str "apply_token_pack: the pack has no theme called \"" on "\" — it has: "
                         (str/join ", " (map :name (:themes pack))))}
 
-      (not (or (nil? onExisting) (contains? choices onExisting)))
+      (not (or (nil? onExisting) (contains? existing-choices onExisting)))
       {:problem "apply_token_pack: onExisting is merge, replace or cancel"}
 
       (= "cancel" onExisting)

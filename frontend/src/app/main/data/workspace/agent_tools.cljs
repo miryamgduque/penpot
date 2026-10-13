@@ -594,7 +594,9 @@
          "radius, a type size) is bound to that role, so it follows the "
          "theme; `keepLiterals: true` leaves every value as written, for "
          "content that must not follow it — a mock-up shown inside a canvas, "
-         "a photo's frame, a brand's fixed color.")
+         "a photo's frame, a brand's fixed color. What a call draws that way "
+         "stays that way: later edits of it, and children added to it, are "
+         "not bound either.")
     :input-schema {:type "object"
                    :properties {:parentId {:type "string" :description "existing board to build into (optional)"}
                                 :tree {:type "object" :description "the root node"}

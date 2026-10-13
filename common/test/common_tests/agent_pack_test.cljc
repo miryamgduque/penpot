@@ -13,6 +13,7 @@
    [app.common.agent.recipe :as car]
    [app.common.agent.tools :as cat]
    [app.common.files.changes :as cfc]
+   [app.common.schema :as sm]
    [app.common.types.file :as ctf]
    [app.common.types.shape :as cts]
    [app.common.types.tokens-lib :as ctob]
@@ -331,7 +332,25 @@
       (let [kept (commit themed (run themed "build_tree"
                                      {:keepLiterals true
                                       :tree {:type "board" :name "Poster" :width 200 :height 80 :fill "#ffffff"}}))]
-        (t/is (nil? (-> (shape-named kept "Poster") :applied-tokens :fill)))))
+        (t/is (nil? (-> (shape-named kept "Poster") :applied-tokens :fill)))
+        (t/testing "and what was drawn so stays so, whatever touches it later"
+          (let [poster (shape-named kept "Poster")
+                out    (run kept "modify_shape" {:shapeId (str (:id poster)) :fill "#18181b"})
+                edited (commit kept out)
+                inside (commit edited (run edited "build_tree"
+                                           {:parentId (str (:id poster))
+                                            :tree {:type "rect" :name "Row" :width 100 :height 20 :fill "#ffffff"}}))]
+            (t/is (= "#18181b" (-> (shape-named edited "Poster") :fills first :fill-color)))
+            (t/is (nil? (-> (shape-named edited "Poster") :applied-tokens :fill)))
+            (t/is (nil? (-> out :result :boundToRoles)))
+            ;; a child added to it later is content too
+            (t/is (nil? (-> (shape-named inside "Row") :applied-tokens :fill)))
+            ;; every change answered is one the backend accepts
+            (t/is (every? #(sm/validate cfc/schema:change %) (:changes out)))
+            (t/is (every? #(sm/validate cfc/schema:change %)
+                          (:changes (run themed "build_tree"
+                                         {:keepLiterals true
+                                          :tree {:type "board" :name "Poster" :width 200 :height 80 :fill "#ffffff"}}))))))))
     (t/testing "a file with no roles is left alone"
       (let [out (run empty-file "create_shape" {:type "rect" :name "Chip" :x 0 :y 200 :width 60 :height 24 :fill "#ffffff"})]
         (t/is (nil? (-> out :result :boundToRoles)))

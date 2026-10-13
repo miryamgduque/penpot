@@ -235,11 +235,12 @@ const ENGINE_HEADERS = {
 const tool = (name) => ({ name, description: name, inputSchema: { type: "object", properties: {} } });
 
 /** Drives a turn, answering every workspace call; returns what was asked, in order. */
-async function drive(base, body, headers) {
+async function drive(base, body, headers, seen = []) {
   const response = await fetch(`${base}/v1/turns`, { method: "POST", headers, body: JSON.stringify(body) });
   const asked = [];
   let turnId;
   for await (const event of events(response)) {
+    seen.push(event);
     if (event.type === "turn") turnId = event.turnId;
     if (event.type === "server-tool") asked.push({ server: event.name, rule: event.rule });
     if (event.type === "tool-call") {
@@ -452,13 +453,25 @@ test("a scout runs on the helper model the turn was sent with, under the helper'
   );
   try {
     const body = { ...BODY, tools: [tool("explore_design"), tool("read_design")] };
-    await drive(t.base, body, {
-      ...SCOUT_HEADERS,
-      "x-penpot-helper-provider": "anthropic",
-      "x-penpot-helper-model": "claude-haiku-4-5-20251001",
-      "x-penpot-helper-api-key": "helper-key",
-    });
+    const seen = [];
+    await drive(
+      t.base,
+      body,
+      {
+        ...SCOUT_HEADERS,
+        "x-penpot-helper-provider": "anthropic",
+        "x-penpot-helper-model": "claude-haiku-4-5-20251001",
+        "x-penpot-helper-api-key": "helper-key",
+      },
+      seen,
+    );
     const [main, scout, after] = t.fake.requests;
+    // what the scout spent is told apart from what the turn spent, with its model
+    const spent = seen.filter((event) => event.type === "usage");
+    assert.deepEqual(
+      spent.map((event) => [event.side ?? "main", event.model]),
+      [["main", undefined], ["helper", "claude-haiku-4-5-20251001"], ["main", undefined]],
+    );
     assert.equal(main.body.model, BODY.model);
     assert.equal(main.key, "key-one");
     assert.equal(scout.body.model, "claude-haiku-4-5-20251001");

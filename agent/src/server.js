@@ -381,7 +381,16 @@ export async function createAgentServer(options = {}) {
         {
           serverTools,
           signal: controller.signal,
-          onUsage: (usage) => emit({ type: "usage", usage }),
+          // what a side job spent is said apart, with the model it ran on:
+          // a helper is not priced like the model the turn runs on
+          onUsage: (usage) =>
+            emit({
+              type: "usage",
+              usage,
+              side: asHelper ? "helper" : "critic",
+              provider: asHelper ? helper.provider : provider,
+              model: request.model ?? (asHelper ? helper.model : model),
+            }),
           callServerTool: async (call, signal) => {
             if (ownTools.has(call.name)) return { content: "a scout cannot call a scout", isError: true };
             const result = await runServerTool(call, signal);

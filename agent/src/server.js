@@ -145,14 +145,32 @@ async function runEngineTool(exporterUri, token, call, context, signal) {
 
 /**
  * The helper model a turn was sent with, or undefined: all three of its
- * headers, and a provider this service knows.
+ * headers, and a provider this service may call.
  */
-function helperOf(headers) {
+function helperOf(headers, callable) {
   const provider = headers["x-penpot-helper-provider"];
   const model = headers["x-penpot-helper-model"];
   const apiKey = headers["x-penpot-helper-api-key"];
   const present = [provider, model, apiKey].every((value) => typeof value === "string" && value !== "");
-  return present && PROVIDER_ROUTES[provider] !== undefined ? { provider, model, apiKey } : undefined;
+  return present && callable(provider) ? { provider, model, apiKey } : undefined;
+}
+
+/**
+ * The endpoints a request names, as the backend handed them over: one JSON
+ * list in a header. The backend is who knows what an instance admin
+ * registered, and it sends the endpoint with the request that uses it.
+ */
+function endpointsOf(headers) {
+  const raw = headers["x-penpot-endpoints"];
+  if (typeof raw !== "string" || raw === "") return [];
+  let parsed;
+  try {
+    parsed = JSON.parse(Buffer.from(raw, "base64").toString("utf8"));
+  } catch {
+    throw new HttpError(400, "the endpoints of this request could not be read");
+  }
+  if (!Array.isArray(parsed)) throw new HttpError(400, "the endpoints of this request are not a list");
+  return parsed;
 }
 
 export async function createAgentServer(options = {}) {
@@ -172,10 +190,26 @@ export async function createAgentServer(options = {}) {
    */
   const pages = new Map();
 
+  // a provider this service may call: built in, or an endpoint registered
+  // on this instance and handed over by the backend
+  const callable = (provider) => (harness.routeOf === undefined ? PROVIDER_ROUTES[provider] !== undefined : harness.routeOf(provider) !== undefined);
+
+  /** Makes the endpoints a request came with callable, before anything asks for them. */
+  async function registerEndpoints(req) {
+    for (const endpoint of endpointsOf(req.headers)) {
+      try {
+        await harness.registerEndpoint(endpoint);
+      } catch (cause) {
+        throw new HttpError(400, cause?.message ?? "the endpoint of this request cannot be registered");
+      }
+    }
+  }
+
   async function handleTurn(req, res) {
     const profileId = requireString(req.headers["x-penpot-profile-id"], "profile id");
     const provider = requireString(req.headers["x-penpot-provider"], "provider");
     const apiKey = requireString(req.headers["x-penpot-api-key"], "api key");
+    await registerEndpoints(req);
     const body = await readJson(req);
     const sessionId = requireString(body.sessionId, "sessionId");
     const model = requireString(body.model, "model");
@@ -204,7 +238,7 @@ export async function createAgentServer(options = {}) {
     const images = Array.isArray(body.images) ? body.images : [];
     // the model for side jobs: the user's helper, with its own provider and
     // key, or the turn's own model when they chose none
-    const helper = helperOf(req.headers) ?? { provider, model, apiKey };
+    const helper = helperOf(req.headers, callable) ?? { provider, model, apiKey };
     // the MCP servers the user connected, as the backend handed them over
     const mcp = await turnMcpServers(req.headers["x-penpot-mcp-servers"], {
       allowPrivate: options.mcpAllowPrivate === true,
@@ -452,7 +486,10 @@ export async function createAgentServer(options = {}) {
     const model = requireString(body.model, "model");
     const system = requireString(body.system, "system");
     const text = requireString(body.text, "text");
-    if (PROVIDER_ROUTES[provider] === undefined) throw new HttpError(400, `unknown provider: ${provider}`);
+    await registerEndpoints(req);
+    if (!callable(provider)) {
+      throw new HttpError(400, `${provider} is neither a built-in provider nor an endpoint registered on this instance`);
+    }
     const controller = new AbortController();
     res.on("close", () => {
       if (!res.writableEnded) controller.abort();

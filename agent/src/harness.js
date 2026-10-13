@@ -22,7 +22,7 @@ import * as SkillTool from "@deepseek-ai/dsh-tool-skill";
 import TokenMeter from "@deepseek-ai/dsh-token-meter";
 import { ToolRuntime } from "@deepseek-ai/dsh-tools";
 
-import { capabilityReader, limitsNote } from "./catalog.js";
+import { capabilityReader, endpointRecord, limitsNote } from "./catalog.js";
 import { TurnCredentials, keyRef } from "./credentials.js";
 import { guardOrigin } from "./netguard.js";
 
@@ -85,10 +85,58 @@ export function sessionIdOf(profileId, conversationId) {
   return `penpot-${profileId}-${conversationId}`;
 }
 
-function providersConfig(overrides) {
+/**
+ * The provider id of an endpoint an instance admin registered. Such an
+ * endpoint is not one of the provider layer's: it is an address and a list of
+ * models the admin vouches for.
+ */
+export const ENDPOINT_PREFIX = "endpoint:";
+
+/** The provider layer's route name of a registered endpoint. */
+const endpointRoute = (provider) => `ep-${provider.slice(ENDPOINT_PREFIX.length).toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
+/**
+ * Why `endpoint` cannot be registered, or undefined: an id, an http(s)
+ * address and at least one model with an id.
+ */
+export function endpointProblem(endpoint) {
+  if (endpoint === null || typeof endpoint !== "object") return "an endpoint is {provider, baseUrl, models}";
+  if (typeof endpoint.provider !== "string" || !/^endpoint:[A-Za-z0-9-]{1,64}$/.test(endpoint.provider)) {
+    return "an endpoint's provider id is endpoint:<id>";
+  }
+  let url;
+  try {
+    url = new URL(endpoint.baseUrl);
+  } catch {
+    return "an endpoint needs a baseUrl";
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return "an endpoint's baseUrl is an http or https address";
+  if (!Array.isArray(endpoint.models) || endpoint.models.length === 0) return "an endpoint needs at least one model";
+  if (!endpoint.models.every((model) => typeof model?.id === "string" && model.id !== "")) return "every model of an endpoint needs an id";
+  return undefined;
+}
+
+function providersConfig(overrides, endpoints = []) {
   const providers = {};
   for (const [provider, route] of Object.entries(PROVIDER_ROUTES)) {
     providers[route] = { apiKeyEnv: keyRef(provider), ...overrides?.[route] };
+  }
+  // an endpoint speaks the protocol local runtimes and gateways share, and
+  // serves the models its admin listed, with the limits they stated
+  for (const endpoint of endpoints) {
+    providers[endpointRoute(endpoint.provider)] = {
+      api: "openai-completions",
+      baseURL: endpoint.baseUrl,
+      apiKeyEnv: keyRef(endpoint.provider),
+      displayName: endpoint.name ?? endpoint.provider,
+      models: endpoint.models.map((model) => ({
+        id: model.id,
+        name: model.name ?? model.id,
+        input: model.vision === true ? ["text", "image"] : ["text"],
+        ...(Number.isInteger(model.contextLimit) ? { contextWindow: model.contextLimit } : {}),
+        ...(Number.isInteger(model.outputLimit) ? { maxTokens: model.outputLimit } : {}),
+      })),
+    };
   }
   return providers;
 }
@@ -137,14 +185,44 @@ export async function createHarness(options = {}) {
   await ctx.plugin(SkillRegistry);
   await ctx.plugin(SkillTool);
   await ctx.plugin(AgentLoop, { agents: [] });
-  await ctx.plugin(LlmPiAi, { providers: providersConfig(options.providers) });
+  // provider id → the endpoint an admin registered under it
+  const endpoints = new Map();
+  for (const endpoint of options.endpoints ?? []) {
+    const problem = endpointProblem(endpoint);
+    if (problem !== undefined) throw new Error(problem);
+    endpoints.set(endpoint.provider, endpoint);
+  }
+  const llm = await ctx.plugin(LlmPiAi, { providers: providersConfig(options.providers, [...endpoints.values()]) });
+
+  /** The provider layer's route of a provider id, or undefined when it is neither built in nor registered. */
+  const routeOf = (provider) => PROVIDER_ROUTES[provider] ?? (endpoints.has(provider) ? endpointRoute(provider) : undefined);
+
+  /**
+   * Makes an endpoint the backend vouches for callable. The backend is who
+   * knows what an admin registered; this service calls nothing else.
+   * Registering it again unchanged does nothing.
+   */
+  async function registerEndpoint(endpoint) {
+    const problem = endpointProblem(endpoint);
+    if (problem !== undefined) throw Object.assign(new Error(problem), { status: 400 });
+    if (JSON.stringify(endpoints.get(endpoint.provider)) === JSON.stringify(endpoint)) return;
+    endpoints.set(endpoint.provider, endpoint);
+    await llm.update({ providers: providersConfig(options.providers, [...endpoints.values()]) });
+  }
   // condenses a long conversation before it outgrows the model's window
   await ctx.plugin(TokenMeter);
   await ctx.plugin(CompactionBasic, { auto: true, ...options.compaction });
 
   // what each model can do: the catalog's answer, unless whoever starts the
   // harness knows better
-  const capabilities = options.capabilities ?? capabilityReader(PROVIDER_ROUTES);
+  const catalogued = capabilityReader(PROVIDER_ROUTES);
+  const capabilities =
+    options.capabilities ??
+    ((provider, model) => {
+      // of an endpoint's model, what its admin declared and nothing more
+      const declared = endpoints.get(provider)?.models.find((entry) => entry.id === model);
+      return declared === undefined ? catalogued(provider, model) : endpointRecord(provider, declared);
+    });
 
   /**
    * Stores images and returns the blocks that carry them to the model. With
@@ -273,7 +351,7 @@ export async function createHarness(options = {}) {
     conversation.releases = releases;
     const resumed = await isStored(id);
     const agentOptions = {
-      provider: PROVIDER_ROUTES[provider],
+      provider: routeOf(provider),
       model,
       maxTokens: options.maxTokens ?? MAX_TOKENS,
     };
@@ -408,7 +486,12 @@ export async function createHarness(options = {}) {
    */
   async function runTurn(request, { emit, callTool, callServerTool, serverTools, signal }) {
     const { sessionId, profileId, provider, apiKey, text } = request;
-    if (PROVIDER_ROUTES[provider] === undefined) throw new Error(`unknown provider: ${provider}`);
+    if (routeOf(provider) === undefined) {
+      throw Object.assign(
+        new Error(`${provider} is neither a built-in provider nor an endpoint registered on this instance: it is not called.`),
+        { status: 400 },
+      );
+    }
     // the agent is its tools: a model that cannot call them cannot be the agent
     const record = capabilities(provider, request.model);
     if (record.tools === false) {
@@ -498,5 +581,5 @@ export async function createHarness(options = {}) {
     await ctx.fiber.dispose();
   }
 
-  return { ctx, runTurn, runSideTurn, dispose, conversations, capabilities };
+  return { ctx, runTurn, runSideTurn, dispose, conversations, capabilities, registerEndpoint, routeOf };
 }

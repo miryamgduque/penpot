@@ -5,10 +5,11 @@
 // Copyright (c) KALEIDOS INC Sucursal en España SL
 
 // The deprecated layer is still imported for what the DS has no answer for:
-// the `%dropdown-wrapper` / `%dropdown-element-base` / `%new-scrollbar`
-// placeholders the menus and scroll areas extend, and the workspace z-index
-// scale. It goes once US #76 has moved the `scaled-*` mixin bodies' sizes and
-// typography onto the DS.
+// the `%dropdown-wrapper` / `%dropdown-element-base` / `%new-scrollbar` /
+// `%button-icon-small` placeholders that 23 `@extend` sites in this file take
+// from `basic-rules.scss`, which `common-refactor.scss` forwards, and the two
+// workspace z-index values below. Those two `z-index` references are all that
+// is left of the deprecated layer here; moving them is tracked in #129.
 @use "refactor/common-refactor.scss" as deprecated;
 @use "ds/_utils.scss" as *;
 @use "ds/_sizes.scss" as *;
@@ -48,42 +49,55 @@
 // to the workspace right-header), fixed glyph boxes like the attachment ✕, and
 // DS buttons (`button*`), which use the fixed compact label size from
 // _agent_button.scss.
+//
+// A text size that scales is an agent-panel addition to the DS type scale, and
+// a deliberate one: the panel is a reading surface inside the workspace, so it
+// carries a reader's text-size control the rest of Penpot has no need of. It is
+// local to this panel and extends the DS scale rather than replacing it — every
+// wrapper below starts from a named DS typography and changes only font-size.
+//
+// The sizes are written `px2rem(n)` because `ds/typography.scss` keeps its
+// `$_fs-*` private, so there is no supported way to read a DS type size and
+// multiply it. Each number is the size of the DS typography named beside it, and
+// the comment on each wrapper says which, so a DS retune is one grep away. The
+// standing fix is a scale parameter on `use-typography`, or an accessor for the
+// size, proposed to the DS team in #147 alongside the smaller-label proposal
+// #83. If the DS adopts either, every wrapper below deletes.
 
 @mixin scaled-body-small {
-  @include deprecated.body-small-typography;
+  @include t.use-typography("body-small");
 
-  font-size: calc(#{deprecated.$fs-12} * var(--ai-font-scale, 1));
-}
-
-@mixin scaled-small-title {
-  @include deprecated.small-title-typography;
-
-  font-size: calc(#{deprecated.$fs-14} * var(--ai-font-scale, 1));
+  // mirrors DS body-small (12px)
+  font-size: calc(#{px2rem(12)} * var(--ai-font-scale, 1));
 }
 
 @mixin scaled-title-small {
   @include t.use-typography("title-small");
 
-  // the DS sheet's `$_fs-14` is private; it and the refactor `$fs-14` are both 14px-as-rem
-  font-size: calc(#{deprecated.$fs-14} * var(--ai-font-scale, 1));
+  // mirrors DS title-small (14px)
+  font-size: calc(#{px2rem(14)} * var(--ai-font-scale, 1));
 }
 
 @mixin scaled-headline-medium {
   @include t.use-typography("headline-medium");
 
-  font-size: calc(#{deprecated.$fs-16} * var(--ai-font-scale, 1));
+  // mirrors DS headline-medium (16px)
+  font-size: calc(#{px2rem(16)} * var(--ai-font-scale, 1));
 }
 
 @mixin scaled-headline-small {
   @include t.use-typography("headline-small");
 
-  font-size: calc(#{deprecated.$fs-12} * var(--ai-font-scale, 1));
+  // mirrors DS headline-small — 12px: the DS headline scale is 18/16/12, so
+  // this restates the size it already had
+  font-size: calc(#{px2rem(12)} * var(--ai-font-scale, 1));
 }
 
 @mixin scaled-med-title {
-  @include deprecated.med-title-typography;
+  @include t.use-typography("title-medium");
 
-  font-size: calc(#{deprecated.$fs-20} * var(--ai-font-scale, 1));
+  // mirrors DS title-medium (20px)
+  font-size: calc(#{px2rem(20)} * var(--ai-font-scale, 1));
 }
 
 // Every DS text button in the panel: see _agent_button.scss.
@@ -2544,7 +2558,7 @@ textarea.create-input {
 }
 
 .detail-category {
-  @include scaled-small-title;
+  @include scaled-title-small;
 
   color: var(--color-foreground-secondary);
 }

@@ -10,11 +10,14 @@
    [app.common.uuid :as uuid]
    [app.config :as cf]
    [app.main.repo :as rp]
+   [app.main.router :as rt]
    [app.main.store :as st]
    [app.main.ui.routes :as routes]
    [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
-   [frontend-tests.helpers.mock :as mock]))
+   [frontend-tests.helpers.agent-opt-out :as opt-out]
+   [frontend-tests.helpers.mock :as mock]
+   [potok.v2.core :as ptk]))
 
 (defn- workspace-match
   [team-id]
@@ -95,3 +98,45 @@
           (t/is (= 2 (count @events)))
           (done'))
         done))))
+
+;; --- The skills pages while the agent is off (#86, #88)
+
+(def ^:private agent-router
+  #{:dashboard-skills :dashboard-agent-skills :dashboard-recent})
+
+(defn- navigate-with
+  "Open `token` as a URL with the account switch `account` (:on or :off)
+  and the agent flag on. Return the navigations it emitted as [screen params options]."
+  [account token]
+  (let [navs    (atom [])
+        default (uuid/next)]
+    (with-redefs [cf/flags (conj cf/flags :design-agent)
+                  st/emit! (mock/stub
+                            (fn [& events]
+                              (doseq [e events]
+                                (when (= ::rt/navigate (ptk/type e))
+                                  (swap! navs conj (let [{:keys [id params options]} @e]
+                                                     [id params options]))))))]
+      (opt-out/with-store-state
+        {:profile {:id (uuid/next)
+                   :default-team-id default
+                   :props {:agent-disabled (= :off account)}}}
+        #(#'routes/on-query-navigate agent-router token false)))
+    {:navs @navs :default default}))
+
+(t/deftest skills-pages-by-url-redirect-while-the-agent-is-off
+  (let [team-id (uuid/next)]
+    (doseq [screen ["dashboard-skills" "dashboard-agent-skills"]]
+      (t/testing screen
+        (let [{:keys [navs]} (navigate-with :off (str "?screen=" screen "&team-id=" team-id))]
+          (t/is (= [[:dashboard-recent {:team-id team-id} {::rt/replace true}]] navs)))
+        (t/testing "without a team in the URL it opens the default team"
+          (let [{:keys [navs default]} (navigate-with :off (str "?screen=" screen))]
+            (t/is (= [[:dashboard-recent {:team-id default} {::rt/replace true}]] navs))))))))
+
+(t/deftest skills-pages-by-url-open-while-the-agent-is-on
+  (doseq [screen ["dashboard-skills" "dashboard-agent-skills"]]
+    (t/is (empty? (:navs (navigate-with :on (str "?screen=" screen "&team-id=" (uuid/next)))))
+          screen))
+  (t/testing "other pages are never redirected"
+    (t/is (empty? (:navs (navigate-with :off (str "?screen=dashboard-recent&team-id=" (uuid/next))))))))

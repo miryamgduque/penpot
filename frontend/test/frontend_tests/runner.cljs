@@ -10,6 +10,7 @@
    [frontend-tests.copy-as-svg-test]
    [frontend-tests.data.agent-access-test]
    [frontend-tests.data.agent-file-switch-test]
+   [frontend-tests.data.agent-opt-out-test]
    [frontend-tests.data.agent-test]
    [frontend-tests.data.agent-tools-test]
    [frontend-tests.data.ai-providers-test]
@@ -144,6 +145,7 @@
    'frontend-tests.copy-as-svg-test
    'frontend-tests.data.agent-access-test
    'frontend-tests.data.agent-file-switch-test
+   'frontend-tests.data.agent-opt-out-test
    'frontend-tests.data.agent-test
    'frontend-tests.data.agent-tools-test
    'frontend-tests.data.ai-providers-test

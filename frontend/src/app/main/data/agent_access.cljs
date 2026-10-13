@@ -19,7 +19,9 @@
   security check: the server does not read it, and nothing here may stand
   in for a server-side check."
   (:require
-   [app.config :as cf]))
+   [app.config :as cf]
+   [app.main.store :as st]
+   [beicon.v2.core :as rx]))
 
 (def agent-routes
   "Routes that only make sense while the agent is on. The route set is
@@ -93,3 +95,26 @@
   watcher and any running agent turn stop on it. Emitted by
   `app.main.data.agent-switch`."
   ::turned-off)
+
+(defn guard-model-call
+  "Wrap the request to a model provider: `make-call` (a function that
+  returns the request's observable) runs only if the agent is on right
+  now, where the user is (the current file, or the account outside a
+  file). Otherwise nothing is sent and the stream fails with an
+  `:agent-off` error.
+
+  The event-level checks stop a call from starting. This one checks again
+  when each request goes out, so a chain that began while the agent was on
+  (a playbook match, a compaction, the next round of a turn) cannot send
+  its next request after the user switched the agent off. Every transport
+  that reaches a provider goes through it."
+  [make-call]
+  (rx/mapcat (fn [_]
+               (let [state @st/state]
+                 (if (agent-enabled? state (:current-file-id state))
+                   (make-call)
+                   (rx/throw (ex-info "The agent is off."
+                                      {:type :restriction
+                                       :code :agent-off
+                                       :hint "the agent is off"})))))
+             (rx/of nil)))

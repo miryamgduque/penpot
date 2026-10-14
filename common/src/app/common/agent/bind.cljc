@@ -179,23 +179,31 @@
 
 (def ^:private written-in
   "Token property → the shape attributes a call writes it through."
-  (merge {:fill         #{:fills :content}
+  (merge {:fill         #{:fills}
           :stroke-color #{:strokes}
-          :font-size    #{:content}
-          :font-family  #{:content}
           :row-gap      #{:layout-gap}
           :column-gap   #{:layout-gap}}
          (zipmap [:r1 :r2 :r3 :r4] (repeat #{:r1 :r2 :r3 :r4}))
          (zipmap [:p1 :p2 :p3 :p4] (repeat #{:layout-padding}))))
 
+(def ^:private written-in-text
+  "The same for a text, whose ink, size and family live in its content.
+  Only a text's: a path's or a boolean's content is its geometry, which
+  every move rewrites."
+  (assoc written-in
+         :fill        #{:fills :content}
+         :font-size   #{:content}
+         :font-family #{:content}))
+
 (defn- by-the-call
-  "Of `roles` found on a shape, those for values the call wrote: all of
+  "Of `roles` found on `shape`, those for values the call wrote: all of
   them on a shape it made, only what it set on one that was there. A value
   the user put on a shape the agent only renamed or moved stays theirs."
-  [roles attrs]
+  [roles attrs shape]
   (if (= :all attrs)
     roles
-    (into {} (filter (fn [[property _]] (some attrs (get written-in property)))) roles)))
+    (let [sources (if (cfh/text-shape? shape) written-in-text written-in)]
+      (into {} (filter (fn [[property _]] (some attrs (get sources property)))) roles))))
 
 (defn with-roles
   "A drawing tool's `answer`, with what it drew bound to the roles its values
@@ -213,7 +221,7 @@
                                     ;; a copy takes what its main has; binding
                                     ;; inside it would be an edit of the copy
                                     (when-not (or (ctc/in-component-copy? shape) (kept? objects shape))
-                                      (when-let [roles (not-empty (by-the-call (found worth shape) attrs))]
+                                      (when-let [roles (not-empty (by-the-call (found worth shape) attrs shape))]
                                         [id roles])))))
                           (touched (:changes answer) page-id))]
         (if (empty? binds)

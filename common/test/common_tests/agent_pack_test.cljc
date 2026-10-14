@@ -7,6 +7,7 @@
 (ns common-tests.agent-pack-test
   (:require
    #?(:clj [app.common.json :as json])
+   [app.common.agent.bind :as cab]
    [app.common.agent.pack :as cak]
    [app.common.agent.pack-make :as cakm]
    [app.common.agent.packs :as caks]
@@ -365,6 +366,15 @@
         (t/testing "but a value the call itself writes is bound"
           (let [painted (commit drawn (run drawn "modify_shape" {:shapeId (str (:id card)) :fill "#ffffff"}))]
             (t/is (= "color.surface" (-> (shape-named painted "Card") :applied-tokens :fill)))))))
+    (t/testing "a path's content is its geometry: moving it writes no paint"
+      (let [by-the-call #'cab/by-the-call
+            roles       {:fill "color.surface" :font-size "font-size.md"}]
+        (t/is (= {} (by-the-call roles #{:content :selrect} {:type :path})))
+        (t/is (= {} (by-the-call roles #{:content} {:type :bool})))
+        ;; a text's content is its ink, size and family
+        (t/is (= roles (by-the-call roles #{:content} {:type :text})))
+        ;; and what a call made is all its own
+        (t/is (= roles (by-the-call roles :all {:type :path})))))
     (t/testing "a file with no roles is left alone"
       (let [out (run empty-file "create_shape" {:type "rect" :name "Chip" :x 0 :y 200 :width 60 :height 24 :fill "#ffffff"})]
         (t/is (nil? (-> out :result :boundToRoles)))

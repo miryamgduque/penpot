@@ -598,24 +598,31 @@
 
 (t/deftest an-old-record-of-the-agents-changes-is-removed
   (let [{:keys [file]} (setup)
-        record! (fn [days-ago]
+        record! (fn [turn-id days-ago]
                   (db/insert! th/*pool* :file-agent-change
                               {:file-id (:id file)
                                :conversation-id "c1"
-                               :turn-id (uuid/next)
+                               :turn-id turn-id
                                :tool "create_shape"
                                :revn 1
                                :changes (blob/encode [])
                                :created-at (ct/in-past {:days days-ago})}))
-        count!  (fn [] (count (th/db-query :file-agent-change {:file-id (:id file)})))]
-    (record! 40)
-    (record! 2)
-    (t/is (= 2 (count!)))
-    (t/testing "past the default 30 days a record goes; a recent one stays"
+        count!  (fn [] (count (th/db-query :file-agent-change {:file-id (:id file)})))
+        old     (uuid/next)
+        recent  (uuid/next)
+        across  (uuid/next)]
+    (record! old 40)
+    (record! recent 2)
+    ;; a turn with a commit on each side of the cut
+    (record! across 31)
+    (record! across 29)
+    (t/is (= 4 (count!)))
+    (t/testing "past the default 30 days a turn goes; a recent one, and one still in use, stay whole"
       (t/is (= 1 (th/run-task! :agent-changes-gc {})))
-      (t/is (= 1 (count!))))
+      (t/is (= 3 (count!)))
+      (t/is (= 2 (count (th/db-query :file-agent-change {:turn-id across})))))
     (t/testing "the age is the instance's to set"
-      (t/is (= 1 (th/run-task! :agent-changes-gc {:max-age (ct/duration {:days 1})})))
+      (t/is (= 3 (th/run-task! :agent-changes-gc {:max-age (ct/duration {:days 1})})))
       (t/is (= 0 (count!))))))
 
 (t/deftest a-commit-is-recorded-at-the-revision-it-made
@@ -642,3 +649,31 @@
     (let [rows (:result (th/command! {::th/type :get-agent-changes ::rpc/profile-id (:id profile)
                                       :file-id (:id file) :turn-id turn-id}))]
       (t/is (= [made] (mapv :revn rows))))))
+
+(t/deftest a-commit-and-its-record-land-together-or-not-at-all
+  (let [profile (th/create-profile* 1 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        page-id (first (get-in file [:data :pages]))
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file)
+                                        {:turn-id (uuid/random) :conversation-id "chat-1"})
+        page    (:result (th/command! {::th/type :get-agent-tool-page :token token}))
+        insert! db/insert!]
+    ;; the record cannot be written
+    (with-redefs [db/insert! (fn [conn table & args]
+                               (if (= :file-agent-change table)
+                                 (throw (ex-info "record refused" {:type :internal}))
+                                 (apply insert! conn table args)))]
+      (let [out (th/command! {::th/type :commit-agent-tool-changes
+                              :token token
+                              :revn (:revn page)
+                              :vern (:vern page)
+                              :tool "create_shape"
+                              :changes [(rect-change page-id (uuid/random) "unrecorded")]})]
+        (t/is (some? (:error out)))))
+    ;; so the change did not land either
+    (let [after (:result (th/command! {::th/type :get-agent-tool-page :token token}))]
+      (t/is (= (:revn page) (:revn after)))
+      (t/is (not-any? #(= "unrecorded" (:name %))
+                      (vals (get-in after [:data :pages-index page-id :objects])))))))

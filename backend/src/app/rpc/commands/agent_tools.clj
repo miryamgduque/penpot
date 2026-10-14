@@ -914,6 +914,12 @@
       AND c.reverted_at IS NULL
     ORDER BY c.revn ASC, c.created_at ASC")
 
+(def ^:private sql:lock-file
+  "SELECT f.revn, f.vern FROM file AS f WHERE f.id = ? FOR UPDATE")
+
+(def ^:private sql:turn-changes-locked
+  (str sql:turn-changes " FOR UPDATE"))
+
 (def ^:private sql:later-file-changes
   "SELECT c.revn, c.changes
      FROM file_change AS c
@@ -971,69 +977,74 @@
    ::sm/params schema:revert-agent-turn}
   [cfg {:keys [::rpc/profile-id file-id turn-id force]}]
   (files/check-edition-permissions! cfg profile-id file-id)
-  (let [rows (db/exec! cfg [sql:turn-changes file-id turn-id])
-        file (bfc/get-file cfg file-id :read-only? true :load-data? false)]
-    (cond
-      (empty? rows)
-      (ex/raise :type :validation
-                :code :nothing-to-revert
-                :hint "this turn changed nothing, or was already reverted")
+  (db/tx-run!
+   cfg
+   (fn [{:keys [::db/conn] :as cfg}]
+     ;; The file row is held from here to the end: an edit committed
+     ;; meanwhile waits for this revert, and every edit committed before it
+     ;; is seen by the conflict check below. The turn's records are held
+     ;; too, so a second revert of the same turn waits, then finds it done.
+     (let [file (db/exec-one! conn [sql:lock-file file-id])
+           rows (db/exec! conn [sql:turn-changes-locked file-id turn-id])]
+       (cond
+         (empty? rows)
+         (ex/raise :type :validation
+                   :code :nothing-to-revert
+                   :hint "this turn changed nothing, or was already reverted")
 
-      (some (comp nil? :undo-changes) rows)
-      (ex/raise :type :validation
-                :code :turn-not-revertable
-                :hint "this turn was recorded without the changes that undo it")
+         (some (comp nil? :undo-changes) rows)
+         (ex/raise :type :validation
+                   :code :turn-not-revertable
+                   :hint "this turn was recorded without the changes that undo it")
 
-      :else
-      (let [rows   (mapv #(-> % (update :changes blob/decode) (update :undo-changes blob/decode)) rows)
-            ids    (touched-shapes (mapcat :changes rows))
-            later  (later-edits cfg file-id (:revn (peek rows)) (:revn file) ids)]
-        (if (and (not force) (or (seq (:shapes later)) (:unknown? later)))
-          {:conflict true
-           ;; the shapes edited since, or none named when it cannot be told
-           :shapes (shape-names cfg file-id (:shapes later))
-           :unknown (:unknown? later)}
-          (let [;; newest commit first: each undoes on top of the ones after it
-                undo (into [] (mapcat :undo-changes) (rseq rows))
-                redo (into [] (mapcat :changes) rows)
-                revert-turn (uuid/next)]
-            (try
-              (db/tx-run! cfg
-                          (fn [{:keys [::db/conn] :as cfg}]
-                            (@update-file-fn cfg {::rpc/profile-id profile-id
-                                                  :id file-id
-                                                  :session-id (uuid/next)
-                                                  :revn (:revn file)
-                                                  :vern (:vern file)
-                                                  :features cfeat/supported-features
-                                                  :changes undo})
-                            ;; recorded in the same transaction as the revert,
-                            ;; at the revision it made: both or neither
-                            (let [revn (:revn (db/get conn :file {:id file-id} {:columns [:revn]}))]
-                              (db/update! conn :file-agent-change
-                                          {:reverted-at (ct/now)}
-                                          {:file-id file-id :turn-id turn-id}
-                                          {::db/return-keys false})
-                              ;; the revert is a change like the others: recorded,
-                              ;; and with what undoes it, which is the turn itself
-                              (db/insert! conn :file-agent-change
-                                          {:file-id file-id
-                                           :profile-id profile-id
-                                           :conversation-id (:conversation-id (first rows))
-                                           :turn-id revert-turn
-                                           :tool "revert_turn"
-                                           :revn revn
-                                           :changes (blob/encode undo)
-                                           :undo-changes (blob/encode redo)}
-                                          {::db/return-keys false})
-                              {:reverted (count rows)
-                               :turn-id revert-turn
-                               :revn revn})))
-              (catch clojure.lang.ExceptionInfo cause
-                (if (= :validation (:type (ex-data cause)))
-                  (ex/raise :type :validation
-                            :code :revert-does-not-apply
-                            :hint (str "the file has changed too much since for this turn to be "
-                                       "taken back cleanly; restore a version from the history instead")
-                            :cause cause)
-                  (throw cause))))))))))
+         :else
+         (let [rows   (mapv #(-> % (update :changes blob/decode) (update :undo-changes blob/decode)) rows)
+               ids    (touched-shapes (mapcat :changes rows))
+               later  (later-edits conn file-id (:revn (peek rows)) (:revn file) ids)]
+           (if (and (not force) (or (seq (:shapes later)) (:unknown? later)))
+             {:conflict true
+              ;; the shapes edited since, or none named when it cannot be told
+              :shapes (shape-names cfg file-id (:shapes later))
+              :unknown (:unknown? later)}
+             (let [;; newest commit first: each undoes on top of the ones after it
+                   undo (into [] (mapcat :undo-changes) (rseq rows))
+                   redo (into [] (mapcat :changes) rows)
+                   revert-turn (uuid/next)]
+               (try
+                 (@update-file-fn cfg {::rpc/profile-id profile-id
+                                       :id file-id
+                                       :session-id (uuid/next)
+                                       :revn (:revn file)
+                                       :vern (:vern file)
+                                       :features cfeat/supported-features
+                                       :changes undo})
+                 (catch clojure.lang.ExceptionInfo cause
+                   (if (= :validation (:type (ex-data cause)))
+                     (ex/raise :type :validation
+                               :code :revert-does-not-apply
+                               :hint (str "the file has changed too much since for this turn to be "
+                                          "taken back cleanly; restore a version from the history instead")
+                               :cause cause)
+                     (throw cause))))
+               ;; recorded in the same transaction as the revert, at the
+               ;; revision it made: both or neither
+               (let [revn (:revn (db/get conn :file {:id file-id} {:columns [:revn]}))]
+                 (db/update! conn :file-agent-change
+                             {:reverted-at (ct/now)}
+                             {:file-id file-id :turn-id turn-id}
+                             {::db/return-keys false})
+                 ;; the revert is a change like the others: recorded, and
+                 ;; with what undoes it, which is the turn itself
+                 (db/insert! conn :file-agent-change
+                             {:file-id file-id
+                              :profile-id profile-id
+                              :conversation-id (:conversation-id (first rows))
+                              :turn-id revert-turn
+                              :tool "revert_turn"
+                              :revn revn
+                              :changes (blob/encode undo)
+                              :undo-changes (blob/encode redo)}
+                             {::db/return-keys false})
+                 {:reverted (count rows)
+                  :turn-id revert-turn
+                  :revn revn})))))))))

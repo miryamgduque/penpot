@@ -14,6 +14,7 @@
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools.common :as atc]
+   [app.main.data.workspace.agent-usage :as au]
    [app.main.data.workspace.design-doc :as dd]
    [app.main.repo :as rp]
    [app.main.store :as st]
@@ -257,12 +258,8 @@
     ptk/UpdateEvent
     (update [_ state]
       (if-let [file-id (:current-file-id state)]
-        (update-in state [:ai-panel file-id :usage]
-                   (fn [u]
-                     (merge-with + (or u {:input-tokens 0 :output-tokens 0
-                                          :cache-read-tokens 0 :cache-write-tokens 0
-                                          :requests 0})
-                                 usage)))
+        ;; usage keeps apart what each model spent: added as the panel adds
+        (update-in state [:ai-panel file-id :usage] au/add-usage usage)
         state))))
 
 (defn explore-design

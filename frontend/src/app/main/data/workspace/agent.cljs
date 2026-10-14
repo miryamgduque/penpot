@@ -20,6 +20,7 @@
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
+   [app.main.data.workspace.agent-usage :as au]
    [app.main.data.workspace.design-doc :as dd]
    [app.main.repo :as rp]
    [beicon.v2.core :as rx]
@@ -214,36 +215,11 @@
 ;; Session token totals accumulate in the panel (the spend meter). Defined here
 ;; because the streaming accumulators below seed themselves with it.
 
-(def empty-usage
-  {:input-tokens 0 :output-tokens 0 :cache-read-tokens 0 :cache-write-tokens 0 :requests 0})
-
-(def ^:private token-keys
-  [:input-tokens :output-tokens :cache-read-tokens :cache-write-tokens :requests])
-
-(defn attributed
-  "`usage` marked as spent on `model` of `provider`: a side job's helper is
-  not priced like the model the turn runs on. Usage with no model named
-  stays unattributed, and is priced as the session's model."
-  [usage provider model]
-  (if (and (string? provider) (string? model))
-    (let [tokens (select-keys usage token-keys)]
-      (assoc tokens :by-model {(str provider ":" model)
-                               (assoc tokens :provider provider :model model)}))
-    usage))
-
-(defn add-usage
-  "Merges a round's usage into the running totals, keeping apart what was
-  spent on each model."
-  [a b]
-  (let [a (or a empty-usage)
-        b (or b empty-usage)]
-    (cond-> (merge-with + (select-keys a token-keys) (select-keys b token-keys))
-      (or (:by-model a) (:by-model b))
-      (assoc :by-model (merge-with (fn [x y]
-                                     (merge (merge-with + (select-keys x token-keys)
-                                                        (select-keys y token-keys))
-                                            (select-keys x [:provider :model])))
-                                   (:by-model a) (:by-model b))))))
+;; The meter's usage: totals, and what each model spent (see agent-usage).
+(def empty-usage au/empty-usage)
+(def ^:private token-keys au/token-keys)
+(def attributed au/attributed)
+(def add-usage au/add-usage)
 
 ;; --- Streaming accumulators
 ;;

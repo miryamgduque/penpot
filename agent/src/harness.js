@@ -42,6 +42,25 @@ export const PROVIDER_ROUTES = {
   deepseek: "deepseek",
 };
 
+/**
+ * What a route needs beyond the provider layer's own description of it.
+ * pi-ai's `zai` route is Z.ai's coding plan, at an address of its own. The
+ * key a user connects is an ordinary Z.ai API key, which the backend checks
+ * against the general API, so the route is sent there.
+ */
+const ROUTE_DEFAULTS = {
+  zai: { baseURL: "https://api.z.ai/api/paas/v4" },
+};
+
+/**
+ * The thinking level asked of a route's reasoning models. pi-ai turns
+ * thinking off when no level is asked for, and Z.ai's GLM models refuse that
+ * ("cannot be disabled"), so they are asked for the least they accept.
+ */
+const ALWAYS_THINKING = {
+  zai: "low",
+};
+
 const MAX_TOKENS = 32000;
 
 // An MCP server the user connected is somebody else's service: it gets less
@@ -140,10 +159,10 @@ export function endpointProblem(endpoint) {
   return undefined;
 }
 
-function providersConfig(overrides, endpoints = []) {
+export function providersConfig(overrides, endpoints = []) {
   const providers = {};
   for (const [provider, route] of Object.entries(PROVIDER_ROUTES)) {
-    providers[route] = { apiKeyEnv: keyRef(provider), ...overrides?.[route] };
+    providers[route] = { apiKeyEnv: keyRef(provider), ...ROUTE_DEFAULTS[route], ...overrides?.[route] };
   }
   // an endpoint speaks the protocol local runtimes and gateways share, and
   // serves the models its admin listed, with the limits they stated
@@ -384,10 +403,12 @@ export async function createHarness(options = {}) {
     const releases = [];
     conversation.releases = releases;
     const resumed = await isStored(id);
+    const effort = record.reasoning === true ? ALWAYS_THINKING[routeOf(provider)] : undefined;
     const agentOptions = {
       provider: routeOf(provider),
       model,
       maxTokens: options.maxTokens ?? MAX_TOKENS,
+      ...(effort === undefined ? {} : { reasoningEffort: effort }),
     };
     const open = resumed
       ? (rest) => ctx.agents.resume({ resumeSessionId: SessionId(id), ...rest })

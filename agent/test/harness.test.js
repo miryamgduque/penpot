@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createHarness } from "../src/harness.js";
+import { createHarness, providersConfig } from "../src/harness.js";
 import { startFakeAnthropic } from "./fake-anthropic.js";
 import { startFakeMcp } from "./fake-mcp.js";
 
@@ -673,5 +673,31 @@ test("two turns started at once in one conversation: the second is refused, not 
     assert.equal(t.fake.requests.length, 1);
   } finally {
     await t.close();
+  }
+});
+
+test("Z.ai is called on its general API, and its GLM models are asked to think", async () => {
+  const { startFakeOpenAI } = await import("./fake-openai.js");
+  // the provider layer's own address for the route is Z.ai's coding plan; a
+  // user's key is for the general API, the one the backend checks it against
+  assert.equal(providersConfig().zai.baseURL, "https://api.z.ai/api/paas/v4");
+  assert.equal(providersConfig({ zai: { baseURL: "http://127.0.0.1:9" } }).zai.baseURL, "http://127.0.0.1:9");
+  assert.equal(providersConfig().moonshotai.baseURL, undefined, "other routes keep their own address");
+
+  const remote = await startFakeOpenAI(() => ({ text: "ok" }));
+  const harness = await createHarness({ providers: { zai: { baseURL: remote.baseURL } } });
+  try {
+    await harness.runTurn(turn({ provider: "zhipu", model: "glm-5.3", tools: [TOOL] }), {
+      emit: () => {},
+      callTool: async () => ({ content: "", isError: false }),
+    });
+    const [first] = remote.requests;
+    // left to itself the provider layer sends thinking off, which a GLM model
+    // answers with "cannot be disabled"
+    assert.deepEqual(first.body.thinking, { type: "enabled", clear_thinking: false });
+    assert.equal(first.body.reasoning_effort, "low");
+  } finally {
+    await harness.dispose();
+    await remote.close();
   }
 });

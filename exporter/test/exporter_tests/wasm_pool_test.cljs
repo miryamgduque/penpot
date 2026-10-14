@@ -43,4 +43,9 @@
                        (t/is (= 1 (:acquired @calls)))
                        (t/is (= 1 (+ (:released @calls) (:destroyed @calls))))
                        (reset! pool/pool nil)
-                       (done))))))))
+                       (done)
+                       ;; `done` returns the next async test's promise. On a
+                       ;; rejected promise, `hmap` rejects with whatever is
+                       ;; returned here when it is truthy, so that promise
+                       ;; would surface as an unhandled rejection.
+                       nil)))))))

@@ -47,9 +47,10 @@
   this and bail out — otherwise the work (and any upstream request behind it)
   runs to completion for a client that left."
   []
-  (let [channel *channel*]
-    (or (nil? channel)
-        (sp/closed? channel))))
+  ;; a function sink (a job's heartbeat) has no consumer that can leave
+  (let [sink *sink*]
+    (or (nil? sink)
+        (and (sp/chan? sink) (sp/closed? sink)))))
 
 (defn spawn-listener
   "Consume the events of `channel` on a thread of its own, until it

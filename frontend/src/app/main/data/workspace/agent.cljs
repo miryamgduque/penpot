@@ -217,10 +217,33 @@
 (def empty-usage
   {:input-tokens 0 :output-tokens 0 :cache-read-tokens 0 :cache-write-tokens 0 :requests 0})
 
+(def ^:private token-keys
+  [:input-tokens :output-tokens :cache-read-tokens :cache-write-tokens :requests])
+
+(defn attributed
+  "`usage` marked as spent on `model` of `provider`: a side job's helper is
+  not priced like the model the turn runs on. Usage with no model named
+  stays unattributed, and is priced as the session's model."
+  [usage provider model]
+  (if (and (string? provider) (string? model))
+    (let [tokens (select-keys usage token-keys)]
+      (assoc tokens :by-model {(str provider ":" model)
+                               (assoc tokens :provider provider :model model)}))
+    usage))
+
 (defn add-usage
-  "Merges a round's usage into the running totals."
+  "Merges a round's usage into the running totals, keeping apart what was
+  spent on each model."
   [a b]
-  (merge-with + (or a empty-usage) (or b empty-usage)))
+  (let [a (or a empty-usage)
+        b (or b empty-usage)]
+    (cond-> (merge-with + (select-keys a token-keys) (select-keys b token-keys))
+      (or (:by-model a) (:by-model b))
+      (assoc :by-model (merge-with (fn [x y]
+                                     (merge (merge-with + (select-keys x token-keys)
+                                                        (select-keys y token-keys))
+                                            (select-keys x [:provider :model])))
+                                   (:by-model a) (:by-model b))))))
 
 ;; --- Streaming accumulators
 ;;
@@ -232,16 +255,31 @@
 
 ;; What a model costs comes from the catalog (`app.main.data.ai-providers`):
 ;; dollars per million tokens, with what reading and writing the cache cost.
+(defn- tokens-cost
+  [{:keys [input output cacheRead cacheWrite]}
+   {:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens]}]
+  (/ (+ (* (or input-tokens 0) input)
+        (* (or cache-read-tokens 0) cacheRead)
+        (* (or cache-write-tokens 0) cacheWrite)
+        (* (or output-tokens 0) output))
+     1000000))
+
 (defn estimate-cost-usd
-  "Estimated session cost in USD, from the catalog's price of `model`; nil
-  when the catalog states none (the meter hides the figure)."
-  [model {:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens]}]
-  (when-let [{:keys [input output cacheRead cacheWrite]} (dai/price model)]
-    (/ (+ (* (or input-tokens 0) input)
-          (* (or cache-read-tokens 0) cacheRead)
-          (* (or cache-write-tokens 0) cacheWrite)
-          (* (or output-tokens 0) output))
-       1000000)))
+  "Estimated session cost in USD: what each model spent at that model's
+  price, and what no model was named for at the price of the session's
+  `model` of `provider`. Nil when the catalog states no price for the
+  session's model (the meter hides the figure). A model with no stated
+  price adds nothing: a registered endpoint costs the user nothing per
+  token."
+  [provider model usage]
+  (when-let [main (dai/price provider model)]
+    (let [spent      (vals (:by-model usage))
+          attributed (apply merge-with + empty-usage (map #(select-keys % token-keys) spent))
+          unnamed    (merge-with - (select-keys (merge empty-usage usage) token-keys) attributed)]
+      (+ (tokens-cost main unnamed)
+         (transduce (keep (fn [{:keys [provider model] :as entry}]
+                            (some-> (dai/price provider model) (tokens-cost entry))))
+                    + 0 spent)))))
 
 ;; --- System prompt
 ;;
@@ -303,11 +341,9 @@
 
 (def ^:private max-tool-result-chars 20000)
 (def ^:private max-history-messages 40)
-;; ~37k tokens — deliberately ABOVE `compact-threshold-chars`, so the order of
-;; defenses is: stubbing (cheap, targeted) → compaction (rare, lossy, smart) →
-;; this trim (the blunt backstop, reached only when compaction failed or is
-;; unavailable). The message cap alone bounded nothing real — a message can be
-;; a 20k-char tool result, so 40 of them is 800k chars.
+;; ~37k tokens: the size the panel's stored copy of a conversation is held
+;; to. The message cap alone bounded nothing real — a message can be a
+;; 20k-char tool result, so 40 of them is 800k chars.
 (def ^:private max-history-chars 150000)
 
 ;; --- History hygiene (applied at turn boundaries)
@@ -464,51 +500,17 @@
    :input (:input (:call o))
    :result (displayed-result (:content o))})
 
-;; --- Auto-compaction (pure halves; the summarizer call is below detect-round)
+;; --- Fresh-chat handoff
 ;;
-;; Past `compact-threshold-chars` the history is replaced by [one summary
-;; message + the last turn]: one cheap buffered round writes the agent's own
-;; working memory, and the wire history resets from tens of thousands of tokens
-;; to the summary. Deliberately LOSSY — which is why it is the layer BEHIND
-;; stubbing (phase 02) and fires only on long sessions, at a turn boundary.
-
-(def compact-threshold-chars 100000)
-
-;; Below the compaction threshold on purpose: the panel SUGGESTS summarizing
-;; into a fresh chat (the user's choice, conversation switch and all) before
-;; the automatic in-place backstop fires.
+;; Past this size the panel suggests summarizing into a fresh chat (the
+;; user's choice, conversation switch and all). The conversation the model
+;; sees lives in the agent service, which condenses it on its own.
 (def handoff-notice-chars 60000)
 
 (defn history-chars
   "Rough payload size of the whole canonical history."
   [messages]
   (reduce + 0 (map message-chars messages)))
-
-(defn compact-due?
-  "Whether the history has outgrown the compaction threshold (~25k tokens)."
-  [messages]
-  (> (history-chars messages) compact-threshold-chars))
-
-(defn- last-turn-index
-  "Index of the last plain user message — where the surviving tail begins."
-  [messages]
-  (->> (range (dec (count messages)) -1 -1)
-       (some (fn [i] (when (= :user (:role (nth messages i))) i)))))
-
-(defn compacted-history
-  "`messages` rewritten as [summary-user-message + the last turn]. The summary
-  is flagged `:compacted?` and framed as a replacement, not the user's words.
-  A history that is one giant turn has no head to compact — returned as-is."
-  [messages summary]
-  (let [messages (vec messages)
-        tail-idx (last-turn-index messages)]
-    (if (or (nil? tail-idx) (zero? tail-idx))
-      messages
-      (into [{:role :user
-              :text (str "[Conversation compacted — the messages before this "
-                         "point were replaced by this summary of them]\n\n" summary)
-              :compacted? true}]
-            (subvec messages tail-idx)))))
 
 (defn conversation-transcript
   "The WHOLE history as plain text for a summarizer. Images are stripped
@@ -534,18 +536,9 @@
                 (str "TOOL RESULTS:\n" (str/join "\n" (map :content results))))))
        (str/join "\n\n")))
 
-(defn compaction-transcript
-  "The head of the history only — everything in-place compaction will replace.
-  The last turn is excluded because `compacted-history` carries it verbatim;
-  summarizing it too would say everything twice."
-  [messages]
-  (let [messages (vec messages)]
-    (conversation-transcript
-     (subvec messages 0 (or (last-turn-index messages) (count messages))))))
-
 (defn handoff-seed
-  "The seeded history for a FRESH conversation carrying `summary` — the
-  fresh-chat sibling of `compacted-history`. One flagged user message and
+  "The seeded history for a FRESH conversation carrying `summary`. One
+  flagged user message and
   nothing else: the old conversation stays whole in the saved chats list, so
   nothing verbatim needs to ride along."
   [summary]
@@ -661,7 +654,7 @@
                     (fn [{:keys [text tool-calls usage]}]
                       (let [spent' (add-usage spent usage)]
                         (if (or (empty? tool-calls) (>= (inc n) max-rounds))
-                          (rx/of {:text text :usage spent'})
+                          (rx/of {:text text :usage (attributed spent' provider (:model opts))})
                           (->> (rx/from tool-calls)
                                (rx/mapcat (partial run-side-tool tools))
                                (rx/reduce conj [])
@@ -695,13 +688,16 @@
                   (cond-> {:system system :text user-text}
                     (and (string? provider) (string? model))
                     (assoc :provider provider :model model))))
-       (rx/map (fn [{:keys [text usage]}]
+       (rx/map (fn [{:keys [text usage] :as answer}]
                  {:text (or text "")
-                  :usage {:input-tokens (or (:input usage) 0)
-                          :output-tokens (or (:output usage) 0)
-                          :cache-read-tokens (or (:cacheRead usage) 0)
-                          :cache-write-tokens (or (:cacheWrite usage) 0)
-                          :requests (or (:requests usage) 1)}}))))
+                  ;; spent on the helper the backend picked, priced as it
+                  :usage (attributed {:input-tokens (or (:input usage) 0)
+                                      :output-tokens (or (:output usage) 0)
+                                      :cache-read-tokens (or (:cacheRead usage) 0)
+                                      :cache-write-tokens (or (:cacheWrite usage) 0)
+                                      :requests (or (:requests usage) 1)}
+                                     (:provider answer)
+                                     (:model answer))}))))
 
 ;; --- Playbook matching (turn-start injection)
 ;;
@@ -780,11 +776,10 @@
                     (nil? (:tokens-lib data)))))
     direction-nudge-text))
 
-;; --- Auto-compaction: the summarizer round
+;; --- The summarizer round, for the fresh-chat handoff
 
 ;; The summary is a side job: it runs on the user's helper model, or on the
-;; model they build with when they chose none. If the round errors the caller
-;; degrades to the uncompacted history (the trim backstop still bounds it).
+;; model they build with when they chose none.
 
 ;; Public because the section contract is pinned by tests: Learned exists so a
 ;; compacted agent does not re-hit walls it already climbed (a rejected raw
@@ -804,28 +799,11 @@
              "A transcript that opens with a bracketed [Conversation compacted…] message is carrying the previous compaction's summary. Treat it as your anchor: keep its still-true facts, drop what is stale, merge in the new — never describe it as something the user said."
              "Be terse and specific. Never invent names. Keep the whole summary under 3000 characters. Output only the summary."]))
 
-(defn compact-history
-  "One buffered summarizer round over the history's head → an observable of one
-  `{:history :usage}`, where `:history` is `compacted-history`'s rewrite. A
-  blank summary degrades to the original history (a no-op compaction beats a
-  history replaced by nothing); provider/HTTP failures surface as stream errors
-  for the caller to catch — compaction must never block the user's turn."
-  [messages main]
-  (->> (detect-round main
-                     compact-system
-                     (compaction-transcript messages))
-       (rx/map (fn [{:keys [text usage]}]
-                 {:history (if (str/blank? text)
-                             (vec messages)
-                             (compacted-history messages text))
-                  :usage usage}))))
-
 (defn summarize-history
   "One buffered summarizer round over the WHOLE history → an observable of one
-  `{:text :usage}` — the fresh-chat handoff's half of what `compact-history`
-  does in place. A blank summary is thrown here (unlike compaction there is no
-  sensible degrade: the caller is about to seed a new chat with this text and
-  must instead stay in the current one)."
+  `{:text :usage}`, for the fresh-chat handoff. A blank summary is thrown
+  here: the caller is about to seed a new chat with this text and must
+  instead stay in the current one."
   [messages main]
   (->> (detect-round main
                      compact-system

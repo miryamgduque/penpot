@@ -17,6 +17,7 @@
   `run-turn` emits the same turn events as `agent/run-turn`, so the panel
   cannot tell the two apart."
   (:require
+   [app.common.data.macros :as dm]
    [app.main.data.agent-access :as agent-access]
    [app.main.data.helpers :as dsh]
    [app.main.data.persistence :as dps]
@@ -213,6 +214,21 @@
    :cache-write-tokens (or cacheWrite 0)
    :requests 1})
 
+(def ^:private cut-reasons
+  "How a turn ends when the model stopped before it was done, not because it
+  finished or was cancelled."
+  {"max-tokens" (str "⚠️ The model ran out of room before it finished: its context or the "
+                     "length of its answer was used up. What it built so far stays in the file. "
+                     "Start a new chat to go on, or choose a model with a larger context.")
+   "max-steps"  (str "⚠️ The turn stopped at the most steps a turn may take, before the model "
+                     "said it was done. What it built so far stays in the file; ask it to go on.")})
+
+(defn cut-note
+  "The note that tells the user a turn was cut short, or nil when it ended
+  as turns should."
+  [reason]
+  (get cut-reasons reason))
+
 (def last-turn-ref*
   "The backend's id for the last turn: `get-agent-changes` lists what the
   turn changed by it."
@@ -288,17 +304,34 @@
                   "mcp"
                   (rx/from (refused-service-events ev))
 
+                  ;; a side job's usage names the model it ran on; the
+                  ;; turn's own is the turn's model
                   "usage"
-                  (rx/of {:kind :usage :usage (usage (:usage ev))})
+                  (rx/of {:kind :usage
+                          :usage (agent/attributed (usage (:usage ev))
+                                                   (or (:provider ev) (:provider settings))
+                                                   (or (:model ev) (:model settings)))})
+
+                  ;; said by the service before the turn, when what it sends
+                  ;; the model takes much of the model's context
+                  "warning"
+                  (rx/of {:kind :note :text (dm/str "⚠️ " (:message ev))})
 
                   "done"
                   ;; the service owns the real history; what is kept here is
-                  ;; the readable shadow the panel persists and restores
+                  ;; the readable shadow the panel persists and restores. A
+                  ;; turn the model could not finish says so: it must not
+                  ;; read as one that did.
                   (do
                     (reset! last-tool-timings* (:toolTimings ev))
-                    (rx/of {:kind :done
-                            :history (conj (vec history)
-                                           {:role :assistant :text @text* :tool-calls []})}))
+                    (rx/concat
+                     (if-let [note (cut-note (:reason ev))]
+                       (rx/of {:kind :note :text note})
+                       (rx/empty))
+                     (rx/of {:kind :done
+                             :reason (:reason ev)
+                             :history (conj (vec history)
+                                            {:role :assistant :text @text* :tool-calls []})})))
 
                   "error"
                   (rx/throw (ex-info (or (:message ev) "agent service error")

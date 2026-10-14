@@ -17,7 +17,6 @@
   (:require
    [app.common.data.macros :as dm]
    [app.common.uuid :as uuid]
-   [app.config :as cf]
    [app.main.data.agent-access :as agent-access]
    [app.main.data.ai-providers :as dai]
    [app.main.data.changes :as dch]
@@ -794,6 +793,7 @@
                          :assistant-delta (rx/of (append-delta (:text ev)))
                          :thinking-delta  (rx/of (append-thinking-delta (:text ev)))
                          :tool         (rx/of (append-tool (dissoc ev :kind)))
+                         :note         (rx/of (append-message "note" (:text ev)))
                          :usage        (rx/of (accumulate-usage (:usage ev)))
                          :turn-history (do (reset! latest* (:history ev))
                                            (rx/empty))
@@ -868,13 +868,10 @@
        (if-not (agent-on? state)
          (rx/empty)
          (let [file-id (:current-file-id state)
-               ;; hygiene runs HERE, at the turn boundary, not between rounds:
-               ;; stubbing old tool results and the size trim both rewrite the
-               ;; history's head, which invalidates the cached prefix — once per
-               ;; turn is the cheap place to pay that (see agent/mark-history-breakpoint)
-               prior   (-> (vec (dm/get-in state [:ai-panel file-id :history]))
-                           (agent/stub-stale-tool-results)
-                           (agent/trim-history))
+               ;; the conversation the model sees lives in the agent service,
+               ;; which condenses it itself; what is kept here is the readable
+               ;; shadow the panel stores, held to a size
+               prior   (agent/trim-history (vec (dm/get-in state [:ai-panel file-id :history])))
                ;; context rides on the user message (the volatile slot), while the
                ;; system prompt stays a stable, cacheable prefix built from `state`
                user-msg (cond-> {:role :user :text text :context context}
@@ -923,26 +920,7 @@
                        (if nudge
                          (rx/of (append-message "note" "✦ Direction nudge: this file has no foundations yet"))
                          (rx/empty))
-                       (if-not (agent/compact-due? prior)
-                         (turn-stream settings (conj prior user-msg) system stream nil)
-                         ;; the history outgrew the compaction threshold: one cheap
-                         ;; buffered round rewrites it as [summary + last turn]
-                         ;; before the turn runs. The turn-stream seeds from the
-                         ;; compacted history, so it is what gets stored when the
-                         ;; turn ends — later turns inherit the savings. A
-                         ;; compaction failure (no Anthropic key, provider down)
-                         ;; must never block the user's turn: it degrades to the
-                         ;; uncompacted history, which the trim backstop bounds.
-                         (->> (agent/compact-history prior settings)
-                              (rx/mapcat
-                               (fn [{:keys [history usage]}]
-                                 (rx/concat
-                                  (rx/of (accumulate-usage usage)
-                                         (append-message "note" "✦ Conversation compacted to save tokens"))
-                                  (turn-stream settings (conj (vec history) user-msg) system stream nil))))
-                              (rx/catch
-                               (fn [_]
-                                 (turn-stream settings (conj prior user-msg) system stream nil)))))))))))))))))
+                       (turn-stream settings (conj prior user-msg) system stream nil)))))))))))))
 
 (defn continue-turn
   "Resumes the turn paused at the runaway checkpoint (see

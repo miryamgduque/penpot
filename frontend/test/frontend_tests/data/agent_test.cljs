@@ -497,48 +497,6 @@
 ;; and the summary arrives as a user message flagged :compacted?.
 ;; ---------------------------------------------------------------------------
 
-(t/deftest compaction-not-due-under-the-threshold
-  (let [history (vec (mapcat #(turn-with-result % "{\"ok\":true}") (range 4)))]
-    (t/is (false? (boolean (agent/compact-due? history))))))
-
-(t/deftest compaction-due-over-the-threshold
-  (let [history (vec (mapcat #(turn-with-result % (apply str (repeat 40000 "x"))) (range 4)))]
-    (t/is (true? (boolean (agent/compact-due? history))))))
-
-(t/deftest compacted-history-is-summary-plus-last-turn
-  (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
-        out     (agent/compacted-history history "the summary")]
-    (t/testing "one summary message replaces every earlier turn"
-      (t/is (= 4 (count out)) "summary + the last turn's 3 messages")
-      (t/is (= :user (:role (first out))))
-      (t/is (true? (:compacted? (first out))))
-      (t/is (str/includes? (:text (first out)) "the summary"))
-      (t/is (str/includes? (str/lower (:text (first out))) "compacted")
-            "the message says what it is — the model must not read it as the user's words"))
-    (t/testing "the last turn survives verbatim, pairs intact"
-      (t/is (= (subvec history 9) (subvec out 1)))
-      (let [[uses results] (anthropic-pairs out)]
-        (t/is (= uses results))))))
-
-(t/deftest compacted-history-keeps-a-lone-turn-whole
-  (t/testing "a history that is one giant turn has no head to compact away"
-    (let [history (vec (turn-with-result 0 big-result))]
-      (t/is (= history (agent/compacted-history history "s"))))))
-
-(t/deftest compaction-transcript-drops-images
-  (t/testing "the summarizer reads text — base64 would be pure cost"
-    (let [history [{:role :user :text "look" :images [png]}
-                   {:role :assistant :text "ok" :tool-calls []}
-                   {:role :user :text "more"}]
-          text    (agent/compaction-transcript history)]
-      (t/is (not (str/includes? text "iVBOR")))
-      (t/is (str/includes? text "look"))
-      (t/is (str/includes? text "ok")))))
-
-;; Phase 01 of the OSS-prompt-learnings plan: the summarizer keeps lessons
-;; (Kimi's compaction priorities) and treats a prior summary as an anchor to
-;; update, not conversation to narrate (opencode's <previous-summary>).
-
 ;; --- Direction nudge (phase 04 of the OSS-prompt-learnings plan)
 ;;
 ;; A first-message BUILD task in a file with no standing direction (no
@@ -589,33 +547,6 @@
     (t/is (str/includes? agent/compact-system "## Learned"))
     (t/is (str/includes? agent/compact-system "previous compaction"))))
 
-(t/deftest recompaction-transcript-carries-the-prior-summary
-  (t/testing "a once-compacted history feeds its own summary back to the
-              summarizer — the anchor instruction has its anchor"
-    (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
-          once    (agent/compacted-history history "alpha: the standing facts")
-          grown   (conj once
-                        {:role :user :text "next ask"}
-                        {:role :assistant :text "done" :tool-calls []})
-          text    (agent/compaction-transcript grown)]
-      (t/is (str/includes? text "alpha: the standing facts"))
-      (t/is (str/includes? (str/lower text) "compacted")
-            "the bracketed frame rides along — it is what the prompt keys on"))))
-
-(t/deftest recompaction-yields-a-single-summary-head
-  (t/testing "compacting again UPDATES the head — one summary message, never
-              a nested chain of summaries-of-summaries"
-    (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
-          once    (agent/compacted-history history "alpha")
-          grown   (conj once
-                        {:role :user :text "next ask"}
-                        {:role :assistant :text "done" :tool-calls []})
-          out     (agent/compacted-history grown "beta")]
-      (t/is (= 1 (count (filter :compacted? out))))
-      (t/is (str/includes? (:text (first out)) "beta"))
-      (t/is (not (str/includes? (agent/conversation-transcript out) "alpha"))
-            "the old summary text is gone — its surviving facts live inside beta"))))
-
 ;; ---------------------------------------------------------------------------
 ;; Fresh-chat handoff (the pure halves).
 ;;
@@ -636,21 +567,14 @@
           "framed as carried-over context, not as the user's words")))
 
 (t/deftest conversation-transcript-includes-the-last-turn
-  (t/testing "the whole conversation is summarized — compaction-transcript's
-              head-only slice would silently drop the newest work"
+  (t/testing "the whole conversation is summarized, the newest work included"
     (let [history [{:role :user :text "first ask"}
                    {:role :assistant :text "did it" :tool-calls []}
                    {:role :user :text "newest ask"}
                    {:role :assistant :text "newest reply" :tool-calls []}]
-          all     (agent/conversation-transcript history)
-          head    (agent/compaction-transcript history)]
+          all     (agent/conversation-transcript history)]
       (t/is (str/includes? all "newest ask"))
-      (t/is (str/includes? all "newest reply"))
-      (t/is (not (str/includes? head "newest ask")) "sanity: the head slice excludes it"))))
-
-(t/deftest handoff-notice-threshold-sits-below-compaction
-  (t/testing "the user gets the choice BEFORE the automatic backstop fires"
-    (t/is (< agent/handoff-notice-chars agent/compact-threshold-chars))))
+      (t/is (str/includes? all "newest reply")))))
 
 (t/deftest history-chars-counts-text-and-results
   (let [history (vec (turn-with-result 0 (apply str (repeat 500 "x"))))]

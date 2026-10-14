@@ -243,10 +243,10 @@
 (defn- usage-summary
   "Compact spend line: calls · prompt tokens (cached %) · output tokens · ~$
   (Claude models only)."
-  [{:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens requests] :as usage} model]
+  [{:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens requests] :as usage} provider model]
   (let [prompt (+ (or input-tokens 0) (or cache-read-tokens 0) (or cache-write-tokens 0))
         cached (if (pos? prompt) (js/Math.round (* (/ (or cache-read-tokens 0) prompt) 100)) 0)
-        cost   (agent/estimate-cost-usd model usage)]
+        cost   (agent/estimate-cost-usd provider model usage)]
     (dm/str (tr "workspace.agent.usage.summary" requests (format-tokens prompt)
                 (dm/str cached "%") (format-tokens output-tokens))
             (when cost (dm/str " · ~$" (.toFixed cost 2))))))
@@ -685,7 +685,7 @@
       ;; paused, resumable as-is — the user decides whether it keeps going
       (when (some? checkpoint)
         (let [{:keys [rounds usage settings]} checkpoint
-              cost (agent/estimate-cost-usd (:model settings) usage)]
+              cost (agent/estimate-cost-usd (:provider settings) (:model settings) usage)]
           [:div {:class (stl/css :checkpoint)}
            [:div {:class (stl/css :checkpoint-label)}
             (if cost
@@ -1361,7 +1361,7 @@
                  :tab-index 0
                  :aria-describedby usage-hint-id}
           (if (some-> usage :requests pos?)
-            (usage-summary usage (:model settings))
+            (usage-summary usage (:provider settings) (:model settings))
             (tr "workspace.agent.usage.restored"))]]
         ;; the glyph is decorative — kept out of the accessible name, which
         ;; would otherwise read "plus sign new chat"

@@ -18,6 +18,7 @@
   correctly refused."
   (:require
    [app.common.uuid :as uuid]
+   [app.main.data.changes :as dch]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.data.workspace.agent-tools.agentic :as atg]
@@ -31,6 +32,7 @@
    [app.main.data.workspace.agent-tools.structure :as ats]
    [app.main.data.workspace.agent-tools.tokens :as att]
    [app.main.data.workspace.media :as dwm]
+   [app.main.store :as st]
    [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
    [cuerdas.core :as str]))
@@ -38,6 +40,18 @@
 ;; ---------------------------------------------------------------------------
 ;; fixtures
 ;; ---------------------------------------------------------------------------
+
+;; The tools run against the store, and a workspace that cannot commit
+;; refuses every tool that changes the file (see "dropped changes" at the
+;; end). A test store has no permissions, so these tests run as an editor.
+(def ^:private prior-permissions (atom nil))
+
+(t/use-fixtures :each
+  {:before (fn []
+             (reset! prior-permissions (:permissions @st/state))
+             (swap! st/state assoc :permissions {:can-edit true}))
+   :after  (fn []
+             (swap! st/state assoc :permissions @prior-permissions))})
 
 (def ^:private id-a (uuid/custom 1 1))
 (def ^:private id-b (uuid/custom 1 2))
@@ -2214,3 +2228,66 @@
                 :children [{:type "text" :text "Hello"}
                            {:type "board" :name "row"
                             :children [{:type "rect"}]}]}))))
+
+;; ---------------------------------------------------------------------------
+;; dropped changes — a workspace that cannot commit (view-only access, or a
+;; preview of an older version) drops what a tool emits without an error. A
+;; tool that changes the file is refused before it runs, and says nothing
+;; happened, instead of reporting a shape id for a shape that does not exist.
+;; ---------------------------------------------------------------------------
+
+(def ^:private editor {:permissions {:can-edit true}})
+(def ^:private viewer {:permissions {:can-edit false :can-read true}})
+(def ^:private preview (assoc editor :workspace-global {:preview-id (uuid/custom 7 7)}))
+
+(def ^:private tool-names (mapv :name at/tool-specs))
+
+(def ^:private changing-tools (into [] (remove at/no-commit-tools) tool-names))
+
+(t/deftest can-commit-is-the-commit-guard
+  (t/is (true? (dch/can-commit? editor)))
+  (t/is (false? (dch/can-commit? viewer)))
+  (t/is (false? (dch/can-commit? preview)))
+  (t/is (false? (dch/can-commit? {})) "no permissions loaded: nothing commits"))
+
+(t/deftest every-declared-tool-is-classified
+  ;; a changing tool is anything not marked as never committing, so this only
+  ;; guards against the no-commit set naming a tool that no longer exists
+  (t/is (every? (set tool-names) at/no-commit-tools))
+  (t/is (seq changing-tools)))
+
+(t/deftest a-viewer-is-refused-every-tool-that-changes-the-file
+  (doseq [name changing-tools]
+    (let [msg (at/commit-refusal name viewer)]
+      (t/is (str/starts-with? (str msg) (str name " did not run")) name)
+      (t/is (str/includes? (str msg) "nothing in the file changed") name)
+      (t/is (str/includes? (str msg) "view the file but not edit it") name))))
+
+(t/deftest a-preview-is-refused-every-tool-that-changes-the-file
+  (doseq [name changing-tools]
+    (let [msg (at/commit-refusal name preview)]
+      (t/is (str/includes? (str msg) "nothing in the file changed") name)
+      (t/is (str/includes? (str msg) "older version") name))))
+
+(t/deftest reading-tools-still-run-where-nothing-can-be-committed
+  (doseq [name at/no-commit-tools
+          state [viewer preview]]
+    (t/is (nil? (at/commit-refusal name state)) name)))
+
+(t/deftest an-editor-runs-every-tool
+  (doseq [name tool-names]
+    (t/is (nil? (at/commit-refusal name editor)) name)))
+
+(t/deftest a-refused-tool-does-not-run
+  (let [ran (atom false)]
+    (swap! st/state assoc :permissions (:permissions viewer))
+    (with-redefs [atc/create-shape (fn [_] (reset! ran true) (rx/of {:id "made-up"}))]
+      (t/is (str/starts-with? (tool-error "create_shape" {:type "rect"})
+                              "create_shape did not run"))
+      (t/is (false? @ran) "the tool's own code never ran"))))
+
+(t/deftest an-editors-tool-runs-as-before
+  (let [ran (atom false)]
+    (with-redefs [atc/create-shape (fn [_] (reset! ran true) (rx/of {:id "s1"}))]
+      (t/is (= "s1" (:id (tool-value "create_shape" {:type "rect"}))))
+      (t/is (true? @ran)))))

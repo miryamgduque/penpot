@@ -237,6 +237,15 @@
   [state file-id]
   (:vern (dsh/lookup-file state file-id)))
 
+(defn can-commit?
+  "True when `commit-changes` would commit: the person can edit the file and
+  is not previewing an older version of it. Anything committed otherwise is
+  dropped without an error, so a caller that reports what it changed asks
+  this first."
+  [state]
+  (boolean (and (:can-edit (get state :permissions))
+                (not (dm/get-in state [:workspace-global :preview-id])))))
+
 (defn commit-changes
   "Schedules a list of changes to execute now, and add the corresponding undo changes to
    the undo stack.
@@ -258,18 +267,16 @@
 
     ptk/WatchEvent
     (watch [_ state _]
-      (let [file-id     (or file-id (:current-file-id state))
-            uchg        (vec undo-changes)
-            rchg        (vec redo-changes)
-            features    (get state :features)
-            permissions (get state :permissions)]
+      (let [file-id  (or file-id (:current-file-id state))
+            uchg     (vec undo-changes)
+            rchg     (vec redo-changes)
+            features (get state :features)]
 
         ;; Historical previews must not create edits to the live file. Check
         ;; this when creating commits so previously queued edits can still save.
         ;; Refusals answer with an empty stream (never nil) so callers can
         ;; uniformly subscribe and observe termination.
-        (if (and (:can-edit permissions)
-                 (not (dm/get-in state [:workspace-global :preview-id])))
+        (if (can-commit? state)
           (do
             (log/trace :hint "commit-changes" :redo-changes redo-changes)
             (let [selected (dm/get-in state [:workspace-local :selected])]

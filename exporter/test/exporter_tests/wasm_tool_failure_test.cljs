@@ -23,5 +23,13 @@
                                    (ex-info "refused" {:code :agent-backend-refused :status 400}))))
   (t/is (nil? (tool-failure/answer "create_shape"
                                    (ex-info "bad token" {:type :validation :code :invalid-turn-token}))))
-  ;; the engine itself breaking carries no data
-  (t/is (nil? (tool-failure/answer "create_shape" (js/Error. "RuntimeError: unreachable")))))
+  ;; the engine itself breaking: the worker is not reused after it
+  (t/is (nil? (tool-failure/answer "create_shape"
+                                   (ex-info "WASM Error (panic)" {:type :wasm-error :code :panic}))))
+  (t/is (nil? (tool-failure/answer "create_shape" (js/Error. "RuntimeError: unreachable"))))
+  ;; nor is any other internal failure taken for the tool's
+  (t/is (nil? (tool-failure/answer "create_shape" (ex-info "boom" {:type :internal :code :unexpected})))))
+
+(t/deftest a-value-the-schema-refuses-is-told-to-the-model
+  (t/is (true? (:isError (tool-failure/answer "set_layout"
+                                              (ex-info "bad value" {:type :validation :code :params-validation}))))))

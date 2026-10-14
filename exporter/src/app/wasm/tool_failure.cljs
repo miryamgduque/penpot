@@ -9,21 +9,29 @@
 
   A tool can fail on the change it was asked for — a shape the file
   rejects, a value the schema does not take. That is the model's to read
-  and correct, like any refusal, and the worker that ran it is fine. Other
-  failures are not the tool's: a turn token the backend refused, or the
-  engine itself breaking. Those still fail the call, and the worker is
-  replaced.")
+  and correct, like any refusal, and the worker that ran it is fine. Every
+  other failure fails the call and the worker is replaced: a turn token
+  the backend refused, and above all the engine itself breaking, which can
+  leave the worker's engine in a state no later call should meet.")
 
-(def ^:private not-the-tools
-  "Failures that are about who asks or the engine, not about the change."
-  #{:agent-backend-refused :invalid-turn-token :worker-exited})
+(def ^:private refused
+  "Failures about who asks, not about the change."
+  #{:agent-backend-refused :invalid-turn-token})
+
+(defn- the-change?
+  "Whether a failure says the change itself was not acceptable: it failed
+  validation. Nothing else is taken for the tool's."
+  [{:keys [type code]}]
+  (and (not (contains? refused code))
+       (or (= :data-validation code)
+           (= :validation type))))
 
 (defn answer
   "The answer a tool that threw with `cause` gives the model, or nil when
   the failure is not the tool's."
   [tool cause]
-  (let [{:keys [type code hint]} (ex-data cause)]
-    (when (and (some? type) (not (contains? not-the-tools code)))
+  (let [{:keys [code hint] :as data} (ex-data cause)]
+    (when (the-change? data)
       {:content (str tool ": "
                      (or hint (ex-message cause) "the change could not be made")
                      (when (= :data-validation code)

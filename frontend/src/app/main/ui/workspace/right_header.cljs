@@ -121,6 +121,9 @@
         read-only?        (mf/use-ctx ctx/workspace-read-only?)
         selected-drawtool (mf/deref refs/selected-drawing-tool)
         ai-panel-open?    (mf/deref refs/ai-panel-open?)
+        agent-enabled-ref (mf/with-memo [file-id]
+                            (refs/make-agent-enabled-ref file-id))
+        agent-enabled?    (mf/deref agent-enabled-ref)
         file-recording?   (and (contains? cfg/flags :design-session-recording)
                                (mf/deref refs/file-recording?))
 
@@ -259,7 +262,7 @@
      ;; it, so the dot rides the panel toggle — the one recording-related
      ;; control that is always on screen. Someone with the panel closed is
      ;; exactly the person who would otherwise never know.
-     (when (contains? cfg/flags :design-agent)
+     (when ^boolean agent-enabled?
        [:div {:class (stl/css :agent-toggle)}
         [:button {:title (if file-recording?
                            (tr "workspace.header.agent.recording-title")
@@ -271,5 +274,14 @@
         (when ^boolean file-recording?
           [:span {:class (stl/css :recording-dot)
                   :role "status"
-                  :aria-label (tr "workspace.header.agent.recording")}])])]))
+                  :aria-label (tr "workspace.header.agent.recording")}])])
+
+     ;; With the agent off for this user the toggle is gone, but they must
+     ;; still be told that the file is being recorded: the dot stays, alone.
+     (when (and (not ^boolean agent-enabled?) ^boolean file-recording?)
+       [:div {:class (stl/css :recording-standalone)
+              :title (tr "workspace.header.agent.recording-title")}
+        [:span {:class (stl/css :recording-dot :recording-dot-standalone)
+                :role "status"
+                :aria-label (tr "workspace.header.agent.recording")}]])]))
 

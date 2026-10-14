@@ -61,6 +61,9 @@
    [:plugins {:optional true} ctp/schema:plugin-registry]
    [:renderer {:optional true} [::sm/one-of #{:svg :wasm}]]
    [:mcp-enabled {:optional true} ::sm/boolean]
+   ;; Hides the design agent for this profile. Absent means the agent is on.
+   ;; It only hides UI in the browser; no RPC checks it.
+   [:agent-disabled {:optional true} ::sm/boolean]
    [:newsletter-updates {:optional true} ::sm/boolean]
    [:newsletter-news {:optional true} ::sm/boolean]
    [:onboarding-team-id {:optional true} ::sm/uuid]

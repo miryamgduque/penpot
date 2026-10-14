@@ -2751,6 +2751,32 @@ msgstr "No more services can be connected. Remove one first."
 msgid "integrations.agent-mcp.error.generic"
 msgstr "The service could not be connected."
 
+msgid "integrations.ai-provider.enabled-files"
+msgid_plural "integrations.ai-provider.enabled-files"
+msgstr[0] "You turned the agent on in 1 file."
+msgstr[1] "You turned the agent on in %s files."
+
+msgid "integrations.ai-provider.enabled-files.action"
+msgstr "Turn it off in those files"
+
+msgid "integrations.ai-provider.status"
+msgstr "Status"
+
+msgid "integrations.ai-provider.status.enabled"
+msgstr "Enabled"
+
+msgid "integrations.ai-provider.status.disabled"
+msgstr "Disabled"
+
+msgid "integrations.ai-provider.status.hint"
+msgstr "Hides the agent for you. Other people in your files can still use it."
+
+msgid "integrations.ai-provider.notification.agent-enabled"
+msgstr "Penpot Agent enabled"
+
+msgid "integrations.ai-provider.notification.agent-disabled"
+msgstr "Penpot Agent disabled"
+
 msgid "integrations.ai-provider.title"
 msgstr "Penpot Agent"
 
@@ -7690,6 +7716,9 @@ msgstr "Linear gradient"
 msgid "workspace.gradients.radial"
 msgstr "Radial gradient"
 
+msgid "workspace.header.menu.disable-agent-in-file"
+msgstr "Disable AI agent in this file"
+
 #: src/app/main/ui/workspace/main_menu.cljs:293
 msgid "workspace.header.menu.disable-dynamic-alignment"
 msgstr "Disable dynamic alignment"
@@ -7718,6 +7747,9 @@ msgstr "Disable snap to ruler guides"
 #: src/app/main/ui/workspace/main_menu.cljs:341
 msgid "workspace.header.menu.disable-webgl"
 msgstr "Disable WebGL rendering (beta)"
+
+msgid "workspace.header.menu.enable-agent-in-file"
+msgstr "Enable AI agent in this file"
 
 #: src/app/main/ui/workspace/main_menu.cljs:294
 msgid "workspace.header.menu.enable-dynamic-alignment"
@@ -11206,7 +11238,7 @@ msgstr "The instance-wide set, seeded from the official penpot-ai-kit. Switch an
 
 #: src/app/main/ui/dashboard/skills.cljs
 msgid "dashboard.skills.create"
-msgstr "+ New skill or rule"
+msgstr "New skill or rule"
 
 #: src/app/main/ui/dashboard/skills.cljs
 msgid "dashboard.skills.empty"
@@ -11489,14 +11521,6 @@ msgid "workspace.agent.composer.send"
 msgstr "Send message"
 
 #: src/app/main/ui/workspace/ai_panel.cljs
-msgid "workspace.agent.composer.attach-images"
-msgstr "Attach images"
-
-#: src/app/main/ui/workspace/ai_panel.cljs
-msgid "workspace.agent.composer.model-cannot-read-images"
-msgstr "This model can't read images"
-
-#: src/app/main/ui/workspace/ai_panel.cljs
 msgid "workspace.agent.composer.no-model"
 msgstr "No model"
 
@@ -11743,10 +11767,6 @@ msgstr "This foundation is gone — someone may have removed it just now."
 #: src/app/main/ui/workspace/ai_panel.cljs
 msgid "workspace.agent.skills.no-match"
 msgstr "No skills match these filters."
-
-#: src/app/main/ui/workspace/ai_panel.cljs
-msgid "workspace.agent.connect.title"
-msgstr "Ready when you are!"
 
 #: src/app/main/ui/workspace/ai_panel.cljs
 msgid "workspace.agent.connect.desc"
@@ -12053,14 +12073,6 @@ msgid "workspace.session-recorder.review-again"
 msgstr "Already reviewed — run it again"
 
 #: src/app/main/ui/workspace/session_recorder.cljs
-msgid "workspace.session-recorder.review-title"
-msgstr "Ask the agent to critique this session"
-
-#: src/app/main/ui/workspace/session_recorder.cljs
-msgid "workspace.session-recorder.export"
-msgstr "Export this session"
-
-#: src/app/main/ui/workspace/session_recorder.cljs
 msgid "workspace.session-recorder.export-title"
 msgstr "Copy this session as JSON"
 
@@ -12107,10 +12119,6 @@ msgstr "Stop recording"
 #: src/app/main/ui/workspace/session_recorder.cljs
 msgid "workspace.session-recorder.record"
 msgstr "Record this design session"
-
-#: src/app/main/ui/workspace/session_recorder.cljs
-msgid "workspace.session-recorder.stop-title"
-msgstr "Stop recording this design session"
 
 #: src/app/main/ui/workspace/session_recorder.cljs
 msgid "workspace.session-recorder.reason.file-closed"

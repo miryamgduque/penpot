@@ -12,6 +12,8 @@
    [app.common.files.helpers :as cfh]
    [app.common.uuid :as uuid]
    [app.config :as cf]
+   [app.main.data.agent-access :as agent-access]
+   [app.main.data.agent-switch :as agent-switch]
    [app.main.data.common :as dcm]
    [app.main.data.event :as ev]
    [app.main.data.exports.assets :as de]
@@ -232,12 +234,26 @@
 (mf/defc preferences-menu*
   {::mf/private true
    ::mf/wrap [mf/memo]}
-  [{:keys [layout profile toggle-flag on-close toggle-theme toggle-render]}]
+  [{:keys [layout profile file-id toggle-flag on-close on-close-all toggle-theme toggle-render]}]
   (let [renderer (or (-> profile :props :renderer) :svg)
+
+        ;; the user's own agent setting for this file; the item stays here
+        ;; while the agent is off, since this is where it is turned back on
+        agent-enabled-ref (mf/with-memo [file-id]
+                            (refs/make-agent-enabled-ref file-id))
+        agent-enabled?    (mf/deref agent-enabled-ref)
 
         show-nudge-options
         (mf/use-fn
-         #(modal/show! {:type :nudge-option}))]
+         #(modal/show! {:type :nudge-option}))
+
+        toggle-agent
+        (mf/use-fn
+         (mf/deps file-id agent-enabled? on-close-all)
+         (fn [event]
+           (dom/stop-propagation event)
+           (st/emit! (agent-switch/set-file-enabled file-id (not agent-enabled?)))
+           (on-close-all)))]
 
     [:> dropdown-menu* {:show true
                         :class (stl/css :base-menu :sub-menu :pos-4)
@@ -330,6 +346,19 @@
          "system" (tr "workspace.header.menu.toggle-dark-theme")
          (tr "workspace.header.menu.toggle-light-theme"))]
       [:> shortcuts* {:id :toggle-theme}]]
+     (when (and (agent-access/instance-enabled?) (some? file-id))
+       [:> dropdown-menu-item* {:on-click    toggle-agent
+                                :class       (stl/css :base-menu-item :submenu-item)
+                                :on-key-down (fn [event]
+                                               (when (kbd/enter? event)
+                                                 (toggle-agent event)))
+                                :data-testid "toggle-agent-in-file"
+                                :id          "file-menu-agent-in-file"}
+        [:span {:class (stl/css :item-name)}
+         (if ^boolean agent-enabled?
+           (tr "workspace.header.menu.disable-agent-in-file")
+           (tr "workspace.header.menu.enable-agent-in-file"))]])
+
      (when (contains? cf/flags :render-switch)
        [:> dropdown-menu-item* {:on-click    toggle-render
                                 :class       (stl/css :base-menu-item :submenu-item)
@@ -1145,7 +1174,9 @@
        :preferences
        [:> preferences-menu* {:layout layout
                               :profile profile
+                              :file-id (:id file)
                               :toggle-flag toggle-flag
+                              :on-close-all close-all-menus
                               :toggle-theme toggle-theme
                               :toggle-render toggle-render
                               :show-shortcuts show-shortcuts

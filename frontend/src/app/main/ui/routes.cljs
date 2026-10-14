@@ -11,6 +11,7 @@
    [app.common.uri :as u]
    [app.common.uuid :as uuid]
    [app.config :as cf]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.team :as dtm]
    [app.main.errors :as errors]
    [app.main.features :as features]
@@ -69,6 +70,11 @@
         (concat
          (when (contains? cf/flags :admin-console)
            [:nitrate-entry])
+         ;; instance scope: the route set is built once, before any profile
+         ;; is known
+         (when (agent-access/instance-enabled?)
+           [:dashboard-skills
+            :dashboard-agent-skills])
          (when *assert*
            [:debug-icons-preview
             :debug-playground]))))
@@ -251,6 +257,17 @@
       :else
       (on-query-navigate router token send-event-info?))))
 
+(defn- redirect-to-dashboard
+  "Send a user who has the agent off away from an agent-only route, to the
+  same team's dashboard. Replaces the history entry so Back does not land
+  on the blocked screen again."
+  [match]
+  (let [team-id (or (some-> (get-in match [:query-params :team-id]) uuid/parse*)
+                    (get-in @st/state [:profile :default-team-id]))]
+    (st/emit! (rt/nav :dashboard-recent
+                      (cond-> {} (some? team-id) (assoc :team-id team-id))
+                      {::rt/replace true}))))
+
 (defn- on-query-navigate
   [router token send-event-info?]
   (let [token-query  (if (str/starts-with? (or token "") "?")
@@ -259,8 +276,15 @@
         query-params (u/query-string->map token-query)
         empty-token? (str/blank? token-query)
         match        (rt/match router token)]
-    (if (some? match)
+    (cond
+      (and (some? match)
+           (not (agent-access/route-allowed? @st/state (get-in match [:data :name]))))
+      (redirect-to-dashboard match)
+
+      (some? match)
       (handle-sso-error-and-navigate match send-event-info? (rt/get-current-href))
+
+      :else
 
       ;; We just recheck with an additional profile request; this
       ;; avoids some race conditions that causes unexpected redirects

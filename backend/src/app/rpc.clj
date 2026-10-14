@@ -383,6 +383,7 @@
     (->> (sv/scan-ns
           'app.rpc.commands.access-token
           'app.rpc.commands.agent-chats
+          'app.rpc.commands.agent-state
           'app.rpc.commands.agent-tools
           'app.rpc.commands.agent-web
           'app.rpc.commands.ai-endpoints

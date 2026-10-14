@@ -8,6 +8,9 @@
    [frontend-tests.code-gen-style-test]
    [frontend-tests.composable-tests.comp.sync-test]
    [frontend-tests.copy-as-svg-test]
+   [frontend-tests.data.agent-access-test]
+   [frontend-tests.data.agent-file-switch-test]
+   [frontend-tests.data.agent-opt-out-test]
    [frontend-tests.data.agent-remote-test]
    [frontend-tests.data.agent-test]
    [frontend-tests.data.agent-tools-test]
@@ -142,6 +145,9 @@
    'frontend-tests.code-gen-style-test
    'frontend-tests.composable-tests.comp.sync-test
    'frontend-tests.copy-as-svg-test
+   'frontend-tests.data.agent-access-test
+   'frontend-tests.data.agent-file-switch-test
+   'frontend-tests.data.agent-opt-out-test
    'frontend-tests.data.agent-remote-test
    'frontend-tests.data.agent-test
    'frontend-tests.data.agent-tools-test

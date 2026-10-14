@@ -485,6 +485,8 @@
         go-skills      #(st/emit! (dcm/go-to-dashboard-skills))
         go-settings    #(st/emit! (dcm/go-to-dashboard-settings))
 
+        agent-enabled? (mf/deref refs/agent-enabled?)
+
         members        (get team :members)
         permissions    (get team :permissions)
         can-rename?    (or (:is-owner permissions)
@@ -590,7 +592,7 @@
                                 :class    (stl/css :team-options-item)}
         (tr "labels.webhooks")])
 
-     (when (contains? cf/flags :design-agent)
+     (when ^boolean agent-enabled?
        [:> dropdown-menu-item* {:on-click    go-skills
                                 :class       (stl/css :team-options-item)
                                 :data-testid "team-skills"}
@@ -1050,6 +1052,7 @@
         overflow?   (deref overflow*)
 
         nitrate?    (contains? cf/flags :admin-console)
+        agent-enabled? (mf/deref refs/agent-enabled?)
 
         focus-timer-ref  (use-focus-timer-ref)
 
@@ -1177,7 +1180,7 @@
                      :keyboard-action go-libs-with-key}
            [:span {:class (stl/css :element-title)} (tr "labels.shared-libraries")]]]
          ;; Agent Skills — the team home for promoted skills (US #12)
-         (when (contains? cf/flags :design-agent)
+         (when ^boolean agent-enabled?
            [:li {:class (stl/css-case :current agent-skills?
                                       :sidebar-nav-item true)}
             [:> link* {:action go-agent-skills

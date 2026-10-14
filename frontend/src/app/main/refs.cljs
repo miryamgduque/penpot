@@ -14,6 +14,7 @@
    [app.common.types.shape.layout :as ctl]
    [app.common.types.tokens-lib :as ctob]
    [app.config :as cf]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.slash-commands :as slc]
@@ -303,13 +304,28 @@
                  (dm/get-in state [:recent-fonts file-id])))
              st/state))
 
+(def agent-enabled?
+  "Whether the design agent is on for the current user, at account scope.
+  See `app.main.data.agent-access`."
+  (l/derived agent-access/agent-enabled? st/state))
+
+(defn make-agent-enabled-ref
+  "Ref of whether the design agent is on for the current user in the file
+  `file-id`. Memoize it in components."
+  [file-id]
+  (l/derived #(agent-access/agent-enabled? % file-id) st/state))
+
+(def agent-enabled-file-count
+  "How many files, still open to the user, they turned the agent on in as
+  an exception to their account setting. Nil until loaded."
+  (l/derived :agent-enabled-file-count st/state))
+
 (def ai-panel-open?
   "Whether the All-In Penpot (Agents) panel is open for the current file.
-  In-memory and file-bound: survives navigation, resets on a hard refresh."
-  (l/derived (fn [state]
-               (when-let [file-id (:current-file-id state)]
-                 (dm/get-in state [:ai-panel file-id :open?])))
-             st/state))
+  In-memory and file-bound: survives navigation, resets on a hard refresh.
+  Never true while the agent is off for the user, whatever the stored
+  state says."
+  (l/derived agent-access/panel-open? st/state))
 
 (def ai-panel-messages
   "The Agents chat transcript for the current file (in-memory, file-bound)."

@@ -12,6 +12,7 @@
    [app.common.transit :as t]
    [app.common.types.objects-map]
    [app.config :as cf]
+   [app.main.data.agent-switch :as agent-switch]
    [app.main.data.auth :as da]
    [app.main.data.event :as ev]
    [app.main.data.profile :as dp]
@@ -77,7 +78,8 @@
     (watch [_ _ stream]
       (rx/merge
        (rx/of (ev/initialize)
-              (dp/refresh-profile))
+              (dp/refresh-profile)
+              (agent-switch/watch-agent-switches))
 
        ;; Watch for profile deletion events
        (->> stream

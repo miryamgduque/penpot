@@ -17,6 +17,7 @@
   `run-turn` emits the same turn events as `agent/run-turn`, so the panel
   cannot tell the two apart."
   (:require
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.helpers :as dsh]
    [app.main.data.persistence :as dps]
    [app.main.data.session-actor :as sa]
@@ -236,12 +237,11 @@
   (let [user-msg (peek (vec history))
         turn-id* (atom nil)
         text*    (atom "")]
-    (->> (rx/mapcat (fn [_]
-                      (rp/cmd! ::sse/agent-service-turn
-                               {:provider (:provider settings)
-                                :file-id (:file-id (:service settings))
-                                :payload (turn-payload settings user-msg system)}))
-                    (rx/of nil))
+    (->> (agent-access/guard-model-call
+          #(rp/cmd! ::sse/agent-service-turn
+                    {:provider (:provider settings)
+                     :file-id (:file-id (:service settings))
+                     :payload (turn-payload settings user-msg system)}))
          (rx/mapcat
           (fn [event]
             (if (not= "event" (sse/get-type event))

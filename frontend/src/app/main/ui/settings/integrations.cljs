@@ -14,6 +14,8 @@
    [app.common.uuid :as uuid]
    [app.config :as cf]
    [app.main.broadcast :as mbc]
+   [app.main.data.agent-access :as agent-access]
+   [app.main.data.agent-switch :as agent-switch]
    [app.main.data.ai-providers :as dai]
    [app.main.data.event :as ev]
    [app.main.data.modal :as modal]
@@ -32,6 +34,7 @@
    [app.main.ui.ds.foundations.typography :as t]
    [app.main.ui.ds.foundations.typography.heading :refer [heading*]]
    [app.main.ui.ds.foundations.typography.text :refer [text*]]
+   [app.main.ui.ds.notifications.actionable :refer [actionable*]]
    [app.main.ui.ds.notifications.shared.notification-pill :refer [notification-pill*]]
    [app.main.ui.ds.tooltip :refer [tooltip*]]
    [app.main.ui.forms :as fc]
@@ -1063,6 +1066,70 @@
        [:> button* {:variant "primary" :disabled (not ready?) :on-click on-save}
         (tr "integrations.ai-endpoint.admin.save")]]]]))
 
+(mf/defc agent-enabled-files*
+  "While the account switch is off, the files where the user turned the
+  agent back on, as a count with one action that turns it off in all of
+  them. The files are not listed."
+  {::mf/private true}
+  []
+  (let [n (mf/deref refs/agent-enabled-file-count)
+
+        on-accept
+        (mf/use-fn
+         #(st/emit! (agent-switch/disable-in-enabled-files)))]
+
+    (mf/with-effect []
+      (st/emit! (agent-switch/fetch-enabled-file-count)))
+
+    (when (and (number? n) (pos? n))
+      [:> actionable* {:class (stl/css :agent-enabled-files)
+                       :role "status"
+                       :accept-label (tr "integrations.ai-provider.enabled-files.action")
+                       :on-accept on-accept}
+       (tr "integrations.ai-provider.enabled-files" (i18n/c n))])))
+
+(mf/defc agent-status*
+  "The account-wide agent switch. Instance scope already holds here (the
+  section renders only when the instance ships the agent), so it reads the
+  account setting alone."
+  {::mf/private true}
+  []
+  (let [profile  (mf/deref refs/profile)
+        enabled? (not (true? (-> profile :props :agent-disabled)))
+
+        on-change
+        (mf/use-fn
+         (fn [value]
+           (st/emit! (agent-switch/set-account-enabled value)
+                     (ntf/show {:level :info
+                                :type :toast
+                                :content (if (true? value)
+                                           (tr "integrations.ai-provider.notification.agent-enabled")
+                                           (tr "integrations.ai-provider.notification.agent-disabled"))
+                                :timeout notification-timeout}))))]
+
+    [:div
+     [:> text* {:as "h3"
+                :typography t/headline-small
+                :class (stl/css :color-primary)}
+      (tr "integrations.ai-provider.status")]
+
+     [:div {:class (stl/css :ai-provider-status)}
+      [:> switch* {:label (if enabled?
+                            (tr "integrations.ai-provider.status.enabled")
+                            (tr "integrations.ai-provider.status.disabled"))
+                   :default-checked enabled?
+                   :on-change on-change}]
+
+      [:> text* {:as "p"
+                 :typography t/body-medium
+                 :class (stl/css :color-secondary)}
+       (tr "integrations.ai-provider.status.hint")]
+
+      ;; only while the account switch is off; mounting it loads the count
+      (when-not ^boolean enabled?
+        [:> agent-enabled-files* {}])]]))
+
 (mf/defc ai-providers-section*
   {::mf/private true}
   []
@@ -1088,6 +1155,8 @@
                  :typography t/body-medium
                  :class (stl/css :color-secondary :ai-provider-description)}
        (tr "integrations.ai-provider.description")]]
+
+     [:> agent-status* {}]
 
      (for [{:keys [id label models-hint]} ai-provider-defs]
        [:> ai-provider-card* {:key id
@@ -1344,11 +1413,13 @@
         mcp-enabled?
         (contains? cf/flags :mcp)
 
-        agent-enabled?
-        (contains? cf/flags :design-agent)
+        ;; instance scope: provider keys stay manageable, and the agent can
+        ;; be switched back on here, while it is off for the user
+        agent-available?
+        (agent-access/instance-enabled?)
 
         agent-mcp-enabled?
-        (and agent-enabled? (contains? cf/flags :design-agent-mcp))]
+        (and agent-available? (contains? cf/flags :design-agent-mcp))]
 
     (mf/with-effect []
       (dom/set-html-title (tr "title.settings.integrations"))
@@ -1368,7 +1439,7 @@
      (when ^boolean mcp-enabled?
        [:hr {:class (stl/css :separator)}])
 
-     (when ^boolean agent-enabled?
+     (when ^boolean agent-available?
        [:> ai-providers-section* {}])
 
      (when ^boolean agent-mcp-enabled?
@@ -1377,7 +1448,7 @@
      (when ^boolean agent-mcp-enabled?
        [:> agent-mcp-servers-section* {}])
 
-     (when (and ^boolean agent-enabled? ^boolean access-tokens-enabled?)
+     (when (and ^boolean agent-available? ^boolean access-tokens-enabled?)
        [:hr {:class (stl/css :separator)}])
 
      (when ^boolean access-tokens-enabled?

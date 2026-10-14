@@ -532,26 +532,29 @@
    {:name "0162-add-team-skill-seen-table"
     :fn (mg/resource "app/migrations/sql/0162-add-team-skill-seen-table.sql")}
 
-   {:name "0163-add-file-agent-change-table"
-    :fn (mg/resource "app/migrations/sql/0163-add-file-agent-change-table.sql")}
+   {:name "0163-add-profile-agent-state-table"
+    :fn (mg/resource "app/migrations/sql/0163-add-profile-agent-state-table.sql")}
 
-   {:name "0164-add-profile-mcp-server-table"
-    :fn (mg/resource "app/migrations/sql/0164-add-profile-mcp-server-table.sql")}
+   {:name "0164-add-file-agent-change-table"
+    :fn (mg/resource "app/migrations/sql/0164-add-file-agent-change-table.sql")}
 
-   {:name "0165-mod-file-agent-change-table"
-    :fn (mg/resource "app/migrations/sql/0165-mod-file-agent-change-table.sql")}
+   {:name "0165-add-profile-mcp-server-table"
+    :fn (mg/resource "app/migrations/sql/0165-add-profile-mcp-server-table.sql")}
 
-   {:name "0166-mod-profile-mcp-server-table"
-    :fn (mg/resource "app/migrations/sql/0166-mod-profile-mcp-server-table.sql")}
+   {:name "0166-mod-file-agent-change-table"
+    :fn (mg/resource "app/migrations/sql/0166-mod-file-agent-change-table.sql")}
 
-   {:name "0167-add-team-recipe-table"
-    :fn (mg/resource "app/migrations/sql/0167-add-team-recipe-table.sql")}
+   {:name "0167-mod-profile-mcp-server-table"
+    :fn (mg/resource "app/migrations/sql/0167-mod-profile-mcp-server-table.sql")}
 
-   {:name "0168-mod-profile-ai-provider-table"
-    :fn (mg/resource "app/migrations/sql/0168-mod-profile-ai-provider-table.sql")}
+   {:name "0168-add-team-recipe-table"
+    :fn (mg/resource "app/migrations/sql/0168-add-team-recipe-table.sql")}
 
-   {:name "0169-add-ai-endpoint-table"
-    :fn (mg/resource "app/migrations/sql/0169-add-ai-endpoint-table.sql")}])
+   {:name "0169-mod-profile-ai-provider-table"
+    :fn (mg/resource "app/migrations/sql/0169-mod-profile-ai-provider-table.sql")}
+
+   {:name "0170-add-ai-endpoint-table"
+    :fn (mg/resource "app/migrations/sql/0170-add-ai-endpoint-table.sql")}])
 
 (defn apply-migrations!
   [pool name migrations]

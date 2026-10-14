@@ -15,6 +15,7 @@
   The agent's turns themselves run in the agent service; see
   `app.main.data.workspace.agent-remote`."
   (:require
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.ai-providers :as dai]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
@@ -651,9 +652,10 @@
                                                   :hint "side turns are read-only"
                                                   :tools (vec bad)})))
     (letfn [(round [messages n spent]
-              (->> (rp/cmd! :ai-agent-round
-                            {:provider provider
-                             :payload (side-round-payload opts messages)})
+              (->> (agent-access/guard-model-call
+                    #(rp/cmd! :ai-agent-round
+                              {:provider provider
+                               :payload (side-round-payload opts messages)}))
                    (rx/map decode-buffered-round)
                    (rx/mapcat
                     (fn [{:keys [text tool-calls usage]}]
@@ -688,10 +690,11 @@
   backend decides. Failures surface as stream errors for the caller to log
   and drop — background work must never toast the user."
   [{:keys [provider model]} system user-text]
-  (->> (rp/cmd! :agent-helper-round
-                (cond-> {:system system :text user-text}
-                  (and (string? provider) (string? model))
-                  (assoc :provider provider :model model)))
+  (->> (agent-access/guard-model-call
+        #(rp/cmd! :agent-helper-round
+                  (cond-> {:system system :text user-text}
+                    (and (string? provider) (string? model))
+                    (assoc :provider provider :model model))))
        (rx/map (fn [{:keys [text usage]}]
                  {:text (or text "")
                   :usage {:input-tokens (or (:input usage) 0)

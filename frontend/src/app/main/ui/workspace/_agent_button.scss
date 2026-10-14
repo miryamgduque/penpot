@@ -1,0 +1,36 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) KALEIDOS INC Sucursal en España SL
+
+@use "ds/_utils.scss" as *;
+@use "ds/_borders.scss" as *;
+
+// Compact labels for DS buttons in the agent UI.
+//
+// A deliberate deviation from the DS: `button*` sets its label in
+// headline-small (12px, uppercase). The agent UI keeps the uppercase so its
+// buttons match the rest of Penpot, but sets the label at 11px (0.6875rem),
+// below the DS type scale, which starts at 12px. A smaller label option for
+// `button*` has been proposed to the DS team (#83). Only `font-size` changes;
+// the DS case, weight, line height and 32px height stay as they are. If the DS
+// adopts the option, delete this mixin and every `.compact-label` rule that
+// includes it.
+//
+// The including rule has the same specificity as the DS `.button` rule and
+// wins on order: the style build emits the DS stylesheets before the app ones
+// (see `compileSassAll` in frontend/scripts/_helpers.js).
+@mixin compact-label {
+  font-size: px2rem(11);
+}
+
+// Focus ring for plain text made focusable (tabindex 0) so its DS tooltip
+// hint is reachable by keyboard: the usage meter and the recorder notes.
+@mixin hint-focus-ring {
+  &:focus-visible {
+    border-radius: $br-4;
+    outline: $b-2 solid var(--color-accent-primary);
+    outline-offset: $b-1;
+  }
+}

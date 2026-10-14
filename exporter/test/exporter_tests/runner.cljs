@@ -19,6 +19,7 @@
    [exporter-tests.shell-test]
    [exporter-tests.wasm-layout-test]
    [exporter-tests.wasm-pool-test]
+   [exporter-tests.wasm-tool-failure-test]
    [goog.object :as gobj]))
 
 (enable-console-print!)
@@ -32,7 +33,8 @@
    'exporter-tests.screenshot-url-test
    'exporter-tests.shell-test
    'exporter-tests.wasm-layout-test
-   'exporter-tests.wasm-pool-test])
+   'exporter-tests.wasm-pool-test
+   'exporter-tests.wasm-tool-failure-test])
 
 (assert (every? find-ns-obj test-namespaces)
         "test-namespaces contains a namespace that isn't required in runner.cljs")

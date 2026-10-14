@@ -18,8 +18,10 @@
    [frontend-tests.helpers.mock :as mock]))
 
 (defn- payload
-  [settings user-msg system]
-  (js->clj (js/JSON.parse (ar/turn-payload settings user-msg system)) :keywordize-keys true))
+  ([settings user-msg system]
+   (payload settings user-msg system at/tool-specs))
+  ([settings user-msg system specs]
+   (js->clj (js/JSON.parse (ar/turn-payload settings user-msg system specs)) :keywordize-keys true)))
 
 (t/deftest turn-payload-carries-the-conversation-and-the-message
   (let [session (uuid/next)
@@ -44,6 +46,15 @@
     (t/is (every? #(= "object" (get-in % [:inputSchema :type])) tools))
     (t/is (= (get-in (first at/tool-specs) [:input-schema :required])
              (get-in (first tools) [:inputSchema :required])))))
+
+(t/deftest a-viewers-turn-declares-only-the-tools-a-viewer-can-run
+  ;; the service runs no tool it was not given, so this list is what a
+  ;; viewer's turn can reach, by any route
+  (let [viewer {:permissions {:can-edit false :can-read true}}
+        p      (payload {:service {:session-id (uuid/next)}} {:role :user :text "hi"} "S"
+                        (at/offered-tool-specs viewer))]
+    (t/is (= (disj at/viewer-tools "get_design_skills") (set (map :name (:tools p)))))
+    (t/is (not-any? #{"create_shape" "set_layout" "save_version" "build_recipe"} (map :name (:tools p))))))
 
 (t/deftest turn-payload-carries-attached-images-as-raw-base64
   (let [p (payload {:service {:session-id (uuid/next)}}

@@ -156,7 +156,8 @@
   [token input context]
   (let [input (js->clj (js/JSON.parse input) :keywordize-keys true)
         ctx   (js->clj (js/JSON.parse context) :keywordize-keys true)]
-    (->> (backend/command! "get-agent-tool-page" {:token token :context context})
+    ;; handoff code only reads the page: a viewer may run it
+    (->> (backend/command! "get-agent-tool-page" {:token token :context context :access "read"})
          (p/mcat
           (fn [{:keys [data page-id team-fonts]}]
             (let [objects  (get-in data [:pages-index page-id :objects])

@@ -661,16 +661,23 @@
 (def ^:private schema:get-agent-tool-page
   [:map {:title "get-agent-tool-page"}
    [:token [:string {:max 5000}]]
-   [:context {:optional true} [:string {:max 200000}]]])
+   [:context {:optional true} [:string {:max 200000}]]
+   ;; "read" for a tool that only reads the page, such as handoff code
+   [:access {:optional true} [:enum "read" "edit"]]])
 
 (sv/defmethod ::get-agent-tool-page
-  "The page an engine tool works on, with what it needs to commit against it."
+  "The page an engine tool works on, with what it needs to commit against it.
+  A tool that changes the page needs edit permission before it is handed
+  over; one that only reads it asks with `access \"read\"`, and someone who
+  may only view the file gets it."
   {::rpc/auth false
    ::doc/added "2.20"
    ::sm/params schema:get-agent-tool-page}
-  [cfg {:keys [token context]}]
+  [cfg {:keys [token context access]}]
   (let [{:keys [profile-id file-id]} (verify-turn-token cfg token)]
-    (files/check-edition-permissions! cfg profile-id file-id)
+    (if (= "read" access)
+      (files/check-read-permissions! cfg profile-id file-id)
+      (files/check-edition-permissions! cfg profile-id file-id))
     (let [context (decode-json context)
           {:keys [data page-id libraries]} (load-view cfg file-id context)
           file    (bfc/get-file cfg file-id :read-only? true :load-data? false)]

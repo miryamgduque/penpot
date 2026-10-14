@@ -5540,6 +5540,10 @@ msgstr "Show / Hide guides"
 msgid "shortcuts.toggle-history"
 msgstr "Toggle history"
 
+#: src/app/main/data/workspace/shortcuts.cljs:653
+msgid "shortcuts.toggle-ai-panel"
+msgstr "Toggle the agents panel"
+
 #: src/app/main/data/workspace/shortcuts.cljs:639
 msgid "shortcuts.toggle-layers"
 msgstr "Toggle layers"

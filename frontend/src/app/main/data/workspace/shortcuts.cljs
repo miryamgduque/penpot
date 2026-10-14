@@ -651,6 +651,7 @@
                           :fn #(st/emit! (dcm/go-to-workspace :layout :assets))}
 
    :toggle-ai-panel      {:tooltip (ds/alt "B")
+                          :label (fn [] (tr "shortcuts.toggle-ai-panel"))
                           :command (ds/a-mod "b")
                           :subsections [:panels]
                           :fn #(st/emit! (dwaip/toggle-panel))}

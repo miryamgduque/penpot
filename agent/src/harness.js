@@ -5,6 +5,8 @@
 // Copyright (c) KALEIDOS INC Sucursal en España SL
 
 import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
+import { join } from "node:path";
 import { Context, Service } from "@deepseek-ai/cordis";
 import { AgentRegistry } from "@deepseek-ai/dsh-agent";
 import { AgentLoop } from "@deepseek-ai/dsh-agent-loop";
@@ -87,6 +89,22 @@ const IDLE_MS = 15 * 60 * 1000;
  */
 export function sessionIdOf(profileId, conversationId) {
   return `penpot-${profileId}-${conversationId}`;
+}
+
+/**
+ * What a conversation is set up with: its model and everything it is told
+ * and given. A turn that brings another — the user switched model, turned a
+ * skill on, connected a service — reopens the conversation with it.
+ */
+export function conversationShape({ provider, model, system, tools = [], skills = [], mcpServers = [] }) {
+  return JSON.stringify({
+    provider,
+    model,
+    system,
+    tools: tools.map((tool) => [tool?.name, tool?.description, tool?.inputSchema]),
+    skills: skills.map((skill) => [skill?.name, skill?.description, skill?.body]),
+    mcp: mcpServers.map((server) => [server.name, server.url, server.headers, server.disabledTools]),
+  });
 }
 
 /**
@@ -344,7 +362,15 @@ export async function createHarness(options = {}) {
 
   async function openConversation(id, { provider, model, system, tools, skills = [], mcpServers = [] }) {
     const record = capabilities(provider, model);
-    const conversation = { id, provider, model, record, turn: undefined, idleTimer: undefined };
+    const conversation = {
+      id,
+      provider,
+      model,
+      record,
+      shape: conversationShape({ provider, model, system, tools, skills, mcpServers }),
+      turn: undefined,
+      idleTimer: undefined,
+    };
     // what the model is told of its own limits, after everything else it is told
     const limits = limitsNote(record);
     const briefing = [system, mcpServers.length > 0 ? EXTERNAL_TOOLS_NOTE : "", limits].filter((part) => part !== "").join("\n\n");
@@ -483,6 +509,20 @@ export async function createHarness(options = {}) {
   }
 
   /**
+   * Closes a conversation that was only ever a means — a side job, a check —
+   * and removes what was stored of it: nobody will reopen it.
+   */
+  async function discardConversation(id) {
+    const conversation = conversations.get(id);
+    if (conversation !== undefined) await closeConversation(conversation);
+    // the store keeps a conversation in a directory named by its id; one made
+    // of these characters is named as it is
+    if (options.sessionsRoot && /^[A-Za-z0-9_-]+$/.test(id)) {
+      await rm(join(options.sessionsRoot, "_no-cwd", id), { recursive: true, force: true });
+    }
+  }
+
+  /**
    * Runs one user turn. `emit` receives the turn's events; `callTool` runs a
    * tool in the connected workspace and resolves with `{content, isError}`;
    * `callServerTool` does the same for the tools named in `serverTools`, which
@@ -509,6 +549,14 @@ export async function createHarness(options = {}) {
     let conversation = conversations.get(id);
     if (conversation !== undefined && conversation.turn !== undefined) {
       throw Object.assign(new Error("a turn is already running in this conversation"), { status: 409 });
+    }
+    // A conversation is set up once, with the model and briefing of the turn
+    // that opened it. A turn that comes with another model, or another
+    // briefing, reopens it: the history is read back from the store and goes
+    // on with what this turn brought.
+    if (conversation !== undefined && conversation.shape !== conversationShape(request)) {
+      await closeConversation(conversation);
+      conversation = undefined;
     }
     conversation ??= await openConversation(id, request);
     clearTimeout(conversation.idleTimer);
@@ -575,8 +623,7 @@ export async function createHarness(options = {}) {
       );
       return text;
     } finally {
-      const conversation = conversations.get(sessionIdOf(request.profileId, sessionId));
-      if (conversation !== undefined) await closeConversation(conversation).catch(() => {});
+      await discardConversation(sessionIdOf(request.profileId, sessionId)).catch(() => {});
     }
   }
 
@@ -585,5 +632,8 @@ export async function createHarness(options = {}) {
     await ctx.fiber.dispose();
   }
 
-  return { ctx, runTurn, runSideTurn, dispose, conversations, capabilities, registerEndpoint, routeOf };
+  /** Closes and removes a conversation nobody will go back to. */
+  const discard = (profileId, sessionId) => discardConversation(sessionIdOf(profileId, sessionId));
+
+  return { ctx, runTurn, runSideTurn, discard, dispose, conversations, capabilities, registerEndpoint, routeOf };
 }

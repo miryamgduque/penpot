@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createAgentServer } from "../src/server.js";
+import { contextWarning, createAgentServer, remember } from "../src/server.js";
 import { startFakeAnthropic } from "./fake-anthropic.js";
 
 async function setup(script, options = {}) {
@@ -743,4 +743,41 @@ test("with no workspace, switching page changes which page the conversation's to
     await t.close();
     await new Promise((r) => backend.close(r));
   }
+});
+
+test("a model whose context is mostly taken before the user speaks is said to be tight", () => {
+  const record = { name: "Tiny", contextLimit: 1000 };
+  // ~1000 tokens of instructions against a 1000-token window
+  assert.match(contextWarning(record, { system: "x".repeat(4000), tools: [], skills: [] }), /Tiny.*about 1k of its 1k-token context/);
+  // plenty of room, or nothing known of the window: nothing to say
+  assert.equal(contextWarning(record, { system: "short", tools: [], skills: [] }), undefined);
+  assert.equal(contextWarning({ name: "Unknown", contextLimit: null }, { system: "x".repeat(4000) }), undefined);
+});
+
+test("a turn on a tight model starts with the warning", async () => {
+  const t = await setup(() => ({ text: "ok" }), {
+    capabilities: (provider, id) => ({ provider, id, name: "Tiny", vision: true, tools: true, contextLimit: 50 }),
+  });
+  try {
+    const response = await fetch(`${t.base}/v1/turns`, { method: "POST", headers: HEADERS, body: JSON.stringify(BODY) });
+    const seen = [];
+    for await (const event of events(response)) seen.push(event);
+    const warning = seen.find((event) => event.type === "warning");
+    assert.ok(warning, "a warning event was sent");
+    assert.match(warning.message, /Tiny/);
+    // before the model's first word
+    assert.ok(seen.indexOf(warning) < seen.findIndex((event) => event.type === "text-delta"));
+  } finally {
+    await t.close();
+  }
+});
+
+test("the pages remembered for workspace-less conversations are capped, oldest first", () => {
+  const pages = new Map();
+  for (const n of [1, 2, 3]) remember(pages, `c${n}`, `page-${n}`, 2);
+  assert.deepEqual([...pages.keys()], ["c2", "c3"]);
+  // switching again makes a conversation the newest
+  remember(pages, "c2", "page-9", 2);
+  remember(pages, "c4", "page-4", 2);
+  assert.deepEqual([...pages.entries()], [["c2", "page-9"], ["c4", "page-4"]]);
 });

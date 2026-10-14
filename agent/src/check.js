@@ -75,7 +75,12 @@ export async function checkModel(harness, { provider, model, apiKey, profileId }
   const session = (name) => `check-${name}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const turn = async (request, callTool = async () => ({ content: "", isError: false })) => {
     const events = [];
-    await harness.runTurn({ ...base, tools: [], ...request }, { emit: (event) => events.push(event), callTool });
+    try {
+      await harness.runTurn({ ...base, tools: [], ...request }, { emit: (event) => events.push(event), callTool });
+    } finally {
+      // a check is asked once: nothing of it is kept
+      await harness.discard?.(profileId, request.sessionId).catch(() => {});
+    }
     return events;
   };
 

@@ -29,6 +29,13 @@
   display: none;
 }
 
+/* Firefox cannot hide its native resize grip, so show only that one. */
+@supports (-moz-appearance: none) {
+  .wrapper:after {
+    display: none;
+  }
+}
+
 /* Docked mode: the modal is an integrated workspace panel, not a floating
    window — it fills its dock container and loses window chrome. */
 :host([docked]) {

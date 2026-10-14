@@ -14,6 +14,7 @@
    [app.common.agent.recipe-build :as carb]
    [app.common.agent.recipe-save :as cars-save]
    [app.common.agent.recipes :as cars]
+   [app.common.agent.token-status :as tst]
    [app.common.agent.tokens :as cato]
    [app.common.agent.tools :as cat]
    [app.common.agent.usage :as cau]
@@ -646,7 +647,7 @@
         (t/is (= {:applied true :fromLibrary true :theme "Light" :pack "Library"}
                  (select-keys (:result out) [:applied :fromLibrary :theme :pack])))
         (t/is (= ["core" "modes/light" "modes/dark"] (mapv ctob/get-name (ctob/get-sets lib))))
-        (t/is (= "#6d4aff" (:value (get (ctob/get-tokens-in-active-sets lib) "color.primary"))))
+        (t/is (= "#6d4aff" (:value (get (tst/active-tokens taken) "color.primary"))))
         ;; the copy placed before now has the values the library's tokens have here
         (t/is (= "#6d4aff" (fill taken)))
         (t/is (re-find #"is the fileId of a library LINKED to this file"

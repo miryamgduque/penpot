@@ -13,6 +13,7 @@
   workspace knows — the selection, the enabled skills, the open violations —
   is handed in by the caller."
   (:require
+   [app.common.agent.token-status :as tst]
    [app.common.data.macros :as dm]
    [app.common.files.variant :as cfv]
    [app.common.types.component :as ctc]
@@ -328,14 +329,14 @@
   "The token library's sets (with active flag) and themes — `read_design`
   flattens tokens into active sets only, so without this the agent cannot see
   that an inactive `modes/dark` exists at all."
-  [lib]
-  (when lib
-    (let [active (ctob/get-active-themes-set-names lib)
+  [data]
+  (when-let [lib (:tokens-lib data)]
+    (let [active (tst/active-set-names data)
           themes (->> (ctob/get-themes lib)
                       (remove #(= ctob/hidden-theme-name (ctob/get-name %)))
                       (mapv (fn [t] (cond-> {:name (ctob/get-name t)
                                              :sets (vec (:sets t))}
-                                      (ctob/theme-active? lib (ctob/get-id t))
+                                      (tst/theme-active? data (ctob/get-id t))
                                       (assoc :active true)))))
           sets   (->> (ctob/get-sets lib)
                       (mapv (fn [s] (cond-> {:name (ctob/get-name s)}
@@ -364,8 +365,6 @@
         top-ids  (get-in objects [uuid/zero :shapes])
         variants (into (variant-sets data objects) (library-variant-sets libraries file-id))
         comps    (library-components libraries file-id)
-        lib      (:tokens-lib data)
-
         [shapes shapes-omitted]     (bounded top-ids max-listed "top-level shapes")
         [variants variants-omitted] (bounded variants max-listed "variant sets")
         [comps comps-omitted]       (bounded comps max-listed "components")
@@ -374,7 +373,7 @@
                   shapes-omitted   (assoc :shapes shapes-omitted)
                   variants-omitted (assoc :variants variants-omitted)
                   comps-omitted    (assoc :components comps-omitted))
-        sets    (sets-and-themes lib)]
+        sets    (sets-and-themes data)]
     (cond-> {:file file-name
              :page (get-in data [:pages-index page-id :name])
              ;; every page, so the agent knows others exist and can switch/create;
@@ -389,7 +388,7 @@
              :shapes (mapv #(summarize-shape objects %) shapes)
              :variants variants
              :components comps
-             :tokens (tokens-by-type (some-> lib ctob/get-tokens-in-active-sets vals))}
+             :tokens (tokens-by-type (some-> (tst/active-tokens data) vals))}
       (seq extras) (merge extras)
 
       ;; sets/themes only when the file has any — a single-set file pays nothing

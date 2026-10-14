@@ -6,6 +6,7 @@
 
 (ns common-tests.agent-tokens-test
   (:require
+   [app.common.agent.token-status :as tst]
    [app.common.agent.tokens :as cato]
    [app.common.agent.write :as caw]
    [app.common.files.changes :as cfc]
@@ -28,7 +29,7 @@
 
 (defn- token-names
   [data]
-  (->> (ctob/get-tokens-in-active-sets (:tokens-lib data)) (vals) (map :name) (set)))
+  (->> (tst/active-tokens data) (vals) (map :name) (set)))
 
 (t/deftest create-token-names-what-is-wrong
   (t/is (re-find #"name is required" (:problem (run data cato/create-token {:type "color" :value "#fff"}))))
@@ -143,7 +144,7 @@
             (get-in (commit designed out) [:pages-index (first (:pages designed)) :objects]))])))
 
 (t/deftest tokens-resolve-when-they-are-plain
-  (let [active (ctob/get-tokens-in-active-sets (:tokens-lib designed))
+  (let [active (tst/active-tokens designed)
         worth  #(cato/resolved-value active (get active %))]
     (t/is (= {:color "#6366f1" :opacity 1} (worth "color.brand")))
     (t/is (= {:color "#6366f1" :opacity 1} (worth "color.alias")))
@@ -216,7 +217,7 @@
                                       {:shapeId (str row-id) :tokenName "space.md" :properties ["columnGap"]}]})
         objects (fn [data] (get-in data [:pages-index (first (:pages data)) :objects]))
         fill    (fn [data] (-> (get (objects data) box-id) :fills first :fill-color))
-        id-of   (fn [data] (:id (get (ctob/get-tokens-in-active-sets (:tokens-lib data)) "color.brand")))
+        id-of   (fn [data] (:id (get (tst/active-tokens data) "color.brand")))
         out     (cato/create-tokens (view bound)
                                     {:tokens [{:type "color" :name "color.brand" :value "#ff0000"}
                                               {:type "color" :name "color.new" :value "#00ff00"}
@@ -250,7 +251,7 @@
                                    (assoc (engine (atom [])) :resolve-tokens (constantly nil)))]
         (t/is (nil? (:pending out)))
         (t/is (= 0 (-> out :result :restyled)))
-        (t/is (= "0.2" (:value (get (ctob/get-tokens-in-active-sets (:tokens-lib (commit bound out))) "fade"))))))
+        (t/is (= "0.2" (:value (get (tst/active-tokens (commit bound out)) "fade"))))))
     (t/testing "the host resolves the tokens as they are after the change"
       (let [asked (cato/create-token (view bound) {:type "spacing" :name "space.md" :value "{radius.sm} * 3"}
                                      (assoc (engine (atom [])) :resolve-tokens (constantly nil)))
@@ -265,7 +266,7 @@
                  {:x 2 :y "2px" :blur 0 :color "#11223380" :inset true}]
         step    (fn [data tool input] (commit data (tool (view data) input (engine (atom [])))))
         with    (step designed cato/create-tokens {:tokens [{:type "shadow" :name "shadow.md" :value shadow}]})
-        token   (get (ctob/get-tokens-in-active-sets (:tokens-lib with)) "shadow.md")
+        token   (get (tst/active-tokens with) "shadow.md")
         applied (step with cato/apply-tokens {:applications [{:shapeId (str box-id) :tokenName "shadow.md"}]})
         box     (get-in applied [:pages-index (first (:pages applied)) :objects box-id])]
     ;; stored as the library stores one: strings, under its own keys
@@ -314,7 +315,7 @@
         applied (apply!)
         objects (get-in (commit designed applied) [:pages-index (first (:pages designed)) :objects])]
     ;; first the tool says which tokens it needs resolved, and changes nothing
-    (t/is (= (ctob/get-tokens-in-active-sets (:tokens-lib designed)) (-> asked :pending :tokens)))
+    (t/is (= (tst/active-tokens designed) (-> asked :pending :tokens)))
     (t/is (nil? (:changes asked)))
     ;; then arithmetic and an rgba color are just values
     (t/is (= 32 (-> (get objects row-id) :layout-gap :column-gap)))
@@ -369,7 +370,7 @@
                                  {:tokens [{:type "fontFamilies" :name "font.body" :value "Inter, Helvetica Neue , sans-serif"}
                                            {:type "fontFamilies" :name "font.alias" :value "{font.body}"}
                                            {:type "spacing" :name "space.sm" :value "4, 8"}]}))
-        tokens (ctob/get-tokens-in-active-sets (:tokens-lib after))]
+        tokens (tst/active-tokens after)]
     (t/is (= ["Inter" "Helvetica Neue" "sans-serif"] (:value (get tokens "font.body"))))
     ;; a reference stays what it is, and other types are not touched
     (t/is (= "{font.body}" (:value (get tokens "font.alias"))))

@@ -9,6 +9,7 @@
   Applied after the tool's own, they have to leave the file as it was: that
   is what reverting an agent turn rests on."
   (:require
+   [app.common.agent.token-status :as tst]
    [app.common.agent.tools :as cat]
    [app.common.agent.write :as caw]
    [app.common.files.changes :as cfc]
@@ -79,12 +80,12 @@
 (defn- tokens-of
   "What a tokens library holds; a library that holds nothing is as good as
   none."
-  [lib]
-  (when (some? lib)
+  [data]
+  (when-let [lib (:tokens-lib data)]
     (let [held {:tokens (update-vals (ctob/get-all-tokens-map lib) #(select-keys % [:name :type :value]))
                 :sets (set (map ctob/get-name (ctob/get-sets lib)))
                 :themes (disj (set (map ctob/get-name (ctob/get-themes lib))) ctob/hidden-theme-name)
-                :active (set (keys (ctob/get-tokens-in-active-sets lib)))}]
+                :active (set (keys (tst/active-tokens data)))}]
       (when (some seq (vals held))
         held))))
 
@@ -99,7 +100,7 @@
                              ;; nothing of the visit
                              #(update % :objects update-vals (fn [shape] (dissoc shape :touched))))
    :components (not-empty (:components data))
-   :tokens (tokens-of (:tokens-lib data))
+   :tokens (tokens-of data)
    :plugin-data (not-empty (into {} (remove (comp empty? val)) (:plugin-data data)))})
 
 (defn- reverts?

@@ -1,5 +1,5 @@
 CREATE DATABASE penpot_test;
-CREATE DATABASE penpot_telemetry;
+CREATE DATABASE penpot_nexus;
 
 -- Design session recordings live in their own database, isolated from the
 -- product tables: it can be dropped, moved or scaled without touching Penpot,

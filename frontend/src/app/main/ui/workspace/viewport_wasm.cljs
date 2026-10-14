@@ -11,6 +11,7 @@
    [app.common.data.macros :as dm]
    [app.common.files.helpers :as cfh]
    [app.common.geom.shapes :as gsh]
+   [app.common.render-wasm.api.select :as wselect]
    [app.common.types.color :as clr]
    [app.common.types.component :as ctk]
    [app.common.types.shape :as cts]
@@ -201,9 +202,21 @@
           [base-objects wasm-modifiers]
           (apply-modifiers-to-selected selected base-objects wasm-modifiers))
 
-        selected-shapes   (->> selected
-                               (into [] (keep (d/getf objects-modified)))
-                               (not-empty))
+        selected-shapes   (mf/with-memo [selected objects-modified]
+                            (->> selected
+                                 (into [] (keep (d/getf objects-modified)))
+                                 (not-empty)))
+
+        ;; True when at least one selected shape can be alt-duplicated.
+        ;; Inner shapes of component copies are excluded by ctk/allow-duplicate?
+        can-alt-duplicate? (mf/with-memo [selected base-objects]
+                             (some #(ctk/allow-duplicate? base-objects %)
+                                   (map (d/getf base-objects) selected)))
+
+        selected-shapes'  (ui-hooks/use-throttle 100 selected-shapes)
+        badge-shapes      (if (= transform :resize)
+                            selected-shapes'
+                            selected-shapes)
         ;; STATE
         alt?                 (mf/use-state false)
         shift?               (mf/use-state false)
@@ -490,7 +503,7 @@
           (let [content (-> active-editor-state
                             (ted/get-editor-current-content)
                             (ted/export-content))]
-            (wasm.api/use-shape edition)
+            (wselect/use-shape edition)
             (wasm.api/set-shape-text-content edition content)
             (let [dimension (wasm.api/get-text-dimensions)]
               (st/emit! (dwt/resize-text-editor edition dimension))
@@ -630,7 +643,7 @@
 
     (hooks/setup-dom-events zoom disable-paste-ref in-viewport-ref read-only? drawing-tool path-drawing?)
     (hooks/setup-viewport-size vport viewport-ref)
-    (hooks/setup-cursor cursor alt? mod? space? panning drawing-tool path-drawing? path-editing? (get path-bar-state :drag-cursor) z? read-only?)
+    (hooks/setup-cursor cursor alt? mod? space? panning drawing-tool path-drawing? path-editing? (get path-bar-state :drag-cursor) z? read-only? can-alt-duplicate?)
     (hooks/setup-keyboard alt? mod? space? z? shift?)
     (hooks/setup-hover-shapes page-id move-stream base-objects selected mod? hover measure-hover
                               hover-ids hover-top-frame-id @hover-disabled? focus zoom show-measures? read-only? transform)
@@ -639,12 +652,12 @@
 
     (mf/with-effect [path-editing? edition @initialized?]
       (when (and path-editing? edition @initialized?)
-        (wasm.api/use-shape edition)
+        (wselect/use-shape edition)
         (wasm.api/set-shape-hidden true)
         (wasm.api/request-render "start-path-edition")
         (fn []
           (when (wasm.api/initialized?)
-            (wasm.api/use-shape edition)
+            (wselect/use-shape edition)
             (wasm.api/set-shape-hidden false)
             (wasm.api/request-render "stop-path-edition")))))
 
@@ -806,15 +819,16 @@
            :zoom zoom}])
 
        (when (and (seq selected-shapes)
-                  (not transform)
+                  (or (not transform) (contains? #{:resize :move} transform))
                   (not text-editing?)
                   (not edition)
                   (not read-only?)
                   (not mode-inspect?)
                   (not page-transition?))
          [:> msr/selection-size-badge*
-          {:shapes selected-shapes
-           :zoom zoom}])
+          {:shapes badge-shapes
+           :zoom zoom
+           :vbox vbox}])
 
        (when show-measures?
          [:> msr/measurement*
@@ -856,6 +870,7 @@
        (when-not shapes-loading?
          [:> widgets/frame-titles*
           {:objects objects-modified
+           :base-objects base-objects
            :selected selected
            :zoom zoom
            :is-show-artboard-names show-artboard-names?
@@ -904,6 +919,7 @@
            :page-id page-id
            :selected selected
            :objects objects-modified
+           :base-objects base-objects
            :focus focus}])
 
        (when show-snap-distance?

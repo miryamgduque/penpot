@@ -28,6 +28,7 @@
    [app.common.agent.recipes.profiles :as profiles]
    [app.common.agent.structure :as cas]
    [app.common.agent.text :as catx]
+   [app.common.agent.token-status :as tst]
    [app.common.agent.tokens :as cato]
    [app.common.agent.write :as caw]
    [app.common.data.macros :as dm]
@@ -283,7 +284,7 @@
         ;; the last one written is not the one its components show
         shared  (keep (fn [[id library]]
                         (when (not= id file-id)
-                          (some-> library :data :tokens-lib ctob/get-tokens-in-active-sets)))
+                          (tst/active-tokens (:data library))))
                       libraries)
         unknown (first (remove #(contains? car/roles %) (keys given)))
         missing (first (remove #(contains? own %) (vals given)))]

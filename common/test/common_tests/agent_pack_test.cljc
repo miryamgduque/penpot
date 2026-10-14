@@ -12,6 +12,7 @@
    [app.common.agent.pack-make :as cakm]
    [app.common.agent.packs :as caks]
    [app.common.agent.recipe :as car]
+   [app.common.agent.token-status :as tst]
    [app.common.agent.tools :as cat]
    [app.common.files.changes :as cfc]
    [app.common.schema :as sm]
@@ -180,7 +181,7 @@
 
 (defn- active
   [data]
-  (ctob/get-tokens-in-active-sets (:tokens-lib data)))
+  (tst/active-tokens data))
 
 (defn- box-fill
   [data]

@@ -19,6 +19,7 @@
     {:problem \"...\" :rule \"...\"}   a refusal the model can act on
     {:fallback \"...\"}              not handled here yet; run it elsewhere"
   (:require
+   [app.common.agent.token-status :as tst]
    [app.common.colors :as cc]
    [app.common.data :as d]
    [app.common.data.macros :as dm]
@@ -35,7 +36,6 @@
    [app.common.types.modifiers :as ctm]
    [app.common.types.shape :as cts]
    [app.common.types.shape.layout :as ctl]
-   [app.common.types.tokens-lib :as ctob]
    [app.common.uuid :as uuid]
    [cuerdas.core :as str]))
 
@@ -182,8 +182,7 @@
   "Set of normalized hexes allowed under token-only-colors: color-token values
   in active sets + the file's library colors."
   [data]
-  (let [token-values   (some->> (:tokens-lib data)
-                                (ctob/get-tokens-in-active-sets)
+  (let [token-values   (some->> (tst/active-tokens data)
                                 (vals)
                                 (filter #(= :color (:type %)))
                                 (keep #(or (:resolved-value %) (:value %))))

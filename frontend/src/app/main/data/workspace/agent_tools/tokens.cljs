@@ -218,7 +218,7 @@
   "The library's sets (with active flag) and themes; see
   `app.common.agent.read/sets-and-themes`."
   [state]
-  (car/sets-and-themes (atc/tokens-lib state)))
+  (car/sets-and-themes (dsh/lookup-file-data state)))
 
 ;; --- Token application
 ;;

@@ -206,6 +206,29 @@
                               :changes []})]
         (t/is (th/ex-of-code? (:error out) :invalid-turn-token))))))
 
+(t/deftest a-viewer-gets-the-page-only-for-a-tool-that-reads-it
+  (let [{:keys [owner file]} (setup)
+        viewer (th/create-profile* 2 {:is-active true})
+        _      (th/create-team-role* {:team-id (:default-team-id owner)
+                                      :profile-id (:id viewer)
+                                      :role :viewer})
+        token  (agent-tools/turn-token th/*system* (:id viewer) (:id file))]
+
+    (t/testing "a tool that only reads, such as handoff code, gets the page"
+      (let [out (th/command! {::th/type :get-agent-tool-page :token token :access "read"})]
+        (t/is (nil? (:error out)))
+        (t/is (= (:id file) (-> out :result :file-id)))))
+
+    (t/testing "a tool that changes it does not"
+      (let [out (th/command! {::th/type :get-agent-tool-page :token token})]
+        (t/is (th/ex-of-type? (:error out) :not-found))))
+
+    (t/testing "and asking to read gives nothing to someone who cannot"
+      (let [stranger (th/create-profile* 3 {:is-active true})
+            token    (agent-tools/turn-token th/*system* (:id stranger) (:id file))
+            out      (th/command! {::th/type :get-agent-tool-page :token token :access "read"})]
+        (t/is (th/ex-of-type? (:error out) :not-found))))))
+
 (t/deftest comments-and-versions-are-written-as-the-turn-profile
   (let [profile (th/create-profile* 1 {:is-active true})
         file    (th/create-file* 1 {:profile-id (:id profile)

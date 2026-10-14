@@ -2279,15 +2279,73 @@
     (t/is (nil? (at/commit-refusal name editor)) name)))
 
 (t/deftest a-refused-tool-does-not-run
-  (let [ran (atom false)]
-    (swap! st/state assoc :permissions (:permissions viewer))
-    (with-redefs [atc/create-shape (fn [_] (reset! ran true) (rx/of {:id "made-up"}))]
-      (t/is (str/starts-with? (tool-error "create_shape" {:type "rect"})
-                              "create_shape did not run"))
-      (t/is (false? @ran) "the tool's own code never ran"))))
+  ;; an editor in a preview: the viewer check lets the call through, the
+  ;; commit check stops it
+  (let [ran   (atom false)
+        prior (:workspace-global @st/state)]
+    (swap! st/state assoc :workspace-global (:workspace-global preview))
+    (try
+      (with-redefs [atc/create-shape (fn [_] (reset! ran true) (rx/of {:id "made-up"}))]
+        (t/is (str/starts-with? (tool-error "create_shape" {:type "rect"})
+                                "create_shape did not run"))
+        (t/is (false? @ran) "the tool's own code never ran"))
+      (finally
+        (swap! st/state assoc :workspace-global prior)))))
 
 (t/deftest an-editors-tool-runs-as-before
   (let [ran (atom false)]
     (with-redefs [atc/create-shape (fn [_] (reset! ran true) (rx/of {:id "s1"}))]
       (t/is (= "s1" (:id (tool-value "create_shape" {:type "rect"}))))
+      (t/is (true? @ran)))))
+
+;; ---------------------------------------------------------------------------
+;; what a viewer is offered (#151) — the tools that read, review and explain
+;; the file, and a comment; checked when the list is built and on every call
+;; ---------------------------------------------------------------------------
+
+(def ^:private viewer-tool-names
+  #{"read_design" "find_shapes" "explore_design" "render_board" "generate_code"
+    "audit_file" "list_comments" "get_design_skills" "ask_user" "switch_page"
+    "fetch_page" "screenshot_page" "leave_comment"})
+
+(t/deftest a-viewer-is-offered-only-the-reading-tools
+  (t/is (= viewer-tool-names at/viewer-tools))
+  (t/is (= viewer-tool-names (set (map :name (at/offered-tool-specs viewer)))))
+  ;; every one of them is declared, so the list is exactly these
+  (t/is (= (count viewer-tool-names) (count (at/offered-tool-specs viewer)))))
+
+(t/deftest an-editor-is-offered-every-tool
+  (t/is (= tool-names (mapv :name (at/offered-tool-specs editor))))
+  (t/is (= tool-names (mapv :name (at/offered-tool-specs preview))) "a preview takes nothing away"))
+
+(t/deftest nothing-a-viewer-is-offered-changes-the-file
+  (t/is (every? at/no-commit-tools at/viewer-tools)))
+
+(t/deftest some-reading-tools-are-left-out-for-a-viewer
+  ;; searching a library nobody can insert from reads as a bug, and
+  ;; get_page_meta exists to feed insert_image
+  (doseq [name ["get_page_meta" "search_icons" "search_fonts"]]
+    (t/is (some? (at/viewer-refusal name viewer)) name)))
+
+(t/deftest a-tool-a-viewer-was-not-offered-is-refused-when-called
+  (doseq [name (remove at/viewer-tools tool-names)]
+    (let [msg (at/viewer-refusal name viewer)]
+      (t/is (str/starts-with? (str msg) (str name " is not available")) name)
+      (t/is (str/includes? (str msg) "Nothing ran") name)))
+  (doseq [name tool-names]
+    (t/is (nil? (at/viewer-refusal name editor)) name)))
+
+(t/deftest a-viewers-call-outside-the-set-does-not-run
+  (let [ran (atom false)]
+    (swap! st/state assoc :permissions (:permissions viewer))
+    (with-redefs [atm/search-icons (fn [_] (reset! ran true) (rx/of {:icons []}))]
+      (t/is (str/starts-with? (tool-error "search_icons" {:query "home"})
+                              "search_icons is not available"))
+      (t/is (false? @ran)))))
+
+(t/deftest a-viewers-call-inside-the-set-runs
+  (let [ran (atom false)]
+    (swap! st/state assoc :permissions (:permissions viewer))
+    (with-redefs [atd/list-comments (fn [_] (reset! ran true) (rx/of {:threads []}))]
+      (t/is (= {:threads []} (tool-value "list_comments" {})))
       (t/is (true? @ran)))))

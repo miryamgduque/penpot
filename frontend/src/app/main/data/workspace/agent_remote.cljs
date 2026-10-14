@@ -41,9 +41,11 @@
 
 (defn turn-payload
   "The JSON body of a turn: the conversation the service should continue, the
-  model, the system prompt, the user's message, the tool declarations and the
-  skills enabled on the file."
-  [settings user-msg system]
+  model, the system prompt, the user's message, the declarations of `specs`
+  (the tools offered to this person, see `agent-tools/offered-tool-specs`)
+  and the skills enabled on the file. The service runs no tool it was not
+  given here."
+  [settings user-msg system specs]
   (js/JSON.stringify
    (clj->js {:sessionId (str (:session-id (:service settings)))
              :model (:model settings)
@@ -57,7 +59,7 @@
                                 (map (fn [t] {:name (:name t)
                                               :description (:description t)
                                               :inputSchema (:input-schema t)})))
-                          at/tool-specs)})))
+                          specs)})))
 
 (defn- run-tool
   "Runs one tool call exactly as the browser loop does → observable of one
@@ -265,7 +267,8 @@
           #(rp/cmd! ::sse/agent-service-turn
                     {:provider (:provider settings)
                      :file-id (:file-id (:service settings))
-                     :payload (turn-payload settings user-msg system)}))
+                     :payload (turn-payload settings user-msg system
+                                            (at/offered-tool-specs @st/state))}))
          (rx/mapcat
           (fn [event]
             (if (not= "event" (sse/get-type event))

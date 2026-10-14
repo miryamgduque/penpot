@@ -14,6 +14,7 @@
    [app.common.agent.recipes :as cars]
    [app.common.agent.recipes.profiles :as profiles]
    [app.common.data.macros :as dm]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.changes :as dch]
    [app.main.data.workspace.agent-tools.agentic :as atg]
    [app.main.data.workspace.agent-tools.common :as atc]
@@ -1347,6 +1348,40 @@
            "view the file but not edit it. Do not retry and do not say it was "
            "done; tell them what you would change instead."))))
 
+;; --- What a viewer is offered
+;;
+;; Someone who may view the file but not change it is offered the tools that
+;; read, review and explain it, and the one write they hold: a comment. The
+;; set is checked when the tool list is built and again on every call, since
+;; a model will name a tool it was never offered.
+
+(def viewer-tools
+  "The tools offered to someone who can view the file but not edit it. Some
+  that only read are left out on purpose: `get_page_meta` exists to feed
+  `insert_image`, and searching icons or fonts nobody can insert reads as a
+  bug."
+  #{"read_design" "find_shapes" "explore_design" "render_board" "generate_code"
+    "audit_file" "list_comments" "get_design_skills" "ask_user" "switch_page"
+    "fetch_page" "screenshot_page" "leave_comment"})
+
+(defn offered-tool-specs
+  "The tool declarations offered to the person in `state`: all of them to
+  someone who can edit the file, the viewer set otherwise."
+  [state]
+  (if (agent-access/can-write? state)
+    tool-specs
+    (filterv #(contains? viewer-tools (:name %)) tool-specs)))
+
+(defn viewer-refusal
+  "Why the tool `name` is not offered to the person in `state`, or nil when
+  it is."
+  [name state]
+  (when-not (or (agent-access/can-write? state)
+                (contains? viewer-tools name))
+    (str name " is not available: this person can view the file but not edit "
+         "it, so the agent can read, review and explain it and leave comments, "
+         "nothing more. Nothing ran. Tell them what you would do instead.")))
+
 ;; --- Dispatch
 
 (defn- dispatch-tool
@@ -1423,6 +1458,8 @@
 
 (defn execute-tool
   [name input]
-  (if-let [refusal (commit-refusal name @st/state)]
-    (rx/throw (ex-info refusal {:type :agent-tool :code :file-not-editable}))
-    (dispatch-tool name input)))
+  (let [state @st/state]
+    (if-let [refusal (or (viewer-refusal name state)
+                         (commit-refusal name state))]
+      (rx/throw (ex-info refusal {:type :agent-tool :code :file-not-editable}))
+      (dispatch-tool name input))))

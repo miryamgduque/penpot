@@ -351,6 +351,20 @@
                           (:changes (run themed "build_tree"
                                          {:keepLiterals true
                                           :tree {:type "board" :name "Poster" :width 200 :height 80 :fill "#ffffff"}}))))))))
+    (t/testing "a value the user wrote on a shape the agent only touched stays theirs"
+      (let [drawn  (commit themed (run themed "create_shape" {:type "rect" :name "Card" :x 0 :y 300 :width 60 :height 24
+                                                              :fill "#123456"}))
+            card   (shape-named drawn "Card")
+            ;; the user paints it white by hand: a role's value, theirs to keep
+            white  (assoc-in drawn [:pages-index (first (:pages drawn)) :objects (:id card) :fills]
+                             [{:fill-color "#ffffff" :fill-opacity 1}])
+            moved  (run white "modify_shape" {:shapeId (str (:id card)) :name "Card (moved)" :x 40})
+            after  (commit white moved)]
+        (t/is (nil? (-> (shape-named after "Card (moved)") :applied-tokens :fill)))
+        (t/is (nil? (-> moved :result :boundToRoles)))
+        (t/testing "but a value the call itself writes is bound"
+          (let [painted (commit drawn (run drawn "modify_shape" {:shapeId (str (:id card)) :fill "#ffffff"}))]
+            (t/is (= "color.surface" (-> (shape-named painted "Card") :applied-tokens :fill)))))))
     (t/testing "a file with no roles is left alone"
       (let [out (run empty-file "create_shape" {:type "rect" :name "Chip" :x 0 :y 200 :width 60 :height 24 :fill "#ffffff"})]
         (t/is (nil? (-> out :result :boundToRoles)))

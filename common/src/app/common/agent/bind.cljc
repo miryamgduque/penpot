@@ -160,14 +160,42 @@
       (= (:id shape) (:parent-id shape)) false
       :else                              (recur (get objects (:parent-id shape))))))
 
-(defn- touched-ids
-  "The shapes of `page-id` that `changes` made or changed."
+(defn- touched
+  "The shapes of `page-id` that `changes` made or changed → shape id →
+  `:all` for a shape the call made, or the set of attributes it wrote on a
+  shape that was there."
   [changes page-id]
-  (into #{}
-        (comp (filter #(and (contains? #{:add-obj :mod-obj} (:type %))
-                            (= page-id (:page-id %))))
-              (map :id))
-        changes))
+  (reduce (fn [found {:keys [type id operations] :as change}]
+            (cond
+              (not= page-id (:page-id change)) found
+              (= :add-obj type)                (assoc found id :all)
+              (and (= :mod-obj type) (not= :all (get found id)))
+              (update found id (fnil into #{})
+                      (keep #(when (= :set (:type %)) (:attr %)))
+                      operations)
+              :else                            found))
+          {}
+          changes))
+
+(def ^:private written-in
+  "Token property → the shape attributes a call writes it through."
+  (merge {:fill         #{:fills :content}
+          :stroke-color #{:strokes}
+          :font-size    #{:content}
+          :font-family  #{:content}
+          :row-gap      #{:layout-gap}
+          :column-gap   #{:layout-gap}}
+         (zipmap [:r1 :r2 :r3 :r4] (repeat #{:r1 :r2 :r3 :r4}))
+         (zipmap [:p1 :p2 :p3 :p4] (repeat #{:layout-padding}))))
+
+(defn- by-the-call
+  "Of `roles` found on a shape, those for values the call wrote: all of
+  them on a shape it made, only what it set on one that was there. A value
+  the user put on a shape the agent only renamed or moved stays theirs."
+  [roles attrs]
+  (if (= :all attrs)
+    roles
+    (into {} (filter (fn [[property _]] (some attrs (get written-in property)))) roles)))
 
 (defn with-roles
   "A drawing tool's `answer`, with what it drew bound to the roles its values
@@ -180,14 +208,14 @@
       (let [after   (cfc/process-changes data (:changes answer) false)
             objects (get-in after [:pages-index page-id :objects])
             binds   (into {}
-                          (keep (fn [id]
+                          (keep (fn [[id attrs]]
                                   (when-let [shape (get objects id)]
                                     ;; a copy takes what its main has; binding
                                     ;; inside it would be an edit of the copy
                                     (when-not (or (ctc/in-component-copy? shape) (kept? objects shape))
-                                      (when-let [roles (not-empty (found worth shape))]
+                                      (when-let [roles (not-empty (by-the-call (found worth shape) attrs))]
                                         [id roles])))))
-                          (touched-ids (:changes answer) page-id))]
+                          (touched (:changes answer) page-id))]
         (if (empty? binds)
           answer
           (let [extra (-> (caw/page-changes page-id objects)

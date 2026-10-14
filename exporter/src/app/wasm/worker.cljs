@@ -13,14 +13,18 @@
   while this thread is blocked inside a render.
 
   Messages in:  {type: \"render\", params: <transit>, cancel: SharedArrayBuffer}
+                {type: \"tool\", params: <transit>}       one agent tool call
   Messages out: {type: \"ready\"}
                 {type: \"object\", payload: <transit>}   one per rendered object
+                {type: \"tool-result\", payload: <transit>}
                 {type: \"done\"} | {type: \"error\", message, code}"
   (:require
    ["node:worker_threads" :as wt]
    [app.common.logging :as l]
    [app.common.transit :as t]
+   [app.wasm.agent-tools :as agent-tools]
    [app.wasm.render :as render]
+   [app.wasm.tool-failure :as tool-failure]
    [promesa.core :as p]))
 
 (defn- post!
@@ -50,10 +54,28 @@
                                :code (some-> cause ex-data :code name)})
                    (p/resolved nil))))))
 
+(defn- handle-tool
+  [data]
+  (let [params (t/decode-str (unchecked-get data "params"))]
+    (->> (p/do (agent-tools/run params))
+         (p/fmap (fn [result]
+                   (post! #js {:type "tool-result" :payload (t/encode-str result)})))
+         (p/merr (fn [cause]
+                   (l/warn :hint "render worker: agent tool failed" :cause cause)
+                   ;; a change the file rejects is the model's to read; this
+                   ;; worker is fine and stays
+                   (if-let [answer (tool-failure/answer (:tool params) cause)]
+                     (post! #js {:type "tool-result" :payload (t/encode-str answer)})
+                     (post! #js {:type "error"
+                                 :message (or (ex-message cause) (str cause))
+                                 :code (some-> cause ex-data :code name)}))
+                   (p/resolved nil))))))
+
 (defn- on-message
   [data]
   (case (unchecked-get data "type")
     "render" (handle-render data)
+    "tool"   (handle-tool data)
     (l/warn :hint "render worker: unknown message" :type (unchecked-get data "type"))))
 
 (defonce ^:private listening

@@ -151,6 +151,14 @@
     [:allowed-origins {:optional true} [::sm/set :string]]
 
     [:exporter-shared-key {:optional true} :string]
+    [:agent-service-uri {:optional true} ::sm/uri]
+    ;; how long a commit of the design agent is kept to be listed and
+    ;; reverted, in hours (e.g. 720h); 30 days when unset
+    [:agent-change-max-age {:optional true} ::ct/duration]
+    [:agent-service-shared-key {:optional true} :string]
+    ;; The public index of community recipes for the design agent: a JSON
+    ;; file listing recipe files. Unset, there is no community source.
+    [:recipe-community-index-uri {:optional true} ::sm/uri]
     [:admin-console-shared-key {:optional true} :string]
     [:nexus-shared-key {:optional true} :string]
     [:media-processor-shared-key {:optional true} :string]

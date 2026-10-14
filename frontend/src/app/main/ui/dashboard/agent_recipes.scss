@@ -1,0 +1,212 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// Copyright (c) KALEIDOS INC Sucursal en España SL
+
+@use "refactor/common-refactor.scss" as *;
+@use "ds/typography.scss" as t;
+
+.agent-recipes-page {
+  // the dashboard content area is a grid (header row + content row); with no
+  // dashboard header we span both rows so the page fills the area.
+  grid-row: 1 / -1;
+  grid-column: 1 / -1;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: $s-16;
+  padding: $s-32;
+  overflow-y: auto;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: $s-4;
+}
+
+.hero-title {
+  @include t.use-typography("title-large");
+
+  color: var(--color-foreground-primary);
+}
+
+.hero-desc {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+  max-inline-size: $s-712;
+}
+
+.section-title {
+  @include t.use-typography("title-medium");
+
+  margin-block-start: $s-16;
+  color: var(--color-foreground-primary);
+}
+
+.toolbar {
+  display: flex;
+  gap: $s-8;
+  align-items: center;
+}
+
+.file-input {
+  display: none;
+}
+
+// --- List
+
+.recipe-list {
+  display: flex;
+  flex-direction: column;
+  gap: $s-8;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-inline-size: $s-712;
+}
+
+.recipe-row {
+  display: flex;
+  gap: $s-16;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: $s-16;
+  border: $s-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
+  background-color: var(--color-background-primary);
+}
+
+.recipe-text {
+  display: flex;
+  flex-direction: column;
+  gap: $s-6;
+  min-inline-size: 0;
+}
+
+.recipe-name {
+  @include t.use-typography("body-large");
+
+  color: var(--color-foreground-primary);
+}
+
+.recipe-desc {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+}
+
+.recipe-tags {
+  display: flex;
+  gap: $s-6;
+  align-items: center;
+  flex-wrap: wrap;
+
+  > * + *::before {
+    content: "·";
+    margin-inline-end: $s-6;
+    color: var(--color-foreground-secondary);
+  }
+}
+
+.recipe-tag {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+.recipe-actions {
+  display: flex;
+  gap: $s-4;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+// --- Buttons
+
+.action {
+  @include t.use-typography("body-small");
+
+  padding: $s-6 $s-8;
+  border: $s-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
+  background: none;
+  color: var(--color-foreground-primary);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
+}
+
+.action-danger:hover {
+  border-color: var(--color-foreground-error);
+  color: var(--color-foreground-error);
+}
+
+.primary {
+  @include t.use-typography("body-small");
+
+  padding: $s-6 $s-12;
+  border: $s-1 solid var(--color-accent-primary);
+  border-radius: $br-8;
+  background-color: var(--color-accent-primary);
+  color: var(--color-background-primary);
+  cursor: pointer;
+}
+
+// --- Editor
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: $s-12;
+  max-inline-size: $s-712;
+  min-block-size: 0;
+  flex: 1;
+}
+
+.editor-title {
+  @include t.use-typography("title-medium");
+
+  color: var(--color-foreground-primary);
+}
+
+.editor-text {
+  @include t.use-typography("code-font");
+
+  flex: 1;
+  min-block-size: $s-400;
+  padding: $s-12;
+  border: $s-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  resize: vertical;
+}
+
+.editor-actions {
+  display: flex;
+  gap: $s-8;
+  justify-content: flex-end;
+}
+
+.error {
+  @include t.use-typography("body-small");
+
+  padding: $s-8 $s-12;
+  border: $s-1 solid var(--color-foreground-error);
+  border-radius: $br-8;
+  color: var(--color-foreground-error);
+  max-inline-size: $s-712;
+}
+
+.empty {
+  @include t.use-typography("body-small");
+
+  color: var(--color-foreground-secondary);
+}

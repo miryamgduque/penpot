@@ -4,7 +4,7 @@
 ;;
 ;; Copyright (c) KALEIDOS INC Sucursal en España SL
 
-(ns app.main.data.workspace.design-md
+(ns app.common.agent.design-md
   "The DESIGN.md format (github.com/google-labs-code/design.md): YAML
   frontmatter carrying machine-readable design tokens + a markdown body of
   human guidance. The vibes doc (and later every foundation) speaks it.

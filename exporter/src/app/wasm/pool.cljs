@@ -233,6 +233,45 @@
                           :hint "export job was cancelled"))
     (run-on-worker worker params cancel-buffer on-object)))
 
+(defn- request-tool
+  "Sends one agent tool call to `worker` and settles with its answer. A tool
+  is a single request and a single reply, so none of the render path's
+  per-object bookkeeping applies."
+  [^js worker params]
+  (p/create
+   (fn [resolve reject]
+     (letfn [(cleanup []
+               (.off worker "message" on-message)
+               (.off worker "error" on-error)
+               (.off worker "exit" on-exit))
+             (on-error [cause]
+               (cleanup)
+               (reject cause))
+             (on-exit [code]
+               (cleanup)
+               (reject (ex/error :type :internal
+                                 :code :worker-exited
+                                 :hint (str "render worker exited with code " code))))
+             (on-message [data]
+               (case (unchecked-get data "type")
+                 "tool-result" (do (cleanup)
+                                   (resolve (t/decode-str (unchecked-get data "payload"))))
+                 "error"       (do (cleanup)
+                                   (reject (ex/error :type :internal
+                                                     :code (or (some-> (unchecked-get data "code") keyword)
+                                                               :agent-tool-error)
+                                                     :hint (unchecked-get data "message"))))
+                 nil))]
+       (.on worker "message" on-message)
+       (.once worker "error" on-error)
+       (.once worker "exit" on-exit)
+       (.postMessage worker #js {:type "tool" :params (t/encode-str params)})))))
+
+(defn run-tool
+  "Runs one agent tool call on a pooled worker → promise of its answer."
+  [params]
+  (with-worker (fn [worker] (request-tool worker params))))
+
 (defn terminate!
   [^js worker]
   (when worker

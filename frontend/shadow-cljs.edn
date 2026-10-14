@@ -53,7 +53,8 @@
     :render
     {:entries [app.render]
      :depends-on #{:shared}
-     :exports {init app.render/init}}
+     :exports {init app.render/init
+               generateCode app.render/generate-code}}
 
     :rasterizer
     {:entries [app.rasterizer]

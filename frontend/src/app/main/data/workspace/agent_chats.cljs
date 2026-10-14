@@ -159,7 +159,10 @@
 
 ;; --- Persistence (emitted by send-message at turn boundaries)
 
-(defn- chat-id-allocated
+(defn chat-id-allocated
+  "Records the active conversation's row id. Public so a turn that needs a
+  stable conversation id before the first save (the agent service session)
+  can allocate it up front; `persist-chat` then reuses it."
   [file-id id]
   (ptk/reify ::chat-id-allocated
     ptk/UpdateEvent

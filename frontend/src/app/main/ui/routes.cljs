@@ -55,6 +55,9 @@
           :dashboard-members
           :dashboard-invitations
           :dashboard-webhooks
+          :dashboard-skills
+          :dashboard-agent-skills
+          :dashboard-agent-recipes
           :dashboard-settings
           :dashboard-recent
           :dashboard-search
@@ -123,6 +126,7 @@
     ["/webhooks"             :dashboard-webhooks]
     ["/skills"               :dashboard-skills]
     ["/agent-skills"         :dashboard-agent-skills]
+    ["/agent-recipes"        :dashboard-agent-recipes]
     ["/settings"             :dashboard-settings]
     ["/recent"               :dashboard-recent]
     ["/search"               :dashboard-search]

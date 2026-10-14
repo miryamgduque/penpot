@@ -7,12 +7,12 @@
 (ns app.main.data.workspace.agent-tools.media
   "External media tools: insert_image, Iconify icons and Google Fonts."
   (:require
+   [app.common.agent.media :as cam]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
    [app.common.types.container :as ctn]
-   [app.common.types.fills :as types.fills]
    [app.common.types.shape :as cts]
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
@@ -29,50 +29,9 @@
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
 
-(defn insert-image-problem
-  "Validation message for an insert_image call, nil when acceptable. Public for
-  tests."
-  [{:keys [url]}]
-  (when-not (and (string? url) (re-matches atc/http-url-re url))
-    (str "insert_image: url must be an absolute http(s) URL, e.g. "
-         "https://picsum.photos/600/400.")))
-
-(defn image-geometry
-  "Final geometry for the image shape: intrinsic media size unless overridden;
-  a single given dimension scales the other to keep the image's aspect ratio.
-  Public for tests."
-  [{:keys [x y width height]} media]
-  (let [mw (:width media)
-        mh (:height media)
-        [w h] (cond
-                (and width height) [width height]
-                (some? width)      [width (js/Math.round (* mh (/ width mw)))]
-                (some? height)     [(js/Math.round (* mw (/ height mh))) height]
-                :else              [mw mh])]
-    {:x (or x 0) :y (or y 0) :width w :height h}))
-
-(def ^:private media-error-hints
-  {:ssrf-blocked-target
-   "the host is private or blocked by this Penpot instance; use a public image URL"
-   :unknown-size
-   (str "the server sent no content-length header, which Penpot requires; "
-        "picsum.photos, placehold.co and api.dicebear.com all send it")
-   :media-type-not-allowed
-   (str "the URL did not return a supported image type; for placehold.co "
-        "request an explicit format, e.g. .../600x400.png")
-   :media-max-file-size-reached
-   "the image exceeds this instance's media size limit; request smaller dimensions"
-   :unable-to-download-image
-   "the image could not be downloaded (unreachable host, timeout, or error status)"})
-
-(defn media-error-message
-  "One-line agent-facing message for a media download/processing failure,
-  naming the fix where one is known. Public for tests."
-  [code]
-  (str "insert_image: "
-       (or (get media-error-hints code)
-           (str "the upload failed" (when code (str " (" (name code) ")"))))
-       "."))
+(def insert-image-problem cam/insert-image-problem)
+(def image-geometry cam/image-geometry)
+(def media-error-message cam/media-error-message)
 
 (defn insert-image
   [{:keys [url parentId] :as input}]
@@ -97,13 +56,7 @@
                     frame-id (when parent?
                                (if (cfh/frame-shape? parent) pid (:frame-id parent)))
                     geom     (image-geometry input media)
-                    fills    (types.fills/create
-                              {:fill-opacity 1
-                               :fill-image {:width (:width media)
-                                            :height (:height media)
-                                            :mtype (:mtype media)
-                                            :id (:id media)
-                                            :keep-aspect-ratio true}})
+                    fills    (cam/image-fill media)
                     shape    (cond-> (-> (cts/setup-shape
                                           (assoc geom :type :rect :name nm))
                                          (assoc :fills fills))
@@ -136,22 +89,8 @@
 
 (def ^:private iconify-base "https://api.iconify.design")
 
-(def ^:private icon-id-re
-  #"^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$")
-
-(defn icon-id-problem
-  "Validation message for an Iconify icon id, nil when acceptable. Public for
-  tests."
-  [icon]
-  (when-not (and (string? icon) (re-matches icon-id-re icon))
-    (str "insert_icon: icon must be an Iconify id in prefix:name form, e.g. "
-         "lucide:house — find one with search_icons.")))
-
-(defn icon-svg-url
-  "The Iconify SVG endpoint for an already-validated icon id. Public for tests."
-  [icon size]
-  (let [[prefix nm] (str/split icon ":")]
-    (str iconify-base "/" prefix "/" nm ".svg?height=" size)))
+(def icon-id-problem cam/icon-id-problem)
+(def icon-svg-url cam/icon-svg-url)
 
 (defn icons-payload
   "Parses an Iconify search response body into the tool result. Caps the id
@@ -230,59 +169,10 @@
 
 ;; --- search_fonts / set_font
 
-(defn font-search-results
-  "Case-insensitive substring search over the fonts db by family name. Public
-  for tests."
-  [db query limit]
-  (let [q (str/lower query)]
-    (->> (vals db)
-         (filter #(str/includes? (str/lower (:family %)) q))
-         (sort-by :family)
-         (take limit)
-         (mapv (fn [{:keys [id family backend variants]}]
-                 {:id id
-                  :family family
-                  :backend (name (or backend :unknown))
-                  :variants (mapv :id variants)})))))
-
-(defn font-attrs
-  "The full text attr map for a font+variant. All five keys always — a partial
-  map leaves the previous font's family or weight behind on the shape. Public
-  for tests."
-  [font variant]
-  {:font-id (:id font)
-   :font-family (:family font)
-   :font-variant-id (:id variant)
-   :font-weight (:weight variant)
-   :font-style (:style variant)})
-
-(defn variant-problem
-  "Validation message when a requested variant does not exist on the font, nil
-  when acceptable (or when no variant was requested). Public for tests."
-  [font variant-id]
-  (when (and (some? variant-id)
-             (not (some #(= variant-id (:id %)) (:variants font))))
-    (str "set_font: variant \"" variant-id "\" does not exist for "
-         (:family font) " — available: "
-         (str/join ", " (map :id (:variants font))) ".")))
-
-(defn non-text-problem
-  "Validation message when any id is unknown on this page or names a non-text
-  shape, nil when all ids are text shapes. Public for tests."
-  [objects ids]
-  (let [missing  (remove #(contains? objects %) ids)
-        non-text (filter #(some->> (get-in objects [% :type]) (not= :text)) ids)]
-    (cond
-      (seq missing)
-      (str "set_font: shape id(s) "
-           (str/join ", " (map str missing))
-           " do not exist on this page — check with find_shapes.")
-
-      (seq non-text)
-      (let [names (map #(or (get-in objects [% :name]) (str %)) non-text)]
-        (str "set_font: " (str/join ", " names)
-             (if (= 1 (count names)) " is not a text shape" " are not text shapes")
-             " — set_font only applies to text.")))))
+(def font-search-results cam/font-search-results)
+(def font-attrs cam/font-attrs)
+(def variant-problem cam/variant-problem)
+(def non-text-problem cam/non-text-problem)
 
 (defn search-fonts
   [{:keys [query limit]}]

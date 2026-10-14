@@ -17,6 +17,7 @@
   owned by its own story."
   (:require-macros [app.main.style :as stl])
   (:require
+   [app.common.agent.design-md :as dmd]
    [app.common.data :as d]
    [app.common.data.macros :as dm]
    [app.common.exceptions :as ex]
@@ -31,13 +32,13 @@
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.ai-panel :as dwaip]
    [app.main.data.workspace.design-doc :as dd]
-   [app.main.data.workspace.design-md :as dmd]
    [app.main.data.workspace.elicitation :as el]
    [app.main.data.workspace.media :as dwm]
    [app.main.data.workspace.selection :as dws]
    [app.main.data.workspace.session-persist :as dwsp]
    [app.main.data.workspace.skill-state :as skst]
    [app.main.data.workspace.slash-commands :as slc]
+   [app.main.data.workspace.team-recipes :as dwtr]
    [app.main.data.workspace.team-skills :as dwts]
    [app.main.data.workspace.user-skills :as dusk]
    [app.main.data.workspace.zoom :as dwz]
@@ -182,7 +183,9 @@
   model the user enabled."
   [providers]
   (vec (for [[_ status] providers
-             model (:enabled-models status)]
+             model (:enabled-models status)
+             ;; a model that cannot call tools cannot be chosen for the agent
+             :when (dai/selectable? (:provider status) model)]
          {:provider (:provider status) :model model})))
 
 (defn- model-key
@@ -240,10 +243,10 @@
 (defn- usage-summary
   "Compact spend line: calls · prompt tokens (cached %) · output tokens · ~$
   (Claude models only)."
-  [{:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens requests] :as usage} model]
+  [{:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens requests] :as usage} provider model]
   (let [prompt (+ (or input-tokens 0) (or cache-read-tokens 0) (or cache-write-tokens 0))
         cached (if (pos? prompt) (js/Math.round (* (/ (or cache-read-tokens 0) prompt) 100)) 0)
-        cost   (agent/estimate-cost-usd model usage)]
+        cost   (agent/estimate-cost-usd provider model usage)]
     (dm/str (tr "workspace.agent.usage.summary" requests (format-tokens prompt)
                 (dm/str cached "%") (format-tokens output-tokens))
             (when cost (dm/str " · ~$" (.toFixed cost 2))))))
@@ -557,7 +560,7 @@
   never pin to the latest — and once the content outgrows the panel the
   sentinel is never seen, leaving it wrongly detached forever."
   {::mf/private true}
-  [{:keys [messages busy? form checkpoint]}]
+  [{:keys [messages busy? form checkpoint revert]}]
   (let [;; consecutive tool calls collapse into one row; `partition-by` on the
         ;; role category yields alternating runs of tools / thinking rows /
         ;; everything else
@@ -572,6 +575,10 @@
 
         on-continue   (mf/use-fn #(st/emit! (dwaip/continue-turn)))
         on-stop-here  (mf/use-fn #(st/emit! (dwaip/dismiss-checkpoint)))
+
+        on-revert       (mf/use-fn #(st/emit! (dwaip/revert-turn)))
+        on-revert-force (mf/use-fn #(st/emit! (dwaip/revert-turn true)))
+        on-revert-keep  (mf/use-fn #(st/emit! (dwaip/dismiss-revert)))
 
         scroll-ref    (mf/use-ref nil)
         ;; a fresh transcript starts pinned to the newest message
@@ -614,7 +621,7 @@
 
     ;; `form`/`checkpoint` are in the deps: an interview or a pause appearing
     ;; is new content to follow
-    (mf/with-layout-effect [messages busy? form checkpoint]
+    (mf/with-layout-effect [messages busy? form checkpoint revert]
       (when ^boolean (mf/ref-val at-bottom-ref)
         (scroll-to-end)))
 
@@ -678,7 +685,7 @@
       ;; paused, resumable as-is — the user decides whether it keeps going
       (when (some? checkpoint)
         (let [{:keys [rounds usage settings]} checkpoint
-              cost (agent/estimate-cost-usd (:model settings) usage)]
+              cost (agent/estimate-cost-usd (:provider settings) (:model settings) usage)]
           [:div {:class (stl/css :checkpoint)}
            [:div {:class (stl/css :checkpoint-label)}
             (if cost
@@ -693,6 +700,47 @@
                          :class (stl/css :compact-label)
                          :on-click on-stop-here}
              (tr "workspace.agent.checkpoint.stop")]]]))
+      ;; the way back: what the agent changes is not in the user's undo
+      ;; history, so a turn that changed the file ends with this offer
+      (when (and (some? revert) (not busy?))
+        (let [{:keys [state shapes unknown]} revert]
+          [:div {:class (stl/css :checkpoint)
+                 :data-testid "agent-revert"}
+           [:div {:class (stl/css :checkpoint-label)}
+            (case state
+              :offered  (tr "workspace.agent.revert.offer")
+              :reverted (tr "workspace.agent.revert.done")
+              :conflict (cond
+                          (seq shapes) (tr "workspace.agent.revert.conflict" (str/join ", " shapes))
+                          unknown      (tr "workspace.agent.revert.conflict-unknown")
+                          :else        (tr "workspace.agent.revert.conflict-unknown"))
+              nil)]
+           [:div {:class (stl/css :checkpoint-actions)}
+            (case state
+              :offered
+              [:button {:type "button"
+                        :class (stl/css :checkpoint-stop)
+                        :on-click on-revert}
+               (tr "workspace.agent.revert.action")]
+
+              :reverted
+              [:button {:type "button"
+                        :class (stl/css :checkpoint-stop)
+                        :on-click on-revert}
+               (tr "workspace.agent.revert.undo")]
+
+              :conflict
+              [:*
+               [:button {:type "button"
+                         :class (stl/css :checkpoint-continue)
+                         :on-click on-revert-force}
+                (tr "workspace.agent.revert.anyway")]
+               [:button {:type "button"
+                         :class (stl/css :checkpoint-stop)
+                         :on-click on-revert-keep}
+                (tr "workspace.agent.revert.keep")]]
+
+              nil)]]))
       ;; …and no placeholder under a thinking row that is itself still
       ;; streaming — its own summary already reads "Thinking…"
       (when (and busy? (nil? form)
@@ -931,6 +979,7 @@
         busy?     (mf/deref refs/ai-panel-busy?)
         usage     (mf/deref refs/ai-panel-usage)
         checkpoint (mf/deref refs/ai-panel-checkpoint)
+        revert     (mf/deref refs/ai-panel-revert)
         history   (mf/deref refs/ai-panel-history)
         handoff-dismissed? (mf/deref refs/ai-panel-handoff-dismissed)
         ;; history identity only changes at turn boundaries — the size memo
@@ -1294,7 +1343,7 @@
 
      (if (or (seq messages) (some? pending-form))
        [:> transcript* {:messages messages :busy? busy? :form pending-form
-                        :checkpoint checkpoint}]
+                        :checkpoint checkpoint :revert revert}]
        [:div {:class (stl/css :transcript-empty)}
         [:> i/icon* {:icon-id i/bot-message-square
                      :size "m"
@@ -1312,7 +1361,7 @@
                  :tab-index 0
                  :aria-describedby usage-hint-id}
           (if (some-> usage :requests pos?)
-            (usage-summary usage (:model settings))
+            (usage-summary usage (:provider settings) (:model settings))
             (tr "workspace.agent.usage.restored"))]]
         ;; the glyph is decorative — kept out of the accessible name, which
         ;; would otherwise read "plus sign new chat"
@@ -2731,6 +2780,8 @@
                 ;; team-promoted skills for the current team (US #12) — every
                 ;; member picks up promotions on panel open
                 (dwts/fetch-team-skills (:id (deref refs/team)))
+                ;; the team's own recipes, for the agent's index
+                (dwtr/fetch-team-recipes (:id (deref refs/team)))
                 (dwach/fetch-chats true)))
 
     [:aside {:class (stl/css :ai-panel)

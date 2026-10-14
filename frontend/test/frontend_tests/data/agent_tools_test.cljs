@@ -18,6 +18,7 @@
   correctly refused."
   (:require
    [app.common.uuid :as uuid]
+   [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.data.workspace.agent-tools.agentic :as atg]
    [app.main.data.workspace.agent-tools.common :as atc]
@@ -823,6 +824,59 @@
     (t/is (str/includes? (:description spec) "does not depend on the answer"))
     (t/is (str/includes? (:description spec) "recommended choice"))
     (t/is (str/includes? (:description spec) "should I proceed"))))
+
+(t/deftest the-build-recipe-tool-names-every-recipe
+  (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
+    (t/is (str/includes? (get-in spec [:input-schema :properties :recipe :description]) "pricing-table"))
+    (t/is (str/includes? (:description spec) "find_recipes")))
+  (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
+    (t/is (= ["android" "ios" "web"] (get-in spec [:input-schema :properties :profile :enum]))))
+  (t/is (some #(= "find_recipes" (:name %)) at/tool-specs))
+  (t/is (some #(= "save_recipe" (:name %)) at/tool-specs))
+  (t/is (some #(= "set_texts" (:name %)) at/tool-specs))
+  (t/is (some #(= "set_icons" (:name %)) at/tool-specs))
+  (t/is (some #(= "critique_design" (:name %)) at/tool-specs))
+  (doseq [tool ["list_token_packs" "generate_token_pack" "apply_token_pack"
+                "list_shared_libraries" "link_library" "reapply_tokens"]]
+    (t/is (some #(= tool (:name %)) at/tool-specs) tool))
+  (t/is (str/includes? ask/inner-knowledge "With no system, propose one first and wait"))
+  (t/is (str/includes? ask/inner-knowledge "do not ask again in this conversation"))
+  (t/is (str/includes? ask/inner-knowledge "merge, replace or cancel"))
+  (t/is (str/includes? ask/inner-knowledge "A generated pack starts from what the project says"))
+  (t/is (str/includes? ask/inner-knowledge "With a library linked, its components before any recipe"))
+  (t/is (str/includes? ask/inner-knowledge "only after the user says yes to that library"))
+  (t/is (str/includes? ask/inner-knowledge "A linked library's tokens become the file's"))
+  (t/is (str/includes? ask/inner-knowledge "What is inside a mock-up keeps its own values"))
+  (t/is (str/includes? ask/inner-knowledge "Judge it, do not only check it"))
+  (t/is (str/includes? ask/inner-knowledge "A direction before the first shape"))
+  (t/is (str/includes? ask/inner-knowledge "The critic at the first whole render, not at the end"))
+  (t/is (str/includes? ask/inner-knowledge "Its points are work, not notes"))
+  (t/is (str/includes? (:description (first (filter #(= "build_tree" (:name %)) at/tool-specs)))
+                       "component: true"))
+  (let [spec (first (filter #(= "build_recipe" (:name %)) at/tool-specs))]
+    (t/is (some? (get-in spec [:input-schema :properties :texts])))
+    (t/is (str/includes? (:description spec) "placeholders"))))
+
+(t/deftest the-agent-always-sees-the-recipe-catalog
+  (t/is (str/includes? ask/inner-knowledge "## Recipes"))
+  (t/is (str/includes? ask/inner-knowledge "data-table (data table)"))
+  (t/is (re-find #"(?m)^- section: " ask/inner-knowledge))
+  (t/is (str/includes? ask/inner-knowledge "call find_recipes"))
+  (t/is (str/includes? ask/inner-knowledge "When no recipe fits, build by hand"))
+  (t/is (str/includes? ask/inner-knowledge "A built recipe is the start, not the result"))
+  (t/is (str/includes? ask/inner-knowledge "Recipes are for what is convention"))
+  (t/is (str/includes? ask/inner-knowledge "What repeats is a component; what has states is a variant"))
+  (t/is (str/includes? ask/inner-knowledge "A bespoke screen still has ordinary parts"))
+  (t/is (str/includes? ask/inner-knowledge "What a recipe builds is yours to change"))
+  (t/testing "and the team's own, the ones in use"
+    (t/is (nil? (ask/team-recipes-section {})))
+    (let [section (ask/team-recipes-section
+                   {:team-recipes [{:recipe {:name "news-card" :title "News card" :purpose "A card for news."}}
+                                   {:recipe {:name "button" :title "Button" :purpose "Ours."} :overrides-built-in true}
+                                   {:recipe {:name "old" :title "Old" :purpose "Gone."} :disabled true}]})]
+      (t/is (str/includes? section "- news-card (News card): A card for news."))
+      (t/is (str/includes? section "- button (Button): Ours. — used in place of the built-in one"))
+      (t/is (not (str/includes? section "old"))))))
 
 ;; ---------------------------------------------------------------------------
 ;; group-problem / ungroup-problem

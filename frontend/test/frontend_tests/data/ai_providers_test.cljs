@@ -5,101 +5,100 @@
 ;; Copyright (c) KALEIDOS INC Sucursal en España SL
 
 (ns frontend-tests.data.ai-providers-test
-  "Locks in the curated model catalog against provider reality.
+  "What the frontend makes of the model catalog.
 
-  These assertions are not really testing our code — they pin down external
-  facts verified against provider documentation on 2026-07-15, with the
-  Moonshot rows re-verified on 2026-07-21 for the K3 launch. The catalog is
-  hand-maintained, and the failure mode of getting a row wrong is a provider
-  error the user sees as a generic red bubble.
-
-  The point is that no single instinct gets vision right across providers:
-  Anthropic and OpenAI read images on every current model; Moonshot's current
-  models are natively multimodal (the base/`-vision-preview` split died with
-  the retired moonshot-v1 line); while Zhipu STILL ships vision as separate
-  ids — `glm-5.2` is text-only and there is no `glm-5.2v`."
+  The catalog itself is not kept in the frontend: it is the provider layer's,
+  read from the agent service (see `agent/test/catalog.test.js`). What is
+  held here is how its answers are read, above all that a capability nobody
+  stated is not taken for a yes."
   (:require
    [app.main.data.ai-providers :as dai]
+   [app.main.data.workspace.agent :as agent]
    [cljs.test :as t :include-macros true]))
 
-(t/deftest anthropic-models-all-see
-  (t/testing "every current Claude model takes image input"
-    (t/is (true? (dai/vision? "anthropic" "claude-fable-5")))
-    (t/is (true? (dai/vision? "anthropic" "claude-opus-4-8")))
-    (t/is (true? (dai/vision? "anthropic" "claude-sonnet-5")))
-    (t/is (true? (dai/vision? "anthropic" "claude-haiku-4-5-20251001")))))
+(def ^:private catalog
+  {:zhipu [{:provider "zhipu" :id "glm-5.2" :name "GLM-5.2" :vision false :tools true
+            :reasoning true :promptCaching nil :contextLimit 1000000 :outputLimit 128000 :price nil}
+           {:provider "zhipu" :id "glm-5v-turbo" :name "GLM-5V Turbo" :vision true :tools true
+            :reasoning true :promptCaching true :contextLimit 200000 :outputLimit 64000
+            :price {:input 1 :output 4 :cacheRead 0.2 :cacheWrite 0}}]
+   :local [{:provider "local" :id "some-model" :name "some-model" :vision nil :tools nil
+            :reasoning nil :promptCaching nil :contextLimit nil :outputLimit nil :price nil}]
+   ;; the same id at another provider, at another price
+   :gateway [{:provider "gateway" :id "glm-5v-turbo" :name "GLM-5V Turbo" :vision true :tools true
+              :reasoning nil :promptCaching nil :contextLimit nil :outputLimit nil
+              :price {:input 10 :output 40 :cacheRead 2 :cacheWrite 0}}
+             {:provider "gateway" :id "cheap" :name "Cheap" :vision false :tools true
+              :reasoning nil :promptCaching nil :contextLimit nil :outputLimit nil
+              :price {:input 0.1 :output 0.4 :cacheRead 0 :cacheWrite 0}}]})
 
-(t/deftest openai-models-all-see
-  (t/testing "OpenAI has no separate vision SKU — every current model takes images"
-    (t/is (true? (dai/vision? "openai" "gpt-5.6-sol")))
-    (t/is (true? (dai/vision? "openai" "gpt-5.6-terra")))
-    (t/is (true? (dai/vision? "openai" "gpt-5.6-luna")))
-    (t/is (true? (dai/vision? "openai" "gpt-5.4-mini")))))
+(t/use-fixtures :each
+  {:before #(dai/set-catalog! catalog)
+   :after  #(dai/set-catalog! {})})
 
-(t/deftest zhipu-splits-vision-into-separate-models
-  (t/testing "the base GLM models are text-only however capable they sound"
-    (t/is (false? (dai/vision? "zhipu" "glm-5.2")))
-    (t/is (false? (dai/vision? "zhipu" "glm-4.7"))))
-  (t/testing "glm-5v-turbo is the vision one — one character away from
-              glm-5-turbo, which is text-only and deliberately not offered"
-    (t/is (true? (dai/vision? "zhipu" "glm-5v-turbo")))
-    (t/is (false? (dai/vision? "zhipu" "glm-5-turbo")) "not in the catalog")))
+(t/deftest vision-is-a-fact-of-the-model-not-of-the-provider
+  (t/is (true? (dai/vision? "zhipu" "glm-5v-turbo")))
+  (t/is (false? (dai/vision? "zhipu" "glm-5.2"))))
 
-(t/deftest moonshot-current-models-are-natively-multimodal
-  (t/testing "the base/-vision-preview split died with the moonshot-v1 line"
-    (t/is (true? (dai/vision? "moonshot" "kimi-k3")))
-    (t/is (true? (dai/vision? "moonshot" "kimi-k2.6")))
-    (t/is (true? (dai/vision? "moonshot" "kimi-k2.7-code")))
-    (t/is (true? (dai/vision? "moonshot" "kimi-k2.7-code-highspeed")))))
+(t/deftest what-is-unknown-is-not-taken-for-a-yes
+  ;; the catalog does not say whether this one reads images
+  (t/is (nil? (:vision (dai/model "local" "some-model"))))
+  (t/is (false? (dai/vision? "local" "some-model")))
+  ;; nor is a model the catalog does not have, or a catalog that has not arrived
+  (t/is (false? (dai/vision? "zhipu" "glm-9")))
+  (t/is (false? (dai/vision? "nobody" "anything")))
+  (dai/set-catalog! {})
+  (t/is (false? (dai/vision? "zhipu" "glm-5v-turbo"))))
 
-(t/deftest kimi-k3-is-the-only-million-token-moonshot-model
-  (t/testing "the rest of the Kimi line is 256K — a wrong context here shows up
-              as history trimmed far too early or a provider-side overflow"
-    (let [by-id (into {} (map (juxt :id :context))
-                      (get dai/ai-provider-models "moonshot"))]
-      (t/is (= 1000000 (get by-id "kimi-k3")))
-      (t/is (= 262144 (get by-id "kimi-k2.6")))
-      (t/is (= 262144 (get by-id "kimi-k2.7-code"))))))
+(t/deftest a-model-known-not-to-call-tools-cannot-be-chosen
+  (dai/set-catalog! (assoc-in catalog [:local 0 :tools] false))
+  (t/is (false? (dai/selectable? "local" "some-model")))
+  ;; one that does, and one nobody stated it for, can
+  (t/is (true? (dai/selectable? "zhipu" "glm-5.2")))
+  (dai/set-catalog! catalog)
+  (t/is (true? (dai/selectable? "local" "some-model")))
+  (t/is (true? (dai/selectable? "nobody" "anything"))))
 
-(t/deftest retired-models-are-not-offered
-  (t/testing "an id that fails at the provider must not be in the picker"
-    (doseq [[provider id reason]
-            [["moonshot" "kimi-k2-0905-preview" "discontinued 2026-05-25"]
-             ["moonshot" "kimi-k2.5" "closed to new accounts, sunset 2026-08-31"]
-             ["moonshot" "moonshot-v1-128k" "sunset 2026-08-31"]
-             ["openai" "gpt-5" "deprecated 2026-06-11, shutdown 2026-12-11"]
-             ["openai" "gpt-5-mini" "deprecated 2026-06-11, shutdown 2026-12-11"]]]
-      (t/is (not (contains? (set (map :id (get dai/ai-provider-models provider))) id))
-            (str id ": " reason)))))
+(t/deftest a-models-price-is-the-catalogs-or-nothing
+  (t/is (= {:input 1 :output 4 :cacheRead 0.2 :cacheWrite 0} (dai/price "zhipu" "glm-5v-turbo")))
+  ;; a model whose price nobody stated, and one the catalog does not have
+  (t/is (nil? (dai/price "zhipu" "glm-5.2")))
+  (t/is (nil? (dai/price "zhipu" "glm-9"))))
 
-(t/deftest unknown-models-are-assumed-blind
-  (t/testing "a user can enable a model that is not in the catalog; guessing
-              wrong toward `true` costs a provider error mid-conversation,
-              guessing wrong toward `false` only greys out a button"
-    (t/is (false? (dai/vision? "anthropic" "claude-some-future-model")))
-    (t/is (false? (dai/vision? "openai" "gpt-6")))
-    (t/is (false? (dai/vision? "no-such-provider" "gpt-5.6-sol")))
-    (t/is (false? (dai/vision? nil nil)))))
+(t/deftest a-price-is-read-at-the-provider-that-serves-the-model
+  ;; the same id, two providers, two prices
+  (t/is (= 1 (:input (dai/price "zhipu" "glm-5v-turbo"))))
+  (t/is (= 10 (:input (dai/price "gateway" "glm-5v-turbo")))))
 
-(t/deftest every-provider-offers-at-least-one-vision-model
-  (t/testing "image attachments are dead on a provider with no vision model —
-              if this fails, that provider's users silently lose the feature"
-    (doseq [[provider models] dai/ai-provider-models]
-      (t/is (some :vision models)
-            (str provider " offers no vision-capable model")))))
+(def ^:private million
+  {:input-tokens 1000000 :output-tokens 0 :cache-read-tokens 0 :cache-write-tokens 0 :requests 1})
 
-(t/deftest catalog-entries-are-well-formed
-  (t/testing "every row carries the keys both the settings UI and the agent read"
-    (doseq [[provider models] dai/ai-provider-models
-            model models]
-      (t/is (string? (:id model)) (str provider " model id"))
-      (t/is (string? (:label model)) (str provider " " (:id model) " label"))
-      (t/is (pos-int? (:context model)) (str provider " " (:id model) " context"))
-      (t/is (boolean? (:vision model))
-            (str provider " " (:id model) " must state vision explicitly")))))
+(t/deftest each-models-spend-is-priced-at-that-models-price
+  (let [main   (agent/attributed million "zhipu" "glm-5v-turbo")
+        helper (agent/attributed million "gateway" "cheap")
+        both   (agent/add-usage main helper)]
+    ;; totals still add up
+    (t/is (= 2000000 (:input-tokens both)))
+    (t/is (= 2 (:requests both)))
+    ;; $1 for the main model's million, $0.10 for the helper's
+    (t/is (= 1.1 (agent/estimate-cost-usd "zhipu" "glm-5v-turbo" both)))
+    ;; not $2, as when everything was priced as the main model
+    (t/is (not= 2 (agent/estimate-cost-usd "zhipu" "glm-5v-turbo" both)))))
 
-(t/deftest catalog-ids-are-unique-within-a-provider
-  (doseq [[provider models] dai/ai-provider-models]
-    (let [ids (map :id models)]
-      (t/is (= (count ids) (count (distinct ids)))
-            (str provider " has a duplicate model id")))))
+(t/deftest spend-with-no-model-named-is-priced-as-the-sessions-model
+  ;; a conversation saved before spend was attributed
+  (t/is (= 1 (agent/estimate-cost-usd "zhipu" "glm-5v-turbo" million)))
+  (t/is (= 2 (agent/estimate-cost-usd "zhipu" "glm-5v-turbo"
+                                      (agent/add-usage million (agent/attributed million "zhipu" "glm-5v-turbo")))))
+  ;; a helper with no stated price adds nothing
+  (t/is (= 1 (agent/estimate-cost-usd "zhipu" "glm-5v-turbo"
+                                      (agent/add-usage (agent/attributed million "zhipu" "glm-5v-turbo")
+                                                       (agent/attributed million "local" "some-model")))))
+  ;; and with no price for the session's model there is no figure
+  (t/is (nil? (agent/estimate-cost-usd "zhipu" "glm-5.2" million))))
+
+(t/deftest the-records-of-a-provider-are-read-by-its-id
+  (t/is (= ["glm-5.2" "glm-5v-turbo"] (mapv :id (dai/models "zhipu"))))
+  (t/is (= [] (dai/models "nobody")))
+  (t/is (= 200000 (:contextLimit (dai/model "zhipu" "glm-5v-turbo"))))
+  (t/is (nil? (dai/model "zhipu" "glm-9"))))

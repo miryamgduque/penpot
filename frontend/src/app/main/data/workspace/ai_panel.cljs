@@ -18,14 +18,17 @@
    [app.common.data.macros :as dm]
    [app.common.uuid :as uuid]
    [app.main.data.agent-access :as agent-access]
+   [app.main.data.ai-providers :as dai]
    [app.main.data.changes :as dch]
    [app.main.data.helpers :as dsh]
    [app.main.data.session-actor :as sa]
    [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-chats :as agent-chats]
+   [app.main.data.workspace.agent-remote :as agent-remote]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.data.workspace.session-events :as se]
+   [app.main.repo :as rp]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]
    [potok.v2.core :as ptk]))
@@ -394,19 +397,29 @@
   data-side twin of the panel's `provider-pool`."
   [state]
   (vec (for [[_ status] (:ai-providers state)
-             model (:enabled-models status)]
+             model (:enabled-models status)
+             :when (dai/selectable? (:provider status) model)]
          {:provider (:provider status) :model model})))
 
+(defn- helper-entry
+  "The user's helper model as a pool entry, or nil when they chose none."
+  [state]
+  (some (fn [[_ {:keys [provider helper-model]}]]
+          (when (string? helper-model) {:provider provider :model helper-model}))
+        (:ai-providers state)))
+
 (defn- tick-settings
-  "The pool entry for the first model a model-detect skill declares; nil when
-  none is connected+enabled — and then no tick fires at all: the semantic
+  "The model the watcher's tick runs on: the user's helper when they chose
+  one, else the pool entry for the first model a model-detect skill declares.
+  Nil when there is neither — and then no tick fires at all: the semantic
   tier never silently falls back to an expensive chat model."
   [state skills]
-  (->> skills
-       (keep :model)
-       (distinct)
-       (keep (fn [m] (some #(when (= m (:model %)) %) (state-pool state))))
-       (first)))
+  (or (helper-entry state)
+      (->> skills
+           (keep :model)
+           (distinct)
+           (keep (fn [m] (some #(when (= m (:model %)) %) (state-pool state))))
+           (first))))
 
 (def ^:private tick-system
   (str "You audit design-file shapes against rules. Judge only; never chat. "
@@ -666,13 +679,100 @@
           (update-in state [:ai-panel file-id] dissoc :checkpoint))
         state))))
 
+;; --- Taking the agent's last turn back
+;;
+;; What the agent changes on the server is not in the user's undo history: it
+;; arrives like another collaborator's edit. So a turn that changed the file
+;; ends with an offer to revert it. `[:ai-panel <file-id> :revert]` holds the
+;; offer: `{:turn-id :count :state}`, where `:state` is `:offered`,
+;; `:conflict` (something the turn touched was edited since — `:shapes` names
+;; it, `:unknown` says it could not be told), or `:reverted` (and `:turn-id` is
+;; then the revert itself, so it can be taken back the same way).
+
+(defn- set-revert
+  [offer]
+  (ptk/reify ::set-revert
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (if (some? offer)
+          (assoc-in state [:ai-panel file-id :revert] offer)
+          (update-in state [:ai-panel file-id] dissoc :revert))
+        state))))
+
+(defn- offer-revert
+  "After a turn: offers to revert it when it changed the file and can be
+  taken back."
+  []
+  (ptk/reify ::offer-revert
+    ptk/WatchEvent
+    (watch [_ state _]
+      (let [file-id (:current-file-id state)
+            turn-id (some-> @agent-remote/last-turn-ref* parse-uuid)]
+        (if (or (nil? file-id) (nil? turn-id))
+          (rx/empty)
+          (->> (rp/cmd! :get-agent-changes {:file-id file-id :turn-id turn-id})
+               (rx/map (fn [rows]
+                         (set-revert
+                          (when (and (seq rows)
+                                     (every? :can-revert rows)
+                                     (every? (comp nil? :reverted-at) rows))
+                            {:turn-id turn-id :count (count rows) :state :offered}))))
+               ;; an offer that cannot be made is no reason to disturb the turn
+               (rx/catch (fn [_] (rx/empty)))))))))
+
+(defn dismiss-revert
+  []
+  (set-revert nil))
+
+(defn revert-turn
+  "Reverts the offered turn. `force?` goes ahead although something the turn
+  touched was edited since."
+  ([] (revert-turn false))
+  ([force?]
+   (ptk/reify ::revert-turn
+     ptk/WatchEvent
+     (watch [_ state _]
+       (let [file-id (:current-file-id state)
+             offer   (dm/get-in state [:ai-panel file-id :revert])]
+         (if (nil? offer)
+           (rx/empty)
+           ;; the user's own last edits are saved first: the revert has to
+           ;; see them to say what it would overwrite
+           (->> (agent-remote/save-pending)
+                (rx/mapcat (fn [_]
+                             (rp/cmd! :revert-agent-turn (cond-> {:file-id file-id :turn-id (:turn-id offer)}
+                                                           force? (assoc :force true)))))
+                (rx/map (fn [out]
+                          (cond
+                            (:conflict out)
+                            (set-revert (assoc offer
+                                               :state :conflict
+                                               :shapes (mapv :name (:shapes out))
+                                               :unknown (boolean (:unknown out))))
+
+                            ;; taking a revert back leaves nothing to offer
+                            (= :reverted (:state offer))
+                            (set-revert nil)
+
+                            :else
+                            (set-revert {:turn-id (:turn-id out)
+                                         :count (:count offer)
+                                         :state :reverted}))))
+                (rx/catch (fn [cause]
+                            (rx/of (set-revert nil)
+                                   (append-message "assistant"
+                                                   (dm/str "⚠️ " (or (:hint (ex-data cause))
+                                                                     (ex-message cause)
+                                                                     "the turn could not be reverted")))))))))))))
+
 (defn- turn-stream
   "The shared run→panel pipeline behind a fresh turn (`send-message`) and a
   checkpoint resume (`continue-turn`): maps agent turn events onto transcript
   events, stores the history when the turn ends or pauses, and closes a
   cancelled turn's history off. `seed` is a resume's cumulative
   `{:rounds :usage}` so the next checkpoint reports whole-turn figures."
-  [settings history system stream seed]
+  [settings history system stream _seed]
   ;; switching the agent off stops the turn like a cancel: no more rounds
   (let [stopper (rx/filter #(or (ptk/type? ::cancel-turn %)
                                 (ptk/type? agent-access/turned-off %))
@@ -686,13 +786,14 @@
     (rx/concat
      ;; `take-until` wraps the pipeline, errors included; `set-busy false`
      ;; must stay outside it or a cancel leaves the panel stuck busy
-     (->> (agent/run-turn settings history system seed)
+     (->> (agent-remote/run-turn settings history system)
           (rx/mapcat (fn [ev]
                        (case (:kind ev)
                          :assistant       (rx/of (append-message "assistant" (:text ev)))
                          :assistant-delta (rx/of (append-delta (:text ev)))
                          :thinking-delta  (rx/of (append-thinking-delta (:text ev)))
                          :tool         (rx/of (append-tool (dissoc ev :kind)))
+                         :note         (rx/of (append-message "note" (:text ev)))
                          :usage        (rx/of (accumulate-usage (:usage ev)))
                          :turn-history (do (reset! latest* (:history ev))
                                            (rx/empty))
@@ -704,7 +805,8 @@
                                                    (-> (select-keys ev [:rounds :usage :history])
                                                        (assoc :settings settings)))))
                          :done         (do (reset! ended?* true)
-                                           (rx/of (store-history (:history ev))))
+                                           (rx/of (store-history (:history ev))
+                                                  (offer-revert)))
                          (rx/empty))))
           (rx/catch (fn [cause]
                       (reset! ended?* true)
@@ -766,30 +868,40 @@
        (if-not (agent-on? state)
          (rx/empty)
          (let [file-id (:current-file-id state)
-               ;; hygiene runs HERE, at the turn boundary, not between rounds:
-               ;; stubbing old tool results and the size trim both rewrite the
-               ;; history's head, which invalidates the cached prefix — once per
-               ;; turn is the cheap place to pay that (see agent/mark-history-breakpoint)
-               prior   (-> (vec (dm/get-in state [:ai-panel file-id :history]))
-                           (agent/stub-stale-tool-results)
-                           (agent/trim-history))
+               ;; the conversation the model sees lives in the agent service,
+               ;; which condenses it itself; what is kept here is the readable
+               ;; shadow the panel stores, held to a size
+               prior   (agent/trim-history (vec (dm/get-in state [:ai-panel file-id :history])))
                ;; context rides on the user message (the volatile slot), while the
                ;; system prompt stays a stable, cacheable prefix built from `state`
                user-msg (cond-> {:role :user :text text :context context}
                           (seq images) (assoc :images images))
-               system   (agent/build-system-prompt state)]
+               ;; the loop and the real history live in the agent service,
+               ;; keyed by the conversation id — so the id has to exist before
+               ;; the first turn, not at the first save
+               system   (agent/build-system-prompt state {:harness-skills? true})
+               chat-id  (dm/get-in state [:ai-panel file-id :chat-id])
+               session  (or chat-id (uuid/next))
+               settings (assoc settings :service {:session-id session
+                                                  :file-id file-id
+                                                  :skills (ask/harness-skills state)})]
            (rx/concat
+            (if (nil? chat-id)
+              (rx/of (agent-chats/chat-id-allocated file-id session))
+              (rx/empty))
             (rx/of (append-message "user" text images)
                    ;; a new message while a checkpoint is pending supersedes it —
                    ;; the stored history already contains the paused turn
                    (set-checkpoint nil)
+                   ;; a new turn: the offer to revert the last one is gone
+                   (set-revert nil)
                    (set-busy true))
             ;; first message of a conversation: one cheap tool-less round names
             ;; the matching playbook and injects it INTO the user message — the
             ;; method arrives with the task instead of gambling on a fetch (the
             ;; NYT session ran 133 rounds without one). Any failure degrades to
             ;; no injection.
-            (->> (if (seq prior) (rx/of {}) (agent/match-playbook state text))
+            (->> (if (seq prior) (rx/of {}) (agent/match-playbook state text settings))
                  (rx/mapcat
                   (fn [{:keys [skill body usage]}]
                     ;; a matched BUILD playbook on a file with no standing
@@ -808,26 +920,7 @@
                        (if nudge
                          (rx/of (append-message "note" "✦ Direction nudge: this file has no foundations yet"))
                          (rx/empty))
-                       (if-not (agent/compact-due? prior)
-                         (turn-stream settings (conj prior user-msg) system stream nil)
-                         ;; the history outgrew the compaction threshold: one cheap
-                         ;; buffered round rewrites it as [summary + last turn]
-                         ;; before the turn runs. The turn-stream seeds from the
-                         ;; compacted history, so it is what gets stored when the
-                         ;; turn ends — later turns inherit the savings. A
-                         ;; compaction failure (no Anthropic key, provider down)
-                         ;; must never block the user's turn: it degrades to the
-                         ;; uncompacted history, which the trim backstop bounds.
-                         (->> (agent/compact-history prior)
-                              (rx/mapcat
-                               (fn [{:keys [history usage]}]
-                                 (rx/concat
-                                  (rx/of (accumulate-usage usage)
-                                         (append-message "note" "✦ Conversation compacted to save tokens"))
-                                  (turn-stream settings (conj (vec history) user-msg) system stream nil))))
-                              (rx/catch
-                               (fn [_]
-                                 (turn-stream settings (conj prior user-msg) system stream nil)))))))))))))))))
+                       (turn-stream settings (conj prior user-msg) system stream nil)))))))))))))
 
 (defn continue-turn
   "Resumes the turn paused at the runaway checkpoint (see
@@ -849,7 +942,8 @@
              (rx/of (set-checkpoint nil)
                     (set-busy true))
              (turn-stream (:settings cp) (:history cp)
-                          (agent/build-system-prompt state) stream
+                          (agent/build-system-prompt state {:harness-skills? true})
+                          stream
                           (select-keys cp [:rounds :usage])))))))))
 
 (defn dismiss-checkpoint
@@ -906,7 +1000,7 @@
                     ;; the old conversation's last word may be a note appended
                     ;; after its last turn-boundary save — persist before leaving
                     (agent-chats/persist-chat))
-             (->> (agent/summarize-history history)
+             (->> (agent/summarize-history history (first (state-pool state)))
                   (rx/mapcat
                    (fn [{:keys [text usage]}]
                      (rx/of (agent-chats/new-chat)

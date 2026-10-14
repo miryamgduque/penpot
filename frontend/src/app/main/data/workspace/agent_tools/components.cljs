@@ -7,13 +7,10 @@
 (ns app.main.data.workspace.agent-tools.components
   "Component tools: variants, instances, overrides and detach."
   (:require
+   [app.common.agent.components :as cac]
    [app.common.data.macros :as dm]
-   [app.common.files.variant :as cfv]
    [app.common.geom.point :as gpt]
-   [app.common.path-names :as cpn]
    [app.common.types.component :as ctc]
-   [app.common.types.components-list :as ctkl]
-   [app.common.types.container :as ctn]
    [app.common.types.file :as ctf]
    [app.common.uuid :as uuid]
    [app.main.data.helpers :as dsh]
@@ -34,77 +31,33 @@
 ;; filter, and rejected with a message that names the corrective action.
 
 
-(defn variant-member-ids
-  "The parsed, de-duplicated member ids from a `create_variant` input, in the
-  order given — `combine-as-variants` honours the order of a sequential
-  collection and normalizes anything else to layer-tree order."
-  [shapeIds]
-  (into [] (comp (keep parse-uuid) (distinct)) shapeIds))
+;; --- Shared with the server
+;;
+;; The pure halves of the component tools live in
+;; `app.common.agent.components`, shared with the server-side tools. They keep
+;; their names here.
 
-(defn variant-naming-hint
-  "Nil when `names` share a path prefix; otherwise a note explaining what the
-  agent is about to get and how to ask for better.
+(def variant-member-ids cac/variant-member-ids)
 
-  `combine-as-variants` derives the set's name from the common *path* prefix of
-  its members (`variants.cljs:667`). With no shared prefix, `transform-in-variant`
-  falls back to `\"Component/\" + name` (`:413`), so the set is called
-  \"Component\" and the member's own name becomes the first property's value.
-  Path depth also decides how many axes the set gets — `num-props` is
-  `(max 1 (dec (count cpath)))` at `:426`.
+(def variant-naming-hint cac/variant-naming-hint)
 
-  So `Badge / Compact` + `Badge / Large` gives a set named \"Badge\" with one
-  axis, and `Chip / Small / Hover` gives \"Chip\" with two. The operation is
-  valid either way — this is a hint, not a rejection."
-  [names]
-  (let [paths  (mapv #(cpn/split-path (or % "")) names)
-        shared (->> (apply map vector paths)
-                    (take-while #(apply = %))
-                    (map first)
-                    (vec))]
-    (when (empty? shared)
-      (dm/str "note: these components share no common path, so Penpot named the set"
-              " \"Component\" and used each member's own name as its first property"
-              " value. To get a named set, name the components with a shared path"
-              " first — e.g. \"Badge / Compact\" and \"Badge / Large\" produce a set"
-              " called \"Badge\". Each extra path segment adds another property:"
-              " \"Chip / Small / Hover\" gives two."))))
+(def variant-members-problem cac/variant-members-problem)
 
-(defn variant-members-problem
-  "Why `ids` cannot become a variant set, as a message the agent can act on, or
-  nil when they can. Pure: `objects` is the current page's shape map."
-  [objects ids]
-  ;; distinct first: [a a] reaches combine-as-variants as one id and no-ops
-  ;; silently, so it must not read as two members here
-  (let [ids      (distinct ids)
-        shapes   (keep #(get objects %) ids)
-        missing  (remove #(contains? objects %) ids)
-        ;; a variant member is also a main instance, so this branch is checked
-        ;; first — "extend the set you already have" beats "make a component"
-        variants (filter ctc/is-variant? shapes)
-        non-main (remove ctc/main-instance? shapes)]
-    (cond
-      (< (count ids) 2)
-      (dm/str "create_variant: needs at least 2 main components (got " (count ids)
-              ") — a variant set is a comparison between members")
+(def add-variant-problem cac/add-variant-problem)
 
-      (seq missing)
-      (dm/str "create_variant: no shape on this page with id "
-              (str/join ", " (map str missing))
-              " — it may be on another page, or gone; check read_design")
+(def instance-problem cac/instance-problem)
 
-      (seq variants)
-      (dm/str "create_variant: " (atc/labels variants)
-              (if (= 1 (count variants)) " is" " are")
-              " already part of a variant set — use add_variant to extend it")
+(def detach-problem cac/detach-problem)
 
-      (seq non-main)
-      (dm/str "create_variant: " (atc/labels non-main)
-              (if (= 1 (count non-main))
-                " is not a main component — call create_component on it first"
-                " are not main components — call create_component on them first")
-              ", then pass the main instance")
+(def axis-pos cac/axis-pos)
 
-      :else nil)))
+(def variant-property-problem cac/variant-property-problem)
+
+(def ^:private instance-copy cac/instance-copy)
+
+(def ^:private not-a-copy-msg cac/not-a-copy-msg)
+
+(def ^:private variant-facts cac/variant-facts)
 
 (defn create-variant
   [{:keys [shapeIds]}]
@@ -128,29 +81,6 @@
                                    "the members' names. Axes are called \"Property 1\"…; "
                                    "name them with set_variant_property. Verify with read_design.")}
                  hint (assoc :namingHint hint)))))))
-
-(defn add-variant-problem
-  "Why `add_variant` cannot grow this set, as a message the agent can act on, or
-  nil. Accepts either a member or the container: `add-new-variant` resolves a
-  container to its primary variant (`variants.cljs:360`)."
-  [objects id]
-  (let [shape (get objects id)]
-    (cond
-      (nil? id)
-      (dm/str "add_variant: shapeId is required — pass a variant set's container"
-              " or one of its members (see read_design)")
-
-      (nil? shape)
-      (dm/str "add_variant: no shape on this page with id " (str id)
-              " — it may be on another page, or gone; check read_design")
-
-      (or (ctc/is-variant-container? shape) (ctc/is-variant? shape))
-      nil
-
-      :else
-      (dm/str "add_variant: " (atc/shape-label shape) " is not part of a variant set"
-              " — a set needs at least two main components; build one with"
-              " create_variant"))))
 
 (defn add-variant
   [{:keys [shapeId]}]
@@ -178,35 +108,6 @@
 ;; Without this a design system the agent builds is write-only: it can author a
 ;; component and never place one, so it redraws from primitives every time and
 ;; the library it just made goes unused.
-
-(defn instance-problem
-  "Why `create_instance` cannot place this component, or nil. Pure.
-
-  `instantiate-component` asserts on `file-id`, `component-id` and
-  `(gpt/point? position)` — an assert throws rather than returning a message the
-  agent can read, so everything is checked here first."
-  [libraries current-file-id {:keys [componentId fileId x y]}]
-  (let [file-id (or (some-> fileId parse-uuid) current-file-id)
-        cid     (some-> componentId parse-uuid)
-        found   (some-> (get-in libraries [file-id :data])
-                        (ctkl/components)
-                        (get cid))]
-    (cond
-      (nil? cid)
-      "create_instance: componentId is required — see the components in read_design"
-
-      ;; not truthiness: 0 is a legitimate coordinate
-      (or (nil? x) (nil? y))
-      "create_instance: x and y are required — a component is placed at a point"
-
-      (nil? found)
-      (dm/str "create_instance: no component " componentId
-              (if fileId
-                (dm/str " in library " fileId)
-                " in this file")
-              " — check the components listed by read_design"
-              (when-not fileId
-                ", and pass fileId if it belongs to a connected library")))))
 
 (defn create-instance
   [{:keys [componentId fileId x y] :as input}]
@@ -236,23 +137,6 @@
 ;; instead of delete + re-instantiate, or restyling by hand into the very
 ;; override drift the audit skill hunts. Push-to-main is deliberately OUT
 ;; (a shared-asset edit, never auto-fix).
-
-(defn- instance-copy
-  "The shape as a component COPY head (not a main), or nil. Copies are what these
-  tools drive; a main is the component itself."
-  [objects id]
-  (let [shape (get objects id)]
-    (when (and shape (ctc/instance-head? shape) (not (ctc/main-instance? shape)))
-      shape)))
-
-(defn- not-a-copy-msg
-  [tool shape id]
-  (cond
-    (nil? shape) (dm/str tool ": no shape on this page with id " (str id) " — check read_design")
-    (ctc/main-instance? shape) (dm/str tool ": " (atc/shape-label shape) " is a component MAIN, not a"
-                                       " copy — these drive a placed instance; edit the main directly")
-    :else (dm/str tool ": " (atc/shape-label shape) " is not a component instance — place one with"
-                  " create_instance first")))
 
 (defn switch-variant
   [{:keys [shapeId property value]}]
@@ -335,40 +219,6 @@
 ;; So the variant guard here refuses for the honest reason (a member is the set's
 ;; structure) rather than repeating a corruption claim we could not reproduce.
 
-(defn detach-problem
-  "Why `detach_instance` cannot run, or nil. Pure."
-  [objects id]
-  (let [shape (get objects id)]
-    (cond
-      (nil? id)
-      "detach_instance: shapeId is required"
-
-      (nil? shape)
-      (dm/str "detach_instance: no shape on this page with id " (str id)
-              " — check read_design")
-
-      (ctc/is-variant? shape)
-      (dm/str "detach_instance: " (atc/shape-label shape) " is a member of a variant set"
-              " — a member is the set's structure, so detaching it would gut the set."
-              " Detach a COPY of it instead, or delete the member if you meant to"
-              " shrink the set")
-
-      (ctc/main-instance? shape)
-      (dm/str "detach_instance: " (atc/shape-label shape) " is a component's MAIN"
-              " — it is the component, so there is nothing to detach it from. You"
-              " probably meant one of its copies; place one with create_instance,"
-              " or edit the main directly")
-
-      (not (ctc/in-component-copy? shape))
-      (dm/str "detach_instance: " (atc/shape-label shape) " is not a component copy"
-              " — it has no main to be severed from")
-
-      (not (ctc/instance-root? shape))
-      (let [root (ctn/get-instance-root objects shape)]
-        (dm/str "detach_instance: " (atc/shape-label shape) " is a piece of a copy,"
-                " not the copy itself — detach its root instead"
-                (when root (dm/str ": " (dm/str (:id root)))))))))
-
 (defn detach-instance
   [{:keys [shapeId]}]
   (let [state   @st/state
@@ -390,52 +240,6 @@
 ;; index is out of range (variants.cljs:131) — another silent no-op. It reads the
 ;; property list from the *last* of `find-variant-components`, so positions are
 ;; resolved against that same component: a pos we resolve is a pos it accepts.
-
-(defn axis-pos
-  "The index of the axis named `property` among `axes`, or nil.
-
-  Callers must resolve this *before* emitting a rename — the index is stable but
-  the name is what we look up, so resolving afterwards finds nothing."
-  [axes property]
-  (first (keep-indexed (fn [i n] (when (= n property) i)) axes)))
-
-(defn variant-property-problem
-  "Why a `set_variant_property` call cannot be applied, as a message the agent
-  can act on, or nil. Pure: `axes` are the set's property names in order,
-  `member-ids` its component ids as strings."
-  [{:keys [container? axes member-ids]} {:keys [variantId property rename componentId value]}]
-  (cond
-    (not container?)
-    (dm/str "set_variant_property: " variantId " is not a variant container"
-            " — build one with create_variant, or see read_design for the sets that exist")
-
-    (nil? (axis-pos axes property))
-    (dm/str "set_variant_property: no axis named \"" property "\" on this set"
-            " (it has: " (str/join ", " axes) ") — pass one of those")
-
-    (and (nil? rename) (nil? value))
-    (dm/str "set_variant_property: nothing to do — pass rename to name the axis,"
-            " and/or value together with componentId to set one member's value")
-
-    (and (some? value) (nil? componentId))
-    (dm/str "set_variant_property: setting a value needs componentId — a value"
-            " belongs to one member, not the whole set")
-
-    (and (some? componentId) (not (contains? member-ids componentId)))
-    (dm/str "set_variant_property: component " componentId " is not a member of"
-            " variant set " variantId " — see read_design")
-
-    :else nil))
-
-(defn- variant-facts
-  "The set's shape as `variant-property-problem` wants it. Axes come from the
-  same component `update-property-name` reads, so a resolved pos is an accepted
-  pos."
-  [data objects variant-id]
-  (let [components (cfv/find-variant-components data objects variant-id)]
-    {:container? (ctc/is-variant-container? (get objects variant-id))
-     :axes (mapv :name (:variant-properties (last components)))
-     :member-ids (into #{} (comp (remove nil?) (map #(str (:id %)))) components)}))
 
 (defn set-variant-property
   [{:keys [variantId property rename componentId value] :as input}]

@@ -156,6 +156,7 @@
         :dashboard-webhooks
         :dashboard-skills
         :dashboard-agent-skills
+        :dashboard-agent-recipes
         :dashboard-settings
         :dashboard-deleted)
        (let [params        (get params :query)

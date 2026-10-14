@@ -9,11 +9,12 @@
   explore_design scout and the web scouts (fetch_page, get_page_meta,
   screenshot_page)."
   (:require
+   [app.common.agent.read :as car]
    [app.common.data.macros :as dm]
-   [app.common.uuid :as uuid]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools.common :as atc]
+   [app.main.data.workspace.agent-usage :as au]
    [app.main.data.workspace.design-doc :as dd]
    [app.main.repo :as rp]
    [app.main.store :as st]
@@ -58,57 +59,18 @@
 ;; checked only when it is active (`enforced-rules`), so a file with no active
 ;; rules audits clean. Reuses the Phase 06 allowed-colors logic.
 
-(def ^:private max-audit-shapes 1000)
-
-(def ^:private default-name-re
-  #"(?i)^(rectangle|ellipse|circle|board|frame|group|path|text|image|bool|curve|line|arc)(\s+\d+)?$")
-
-(defn- default-name?
-  [shape]
-  (boolean (some->> (:name shape) (re-matches default-name-re))))
-
-(defn- shape-raw-colors
-  "Raw (non-token, non-allowed) fill/stroke colors on a shape."
-  [shape allowed]
-  (concat
-   (keep (fn [f]
-           (let [c (:fill-color f)]
-             (when (and c (nil? (:fill-color-ref-id f)) (not (contains? allowed (atc/normalize-hex c)))) c)))
-         (:fills shape))
-   (keep (fn [s]
-           (let [c (:stroke-color s)]
-             (when (and c (nil? (:stroke-color-ref-id s)) (not (contains? allowed (atc/normalize-hex c)))) c)))
-         (:strokes shape))))
-
 (defn audit-violations
   [state]
-  (let [objects       (dsh/lookup-page-objects state)
-        check-colors? (atc/rule-enforced? state "token-only-colors")
-        check-names?  (atc/rule-enforced? state "layer-naming")
-        allowed       (when check-colors? (atc/allowed-colors state))
-        shapes        (->> (dissoc objects uuid/zero) vals (take max-audit-shapes))]
-    (vec
-     (concat
-      (when check-colors?
-        (for [s shapes
-              :let [bad (seq (shape-raw-colors s allowed))]
-              :when bad]
-          {:rule "token-only-colors" :shapeId (dm/str (:id s)) :shapeName (:name s)
-           :reason (dm/str "raw colors not bound to a token: " (str/join ", " bad))}))
-      (when check-names?
-        (for [s shapes
-              :when (default-name? s)]
-          {:rule "layer-naming" :shapeId (dm/str (:id s)) :shapeName (:name s)
-           :reason "uses a default/auto-generated layer name"}))))))
+  (let [check-colors? (atc/rule-enforced? state "token-only-colors")]
+    (car/audit-violations
+     (dsh/lookup-page-objects state)
+     {:enforced (into #{} (filter #(atc/rule-enforced? state %)) ["token-only-colors" "layer-naming"])
+      :allowed (when check-colors? (atc/allowed-colors state))
+      :normalize atc/normalize-hex})))
 
 (defn audit-file
   []
-  (let [violations (audit-violations @st/state)]
-    (rx/of {:violations violations
-            :count (count violations)
-            :note (if (seq violations)
-                    "fix shape by shape, then run audit_file again to confirm"
-                    "no open violations for the active rules")})))
+  (rx/of (car/audit-result (audit-violations @st/state))))
 
 ;; --- ask_user (the elicitation tool)
 ;;
@@ -296,12 +258,8 @@
     ptk/UpdateEvent
     (update [_ state]
       (if-let [file-id (:current-file-id state)]
-        (update-in state [:ai-panel file-id :usage]
-                   (fn [u]
-                     (merge-with + (or u {:input-tokens 0 :output-tokens 0
-                                          :cache-read-tokens 0 :cache-write-tokens 0
-                                          :requests 0})
-                                 usage)))
+        ;; usage keeps apart what each model spent: added as the panel adds
+        (update-in state [:ai-panel file-id :usage] au/add-usage usage)
         state))))
 
 (defn explore-design

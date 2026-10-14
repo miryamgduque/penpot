@@ -7,17 +7,11 @@
 (ns app.main.data.workspace.agent-tools.read
   "Read tools: read_design, find_shapes and render_board."
   (:require
-   [app.common.data.macros :as dm]
-   [app.common.files.variant :as cfv]
-   [app.common.types.component :as ctc]
-   [app.common.types.components-list :as ctkl]
-   [app.common.types.tokens-lib :as ctob]
+   [app.common.agent.read :as car]
    [app.common.uuid :as uuid]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools.agentic :as atg]
-   [app.main.data.workspace.agent-tools.common :as atc]
-   [app.main.data.workspace.agent-tools.tokens :as att]
    [app.main.data.workspace.design-doc :as dd]
    [app.main.features :as features]
    [app.main.store :as st]
@@ -27,132 +21,43 @@
 
 (declare uint8->base64)
 
-;; --- read_design
-
-;; --- read_design's budget
+;; --- read_design and find_shapes
 ;;
-;; Tool results are hard-capped at 20k chars (`agent/max-tool-result-chars`), and
-;; `read_design` is the most-called tool we have. Every list it returns is
-;; bounded, and every bound announces itself: a list silently cut is read as the
-;; whole file, which is worse than a short list that says it is short.
-
-(def ^:private max-listed 60)
+;; The logic lives in `app.common.agent.read`, shared with the server-side
+;; tools. What is added here is what only the running workspace knows: the
+;; page in view, the selection, the enabled skills and the open violations.
 
 (defn find-shapes
-  [{:keys [name type] :as query}]
-  (if-let [problem
-           (cond
-             (and (nil? name) (nil? type))
-             (str "find_shapes: pass a name and/or a type to search for — an empty"
-                  " query would return the whole file, which is what read_design"
-                  " is for")
-
-             ;; an unmapped type matches nothing, and "0 found" reads as "none
-             ;; exist" — say it was the query that was wrong
-             (and (some? type) (nil? (get atc/searchable-types (str/lower type))))
-             (dm/str "find_shapes: \"" type "\" is not a shape type — use one of: "
-                     (str/join ", " (sort (distinct (keys atc/searchable-types))))))]
+  [query]
+  (if-let [problem (car/find-shapes-problem query)]
     (rx/throw (ex-info problem {}))
-    (let [objects (dsh/lookup-page-objects @st/state)
-          hits    (->> (vals objects)
-                       (filter #(atc/shape-matches? % query))
-                       (sort-by :name))
-          [items omitted] (atc/bounded hits max-listed "matches")]
-      (rx/of (cond-> {:matches (mapv #(atc/summarize-shape objects (:id %) {:look? true}) items)
-                      :found (count hits)}
-               omitted (assoc :omitted omitted))))))
+    (rx/of (car/find-shapes (dsh/lookup-page-objects @st/state) query))))
 
-(defn library-components
-  "Every component the agent can instantiate — this file's and every connected
-  library's. Variant members are omitted: they are already listed under
-  `:variants` with their component ids, and repeating them here would double the
-  payload on a set-heavy file."
-  [libraries current-file-id]
-  (->> libraries
-       (mapcat (fn [[file-id file]]
-                 (->> (ctkl/components-seq (:data file))
-                      (remove ctc/is-variant?)
-                      (map (fn [component]
-                             (cond-> {:componentId (dm/str (:id component))
-                                      :name (:name component)}
-                               ;; the local file is the default target, so saying
-                               ;; so on every entry is payload for nothing
-                               (not= file-id current-file-id)
-                               (assoc :fileId (dm/str file-id)
-                                      :library (:name file))))))))
-       (vec)))
+(def library-components car/library-components)
 
-(defn variant-sets
-  "Every variant container on the page with its members and their properties —
-  the structural view `create_variant` writes and Phase 03/04 target.
+(def variant-sets car/variant-sets)
 
-  Scans the whole objects map rather than the top level: a container relocated
-  into a board still exists, and an agent that cannot see it rebuilds a set that
-  is already there. Member order is `find-variant-components`' own (it reverses
-  the container's child order deliberately) — do not re-sort it."
-  [data objects]
-  (->> objects
-       (keep (fn [[id shape]]
-               (when (ctc/is-variant-container? shape)
-                 {:variantId (dm/str id)
-                  :name (:name shape)
-                  :members (->> (cfv/find-variant-components data objects id)
-                                (remove nil?)
-                                (mapv (fn [component]
-                                        {:componentId (dm/str (:id component))
-                                         :name (:name component)
-                                         :properties (mapv #(select-keys % [:name :value])
-                                                           (:variant-properties component))})))})))
-       (vec)))
+(defn workspace-extras
+  "The facts `read_design` reports that only a running workspace knows."
+  [state]
+  {:skills (ask/catalog-manifest state)
+   ;; a boolean, not the text: the doc itself is already inlined in the system
+   ;; prompt, and repeating 4k chars in every read_design result would
+   ;; double-bill it
+   :hasDesignDoc (some? (dd/get-doc state))
+   :openViolations (count (atg/audit-violations state))})
 
 (defn read-design
   []
-  (let [state    @st/state
-        file-id  (:current-file-id state)
-        page     (dsh/lookup-page state)
-        objects  (dsh/lookup-page-objects state)
-        data     (dsh/lookup-file-data state)
-        top-ids  (get-in objects [uuid/zero :shapes])
-        selected (dsh/get-selected-ids state)
-        variants (variant-sets data objects)
-        comps    (library-components (dsh/lookup-libraries state) file-id)
-
-        [shapes shapes-omitted]     (atc/bounded top-ids max-listed "top-level shapes")
-        [variants variants-omitted] (atc/bounded variants max-listed "variant sets")
-        [comps comps-omitted]       (atc/bounded comps max-listed "components")
-
-        omitted (cond-> {}
-                  shapes-omitted   (assoc :shapes shapes-omitted)
-                  variants-omitted (assoc :variants variants-omitted)
-                  comps-omitted    (assoc :components comps-omitted))]
-    (cond-> {:file (get-in state [:files file-id :name])
-             :page (:name page)
-             ;; every page, so the agent knows others exist and can switch/create;
-             ;; the shape lists above are still just THIS page's
-             :pages (let [cur (:current-page-id state)]
-                      (mapv (fn [pid]
-                              (cond-> {:id (dm/str pid)
-                                       :name (get-in data [:pages-index pid :name])}
-                                (= pid cur) (assoc :current true)))
-                            (:pages data)))
-             :selection (mapv #(atc/summarize-shape objects % {:look? true}) selected)
-             :shapes (mapv #(atc/summarize-shape objects %) shapes)
-             :variants variants
-             :components comps
-             :tokens (atc/tokens-by-type (some-> data :tokens-lib ctob/get-tokens-in-active-sets vals))
-             :skills (ask/catalog-manifest state)
-             ;; a boolean, not the text: the doc itself is already inlined in
-             ;; the system prompt, and repeating 4k chars in every read_design
-             ;; result would double-bill it
-             :hasDesignDoc (some? (dd/get-doc state))
-             :openViolations (count (atg/audit-violations state))}
-      ;; sets/themes only when the file has any — a single-set file pays nothing
-      (seq (att/sets-and-themes state))
-      (merge (att/sets-and-themes state))
-
-      ;; only when something was actually held back — an always-present "nothing
-      ;; omitted" key is payload for nothing
-      (seq omitted) (assoc :omitted omitted))))
+  (let [state   @st/state
+        file-id (:current-file-id state)]
+    (car/read-design {:file-id file-id
+                      :file-name (get-in state [:files file-id :name])
+                      :data (dsh/lookup-file-data state)
+                      :page-id (:current-page-id state)
+                      :libraries (dsh/lookup-libraries state)
+                      :selected (dsh/get-selected-ids state)}
+                     (workspace-extras state))))
 
 ;; --- render_board
 ;;

@@ -124,31 +124,10 @@
       (t/is (= 2 (count uses)))
       (t/is (empty? results)))))
 
-(defn- openai-pairs
-  "→ [tool_call ids, tool-message ids] as encoded for OpenAI."
-  [messages]
-  (let [encoded (agent/encode-openai "sys" messages)]
-    [(->> encoded (mapcat :tool_calls) (filterv some?) (mapv :id))
-     (->> encoded (filter #(= "tool" (:role %))) (mapv :tool_call_id))]))
-
-(t/deftest openai-every-tool-call-has-a-result-after-cancel
-  (t/testing "no unmatched tool_call_id 400"
-    (let [[calls results] (openai-pairs (agent/cancel-history turn-with-dangling-calls))]
-      (t/is (= 2 (count calls)))
-      (t/is (= calls results)))))
-
 ;; ---------------------------------------------------------------------------
 ;; Streaming accumulators — they must rebuild exactly what the buffered
 ;; decoders used to return, since the turn loop still branches on that shape.
 ;; ---------------------------------------------------------------------------
-
-(defn- fold-anthropic
-  [frames]
-  (reduce (fn [[acc texts] frame]
-            (let [[acc' text] (agent/accumulate-anthropic acc frame)]
-              [acc' (cond-> texts text (conj text))]))
-          [agent/empty-accumulator []]
-          frames))
 
 (def ^:private anthropic-frames
   [{:type "message_start"
@@ -165,103 +144,6 @@
    {:type "ping"}
    {:type "message_delta" :delta {:stop_reason "tool_use"} :usage {:output_tokens 25}}
    {:type "message_stop"}])
-
-(t/deftest anthropic-accumulator-rebuilds-text-tools-and-usage
-  (let [[acc texts] (fold-anthropic anthropic-frames)
-        outcome     (agent/accumulator->outcome acc true)]
-    (t/testing "text is reassembled from its deltas"
-      (t/is (= "Hello" (:text outcome)))
-      (t/is (= ["Hel" "lo"] texts) "each text delta is surfaced for live rendering"))
-    (t/testing "tool call json is reassembled across partial_json fragments"
-      (t/is (= [{:id "call_1" :name "read_design" :input {:a 1}}] (:tool-calls outcome))))
-    (t/testing "usage merges message_start and message_delta"
-      (t/is (= {:input-tokens 10 :output-tokens 25 :cache-read-tokens 4
-                :cache-write-tokens 2 :requests 1}
-               (:usage outcome))))
-    (t/is (false? (:stopped-for-length? outcome)))))
-
-(t/deftest anthropic-accumulator-flags-length-stop
-  (let [frames (conj (vec (butlast anthropic-frames))
-                     {:type "message_delta" :delta {:stop_reason "max_tokens"} :usage {:output_tokens 5}})
-        [acc _] (fold-anthropic frames)]
-    (t/is (true? (:stopped-for-length? (agent/accumulator->outcome acc true))))))
-
-(t/deftest anthropic-accumulator-tool-with-no-arguments
-  (t/testing "a no-arg tool streams zero json deltas — must not blow up on \"\""
-    (let [frames [{:type "content_block_start" :index 0
-                   :content_block {:type "tool_use" :id "c1" :name "audit_file"}}
-                  {:type "content_block_stop" :index 0}]
-          [acc _] (fold-anthropic frames)]
-      (t/is (= [{:id "c1" :name "audit_file" :input {}}]
-               (:tool-calls (agent/accumulator->outcome acc true)))))))
-
-(defn- fold-thinking
-  "Like the folds above but collects the third (thinking) slot too."
-  [accumulate frames]
-  (reduce (fn [[acc texts thinks] frame]
-            (let [[acc' text think] (accumulate acc frame)]
-              [acc'
-               (cond-> texts text (conj text))
-               (cond-> thinks think (conj think))]))
-          [agent/empty-accumulator [] []]
-          frames))
-
-(t/deftest anthropic-accumulator-surfaces-thinking-deltas
-  (let [frames [{:type "content_block_start" :index 0 :content_block {:type "thinking"}}
-                {:type "content_block_delta" :index 0
-                 :delta {:type "thinking_delta" :thinking "Let me "}}
-                {:type "content_block_delta" :index 0
-                 :delta {:type "thinking_delta" :thinking "look."}}
-                {:type "content_block_delta" :index 0
-                 :delta {:type "signature_delta" :signature "sig=="}}
-                {:type "content_block_stop" :index 0}]
-        [acc texts thinks] (fold-thinking agent/accumulate-anthropic frames)]
-    (t/testing "thinking deltas surface for live rendering, apart from text"
-      (t/is (= ["Let me " "look."] thinks))
-      (t/is (empty? texts)))
-    (t/testing "thinking never leaks into the outcome sent back next round"
-      (t/is (= "" (:text (agent/accumulator->outcome acc true)))))))
-
-(t/deftest openai-accumulator-surfaces-reasoning-content
-  (let [frames [{:choices [{:delta {:reasoning_content "hmm "}}]}
-                {:choices [{:delta {:reasoning_content "ok."}}]}
-                {:choices [{:delta {:content "Hi"} :finish_reason "stop"}]}]
-        [acc texts thinks] (fold-thinking agent/accumulate-openai frames)]
-    (t/is (= ["hmm " "ok."] thinks))
-    (t/is (= ["Hi"] texts))
-    (t/is (= "Hi" (:text (agent/accumulator->outcome acc false))))))
-
-(defn- fold-openai
-  [frames]
-  (reduce (fn [[acc texts] frame]
-            (let [[acc' text] (agent/accumulate-openai acc frame)]
-              [acc' (cond-> texts text (conj text))]))
-          [agent/empty-accumulator []]
-          frames))
-
-(t/deftest openai-accumulator-rebuilds-text-tools-and-usage
-  (let [frames [{:choices [{:delta {:content "Hi"}}]}
-                {:choices [{:delta {:content " there"}}]}
-                {:choices [{:delta {:tool_calls [{:index 0 :id "call_9"
-                                                  :function {:name "apply_tokens" :arguments "{\"t\":"}}]}}]}
-                ;; id/name only arrive on the first fragment per index
-                {:choices [{:delta {:tool_calls [{:index 0 :function {:arguments "\"blue\"}"}}]}}]}
-                {:choices [{:delta {} :finish_reason "tool_calls"}]}
-                ;; the include_usage tail chunk: no choices, just usage
-                {:choices [] :usage {:prompt_tokens 7 :completion_tokens 11
-                                     :prompt_tokens_details {:cached_tokens 3}}}]
-        [acc texts] (fold-openai frames)
-        outcome     (agent/accumulator->outcome acc false)]
-    (t/is (= "Hi there" (:text outcome)))
-    (t/is (= ["Hi" " there"] texts))
-    (t/is (= [{:id "call_9" :name "apply_tokens" :input {:t "blue"}}] (:tool-calls outcome)))
-    (t/is (= {:input-tokens 7 :output-tokens 11 :cache-read-tokens 3
-              :cache-write-tokens 0 :requests 1}
-             (:usage outcome)))))
-
-(t/deftest openai-accumulator-flags-length-stop
-  (let [[acc _] (fold-openai [{:choices [{:delta {:content "x"} :finish_reason "length"}]}])]
-    (t/is (true? (:stopped-for-length? (agent/accumulator->outcome acc false))))))
 
 ;; ---------------------------------------------------------------------------
 ;; trim-history must not undo the fix
@@ -295,19 +177,6 @@
 (def ^:private jpg {:mtype "image/jpeg" :data "/9j/4AAQSkZJRg=="})
 
 (defn- a-content [message] (:content (first (agent/encode-anthropic [message]))))
-(defn- o-content [message] (:content (second (agent/encode-openai "sys" [message]))))
-
-(t/deftest user-without-images-stays-a-plain-string
-  (t/testing "the no-image fast path is untouched — this is the common case"
-    (let [m {:role :user :text "make it blue"}]
-      (t/is (= "make it blue" (a-content m)))
-      (t/is (= "make it blue" (o-content m))))))
-
-(t/deftest user-with-empty-images-stays-a-plain-string
-  (t/testing "an empty :images vector must not promote content to blocks"
-    (let [m {:role :user :text "hi" :images []}]
-      (t/is (string? (a-content m)))
-      (t/is (string? (o-content m))))))
 
 (t/deftest anthropic-encodes-an-image-block
   (let [content (a-content {:role :user :text "what is this?" :images [png]})]
@@ -316,36 +185,6 @@
               {:type "text" :text "what is this?"}]
              content)
           "bare base64 + separate media_type, image first")))
-
-(t/deftest openai-encodes-an-image-url-block
-  (let [content (o-content {:role :user :text "what is this?" :images [png]})]
-    (t/is (= [{:type "image_url"
-               :image_url {:url "data:image/png;base64,iVBORw0KGgo="}}
-              {:type "text" :text "what is this?"}]
-             content)
-          "a full data: URI, not a bare base64 payload")))
-
-(t/deftest images-precede-the-text-in-both-dialects
-  (t/testing "providers read a trailing question as being about the images above it"
-    (let [m {:role :user :text "compare these" :images [png jpg]}]
-      (t/is (= ["image" "image" "text"] (mapv :type (a-content m))))
-      (t/is (= ["image_url" "image_url" "text"] (mapv :type (o-content m)))))))
-
-(t/deftest five-images-all-survive-encoding
-  (t/testing "5 is the product cap; the encoder must not silently drop any"
-    (let [imgs (mapv (fn [i] {:mtype "image/png" :data (str "data" i)}) (range 5))
-          m    {:role :user :text "look" :images imgs}]
-      (t/is (= 5 (count (filter #(= "image" (:type %)) (a-content m)))))
-      (t/is (= 5 (count (filter #(= "image_url" (:type %)) (o-content m)))))
-      (t/is (= ["data0" "data1" "data2" "data3" "data4"]
-               (->> (a-content m) (filter #(= "image" (:type %))) (mapv #(get-in % [:source :data]))))
-            "order is preserved — the user's 1st image stays 1st"))))
-
-(t/deftest image-without-text-emits-no-empty-text-block
-  (t/testing "Anthropic rejects an empty text block, so it must be omitted entirely"
-    (let [m {:role :user :text "" :images [png]}]
-      (t/is (= ["image"] (mapv :type (a-content m))))
-      (t/is (= ["image_url"] (mapv :type (o-content m)))))))
 
 (t/deftest image-message-still-carries-the-design-context
   (t/testing "context rides the text block, exactly as it does without images"
@@ -658,48 +497,6 @@
 ;; and the summary arrives as a user message flagged :compacted?.
 ;; ---------------------------------------------------------------------------
 
-(t/deftest compaction-not-due-under-the-threshold
-  (let [history (vec (mapcat #(turn-with-result % "{\"ok\":true}") (range 4)))]
-    (t/is (false? (boolean (agent/compact-due? history))))))
-
-(t/deftest compaction-due-over-the-threshold
-  (let [history (vec (mapcat #(turn-with-result % (apply str (repeat 40000 "x"))) (range 4)))]
-    (t/is (true? (boolean (agent/compact-due? history))))))
-
-(t/deftest compacted-history-is-summary-plus-last-turn
-  (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
-        out     (agent/compacted-history history "the summary")]
-    (t/testing "one summary message replaces every earlier turn"
-      (t/is (= 4 (count out)) "summary + the last turn's 3 messages")
-      (t/is (= :user (:role (first out))))
-      (t/is (true? (:compacted? (first out))))
-      (t/is (str/includes? (:text (first out)) "the summary"))
-      (t/is (str/includes? (str/lower (:text (first out))) "compacted")
-            "the message says what it is — the model must not read it as the user's words"))
-    (t/testing "the last turn survives verbatim, pairs intact"
-      (t/is (= (subvec history 9) (subvec out 1)))
-      (let [[uses results] (anthropic-pairs out)]
-        (t/is (= uses results))))))
-
-(t/deftest compacted-history-keeps-a-lone-turn-whole
-  (t/testing "a history that is one giant turn has no head to compact away"
-    (let [history (vec (turn-with-result 0 big-result))]
-      (t/is (= history (agent/compacted-history history "s"))))))
-
-(t/deftest compaction-transcript-drops-images
-  (t/testing "the summarizer reads text — base64 would be pure cost"
-    (let [history [{:role :user :text "look" :images [png]}
-                   {:role :assistant :text "ok" :tool-calls []}
-                   {:role :user :text "more"}]
-          text    (agent/compaction-transcript history)]
-      (t/is (not (str/includes? text "iVBOR")))
-      (t/is (str/includes? text "look"))
-      (t/is (str/includes? text "ok")))))
-
-;; Phase 01 of the OSS-prompt-learnings plan: the summarizer keeps lessons
-;; (Kimi's compaction priorities) and treats a prior summary as an anchor to
-;; update, not conversation to narrate (opencode's <previous-summary>).
-
 ;; --- Direction nudge (phase 04 of the OSS-prompt-learnings plan)
 ;;
 ;; A first-message BUILD task in a file with no standing direction (no
@@ -750,33 +547,6 @@
     (t/is (str/includes? agent/compact-system "## Learned"))
     (t/is (str/includes? agent/compact-system "previous compaction"))))
 
-(t/deftest recompaction-transcript-carries-the-prior-summary
-  (t/testing "a once-compacted history feeds its own summary back to the
-              summarizer — the anchor instruction has its anchor"
-    (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
-          once    (agent/compacted-history history "alpha: the standing facts")
-          grown   (conj once
-                        {:role :user :text "next ask"}
-                        {:role :assistant :text "done" :tool-calls []})
-          text    (agent/compaction-transcript grown)]
-      (t/is (str/includes? text "alpha: the standing facts"))
-      (t/is (str/includes? (str/lower text) "compacted")
-            "the bracketed frame rides along — it is what the prompt keys on"))))
-
-(t/deftest recompaction-yields-a-single-summary-head
-  (t/testing "compacting again UPDATES the head — one summary message, never
-              a nested chain of summaries-of-summaries"
-    (let [history (vec (mapcat #(turn-with-result % big-result) (range 4)))
-          once    (agent/compacted-history history "alpha")
-          grown   (conj once
-                        {:role :user :text "next ask"}
-                        {:role :assistant :text "done" :tool-calls []})
-          out     (agent/compacted-history grown "beta")]
-      (t/is (= 1 (count (filter :compacted? out))))
-      (t/is (str/includes? (:text (first out)) "beta"))
-      (t/is (not (str/includes? (agent/conversation-transcript out) "alpha"))
-            "the old summary text is gone — its surviving facts live inside beta"))))
-
 ;; ---------------------------------------------------------------------------
 ;; Fresh-chat handoff (the pure halves).
 ;;
@@ -797,21 +567,14 @@
           "framed as carried-over context, not as the user's words")))
 
 (t/deftest conversation-transcript-includes-the-last-turn
-  (t/testing "the whole conversation is summarized — compaction-transcript's
-              head-only slice would silently drop the newest work"
+  (t/testing "the whole conversation is summarized, the newest work included"
     (let [history [{:role :user :text "first ask"}
                    {:role :assistant :text "did it" :tool-calls []}
                    {:role :user :text "newest ask"}
                    {:role :assistant :text "newest reply" :tool-calls []}]
-          all     (agent/conversation-transcript history)
-          head    (agent/compaction-transcript history)]
+          all     (agent/conversation-transcript history)]
       (t/is (str/includes? all "newest ask"))
-      (t/is (str/includes? all "newest reply"))
-      (t/is (not (str/includes? head "newest ask")) "sanity: the head slice excludes it"))))
-
-(t/deftest handoff-notice-threshold-sits-below-compaction
-  (t/testing "the user gets the choice BEFORE the automatic backstop fires"
-    (t/is (< agent/handoff-notice-chars agent/compact-threshold-chars))))
+      (t/is (str/includes? all "newest reply")))))
 
 (t/deftest history-chars-counts-text-and-results
   (let [history (vec (turn-with-result 0 (apply str (repeat 500 "x"))))]
@@ -829,31 +592,6 @@
 ;; ---------------------------------------------------------------------------
 
 (def ^:private no-spend agent/empty-usage)
-
-(t/deftest checkpoint-not-due-early
-  (t/is (false? (boolean (agent/checkpoint-due? "claude-sonnet-5" 3 no-spend)))))
-
-(t/deftest checkpoint-is-disabled
-  (t/testing "Santi, 2026-07-16: the brake interrupted real design work —
-              disabled behind checkpoint-enabled?, so even the old firing
-              conditions no longer pause the turn. max-rounds stays as the
-              hard backstop. Flip the boolean in agent.cljs to re-enable;
-              these assertions then invert back to the ones in git history."
-    ;; the old round-cap trigger
-    (t/is (false? (boolean (agent/checkpoint-due? "claude-sonnet-5" 12 no-spend))))
-    ;; the old spend trigger: 80k output on opus-4-8 at $25/M = $2
-    (let [spent {:input-tokens 10000 :output-tokens 80000
-                 :cache-read-tokens 0 :cache-write-tokens 0 :requests 3}]
-      (t/is (false? (boolean (agent/checkpoint-due? "claude-opus-4-8" 3 spent)))))
-    ;; the old unpriced-model round trigger
-    (t/is (false? (boolean (agent/checkpoint-due? "some-unpriced-model" 12 no-spend))))))
-
-(t/deftest checkpoint-never-fires-before-the-first-round
-  (t/testing "round 0 = nothing has run in this segment yet — even a resumed
-              turn with heavy prior spend must not re-pause instantly"
-    (let [heavy {:input-tokens 1000000 :output-tokens 1000000
-                 :cache-read-tokens 0 :cache-write-tokens 0 :requests 30}]
-      (t/is (false? (boolean (agent/checkpoint-due? "claude-sonnet-5" 0 heavy)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; The history cache breakpoint.
@@ -873,55 +611,6 @@
   (->> encoded
        (mapcat #(let [c (:content %)] (if (vector? c) c [])))
        (filterv :cache_control)))
-
-(t/deftest breakpoint-lands-on-the-last-block-of-the-last-message
-  (let [history [{:role :user :text "hi"}
-                 {:role :assistant :text "hello" :tool-calls []}
-                 {:role :user :text "make it blue"}]
-        out     (agent/mark-history-breakpoint (agent/encode-anthropic history))]
-    (t/testing "exactly one marker in the whole history"
-      (t/is (= 1 (count (marked-blocks out)))))
-    (t/testing "it is the final block of the final message"
-      (let [last-content (:content (peek out))]
-        (t/is (vector? last-content) "a string content is promoted to blocks to carry it")
-        (t/is (= {:type "ephemeral"} (:cache_control (peek last-content))))
-        (t/is (= "make it blue" (:text (peek last-content))))))
-    (t/testing "earlier messages are untouched"
-      (t/is (= (agent/encode-anthropic (butlast history))
-               (vec (butlast out)))))))
-
-(t/deftest breakpoint-marks-a-tool-result-tail
-  (t/testing "mid-turn the last message is tool-results — the common case"
-    (let [history (conj turn-with-dangling-calls
-                        {:role :tool-results
-                         :results [{:id "call_1" :content "{}"}
-                                   {:id "call_2" :content "{}"}]})
-          out     (agent/mark-history-breakpoint (agent/encode-anthropic history))
-          blocks  (:content (peek out))]
-      (t/is (= 1 (count (marked-blocks out))))
-      (t/is (= "tool_result" (:type (peek blocks))))
-      (t/is (= {:type "ephemeral"} (:cache_control (peek blocks))))
-      (t/testing "its sibling result is not marked"
-        (t/is (nil? (:cache_control (first blocks))))))))
-
-(t/deftest breakpoint-never-creates-an-empty-text-block
-  (t/testing "Anthropic rejects an empty text block — better unmarked than 400"
-    (let [out (agent/mark-history-breakpoint
-               (agent/encode-anthropic [{:role :user :text ""}]))]
-      (t/is (empty? (marked-blocks out)))
-      (t/is (= "" (:content (peek out))) "the message itself is left as it was"))))
-
-(t/deftest breakpoint-on-empty-history-is-a-no-op
-  (t/is (= [] (agent/mark-history-breakpoint []))))
-
-(t/deftest breakpoint-marks-an-image-tail
-  (t/testing "a user message of only images ends in an image block; marking it is
-              valid and still extends the prefix over everything before it"
-    (let [out (agent/mark-history-breakpoint
-               (agent/encode-anthropic [{:role :user :text "" :images [png]}]))
-          blocks (:content (peek out))]
-      (t/is (= "image" (:type (peek blocks))))
-      (t/is (= {:type "ephemeral"} (:cache_control (peek blocks)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Images coming back FROM a tool (render_board).
@@ -958,15 +647,6 @@
                    {:role :tool-results :results [{:id "c1" :content "{}"}]}]
           content (->> (agent/encode-anthropic history) (last) :content (first))]
       (t/is (= "{}" (:content content))))))
-
-(t/deftest openai-tool-result-says-the-image-could-not-be-shown
-  (t/testing "silently dropping it would have the model describe what it never saw"
-    (let [msg (->> (agent/encode-openai "sys" render-result)
-                   (filter #(= "tool" (:role %)))
-                   (first))]
-      (t/is (str/includes? (:content msg) "rendered"))
-      (t/is (str/includes? (:content msg) "cannot be shown"))
-      (t/is (str/includes? (:content msg) "2") "says how many"))))
 
 (t/deftest tool-result-images-are-stripped-for-a-blind-model
   (let [out (agent/strip-images render-result)

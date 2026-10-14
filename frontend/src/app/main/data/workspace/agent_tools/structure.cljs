@@ -8,12 +8,13 @@
   "Structural tools: create/modify/nest shapes, text, components,
   masks, SVG import, booleans, delete/duplicate and group/ungroup."
   (:require
+   [app.common.agent.structure :as cas]
+   [app.common.agent.write :as caw]
    [app.common.data.macros :as dm]
    [app.common.files.changes-builder :as cb]
    [app.common.files.helpers :as cfh]
    [app.common.geom.point :as gpt]
    [app.common.geom.rect :as grc]
-   [app.common.types.component :as ctc]
    [app.common.types.container :as ctn]
    [app.common.types.path :as path]
    [app.common.types.shape :as cts]
@@ -36,10 +37,32 @@
    [app.main.features :as features]
    [app.main.store :as st]
    [beicon.v2.core :as rx]
-   [cuerdas.core :as str]
    [potok.v2.core :as ptk]))
 
-(declare unparsable-problem ids-problem)
+;; --- Shared with the server
+;;
+;; The refusals of the structure tools live in `app.common.agent.structure`,
+;; shared with the server-side tools. They keep their names here.
+
+(def mask-problem cas/mask-problem)
+
+(def unmask-problem cas/unmask-problem)
+
+(def nest-problem cas/nest-problem)
+
+(def unparsable-problem cas/unparsable-problem)
+
+(def ids-problem cas/ids-problem)
+
+(def delete-problem cas/delete-problem)
+
+(def duplicate-problem cas/duplicate-problem)
+
+(def group-problem cas/group-problem)
+
+(def ungroup-problem cas/ungroup-problem)
+
+(def boolean-problem cas/boolean-problem)
 
 ;; --- Mask / unmask
 ;;
@@ -48,31 +71,6 @@
 ;; no-ops on empty; `unmask-group` keeps only group/bool and commits whatever
 ;; survived — pass a rect and it "succeeds" having done nothing. It also changes
 ;; the user's selection, which we restore.
-
-(defn mask-problem
-  "Why `mask_shapes` cannot run, or nil. Pure."
-  [objects ids]
-  (or (ids-problem "mask_shapes" objects ids)
-      (let [in-copy (filter #(ctn/has-any-copy-parent? objects (get objects %)) ids)]
-        (when (seq in-copy)
-          (dm/str "mask_shapes: " (atc/labels (map #(get objects %) in-copy))
-                  (if (= 1 (count in-copy)) " is" " are")
-                  " inside a component copy, whose structure is owned by the main"
-                  " component — mask the main instead, or detach the copy first")))))
-
-(defn unmask-problem
-  "Why `unmask_shapes` cannot run, or nil. Pure."
-  [objects ids]
-  (or (ids-problem "unmask_shapes" objects ids)
-      (let [shapes (map #(get objects %) ids)
-            wrong  (remove #(and (or (cfh/group-shape? %) (cfh/bool-shape? %))
-                                 (:masked-group %))
-                           shapes)]
-        (when (seq wrong)
-          (dm/str "unmask_shapes: " (atc/labels wrong)
-                  (if (= 1 (count wrong)) " is not a masked group" " are not masked groups")
-                  " — only a shape created by mask_shapes can be unmasked (see its"
-                  " isMask flag in read_design)")))))
 
 (defn mask-shapes
   [{:keys [shapeIds]}]
@@ -132,141 +130,39 @@
                          "token-only-colors — that is deliberate for icons, but "
                          "audit_file still flags raw colors. Verify with read_design.")}))))
 
-(defn shadow->shape
-  "A shadow as Penpot stores it. `:color` is a *map* (`schema:color`), not a hex
-  string — a bare string fails the schema."
-  [{:keys [style offsetX offsetY blur spread color opacity]}]
-  {:id (uuid/next)
-   :style (if (= style "inner-shadow") :inner-shadow :drop-shadow)
-   :offset-x (or offsetX 0)
-   :offset-y (or offsetY 0)
-   :blur (or blur 4)
-   :spread (or spread 0)
-   :hidden false
-   :color (cond-> {:color (or color "#000000")}
-            (some? opacity) (assoc :opacity opacity))})
+(def shadow->shape caw/shadow->shape)
 
-(defn style-attrs
-  "The plain shape attrs for the styling params. Only keys given are emitted, and
-  presence is `some?` — `opacity 0` is a real instruction."
-  [{:keys [radius opacity]}]
-  (cond-> {}
-    (some? radius) (assoc :r1 radius :r2 radius :r3 radius :r4 radius)
-    (some? opacity) (assoc :opacity opacity)))
+(def style-attrs caw/style-attrs)
 
-(def ^:private stroke-styles #{"solid" "dotted" "dashed" "mixed"})
+(def ^:private stroke-styles caw/stroke-styles)
 
-;; Line/path end caps (`:stroke-cap-start` / `:stroke-cap-end` on the stroke).
-;; The exact Penpot tokens the model should use, plus "none" to clear a cap and
-;; a couple of forgiving aliases ("circle" → the circle-marker dot).
-(def ^:private stroke-cap-values
-  #{"round" "square" "line-arrow" "triangle-arrow" "square-marker"
-    "circle-marker" "diamond-marker" "none"})
+(def ^:private stroke-cap-inputs caw/stroke-cap-inputs)
 
-(def ^:private stroke-cap-aliases
-  {"circle" "circle-marker" "diamond" "diamond-marker" "arrow" "triangle-arrow"})
+(def ^:private ->stroke-cap caw/->stroke-cap)
 
-(def ^:private stroke-cap-inputs (into stroke-cap-values (keys stroke-cap-aliases)))
-
-(defn- ->stroke-cap
-  "A validated cap string → the stored keyword, or nil for \"none\" (clears it)."
-  [v]
-  (let [v (get stroke-cap-aliases v v)]
-    (when-not (= v "none") (keyword v))))
-
-(defn locked-problem
-  "Refuses mutating a locked (`:blocked`) shape, unless the call is unlocking it.
-  A user locks a layer to mean hands-off; the agent should respect that and say
-  how to override. Pure."
-  [shape {:keys [locked] :as _input}]
-  (when (and (:blocked shape) (not (false? locked)))
-    (dm/str "modify_shape: " (atc/shape-label shape) " is locked. A user locks a layer"
-            " to keep it as-is — ask before changing it, or unlock it deliberately"
-            " with modify_shape locked:false.")))
+(def locked-problem caw/locked-problem)
 
 (defn- modify-throwable
   "The rejection (an ex-info, carrying :rule for guard hits) for ONE
   modify_shape-style update, or nil. Shared by modify_shape and the
   update_shapes batch; `tool` names whichever surfaced it."
-  [tool state objects {:keys [shapeId fill strokeStyle strokeCapStart strokeCapEnd] :as input}]
-  (let [id    (some-> shapeId parse-uuid)
-        shape (when id (get objects id))]
-    (cond
-      (nil? id)
-      (ex-info (dm/str tool ": missing or invalid shapeId") {})
-
-      (nil? shape)
-      (ex-info (dm/str tool ": no shape with id " shapeId " on this page") {})
-
-      (some? (locked-problem shape input))
-      (ex-info (locked-problem shape input) {})
-
-      (some? (atc/fill-problem fill))
-      (ex-info (dm/str tool ": " (atc/fill-problem fill)) {})
-
-      (some? (atc/enum-problem tool "strokeStyle" strokeStyle stroke-styles))
-      (ex-info (atc/enum-problem tool "strokeStyle" strokeStyle stroke-styles) {})
-
-      (some? (atc/enum-problem tool "strokeCapStart" strokeCapStart stroke-cap-inputs))
-      (ex-info (atc/enum-problem tool "strokeCapStart" strokeCapStart stroke-cap-inputs) {})
-
-      (some? (atc/enum-problem tool "strokeCapEnd" strokeCapEnd stroke-cap-inputs))
-      (ex-info (atc/enum-problem tool "strokeCapEnd" strokeCapEnd stroke-cap-inputs) {})
-
-      ;; the guard runs last: a rejection naming the rule is the most useful
-      ;; message, so it should not mask a plain input error
-      :else
-      (some #(atc/color-violation state %) (atc/input-colors input)))))
+  [tool state objects input]
+  (when-let [{:keys [problem rule]} (caw/modify-problem tool objects input (atc/color-guard state))]
+    (ex-info problem (if rule {:rule rule} {}))))
 
 (defn- emit-shape-update!
   "Emits one already-validated modify_shape-style update for `id`. No undo
   transaction of its own — the caller brackets one around the whole call (or
   the whole batch)."
-  [{:keys [x y width height fill stroke shadow strokeWidth strokeStyle
-           strokeCapStart strokeCapEnd strokeDash strokeGap hidden locked rotation flipH flipV] :as input} id]
-  (let [nm     (:name input)
-        styles (style-attrs input)
-        ;; Every plain attribute write (name, styles, shadow, fill, stroke) is a
-        ;; pure `(assoc/merge shape …)` on a distinct key, so compose them into
-        ;; ONE update-shapes pass instead of one full changes-build+commit per
-        ;; attribute. The batch tool runs this per shape, so a 50-shape batch
-        ;; used to fire hundreds of commit passes. The specialized transform
-        ;; events (flags, rotation, flips, position, dimensions) stay separate —
-        ;; they are not plain assocs and each computes its own modifiers.
-        attr-fns
-        (cond-> []
-          nm           (conj #(assoc % :name nm))
-          (seq styles) (conj #(merge % styles))
-          shadow       (conj #(assoc % :shadow [(shadow->shape shadow)]))
-          fill         (conj #(assoc % :fills (atc/fill->shape fill)))
-          stroke       (conj #(assoc % :strokes [(cond-> {:stroke-color stroke
-                                                          :stroke-opacity 1
-                                                          :stroke-width (or strokeWidth 1)
-                                                          :stroke-style (keyword (or strokeStyle "solid"))
-                                                          :stroke-alignment :center}
-                                                   (some? strokeCapStart) (assoc :stroke-cap-start (->stroke-cap strokeCapStart))
-                                                   (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd))
-                                                   (some? strokeDash)     (assoc :stroke-dash strokeDash)
-                                                   (some? strokeGap)      (assoc :stroke-gap strokeGap))]))
-          ;; stroke width/style/caps/dash change with no new color: patch existing stroke
-          (and (nil? stroke) (or (some? strokeWidth) (some? strokeStyle)
-                                 (some? strokeCapStart) (some? strokeCapEnd)
-                                 (some? strokeDash) (some? strokeGap)))
-          (conj (fn [s]
-                  (update s :strokes
-                          (fn [strokes]
-                            (let [st0 (or (first strokes)
-                                          {:stroke-color "#000000" :stroke-opacity 1
-                                           :stroke-alignment :center})]
-                              [(cond-> st0
-                                 (some? strokeWidth)    (assoc :stroke-width strokeWidth)
-                                 (some? strokeStyle)    (assoc :stroke-style (keyword strokeStyle))
-                                 (some? strokeCapStart) (assoc :stroke-cap-start (->stroke-cap strokeCapStart))
-                                 (some? strokeCapEnd)   (assoc :stroke-cap-end (->stroke-cap strokeCapEnd))
-                                 (some? strokeDash)     (assoc :stroke-dash strokeDash)
-                                 (some? strokeGap)      (assoc :stroke-gap strokeGap))]))))))]
-    (when (seq attr-fns)
-      (st/emit! (dwsh/update-shapes [id] (apply comp attr-fns))))
+  [{:keys [x y width height hidden locked rotation flipH flipV] :as input} id]
+  (let [;; Every plain attribute write (name, styles, shadow, fill, stroke) is
+        ;; composed into ONE update-shapes pass instead of one full
+        ;; changes-build+commit per attribute. The specialized transform events
+        ;; (flags, rotation, flips, position, dimensions) stay separate — they
+        ;; are not plain assocs and each computes its own modifiers.
+        attr-fn (caw/attr-update-fn input)]
+    (when (some? attr-fn)
+      (st/emit! (dwsh/update-shapes [id] attr-fn)))
     ;; hide/lock — some? so `false` genuinely unhides/unlocks
     (when (or (some? hidden) (some? locked))
       (st/emit! (dwsh/update-shape-flags [id]
@@ -371,46 +267,6 @@
           (rx/of {:updated (count updates)
                   :note (str "updated — one undo step. Geometry settles "
                              "asynchronously; verify with read_design.")}))))))
-
-(defn nest-problem
-  "Why `nest_shape` cannot run, or nil. Pure. Public for tests.
-
-  relocate-shapes filters silently — a stale id, a cycle, or a copy-owned
-  target all no-op and read as success, which is how the Kahoot session lost
-  half its content to nests that never landed. Name the refusal instead."
-  [objects id pid]
-  (let [shape  (get objects id)
-        parent (get objects pid)]
-    (cond
-      (or (nil? id) (nil? pid))
-      "nest_shape: missing or invalid shapeId/parentId"
-
-      (nil? shape)
-      (dm/str "nest_shape: no shape on this page with id " (str id)
-              " — it may already be deleted; check read_design")
-
-      (nil? parent)
-      (dm/str "nest_shape: no shape on this page with id " (str pid)
-              " (the parentId) — check read_design")
-
-      (= id pid)
-      "nest_shape: a shape cannot be nested into itself"
-
-      (not (or (cfh/frame-shape? parent) (cfh/group-shape? parent)))
-      (dm/str "nest_shape: " (atc/shape-label parent) " is a "
-              (some-> (:type parent) name)
-              " — the parent must be a board or a group")
-
-      (cfh/is-parent? objects pid id)
-      (dm/str "nest_shape: " (atc/shape-label parent) " is inside "
-              (atc/shape-label shape)
-              " — nesting a shape into its own descendant would create a cycle")
-
-      (or (ctc/in-component-copy? parent)
-          (ctn/has-any-copy-parent? objects parent))
-      (dm/str "nest_shape: " (atc/shape-label parent) " is part of a component copy,"
-              " whose structure is owned by the main component — nest into the"
-              " main component instead, or sever the copy with detach_instance"))))
 
 (defn nest-shape
   [{:keys [shapeId parentId index]}]
@@ -666,49 +522,6 @@
 ;; set, and `duplicate-shapes` drops anything `allow-duplicate?` refuses and then
 ;; no-ops on the empty set, which reads as success.
 
-(defn- unparsable-problem
-  "Why a call must be rejected because some `shapeIds` entry is not a valid
-  shape id, or nil. The handlers parse ids with `(keep parse-uuid)`, which
-  drops malformed entries silently — so without this a request like
-  [\"<valid>\" \"b7f3-truncated\"] would act on the valid subset and read as
-  success, leaving the model believing a shape it named was handled. Reject the
-  whole call and name the offenders; nothing is mutated. Pure."
-  [tool shapeIds]
-  (let [bad (into [] (remove #(and (string? %) (some? (parse-uuid %)))) shapeIds)]
-    (when (seq bad)
-      (dm/str tool ": not valid shape ids: "
-              (str/join ", " (map pr-str bad))
-              " — pass the exact ids from read_design; nothing was changed"))))
-
-(defn ids-problem
-  [tool objects ids]
-  (let [missing (remove #(contains? objects %) ids)]
-    (cond
-      (empty? ids)
-      (dm/str tool ": shapeIds is required — pass the ids to act on (see read_design)")
-
-      (seq missing)
-      (dm/str tool ": no shape on this page with id "
-              (str/join ", " (map str missing))
-              " — it may be on another page, or already gone; check read_design"))))
-
-(defn delete-problem
-  "Why `delete_shape` cannot run, or nil. Pure."
-  [objects ids]
-  (ids-problem "delete_shape" objects ids))
-
-(defn duplicate-problem
-  "Why `duplicate_shape` cannot run, or nil. Pure."
-  [objects ids]
-  (or (ids-problem "duplicate_shape" objects ids)
-      (let [blocked (remove #(ctc/allow-duplicate? objects (get objects %)) ids)]
-        (when (seq blocked)
-          (dm/str "duplicate_shape: " (atc/labels (map #(get objects %) blocked))
-                  (if (= 1 (count blocked)) " is" " are")
-                  " inside a component copy, whose structure is owned by the main"
-                  " component — duplicate the main instead, or sever this copy with"
-                  " detach_instance first")))))
-
 (defn delete-shape
   [{:keys [shapeIds]}]
   (let [state   @st/state
@@ -777,66 +590,6 @@
 ;; input silently and then `(when-not (empty? …))`, so a fully-filtered call
 ;; does nothing and returns success.
 
-(defn group-problem
-  "Why `group_shapes` cannot run, or nil. Mirrors `group-shapes`' own filters
-  (`groups.cljs:195-200`)."
-  [objects ids]
-  (or (ids-problem "group_shapes" objects ids)
-      (let [shapes   (map #(get objects %) ids)
-            variants (filter ctc/is-variant? shapes)
-            in-copy  (filter #(ctn/has-any-copy-parent? objects %) shapes)]
-        (cond
-          (seq variants)
-          (dm/str "group_shapes: " (atc/labels variants)
-                  (if (= 1 (count variants)) " is" " are")
-                  " part of a variant set, which owns its own structure"
-                  " — a variant set cannot be grouped")
-
-          (seq in-copy)
-          (dm/str "group_shapes: " (atc/labels in-copy)
-                  (if (= 1 (count in-copy)) " is" " are")
-                  " inside a component copy, whose structure is owned by the main"
-                  " component — group the main instead, or sever this copy with"
-                  " detach_instance first")))))
-
-(defn ungroup-problem
-  "Why `ungroup_shapes` cannot run, or nil. Mirrors `ungroup-shapes`' filters
-  (`groups.cljs:242-246`) and what its `prepare` can actually handle."
-  [objects ids]
-  (or (ids-problem "ungroup_shapes" objects ids)
-      (let [shapes    (map #(get objects %) ids)
-            in-copy   (filter #(ctn/has-any-copy-parent? objects %) shapes)
-            comps     (filter ctc/instance-head? shapes)
-            containers (filter ctc/is-variant-container? shapes)
-            ;; prepare handles group / bool / frame; anything else yields no
-            ;; changes and is dropped without a word
-            wrong     (remove #(or (cfh/group-shape? %)
-                                   (cfh/bool-shape? %)
-                                   (cfh/frame-shape? %))
-                              shapes)]
-        (cond
-          (seq containers)
-          (dm/str "ungroup_shapes: " (atc/labels containers)
-                  (if (= 1 (count containers)) " is a variant container" " are variant containers")
-                  " — ungrouping one would destroy the set; delete it instead if that is the intent")
-
-          (seq comps)
-          (dm/str "ungroup_shapes: " (atc/labels comps)
-                  (if (= 1 (count comps)) " is a component" " are components")
-                  " and components cannot be ungrouped — sever a copy with detach_instance,"
-                  " or delete the component")
-
-          (seq in-copy)
-          (dm/str "ungroup_shapes: " (atc/labels in-copy)
-                  (if (= 1 (count in-copy)) " is" " are")
-                  " inside a component copy, whose structure is owned by the main component")
-
-          (seq wrong)
-          (dm/str "ungroup_shapes: " (atc/labels wrong)
-                  (if (= 1 (count wrong)) " is a " " are ")
-                  (some-> (:type (first wrong)) name)
-                  " — only a group, a board or a boolean can be ungrouped")))))
-
 (defn group-shapes
   [{:keys [shapeIds]}]
   (let [state   @st/state
@@ -874,27 +627,6 @@
 ;; capability it could not begin. Same silent filter as group/bool everywhere:
 ;; create-bool drops frames, variants and copy-children, no-ops on empty, and
 ;; selects the new bool (which we restore).
-
-(def ^:private bool-ops #{"union" "difference" "intersection" "exclusion"})
-
-(defn boolean-problem
-  "Why `create_boolean` cannot run, or nil. Pure — mirrors create-bool's filter."
-  [objects operation ids]
-  (or (atc/enum-problem "create_boolean" "operation" operation bool-ops)
-      (when (< (count ids) 2)
-        (dm/str "create_boolean: needs at least 2 shapes (got " (count ids)
-                ") — a boolean combines shapes"))
-      (ids-problem "create_boolean" objects ids)
-      (let [usable (remove (fn [id]
-                             (let [s (get objects id)]
-                               (or (cfh/frame-shape? s)
-                                   (ctc/is-variant? s)
-                                   (ctn/has-any-copy-parent? objects s))))
-                           ids)]
-        (when (< (count usable) 2)
-          (dm/str "create_boolean: after skipping boards, variants and copy-children"
-                  " fewer than 2 usable shapes remain — a board is not a boolean"
-                  " operand; use plain shapes or paths")))))
 
 (defn create-boolean
   [{:keys [operation shapeIds]}]

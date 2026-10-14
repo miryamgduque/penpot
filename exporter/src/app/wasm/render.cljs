@@ -52,7 +52,9 @@
 
 (defonce ^:private module* (atom nil))
 
-(defn- ensure-module!
+(defn ensure-module!
+  "The worker's one render-wasm module, loaded on first use. Public: the agent
+  tools lay pages out on the same instance the renders use."
   []
   (or @module*
       (reset! module* (wasm/init!))))
@@ -257,7 +259,10 @@
           variant   (find-variant variants font-uuid weight style)]
       (cond
         (:ttf-file-id variant)
-        (fetch-asset-bytes (:ttf-file-id variant) params)
+        (if-let [fetch-asset (:fetch-asset params)]
+          ;; a caller with no session brings its own way to the file
+          (fetch-asset (:ttf-file-id variant))
+          (fetch-asset-bytes (:ttf-file-id variant) params))
 
         (= uuid/zero font-uuid)
         (fetch-builtin-font-bytes (cfnt/resolve-ttf-file weight style))
@@ -394,6 +399,40 @@
                                  (l/warn :hint "wasm render: image unavailable"
                                          :media-id (str image-id))))))))
          (p/all))))
+
+(defn provision-scenes-fonts!
+  "Loads into the engine the fonts the text of each of `scenes` uses → promise
+  of true when every font was found. Each scene is a page's objects; they are
+  loaded one after another, so the engine is left holding the last one.
+
+  For callers that hold no session. Built-in and Google fonts need none. A
+  team's uploaded fonts do: `variants` are the team's font variants and
+  `fetch-asset` gets the bytes of one's file by id; without them a scene that
+  uses such a font answers false."
+  [scenes load-scene! {:keys [variants fetch-asset]}]
+  (let [missing? (volatile! false)
+        resolve  (make-resolve-font variants {:fetch-asset fetch-asset})]
+    (wasm/clear-fonts!)
+    (->> (p/run
+          (fn [scene]
+            (let [text-ids (into [] (comp (filter #(= :text (:type %))) (map :id)) (vals scene))]
+              (load-scene! scene)
+              (->> (wasm/provision-fonts! text-ids
+                                          (fn [family]
+                                            (->> (resolve family)
+                                                 (p/fmap (fn [bytes]
+                                                           (when (nil? bytes) (vreset! missing? true))
+                                                           bytes)))))
+                   (p/mcat (fn [_] (provision-fallback-fonts! scene)))
+                   (p/fmap (fn [_]
+                             (doseq [id text-ids] (wasm/update-text-layout! id)))))))
+          scenes)
+         (p/fmap (fn [_] (not @missing?))))))
+
+(defn provision-scene-fonts!
+  "`provision-scenes-fonts!` for one scene the engine already holds."
+  [scene fonts]
+  (provision-scenes-fonts! [scene] (fn [_] nil) fonts))
 
 (defn- relayout-text!
   "Recomputes layout for every text shape, once the real fonts are provisioned

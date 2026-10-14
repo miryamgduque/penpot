@@ -24,8 +24,8 @@
   per-doc cap at the write boundary — every character here is a standing tax
   on every future turn in the file."
   (:require
+   [app.common.agent.design-md :as dmd]
    [app.main.data.plugins :as dp]
-   [app.main.data.workspace.design-md :as dmd]
    [app.main.store :as st]
    [cuerdas.core :as str]
    [okulary.core :as l]))

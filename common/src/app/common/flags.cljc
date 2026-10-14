@@ -204,6 +204,17 @@
     ;; a deployment opts in.
     :design-agent
 
+    ;; Runs the design agent's tools on the server — the backend and the
+    ;; exporter — instead of in the workspace. Exploration; needs
+    ;; :design-agent. OFF by default.
+    :design-agent-server-tools
+
+    ;; Lets a user connect external MCP servers to the design agent, so their
+    ;; tools are available to it. The agent service then calls addresses a
+    ;; user typed, and what those tools return reaches a model that can edit
+    ;; files. OFF by default; a deployment opts in.
+    :design-agent-mcp
+
     ;; Design session recording: capture every layout interaction on a file,
     ;; by any participant, for an agent to critique afterwards.
     ;;

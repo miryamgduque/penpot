@@ -143,7 +143,7 @@
    {:query-params [:file-id :revn]
     :form-data? true}
 
-   ::sse/ai-agent-round-stream
+   ::sse/agent-service-turn
    {:stream? true}
 
    ::sse/export-binfile

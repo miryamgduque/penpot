@@ -261,6 +261,7 @@
         fonts?      (= section :dashboard-fonts)
         libs?       (= section :dashboard-libraries)
         agent-skills? (= section :dashboard-agent-skills)
+        agent-recipes? (= section :dashboard-agent-recipes)
         drafts?     (and (= section :dashboard-files)
                          (= (:id project) default-project-id))
         container   (mf/use-ref nil)
@@ -321,6 +322,11 @@
         (mf/use-fn
          (mf/deps team-id)
          (fn [] (st/emit! (dcm/go-to-dashboard-agent-skills :team-id team-id))))
+
+        go-agent-recipes
+        (mf/use-fn
+         (mf/deps team-id)
+         (fn [] (st/emit! (dcm/go-to-dashboard-agent-recipes :team-id team-id))))
 
         go-libs-with-key
         (mf/use-fn
@@ -397,7 +403,15 @@
             [:> link* {:action go-agent-skills
                        :data-testid "agent-skills-link-sidebar"
                        :class (stl/css :sidebar-link)}
-             [:span {:class (stl/css :element-title)} (tr "labels.agent-skills")]]])]]
+             [:span {:class (stl/css :element-title)} (tr "labels.agent-skills")]]])
+         ;; Agent Recipes — what the agent builds common UI from
+         (when (contains? cf/flags :design-agent)
+           [:li {:class (stl/css-case :current agent-recipes?
+                                      :sidebar-nav-item true)}
+            [:> link* {:action go-agent-recipes
+                       :data-testid "agent-recipes-link-sidebar"
+                       :class (stl/css :sidebar-link)}
+             [:span {:class (stl/css :element-title)} (tr "labels.agent-recipes")]]])]]
 
 
        [:div {:class (stl/css :sidebar-content-section)

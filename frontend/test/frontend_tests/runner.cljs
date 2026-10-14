@@ -12,8 +12,10 @@
    [frontend-tests.data.agent-access-test]
    [frontend-tests.data.agent-file-switch-test]
    [frontend-tests.data.agent-opt-out-test]
+   [frontend-tests.data.agent-remote-test]
    [frontend-tests.data.agent-test]
    [frontend-tests.data.agent-tools-test]
+   [frontend-tests.data.agent-usage-test]
    [frontend-tests.data.ai-providers-test]
    [frontend-tests.data.changes-provenance-test]
    [frontend-tests.data.comments-filters-test]
@@ -125,6 +127,7 @@
    [frontend-tests.tokens.logic.token-remapping-test]
    [frontend-tests.tokens.logic.tokens-status-test]
    [frontend-tests.tokens.referenced-token-value-test]
+   [frontend-tests.tokens.shared-resolver-test]
    [frontend-tests.tokens.style-dictionary-test]
    [frontend-tests.tokens.token-errors-test]
    [frontend-tests.tokens.workspace-tokens-remap-test]
@@ -189,8 +192,10 @@
    'frontend-tests.data.agent-access-test
    'frontend-tests.data.agent-file-switch-test
    'frontend-tests.data.agent-opt-out-test
+   'frontend-tests.data.agent-remote-test
    'frontend-tests.data.agent-test
    'frontend-tests.data.agent-tools-test
+   'frontend-tests.data.agent-usage-test
    'frontend-tests.data.ai-providers-test
    'frontend-tests.data.changes-provenance-test
    'frontend-tests.data.comments-filters-test
@@ -300,6 +305,7 @@
    'frontend-tests.tokens.logic.token-data-test
    'frontend-tests.tokens.logic.token-remapping-test
    'frontend-tests.tokens.referenced-token-value-test
+   'frontend-tests.tokens.shared-resolver-test
    'frontend-tests.tokens.style-dictionary-test
    'frontend-tests.tokens.token-errors-test
    'frontend-tests.tokens.logic.tokens-status-test

@@ -27,6 +27,7 @@ if [[ "${PENPOT_BACKEND_WORKER:-true}" == "true" ]]; then
 fi
 
 export PENPOT_MEDIA_PROCESSING_SERVICE_URI=http://localhost:6065
+export PENPOT_AGENT_SERVICE_URI=http://localhost:6067
 
 export PENPOT_FLAGS="\
        $PENPOT_FLAGS \

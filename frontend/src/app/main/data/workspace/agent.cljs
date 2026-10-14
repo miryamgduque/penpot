@@ -5,27 +5,24 @@
 ;; Copyright (c) KALEIDOS INC Sucursal en España SL
 
 (ns app.main.data.workspace.agent
-  "The Agents chat model, routed through the Penpot backend proxy
-  (`::sse/ai-agent-round-stream`) — provider keys live with the profile on the
-  server and never reach the browser. The proxy is a dumb pipe: it forwards our
-  payload verbatim and re-emits the provider's own SSE frames, so both wire
-  dialects are decoded here.
+  "What the panel still does itself around the design agent: the system
+  prompt, the message a turn opens with, the readable history it keeps and
+  restores, and the side work — playbook matching, the watcher's checks,
+  summaries — which goes through the backend's buffered provider proxy
+  (`ai-agent-round`). Provider keys live with the profile on the server and
+  never reach the browser.
 
-  The conversation history is kept in ONE canonical form and re-encoded into
-  the wire form of whichever provider is currently selected (Anthropic
-  Messages for Claude models; OpenAI chat.completions for OpenAI-compatible
-  providers). That is what lets a user switch models — even across providers —
-  mid-conversation and carry the whole history."
+  The agent's turns themselves run in the agent service; see
+  `app.main.data.workspace.agent-remote`."
   (:require
    [app.main.data.agent-access :as agent-access]
    [app.main.data.ai-providers :as dai]
    [app.main.data.helpers :as dsh]
-   [app.main.data.session-actor :as sa]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
+   [app.main.data.workspace.agent-usage :as au]
    [app.main.data.workspace.design-doc :as dd]
    [app.main.repo :as rp]
-   [app.util.sse :as sse]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
 
@@ -47,7 +44,7 @@
 ;; history is re-encoded from canonical on every round: baking one provider's
 ;; shape in would break the moment the user switched models mid-conversation.
 
-(defn- user-text
+(defn user-text
   "The text half of a canonical user message: the turn's design context and
   the auto-matched playbook (both when present), then what the user typed.
   The playbook rides HERE — the volatile slot — because the system prompt is
@@ -91,17 +88,6 @@
                        :source {:type "base64" :media_type mtype :data data}})
                     images)
         ;; an empty text block is rejected outright, so omit it entirely
-        (seq text) (conj {:type "text" :text text}))
-      text)))
-
-(defn- user-content-openai
-  [{:keys [images] :as message}]
-  (let [text (user-text message)]
-    (if (seq images)
-      (cond-> (mapv (fn [{:keys [mtype data]}]
-                      {:type "image_url"
-                       :image_url {:url (str "data:" mtype ";base64," data)}})
-                    images)
         (seq text) (conj {:type "text" :text text}))
       text)))
 
@@ -158,11 +144,6 @@
 ;; of the very turn asking about it.
 (def ^:private max-image-turns 2)
 
-;; Ours, not the provider's: `:payload [:string {:max 4000000}]` on both
-;; ai-agent-round schemas. Overrunning it is an RPC *validation* error, which
-;; reaches the user as a generic failure with nothing pointing at the image.
-(def ^:private max-payload-chars 4000000)
-
 (defn prune-history-images
   "Drops images from every user turn but the most recent `max-image-turns`.
 
@@ -179,28 +160,7 @@
         (into (strip-images (subvec messages 0 cut))
               (subvec messages cut))))))
 
-(defn- anthropic?
-  "Providers that speak the Anthropic Messages API; the rest are
-  OpenAI-compatible (chat.completions)."
-  [provider]
-  (= provider "anthropic"))
-
 ;; --- Tools: declarations live in agent-tools; encode per provider here.
-
-(defn- anthropic-tools
-  []
-  (mapv (fn [t] {:name (:name t)
-                 :description (:description t)
-                 :input_schema (:input-schema t)})
-        at/tool-specs))
-
-(defn- openai-tools
-  []
-  (mapv (fn [t] {:type "function"
-                 :function {:name (:name t)
-                            :description (:description t)
-                            :parameters (:input-schema t)}})
-        at/tool-specs))
 
 ;; --- Wire encoding
 
@@ -250,160 +210,16 @@
                                      (:error? r) (assoc :is_error true)))
                                  results)})))))
 
-(defn mark-history-breakpoint
-  "Puts an ephemeral `cache_control` marker on the last block of the last
-  encoded message, extending the cached prefix over the whole conversation.
-
-  Without it the marker on the system block caches tools+system only, and every
-  round re-sends the entire history at full input price — a turn is up to 32
-  rounds over a history that grows each round, so the history term dominates a
-  session's spend. With it, each round re-reads prior rounds at ~0.1× and pays
-  the 1.25× write only on its own tail.
-
-  Interplay, documented rather than avoided: `trim-history` and
-  `prune-history-images` rewrite the history's head, which invalidates this
-  prefix and eats one full re-write when they fire. Both fire rarely (message
-  cap, image window exit) and shrink what they rewrite — net-positive.
-
-  A plain-string content is promoted to a block vector to carry the marker —
-  except an empty string, where the promotion would mint an empty text block
-  (rejected outright by the API): better one unmarked round than a 400."
-  [encoded]
-  (let [message (peek encoded)
-        content (:content message)
-        blocks  (cond
-                  (vector? content)                        content
-                  (and (string? content) (seq content))    [{:type "text" :text content}]
-                  :else                                    nil)]
-    (if (seq blocks)
-      (conj (vec (butlast encoded))
-            (assoc message :content
-                   (conj (vec (butlast blocks))
-                         (assoc (peek blocks) :cache_control {:type "ephemeral"}))))
-      encoded)))
-
-(defn encode-openai
-  [system messages]
-  (into [{:role "system" :content system}]
-        (mapcat (fn [{:keys [role text tool-calls results] :as message}]
-                  (case role
-                    :user
-                    [{:role "user" :content (user-content-openai message)}]
-
-                    :assistant
-                    ;; content may be null ONLY when tool_calls are present;
-                    ;; an empty assistant turn (no text, no calls) would
-                    ;; otherwise serialize as {content:null} with no tool_calls,
-                    ;; which OpenAI-dialect providers reject (400) — poisoning
-                    ;; every later turn. Substitute a placeholder like the
-                    ;; anthropic encoder does.
-                    [(cond-> {:role "assistant"
-                              :content (cond
-                                         (seq text)       text
-                                         (seq tool-calls) nil
-                                         :else            "…")}
-                       (seq tool-calls)
-                       (assoc :tool_calls
-                              (mapv (fn [c]
-                                      {:id (:id c)
-                                       :type "function"
-                                       :function {:name (:name c)
-                                                  :arguments (js/JSON.stringify
-                                                              (clj->js (or (:input c) {})))}})
-                                    tool-calls)))]
-
-                    :tool-results
-                    (mapv (fn [{:keys [images] :as r}]
-                            {:role "tool"
-                             :tool_call_id (:id r)
-                             ;; This dialect has nowhere to put an image in a
-                             ;; `tool` message. Say so rather than hand back a
-                             ;; result that talks about pictures the model was
-                             ;; never shown — it would answer as if it had seen
-                             ;; them.
-                             :content (cond-> (:content r)
-                                        (seq images)
-                                        (str "\n\n[" (count images)
-                                             " image(s) were rendered, but this model's API"
-                                             " cannot be shown images from a tool. Describe"
-                                             " what you know from read_design instead.]"))})
-                          results))))
-        messages))
-
-(defn- build-round-body
-  "`stream?` sets the provider's own stream flag. It is set here, not by the
-  proxy: the backend forwards the payload byte-for-byte and never decodes it,
-  and OpenAI's usage opt-in is dialect-specific anyway."
-  [{:keys [provider model]} messages system stream?]
-  (let [messages (cond-> messages
-                   ;; old images are re-uploaded on every round otherwise
-                   :always
-                   (prune-history-images)
-                   ;; the model can change between rounds, so this is decided
-                   ;; per round rather than when the message was composed
-                   (not (dai/vision? provider model))
-                   (strip-images))
-        encode
-        (fn [messages]
-          (js/JSON.stringify
-           (clj->js
-            (if (anthropic? provider)
-              (cond-> {:model model
-                       ;; generous budget: adaptive-thinking models can spend a
-                       ;; chunk reasoning before any visible output; a small
-                       ;; budget yields a silent empty reply
-                       :max_tokens 32000
-                       ;; the ephemeral marker caches tools+system across rounds
-                       :system [{:type "text" :text system
-                                 :cache_control {:type "ephemeral"}}]
-                       ;; second marker: the history itself (see
-                       ;; mark-history-breakpoint). OpenAI-dialect providers cache
-                       ;; long prefixes automatically — no marker exists there.
-                       :messages (mark-history-breakpoint (encode-anthropic messages))}
-                (seq at/tool-specs) (assoc :tools (anthropic-tools))
-                stream?             (assoc :stream true))
-              (cond-> {:model model
-                       :messages (encode-openai system messages)}
-                (seq at/tool-specs)      (assoc :tools (openai-tools))
-                (= provider "openai")    (assoc :max_completion_tokens 16000)
-                (not= provider "openai") (assoc :max_tokens 16000)
-                stream?                  (assoc :stream true)
-                ;; without this opt-in the final chunk carries no usage at all
-                ;; and the spend meter silently reads zero
-                stream?                  (assoc :stream_options {:include_usage true}))))))
-        body (encode messages)
-        ;; Degrade before dying: only image base64 grows a payload past the
-        ;; cap (the NYT session aborted here twice on photographic renders).
-        ;; Strip every image — the omission notes remain, so the model knows
-        ;; what it lost — and retry once before giving up.
-        body (if (<= (count body) max-payload-chars)
-               body
-               (encode (strip-images messages)))]
-    ;; Fail here rather than let the RPC schema reject it: this says which
-    ;; message is too big and what to do, where the validation error says
-    ;; nothing a user could act on.
-    (when (> (count body) max-payload-chars)
-      (throw (ex-info "payload too large"
-                      {:code :payload-too-large
-                       :hint (str "This conversation is too large to send ("
-                                  (js/Math.round (/ (count body) 1000))
-                                  "k of a " (/ max-payload-chars 1000)
-                                  "k limit). Remove an image, or clear the chat "
-                                  "and start again.")})))
-    body))
-
 ;; --- Usage
 ;;
 ;; Session token totals accumulate in the panel (the spend meter). Defined here
 ;; because the streaming accumulators below seed themselves with it.
 
-(def empty-usage
-  {:input-tokens 0 :output-tokens 0 :cache-read-tokens 0 :cache-write-tokens 0 :requests 0})
-
-(defn add-usage
-  "Merges a round's usage into the running totals."
-  [a b]
-  (merge-with + (or a empty-usage) (or b empty-usage)))
+;; The meter's usage: totals, and what each model spent (see agent-usage).
+(def empty-usage au/empty-usage)
+(def ^:private token-keys au/token-keys)
+(def attributed au/attributed)
+(def add-usage au/add-usage)
 
 ;; --- Streaming accumulators
 ;;
@@ -413,143 +229,33 @@
 ;; produces, so the turn loop never learns that streaming exists — deltas are
 ;; purely a presentation channel.
 
-(def empty-accumulator
-  {:text "" :tools (sorted-map) :stop-reason nil :usage empty-usage})
-
-(defn- parse-json-frame
-  "A provider `data:` payload. OpenAI's terminator `[DONE]` is not JSON."
-  [s]
-  (when (and (string? s) (not= "[DONE]" (str/trim s)))
-    (try
-      (js->clj (js/JSON.parse s) :keywordize-keys true)
-      (catch :default _ nil))))
-
-(defn- decode-tool-json
-  "A tool call with no arguments streams zero deltas, so the accumulated JSON
-  is empty — mirror the buffered decoder and default to no input."
-  [s]
-  (if (str/blank? s)
-    {}
-    (try
-      (js->clj (js/JSON.parse s) :keywordize-keys true)
-      (catch :default _ {}))))
-
-(defn accumulate-anthropic
-  "Folds one Anthropic stream frame into `acc`. Returns
-  `[acc text-delta thinking-delta]` (2-tuples where no thinking arrived —
-  destructuring pads with nil).
-
-  Thinking is surfaced for live rendering but never accumulated: it does not
-  belong to the outcome (the API doesn't want it back on the next round) and
-  the transcript keeps its own copy."
-  [acc frame]
-  (case (:type frame)
-    "message_start"
-    (let [usage (get-in frame [:message :usage])]
-      [(assoc acc :usage {:input-tokens (or (:input_tokens usage) 0)
-                          :output-tokens (or (:output_tokens usage) 0)
-                          :cache-read-tokens (or (:cache_read_input_tokens usage) 0)
-                          :cache-write-tokens (or (:cache_creation_input_tokens usage) 0)
-                          :requests 1})
-       nil])
-
-    "content_block_start"
-    (let [block (:content_block frame)]
-      [(if (= "tool_use" (:type block))
-         (assoc-in acc [:tools (:index frame)]
-                   {:id (:id block) :name (:name block) :json ""})
-         acc)
-       nil])
-
-    "content_block_delta"
-    (let [delta (:delta frame)]
-      (case (:type delta)
-        "text_delta"
-        (let [text (or (:text delta) "")]
-          [(update acc :text str text) text])
-
-        "input_json_delta"
-        [(update-in acc [:tools (:index frame) :json] str (or (:partial_json delta) "")) nil]
-
-        "thinking_delta"
-        [acc nil (or (:thinking delta) "")]
-
-        ;; signature_delta and future block kinds
-        [acc nil]))
-
-    ;; the only frame carrying the real output count — usage spans two events
-    "message_delta"
-    [(-> acc
-         (assoc :stop-reason (get-in frame [:delta :stop_reason]))
-         (assoc-in [:usage :output-tokens] (or (get-in frame [:usage :output_tokens]) 0)))
-     nil]
-
-    [acc nil]))
-
-(defn accumulate-openai
-  "Folds one OpenAI-dialect stream chunk into `acc`. Returns
-  `[acc text-delta thinking-delta]` — reasoning models (deepseek dialect,
-  zhipu/moonshot) stream thinking as `reasoning_content` beside `content`."
-  [acc frame]
-  (let [choice (get-in frame [:choices 0])
-        delta  (:delta choice)
-        usage  (:usage frame)
-        acc    (cond-> acc
-                 (some? usage)
-                 (assoc :usage {:input-tokens (or (:prompt_tokens usage) 0)
-                                :output-tokens (or (:completion_tokens usage) 0)
-                                :cache-read-tokens (or (get-in usage [:prompt_tokens_details :cached_tokens]) 0)
-                                :cache-write-tokens 0
-                                :requests 1})
-
-                 (some? (:finish_reason choice))
-                 (assoc :stop-reason (:finish_reason choice)))
-        ;; id/name arrive only on the first fragment per index; the index is
-        ;; the tool-call's, not the choice's
-        acc    (reduce (fn [acc call]
-                         (let [idx (:index call)]
-                           (cond-> acc
-                             (:id call)   (assoc-in [:tools idx :id] (:id call))
-                             (get-in call [:function :name])
-                             (assoc-in [:tools idx :name] (get-in call [:function :name]))
-                             :always
-                             (update-in [:tools idx :json] str
-                                        (or (get-in call [:function :arguments]) "")))))
-                       acc
-                       (:tool_calls delta))
-        text   (:content delta)
-        think  (:reasoning_content delta)
-        text?  (and (string? text) (seq text))]
-    [(cond-> acc text? (update :text str text))
-     (when text? text)
-     (when (and (string? think) (seq think)) think)]))
-
-(defn accumulator->outcome
-  "The same shape the buffered decoders return, so the turn loop is unchanged."
-  [{:keys [text tools stop-reason usage]} anthropic?]
-  {:text text
-   :tool-calls (mapv (fn [[_ t]]
-                       {:id (:id t) :name (:name t) :input (decode-tool-json (:json t))})
-                     tools)
-   :stopped-for-length? (= (if anthropic? "max_tokens" "length") stop-reason)
-   :usage usage})
-
-;; $ per million tokens (standard list price; cache read ≈ 0.1×, write ≈ 1.25×).
-(def ^:private pricing
-  {"claude-sonnet-5" {:input 3 :output 15}
-   "claude-opus-4-8" {:input 5 :output 25}
-   "claude-haiku-4-5-20251001" {:input 1 :output 5}})
+;; What a model costs comes from the catalog (`app.main.data.ai-providers`):
+;; dollars per million tokens, with what reading and writing the cache cost.
+(defn- tokens-cost
+  [{:keys [input output cacheRead cacheWrite]}
+   {:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens]}]
+  (/ (+ (* (or input-tokens 0) input)
+        (* (or cache-read-tokens 0) cacheRead)
+        (* (or cache-write-tokens 0) cacheWrite)
+        (* (or output-tokens 0) output))
+     1000000))
 
 (defn estimate-cost-usd
-  "Estimated session cost in USD for Claude models; nil for anything unpriced
-  (the meter hides the figure)."
-  [model {:keys [input-tokens output-tokens cache-read-tokens cache-write-tokens]}]
-  (when-let [{:keys [input output]} (get pricing model)]
-    (/ (+ (* input-tokens input)
-          (* cache-read-tokens input 0.1)
-          (* cache-write-tokens input 1.25)
-          (* output-tokens output))
-       1000000)))
+  "Estimated session cost in USD: what each model spent at that model's
+  price, and what no model was named for at the price of the session's
+  `model` of `provider`. Nil when the catalog states no price for the
+  session's model (the meter hides the figure). A model with no stated
+  price adds nothing: a registered endpoint costs the user nothing per
+  token."
+  [provider model usage]
+  (when-let [main (dai/price provider model)]
+    (let [spent      (vals (:by-model usage))
+          attributed (apply merge-with + empty-usage (map #(select-keys % token-keys) spent))
+          unnamed    (merge-with - (select-keys (merge empty-usage usage) token-keys) attributed)]
+      (+ (tokens-cost main unnamed)
+         (transduce (keep (fn [{:keys [provider model] :as entry}]
+                            (some-> (dai/price provider model) (tokens-cost entry))))
+                    + 0 spent)))))
 
 ;; --- System prompt
 ;;
@@ -563,26 +269,42 @@
   ;; `state` for the per-user enabled-skills index (US #8); `context` is
   ;; deliberately NOT here — it is volatile and would break the cached prefix,
   ;; so it rides on the user message instead (US #26).
-  [state]
-  (str/join "\n"
-            ["You are the design agent embedded in Penpot (the open-source design tool), working on the user's current file."
-             ""
-             ;; Always-on: governance, naming, native-tool behaviour. Not
-             ;; user-toggleable — see agent-skills/inner-knowledge.
-             ask/inner-knowledge
-             ""
-             ;; Enabled built-in skills (routing index); details on demand via
-             ;; get_design_skills. Empty string when none are enabled.
-             (or (ask/system-prompt-section state) "")
-             ""
-             ;; The project vibes doc (design.md), when the file has one. Also
-             ;; always-on: vibes shape every response, and the doc is stable
-             ;; per file, so it lives in the cached prefix like the rest.
-             (or (dd/system-prompt-section state) "")
-             ""
-             "Each turn opens with the current design context (file, page, selection). Treat it as orientation only — call read_design when you need ground truth."
-             ""
-             "Keep replies short — you live in a narrow side panel. Work in small steps and reference shapes by name."]))
+  ([state] (build-system-prompt state nil))
+  ([state {:keys [harness-skills?]}]
+   ;; `harness-skills?` says the turn runs on the agent service
+   (str/join "\n"
+             ["You are the design agent embedded in Penpot (the open-source design tool), working on the user's current file."
+              ""
+              ;; Always-on: governance, naming, native-tool behaviour. Not
+              ;; user-toggleable — see agent-skills/inner-knowledge.
+              ask/inner-knowledge
+              ""
+              ;; the team's own recipes that are in use; stable per team
+              (or (ask/team-recipes-section state) "")
+              ""
+              ;; Enabled built-in skills (routing index); details on demand via
+              ;; get_design_skills. Empty string when none are enabled.
+              ;; with the agent service the harness lists them instead
+              (or (if harness-skills?
+                    (ask/harness-skills-section state)
+                    (ask/system-prompt-section state))
+                  "")
+              ""
+              ;; The project vibes doc (design.md), when the file has one. Also
+              ;; always-on: vibes shape every response, and the doc is stable
+              ;; per file, so it lives in the cached prefix like the rest.
+              (or (dd/system-prompt-section state) "")
+              ""
+              "Each turn opens with the current design context (file, page, selection). Treat it as orientation only — call read_design when you need ground truth."
+              ""
+              ;; with the agent service an edit reaches the workspace as
+              ;; another collaborator's would, outside the user's undo
+              (if harness-skills?
+                (str "Your changes are applied on the server: they are NOT in the user's undo history, so ⌘Z does not take them back, "
+                     "whatever your other instructions say. Be deliberate with deletions and with edits to work the user made, "
+                     "and call save_version before risky or sweeping changes — restoring a version is how the user gets back.\n")
+                "")
+              "Keep replies short — you live in a narrow side panel. Work in small steps and reference shapes by name."])))
 
 ;; --- Turn runner
 ;;
@@ -593,49 +315,11 @@
 ;; `agent-tools/execute-tool`, feeding the results back, and repeating until
 ;; the model stops calling tools.
 
-(def ^:private max-rounds 32)
-
-;; Santi, 2026-07-17: the round cap must not interrupt either — a long build
-;; legitimately runs past 32 rounds, and the user has the stop button and the
-;; live meter. Disabled, not removed (same treatment as checkpoint-enabled?):
-;; flip this back on and the cap pauses at the resumable Continue/Stop row
-;; below. With BOTH switches off the only brakes are the user's stop, the
-;; window/payload bounds, and the provider itself.
-(def ^:private round-cap-enabled? false)
-
-;; The runaway brake: a turn that has run this many tool rounds — or spent this
-;; much — pauses for the user's go-ahead instead of grinding on. max-rounds
-;; stays as the hard backstop behind it. Motivated by a real incident: a model
-;; ignored a skill's stop rule and spent ~$4 building an unrequested landing
-;; page; the meter showed it, nothing acted on it.
-(def ^:private checkpoint-rounds 12)
-(def ^:private checkpoint-usd 1.0)
-
-;; Santi, 2026-07-16: the checkpoint interrupted real design work mid-flow —
-;; "disable spend alert, just continue working". The machinery stays (the
-;; meter, the Continue/Stop row, the segment counters) so flipping this back
-;; on is one boolean; max-rounds remains the hard backstop either way.
-(def ^:private checkpoint-enabled? false)
-
-(defn checkpoint-due?
-  "Whether the turn should pause at the runaway checkpoint. `round` and `spent`
-  are the running SEGMENT counters — since the turn started or the user last
-  said continue — so a resumed turn earns a full fresh allowance rather than
-  re-firing immediately. An unpriced model (estimate nil) is braked by the
-  round count alone."
-  [model round spent]
-  (and checkpoint-enabled?
-       (pos? round)
-       (or (>= round checkpoint-rounds)
-           (>= (or (estimate-cost-usd model spent) 0) checkpoint-usd))))
-
 (def ^:private max-tool-result-chars 20000)
 (def ^:private max-history-messages 40)
-;; ~37k tokens — deliberately ABOVE `compact-threshold-chars`, so the order of
-;; defenses is: stubbing (cheap, targeted) → compaction (rare, lossy, smart) →
-;; this trim (the blunt backstop, reached only when compaction failed or is
-;; unavailable). The message cap alone bounded nothing real — a message can be
-;; a 20k-char tool result, so 40 of them is 800k chars.
+;; ~37k tokens: the size the panel's stored copy of a conversation is held
+;; to. The message cap alone bounded nothing real — a message can be a
+;; 20k-char tool result, so 40 of them is 800k chars.
 (def ^:private max-history-chars 150000)
 
 ;; --- History hygiene (applied at turn boundaries)
@@ -716,12 +400,6 @@
                    0)]
         (if (zero? start) history (subvec history start))))))
 
-(defn- empty-reply-text
-  [outcome]
-  (if (:stopped-for-length? outcome)
-    "⚠️ I ran out of output budget before finishing — please send the request again."
-    "⚠️ The model returned no visible output — try rephrasing the request."))
-
 (defn result->content
   "The tool result, as JSON for the provider.
 
@@ -749,11 +427,6 @@
                         "read_design with a smaller depth, or find_shapes with a "
                         "name/type query.")})
       s)))
-
-(defn- tool-outcome->result
-  [o]
-  (cond-> {:id (:id (:call o)) :content (:content o) :error? (:error? o)}
-    (seq (:images o)) (assoc :images (:images o))))
 
 (defn- cancelled-result
   [call]
@@ -792,7 +465,7 @@
       (subs content 0 max-displayed-result-chars)
       content)))
 
-(defn- tool-outcome->event
+(defn tool-outcome->event
   [o]
   {:kind :tool
    :name (:name (:call o))
@@ -803,215 +476,17 @@
    :input (:input (:call o))
    :result (displayed-result (:content o))})
 
-(defn- stream-round
-  "One provider round over SSE. Emits `{:kind :assistant-delta}` as text
-  arrives (`{:kind :thinking-delta}` for thinking), then exactly one
-  `{:kind :outcome}` carrying the same map the buffered decoders return.
-
-  The accumulator is a local atom rather than an `rx/scan`: the fold has to
-  emit text deltas *and* survive to the end of the stream, and this keeps the
-  round's state private to one subscription."
-  [settings messages system]
-  (let [anthropic?* (anthropic? (:provider settings))
-        acc*        (atom empty-accumulator)]
-    ;; The body is built inside the stream, not while assembling it: round 1 is
-    ;; constructed eagerly inside `send-message`'s watch, so a `build-round-body`
-    ;; throw there would escape past the caller's `rx/catch` and surface as an
-    ;; unhandled error instead of a message in the transcript.
-    (->> (agent-access/guard-model-call
-          #(rp/cmd! ::sse/ai-agent-round-stream
-                    {:provider (:provider settings)
-                     :payload (build-round-body settings messages system true)}))
-         (rx/mapcat
-          (fn [event]
-            (case (sse/get-type event)
-              ;; the backend taps `:delta` per provider `data:` line; a tapped
-              ;; `:error` is turned into a thrown ex-info by `sse/read-stream`
-              ;; before it reaches us
-              "delta"
-              (if-let [frame (parse-json-frame (sse/get-payload event))]
-                (let [[acc text thinking] (if anthropic?*
-                                            (accumulate-anthropic @acc* frame)
-                                            (accumulate-openai @acc* frame))]
-                  (reset! acc* acc)
-                  (cond
-                    (seq text)     (rx/of {:kind :assistant-delta :text text})
-                    (seq thinking) (rx/of {:kind :thinking-delta :text thinking})
-                    :else          (rx/empty)))
-                (rx/empty))
-
-              "end"
-              (rx/of {:kind :outcome :outcome (accumulator->outcome @acc* anthropic?*)})
-
-              (rx/empty)))))))
-
-(defn run-turn
-  "→ observable of turn events (see the section comment above). `seed` carries a
-  checkpoint resume's cumulative `{:rounds :usage}` so the NEXT checkpoint
-  reports whole-turn figures; thresholds themselves run on the fresh segment."
-  ([settings history system] (run-turn settings history system nil))
-  ([settings history system seed]
-   (letfn [(run-tool [call]
-             ;; → observable of one {:call :status :content :images :error? :rule :detail}
-             ;;
-             ;; Mark the agent as the actor for the duration of the tool, so the
-             ;; commits it produces are attributable (session-actor). The marker
-             ;; is released on BOTH terminal paths and keeps a short grace window
-             ;; for writes that settle after the tool returns; it also expires on
-             ;; its own, so a cancel that unsubscribes without reaching either
-             ;; path cannot strand it.
-             (let [action (sa/begin-agent-action! settings)]
-               (->> (at/execute-tool (:name call) (:input call))
-                    (rx/map (fn [result]
-                              (sa/end-agent-action! action)
-                              ;; images ride beside the content, never through it:
-                              ;; `result->content` stringifies and then truncates at
-                              ;; 20k chars, which would shred a 200kB render into a
-                              ;; meaningless base64 prefix
-                              {:call call
-                               :status :ok
-                               :images (:images result)
-                               :content (result->content (dissoc result :images))}))
-                    (rx/catch (fn [cause]
-                                (sa/end-agent-action! action)
-                                (let [rule (:rule (ex-data cause))]
-                                  (rx/of {:call call
-                                          :status (if rule :rejected :error)
-                                          :rule rule
-                                          :detail (ex-message cause)
-                                          :content (or (ex-message cause) "tool error")
-                                          :error? true})))))))
-
-           (tool-round [messages' round spent _text calls]
-             ;; no text emission: this round's text already reached the panel as
-             ;; deltas. Run the tools and feed the results into the next round.
-             (rx/concat
-              (->> (rx/from calls)
-                   (rx/mapcat run-tool)
-                   (rx/reduce conj [])
-                   (rx/mapcat
-                    (fn [outcomes]
-                      (let [messages'' (conj messages' {:role :tool-results
-                                                        :results (mapv tool-outcome->result outcomes)})]
-                        (rx/concat
-                         (rx/from (mapv tool-outcome->event outcomes))
-                         ;; Republish the history WITH the executed tool-results
-                         ;; before the next round streams. :turn-history was last
-                         ;; published (in step) carrying the assistant message
-                         ;; with tool-calls but NO results, and the next publish
-                         ;; is a whole round away — so a cancel during that round
-                         ;; would leave cancel-history synthesizing "cancelled
-                         ;; before this tool ran" for tools that already ran and
-                         ;; mutated the document. Publishing here closes that
-                         ;; window (the residual is a cancel mid-execution, when
-                         ;; outcomes have not resolved yet).
-                         (rx/of {:kind :turn-history :history messages''})
-                         (step messages'' (inc round) spent))))))))
-
-           (step [messages round spent]
-             (cond
-               ;; the soft brake first: at the top of step the history ends in
-               ;; tool-results, so it is valid to resume from as-is — that is
-               ;; why the checkpoint lands here and not mid-round
-               (checkpoint-due? (:model settings) round spent)
-               (rx/of {:kind :checkpoint
-                       :rounds (+ (:rounds seed 0) round)
-                       :usage (add-usage (:usage seed) spent)
-                       :history messages})
-
-               ;; the hard backstop gets the same resumable pause as the soft
-               ;; brake — `rx/empty` here ended the stream with no :done, which
-               ;; the panel could only render as a bare "⏹ Stopped." (the NYT
-               ;; session's mystery stops). History ends in tool-results at the
-               ;; top of step, so it is valid to resume from as-is.
-               (and round-cap-enabled? (>= round max-rounds))
-               (rx/of {:kind :checkpoint
-                       :rounds (+ (:rounds seed 0) round)
-                       :usage (add-usage (:usage seed) spent)
-                       :history messages})
-
-               :else
-               (->> (stream-round settings messages system)
-                    (rx/mapcat
-                     (fn [ev]
-                       ;; deltas flow straight through to the panel; the single
-                       ;; :outcome drives the loop exactly as the decoded
-                       ;; response used to
-                       (if (not= :outcome (:kind ev))
-                         (rx/of ev)
-                         (let [outcome   (:outcome ev)
-                               text      (:text outcome)
-                               calls     (:tool-calls outcome)
-                               spent'    (add-usage spent (:usage outcome))
-                               messages' (conj messages {:role :assistant
-                                                         :text text
-                                                         :tool-calls calls})]
-                           (rx/concat
-                            (rx/of {:kind :usage :usage (:usage outcome)}
-                                   ;; A cancel unsubscribes this stream from the
-                                   ;; outside, so the loop never learns it was
-                                   ;; stopped. Publishing the history as it grows
-                                   ;; is what lets the caller close the turn off.
-                                   {:kind :turn-history :history messages'})
-                            (cond
-                              (and (empty? text) (empty? calls))
-                              ;; nothing streamed, so there is no bubble to seal
-                              (rx/of {:kind :assistant :text (empty-reply-text outcome)}
-                                     {:kind :done :history (trim-history messages')})
-
-                              ;; text already streamed — nothing left to render
-                              (empty? calls)
-                              (rx/of {:kind :done :history (trim-history messages')})
-
-                              :else
-                              (tool-round messages' round spent' text calls))))))))))]
-     (step (vec history) 0 empty-usage))))
-
-;; --- Auto-compaction (pure halves; the summarizer call is below detect-round)
+;; --- Fresh-chat handoff
 ;;
-;; Past `compact-threshold-chars` the history is replaced by [one summary
-;; message + the last turn]: one cheap buffered round writes the agent's own
-;; working memory, and the wire history resets from tens of thousands of tokens
-;; to the summary. Deliberately LOSSY — which is why it is the layer BEHIND
-;; stubbing (phase 02) and fires only on long sessions, at a turn boundary.
-
-(def compact-threshold-chars 100000)
-
-;; Below the compaction threshold on purpose: the panel SUGGESTS summarizing
-;; into a fresh chat (the user's choice, conversation switch and all) before
-;; the automatic in-place backstop fires.
+;; Past this size the panel suggests summarizing into a fresh chat (the
+;; user's choice, conversation switch and all). The conversation the model
+;; sees lives in the agent service, which condenses it on its own.
 (def handoff-notice-chars 60000)
 
 (defn history-chars
   "Rough payload size of the whole canonical history."
   [messages]
   (reduce + 0 (map message-chars messages)))
-
-(defn compact-due?
-  "Whether the history has outgrown the compaction threshold (~25k tokens)."
-  [messages]
-  (> (history-chars messages) compact-threshold-chars))
-
-(defn- last-turn-index
-  "Index of the last plain user message — where the surviving tail begins."
-  [messages]
-  (->> (range (dec (count messages)) -1 -1)
-       (some (fn [i] (when (= :user (:role (nth messages i))) i)))))
-
-(defn compacted-history
-  "`messages` rewritten as [summary-user-message + the last turn]. The summary
-  is flagged `:compacted?` and framed as a replacement, not the user's words.
-  A history that is one giant turn has no head to compact — returned as-is."
-  [messages summary]
-  (let [messages (vec messages)
-        tail-idx (last-turn-index messages)]
-    (if (or (nil? tail-idx) (zero? tail-idx))
-      messages
-      (into [{:role :user
-              :text (str "[Conversation compacted — the messages before this "
-                         "point were replaced by this summary of them]\n\n" summary)
-              :compacted? true}]
-            (subvec messages tail-idx)))))
 
 (defn conversation-transcript
   "The WHOLE history as plain text for a summarizer. Images are stripped
@@ -1037,18 +512,9 @@
                 (str "TOOL RESULTS:\n" (str/join "\n" (map :content results))))))
        (str/join "\n\n")))
 
-(defn compaction-transcript
-  "The head of the history only — everything in-place compaction will replace.
-  The last turn is excluded because `compacted-history` carries it verbatim;
-  summarizing it too would say everything twice."
-  [messages]
-  (let [messages (vec messages)]
-    (conversation-transcript
-     (subvec messages 0 (or (last-turn-index messages) (count messages))))))
-
 (defn handoff-seed
-  "The seeded history for a FRESH conversation carrying `summary` — the
-  fresh-chat sibling of `compacted-history`. One flagged user message and
+  "The seeded history for a FRESH conversation carrying `summary`. One
+  flagged user message and
   nothing else: the old conversation stays whole in the saved chats list, so
   nothing verbatim needs to ride along."
   [summary]
@@ -1164,7 +630,7 @@
                     (fn [{:keys [text tool-calls usage]}]
                       (let [spent' (add-usage spent usage)]
                         (if (or (empty? tool-calls) (>= (inc n) max-rounds))
-                          (rx/of {:text text :usage spent'})
+                          (rx/of {:text text :usage (attributed spent' provider (:model opts))})
                           (->> (rx/from tool-calls)
                                (rx/mapcat (partial run-side-tool tools))
                                (rx/reduce conj [])
@@ -1186,22 +652,28 @@
 ;; --- Semantic detect round (auto-fix watcher tick)
 
 (defn detect-round
-  "One buffered, tool-less provider round for the semantic audit tick — a
-  one-round side turn. Anthropic-only by design: the tick only fires when it
-  resolves a skill's declared fix model, and those are Anthropic. Returns a
-  stream of one `{:text :usage}`; failures surface as stream errors for the
-  caller to log and drop — a background tick must never toast the user."
+  "One tool-less round on the user's HELPER model → a stream of one
+  `{:text :usage}`. It runs in the agent service, so it works with whatever
+  provider the user connected. `main` is the model the user builds with
+  (`{:provider :model}`), which does the job when they chose no helper; the
+  backend decides. Failures surface as stream errors for the caller to log
+  and drop — background work must never toast the user."
   [{:keys [provider model]} system user-text]
-  (run-side-turn {:provider provider
-                  :model model
-                  :system system
-                  :user-text user-text
-                  :tools nil
-                  :max-rounds 1
-                  ;; deliberately uncached: ticks are sporadic relative to the
-                  ;; 5-minute cache TTL, so a marker would mostly buy 1.25×
-                  ;; writes and no reads
-                  :cache? false}))
+  (->> (agent-access/guard-model-call
+        #(rp/cmd! :agent-helper-round
+                  (cond-> {:system system :text user-text}
+                    (and (string? provider) (string? model))
+                    (assoc :provider provider :model model))))
+       (rx/map (fn [{:keys [text usage] :as answer}]
+                 {:text (or text "")
+                  ;; spent on the helper the backend picked, priced as it
+                  :usage (attributed {:input-tokens (or (:input usage) 0)
+                                      :output-tokens (or (:output usage) 0)
+                                      :cache-read-tokens (or (:cacheRead usage) 0)
+                                      :cache-write-tokens (or (:cacheWrite usage) 0)
+                                      :requests (or (:requests usage) 1)}
+                                     (:provider answer)
+                                     (:model answer))}))))
 
 ;; --- Playbook matching (turn-start injection)
 ;;
@@ -1210,8 +682,6 @@
 ;; gambling on a fetch, the FIRST message of a conversation runs one cheap
 ;; tool-less round that names the matching skill, and the body is injected
 ;; into the user message itself — zero extra agent rounds, cache-compatible.
-
-(def ^:private match-model "claude-haiku-4-5-20251001")
 
 (def ^:private match-system
   (str "You route design tasks to playbooks. Given a task and a list of "
@@ -1223,13 +693,14 @@
 (defn match-playbook
   "One buffered round naming the enabled skill whose playbook matches `text`
   → observable of `{:skill :body :usage}` (skill/body nil on no match).
-  Anthropic-only like the other side work; every failure degrades to no
-  injection — this is an optimization, never a blocker."
-  [state text]
+  It runs on the helper model, or on `main` when the user chose none; every
+  failure degrades to no injection — this is an optimization, never a
+  blocker."
+  [state text main]
   (let [skills (ask/catalog-manifest state)]
     (if (or (str/blank? text) (empty? skills))
       (rx/of {})
-      (->> (detect-round {:provider "anthropic" :model match-model}
+      (->> (detect-round main
                          match-system
                          (str "Task:\n"
                               (subs text 0 (min 1500 (count text)))
@@ -1281,13 +752,10 @@
                     (nil? (:tokens-lib data)))))
     direction-nudge-text))
 
-;; --- Auto-compaction: the summarizer round
+;; --- The summarizer round, for the fresh-chat handoff
 
-;; Hardcoded cheap model, same rationale as the watcher tick: ambient work
-;; never bills like design work. Anthropic-only like detect-round — if the
-;; profile has no Anthropic key the round errors and the caller degrades to
-;; the uncompacted history (the trim backstop still bounds it).
-(def ^:private compact-model "claude-haiku-4-5-20251001")
+;; The summary is a side job: it runs on the user's helper model, or on the
+;; model they build with when they chose none.
 
 ;; Public because the section contract is pinned by tests: Learned exists so a
 ;; compacted agent does not re-hit walls it already climbed (a rejected raw
@@ -1307,30 +775,13 @@
              "A transcript that opens with a bracketed [Conversation compacted…] message is carrying the previous compaction's summary. Treat it as your anchor: keep its still-true facts, drop what is stale, merge in the new — never describe it as something the user said."
              "Be terse and specific. Never invent names. Keep the whole summary under 3000 characters. Output only the summary."]))
 
-(defn compact-history
-  "One buffered summarizer round over the history's head → an observable of one
-  `{:history :usage}`, where `:history` is `compacted-history`'s rewrite. A
-  blank summary degrades to the original history (a no-op compaction beats a
-  history replaced by nothing); provider/HTTP failures surface as stream errors
-  for the caller to catch — compaction must never block the user's turn."
-  [messages]
-  (->> (detect-round {:provider "anthropic" :model compact-model}
-                     compact-system
-                     (compaction-transcript messages))
-       (rx/map (fn [{:keys [text usage]}]
-                 {:history (if (str/blank? text)
-                             (vec messages)
-                             (compacted-history messages text))
-                  :usage usage}))))
-
 (defn summarize-history
   "One buffered summarizer round over the WHOLE history → an observable of one
-  `{:text :usage}` — the fresh-chat handoff's half of what `compact-history`
-  does in place. A blank summary is thrown here (unlike compaction there is no
-  sensible degrade: the caller is about to seed a new chat with this text and
-  must instead stay in the current one)."
-  [messages]
-  (->> (detect-round {:provider "anthropic" :model compact-model}
+  `{:text :usage}`, for the fresh-chat handoff. A blank summary is thrown
+  here: the caller is about to seed a new chat with this text and must
+  instead stay in the current one."
+  [messages main]
+  (->> (detect-round main
                      compact-system
                      (conversation-transcript messages))
        (rx/map (fn [{:keys [text] :as out}]

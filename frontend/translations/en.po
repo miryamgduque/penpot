@@ -2353,6 +2353,82 @@ msgstr "Resolved value:"
 msgid "inspect.tabs.styles.variants-panel"
 msgstr "Variant Properties"
 
+msgid "integrations.agent-mcp.title"
+msgstr "Connected services"
+
+msgid "integrations.agent-mcp.description"
+msgstr ""
+"Connect MCP servers of other services so the Penpot Agent can use their "
+"tools. They are called from Penpot's server, over https; a token is stored "
+"encrypted and never shown again. What a connected service returns reaches "
+"an agent that can edit your files: connect only services you trust."
+
+msgid "integrations.agent-mcp.name.label"
+msgstr "Name"
+
+msgid "integrations.agent-mcp.name.placeholder"
+msgstr "Name, e.g. tracker"
+
+msgid "integrations.agent-mcp.url.label"
+msgstr "Server address"
+
+msgid "integrations.agent-mcp.url.placeholder"
+msgstr "https://example.com/mcp"
+
+msgid "integrations.agent-mcp.token.label"
+msgstr "Token"
+
+msgid "integrations.agent-mcp.token.placeholder"
+msgstr "Token (optional)"
+
+msgid "integrations.agent-mcp.connect"
+msgstr "Connect"
+
+msgid "integrations.agent-mcp.enabled"
+msgstr "Enabled"
+
+msgid "integrations.agent-mcp.remove"
+msgstr "Remove service"
+
+msgid "integrations.agent-mcp.tools.enabled"
+msgstr "Let the agent use %s"
+
+msgid "integrations.agent-mcp.tools.error"
+msgstr "The service did not list its tools: %s"
+
+msgid "integrations.agent-mcp.tools.hide"
+msgstr "Hide tools"
+
+msgid "integrations.agent-mcp.tools.loading"
+msgstr "Asking the service for its tools…"
+
+msgid "integrations.agent-mcp.tools.none"
+msgstr "This service offers no tools."
+
+msgid "integrations.agent-mcp.tools.show"
+msgstr "Show tools"
+
+msgid "integrations.agent-mcp.token-saved"
+msgstr "Token saved"
+
+msgid "integrations.agent-mcp.notification.connected"
+msgstr "%s connected"
+
+msgid "integrations.agent-mcp.error.name"
+msgstr "The name can have letters, digits, - and _, up to 32 of them."
+
+msgid "integrations.agent-mcp.error.https"
+msgstr "The server address must start with https://"
+
+msgid "integrations.agent-mcp.error.private"
+msgstr "That address is private or blocked by this Penpot instance."
+
+msgid "integrations.agent-mcp.error.limit"
+msgstr "No more services can be connected. Remove one first."
+
+msgid "integrations.agent-mcp.error.generic"
+msgstr "The service could not be connected."
+
 msgid "integrations.ai-provider.enabled-files"
 msgid_plural "integrations.ai-provider.enabled-files"
 msgstr[0] "You turned the agent on in 1 file."
@@ -2429,6 +2505,90 @@ msgstr "Images"
 
 msgid "integrations.ai-provider.models.vision-hint"
 msgstr "This model can read images you attach in the agent chat."
+
+msgid "integrations.ai-endpoint.hint"
+msgstr "Run by your organisation"
+
+msgid "integrations.ai-endpoint.use"
+msgstr "Use this endpoint"
+
+msgid "integrations.ai-endpoint.status.in-use"
+msgstr "In use"
+
+msgid "integrations.ai-endpoint.admin.title"
+msgstr "Model endpoints of this instance"
+
+msgid "integrations.ai-endpoint.admin.description"
+msgstr "Register the models your organisation runs itself: an address that speaks the OpenAI-compatible protocol, and the models it serves. Everyone on this instance can then use them; only administrators can add an address."
+
+msgid "integrations.ai-endpoint.admin.name"
+msgstr "Name"
+
+msgid "integrations.ai-endpoint.admin.address"
+msgstr "Address"
+
+msgid "integrations.ai-endpoint.admin.address-placeholder"
+msgstr "http://models.internal:11434/v1"
+
+msgid "integrations.ai-endpoint.admin.requires-key"
+msgstr "Each user brings a key of their own"
+
+msgid "integrations.ai-endpoint.admin.models-hint"
+msgstr "The models it serves. Tick what each one can do; the agent needs tool use, and sends images only to models that read them."
+
+msgid "integrations.ai-endpoint.admin.model-id"
+msgstr "Model id"
+
+msgid "integrations.ai-endpoint.admin.context"
+msgstr "Context, in tokens"
+
+msgid "integrations.ai-endpoint.admin.tools"
+msgstr "Tool use"
+
+msgid "integrations.ai-endpoint.admin.add-model"
+msgstr "Add a model"
+
+msgid "integrations.ai-endpoint.admin.save"
+msgstr "Register endpoint"
+
+msgid "integrations.ai-endpoint.admin.remove"
+msgstr "Remove %s"
+
+msgid "integrations.ai-endpoint.error.address"
+msgstr "The address has to be an http or https URL."
+
+msgid "integrations.ai-endpoint.error.name"
+msgstr "Another endpoint has that name."
+
+msgid "integrations.ai-endpoint.error.models"
+msgstr "Two models cannot have the same id."
+
+msgid "integrations.ai-endpoint.error.limit"
+msgstr "This instance has as many endpoints as it can hold."
+
+msgid "integrations.ai-endpoint.error.generic"
+msgstr "The endpoint could not be registered."
+
+msgid "integrations.ai-provider.helper.title"
+msgstr "Helper model"
+
+msgid "integrations.ai-provider.helper.description"
+msgstr "The model for the agent's side jobs: summaries, reading through the file and matching playbooks. A cheaper, faster model keeps the cost down. With none chosen, the model you build with does them."
+
+msgid "integrations.ai-provider.helper.same"
+msgstr "Same as the model I build with"
+
+msgid "integrations.ai-provider.models.no-tools"
+msgstr "No tool use"
+
+msgid "integrations.ai-provider.models.no-tools-hint"
+msgstr "This model cannot call tools, which the agent needs for everything it does, so it cannot be chosen."
+
+msgid "integrations.ai-provider.models.unknown"
+msgstr "Unknown"
+
+msgid "integrations.ai-provider.models.unknown-hint"
+msgstr "What this model can do is not known. The agent will try it, and will not send it images."
 
 msgid "integrations.ai-provider.models.count"
 msgstr "%s models enabled"
@@ -3517,6 +3677,114 @@ msgstr "by %s"
 #: src/app/main/ui/dashboard/agent_skills.cljs
 msgid "dashboard.agent-skills.no-test"
 msgstr "No test action here — the dashboard has no open file to act on."
+
+#: src/app/main/ui/dashboard/sidebar.cljs
+msgid "labels.agent-recipes"
+msgstr "Agent Recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "title.agent-recipes"
+msgstr "Agent Recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.description"
+msgstr "A recipe is the structure of a common piece of UI. The agent builds from it in one step: auto-layout, tokens and components, the same way every time. Recipes hold structure, not style."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.new"
+msgstr "New recipe"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.edit-title"
+msgstr "Edit %s"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.editor-hint"
+msgstr "A recipe is JSON in the recipe format. It is checked when you save: anything outside the format is refused, and you are told what and where."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.import"
+msgstr "Import file"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.export"
+msgstr "Export"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.enable"
+msgstr "Enable"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.disable"
+msgstr "Disable"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.refused"
+msgstr "Not saved: %s"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.team-title"
+msgstr "Your team's recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.empty"
+msgstr "No team recipes yet. Write one, import a file, or ask the agent to save a board as a recipe."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.built-in-title"
+msgstr "Built-in recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.built-in-desc"
+msgstr "These come with Penpot and cannot be changed. To change one for your team, export it, edit it and import it under the same name: your team's recipe is then used in its place."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.built-in"
+msgstr "Built-in"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.replaces-built-in"
+msgstr "Used in place of the built-in one"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.disabled"
+msgstr "Disabled"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.origin.team"
+msgstr "Written in the team"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.origin.saved"
+msgstr "Saved from “%s”"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.origin.imported"
+msgstr "Imported from “%s”"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.origin.community"
+msgstr "From the community: %s"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-title"
+msgstr "Community recipes"
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-desc"
+msgstr "Recipes shared by others, from %s. Importing one copies it into your team, labelled with where it came from and disabled until you enable it. A recipe is data: nothing in it is ever run."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-unavailable"
+msgstr "The community index could not be read just now."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-empty"
+msgstr "The community index has no recipes yet."
+
+#: src/app/main/ui/dashboard/agent_recipes.cljs
+msgid "dashboard.agent-recipes.community-in-team"
+msgstr "Already in your team"
 
 #: src/app/main/ui/onboarding/questions.cljs:53
 msgid "labels.start"
@@ -9922,6 +10190,30 @@ msgid "workspace.agent.checkpoint.continue"
 msgstr "Continue"
 
 #: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.revert.offer"
+msgstr "The agent changed the file in this turn. Its changes are not in your undo history."
+
+msgid "workspace.agent.revert.action"
+msgstr "Revert this turn"
+
+msgid "workspace.agent.revert.done"
+msgstr "The turn's changes were reverted."
+
+msgid "workspace.agent.revert.undo"
+msgstr "Undo revert"
+
+msgid "workspace.agent.revert.conflict"
+msgstr "Edited since the agent changed them: %s. Reverting will overwrite those edits."
+
+msgid "workspace.agent.revert.conflict-unknown"
+msgstr "This turn is too old to tell whether what it changed was edited since. Reverting may overwrite later edits."
+
+msgid "workspace.agent.revert.anyway"
+msgstr "Revert anyway"
+
+msgid "workspace.agent.revert.keep"
+msgstr "Keep as is"
+
 msgid "workspace.agent.checkpoint.stop"
 msgstr "Stop here"
 

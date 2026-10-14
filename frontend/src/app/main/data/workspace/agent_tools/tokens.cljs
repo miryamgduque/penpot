@@ -7,126 +7,37 @@
 (ns app.main.data.workspace.agent-tools.tokens
   "Design-token tools: create/apply tokens, sets and themes."
   (:require
+   [app.common.agent.read :as car]
+   [app.common.agent.tokens :as cato]
    [app.common.data.macros :as dm]
-   [app.common.types.token :as cto]
    [app.common.types.tokens-lib :as ctob]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-tools.common :as atc]
    [app.main.data.workspace.tokens.application :as dwta]
    [app.main.data.workspace.tokens.library-edit :as dwtl]
+   [app.main.data.workspace.tokens.propagation :as dwtp]
    [app.main.store :as st]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
 
-;; Composite types carry structured values (typography is a map of font
-;; attributes, shadow a vector of shadow maps). `:value` is `::sm/any`, so
-;; `make-token` would accept a plain string for one and author something
-;; malformed without complaint — better to not offer them than to offer a lie.
-(def ^:private composite-token-types #{:typography :shadow})
-
-(def token-type-names
-  "The DTCG type names `create_token` offers, derived from
-  `cto/token-type->dtcg-token-type` rather than retyped — a hand-copied list
-  drifts the next time Penpot adds a type. Public because the tool
-  declarations read it for their enum."
-  (->> cto/token-type->dtcg-token-type
-       (remove (fn [[k _]] (contains? composite-token-types k)))
-       (map second)
-       (sort)
-       (vec)))
-
-;; --- Token tools (the safe coloring path)
-
-(defn token-type
-  "The internal token type for a public DTCG name, or nil. Accepts the
-  back-compat singular aliases (`fontSize`, `fontWeight`, …) that
-  `cto/dtcg-token-type->token-type` already knows."
-  [name]
-  (get cto/dtcg-token-type->token-type name))
-
-(defn token-problem
-  "Why `create_token` cannot author this token, or nil. Pure."
-  [{:keys [type name value]}]
-  (let [t (token-type type)]
-    (cond
-      (or (not (string? name)) (str/blank? name))
-      "create_token: name is required, e.g. \"spacing.md\" or \"color.brand.primary\""
-
-      ;; not `blank?`: "0" is a legitimate spacing value
-      (or (nil? value) (and (string? value) (empty? value)))
-      "create_token: value is required, e.g. \"16\", \"#6366f1\" or \"{color.blue.500}\""
-
-      (nil? t)
-      (dm/str "create_token: \"" type "\" is not a token type — use one of: "
-              (str/join ", " token-type-names))
-
-      (contains? composite-token-types t)
-      (dm/str "create_token: " type " tokens need a structured value, which this"
-              " tool cannot express yet — author it in the tokens panel")
-
-      :else nil)))
-
-;; --- Token sets and themes
+;; --- Shared with the server
 ;;
-;; `penpot-foundations`' whole method: primitives in one set, semantics duplicated
-;; across `modes/light` / `modes/dark`, and a theme per mode toggling the matching
-;; set. "/" is the group separator, which is what makes `modes/*` a group.
+;; The pure halves of the token tools live in `app.common.agent.tokens`,
+;; shared with the server-side tools. They keep their names here.
 
-(defn normalize-set
-  "A set name as the library stores it — `\"modes / dark\"` → `\"modes/dark\"`."
-  [name]
-  (ctob/normalize-set-name (str name)))
+(def token-type-names cato/token-type-names)
 
-(defn token-set-problem
-  "Why a token cannot target this set, or nil. `nil` means Phase 08's default
-  (the library's existing set), which stays untouched.
+(def token-type cato/token-type)
 
-  Note the param is `set-name`, not `set`: naming it `set` shadows
-  `clojure.core/set`, and `(set set-names)` then calls a string."
-  [set-names set-name]
-  (when (some? set-name)
-    (let [want (normalize-set set-name)]
-      (cond
-        (empty? set-names)
-        (dm/str "set \"" want "\" does not exist — this file has no token sets yet;"
-                " create one with create_token_set")
+(def token-problem cato/token-problem)
 
-        (not (contains? (into #{} set-names) want))
-        (dm/str "set \"" want "\" does not exist — this file has: "
-                (str/join ", " (sort set-names))
-                " (create another with create_token_set)")))))
+(def normalize-set cato/normalize-set)
 
-(defn new-set-problem
-  "Why `create_token_set` cannot make this set, or nil."
-  [set-names name]
-  (let [want (normalize-set name)]
-    (cond
-      (or (not (string? name)) (str/blank? name))
-      "create_token_set: name is required, e.g. \"modes/dark\" (\"/\" groups sets)"
+(def token-set-problem cato/token-set-problem)
 
-      ;; create-token-set commits over an existing set — which is exactly how the
-      ;; library got wiped in Phase 08. Never silently replace one.
-      (contains? (into #{} set-names) want)
-      (dm/str "create_token_set: a set named \"" want "\" already exists"
-              " — name a token's set with create_token's `set` param instead"))))
+(def new-set-problem cato/new-set-problem)
 
-(defn theme-problem
-  "Why `create_token_theme` cannot make this theme, or nil."
-  [set-names {:keys [name sets]}]
-  (let [known (into #{} set-names)
-        want  (mapv normalize-set sets)
-        gone  (remove known want)]
-    (cond
-      (or (not (string? name)) (str/blank? name))
-      "create_token_theme: name is required, e.g. \"Dark\""
-
-      (empty? sets)
-      (dm/str "create_token_theme: a theme needs at least one set to enable"
-              " — a theme that enables nothing would activate and change nothing")
-
-      (seq gone)
-      (dm/str "create_token_theme: no set named " (str/join ", " (map #(dm/str "\"" % "\"") gone))
-              " — this file has: " (str/join ", " (sort set-names))))))
+(def theme-problem cato/theme-problem)
 
 (defn existing-token-set-id
   "The id of a set already in the library, or nil when it genuinely has none.
@@ -161,6 +72,35 @@
              (first)
              (ctob/get-id))))
 
+(defn- write-token!
+  "Writes a token into the set. A token of that name already there is
+  changed, as on the server (`app.common.agent.tokens`): it keeps its id and
+  takes the new value. → whether a token that was there changed."
+  [state set-id {:keys [type name value]}]
+  (let [kind  (token-type type)
+        value (cato/stored-value kind value)
+        prev  (when set-id
+                (some-> (atc/tokens-lib state) (ctob/get-tokens set-id) (get name)))]
+    (cond
+      (nil? prev)
+      (do (st/emit! (if set-id
+                      (dwtl/create-token set-id (ctob/make-token {:type kind :name name :value value}))
+                      ;; no sets at all: this is the branch that legitimately makes one
+                      (dwtl/create-token (ctob/make-token {:type kind :name name :value value}))))
+          false)
+
+      (and (= kind (:type prev)) (= value (:value prev)))
+      false
+
+      :else
+      (do (st/emit! (dwtl/update-token set-id (:id prev) {:type kind :value value}))
+          true))))
+
+(def ^:private changed-note
+  (str "these tokens were there already and have their new value; every shape "
+       "bound to them, or to a token that refers to them, follows — nothing "
+       "needs re-applying. Verify with render_board."))
+
 (defn create-token
   ;; `:set` is destructured as `target-set`: binding it to `set` would shadow
   ;; clojure.core/set for the whole fn — which is exactly how token-set-problem
@@ -174,13 +114,12 @@
       (let [set-id (if target-set
                      (set-id-by-name state target-set)
                      (existing-token-set-id state))
-            token  (ctob/make-token {:type (token-type type) :name name :value value})]
-        (st/emit! (if set-id
-                    (dwtl/create-token set-id token)
-                    ;; no sets at all: this is the branch that legitimately makes one
-                    (dwtl/create-token token)))
+            changed? (write-token! state set-id input)]
+        (when changed?
+          (st/emit! (dwtp/propagate-workspace-tokens)))
         (rx/of (cond-> {:name name :type type :value value
                         :note "token created — bind it to shapes with apply_tokens"}
+                 changed?   (assoc :changed [name] :note changed-note)
                  target-set (assoc :set (normalize-set target-set))))))))
 
 (defn create-tokens
@@ -210,20 +149,22 @@
           (rx/throw (ex-info (str/join " | " problems) {}))
           (do
             (atc/interrupt!)
-            (run! (fn [{:keys [type name value] target-set :set}]
-                    (let [set-id (if target-set
-                                   (set-id-by-name state target-set)
-                                   (existing-token-set-id state))
-                          token  (ctob/make-token {:type (token-type type)
-                                                   :name name :value value})]
-                      (st/emit! (if set-id
-                                  (dwtl/create-token set-id token)
-                                  (dwtl/create-token token)))))
-                  entries)
-            (rx/of {:created (count entries)
-                    :note (str "tokens created — bind them to shapes with "
-                               "apply_tokens; values referencing other tokens "
-                               "(\"{color.blue.500}\") resolve lazily")})))))))
+            (let [changed (into []
+                                (keep (fn [{target-set :set :as entry}]
+                                        (when (write-token! state
+                                                            (if target-set
+                                                              (set-id-by-name state target-set)
+                                                              (existing-token-set-id state))
+                                                            entry)
+                                          (:name entry))))
+                                entries)]
+              (when (seq changed)
+                (st/emit! (dwtp/propagate-workspace-tokens)))
+              (rx/of (cond-> {:created (count entries)
+                              :note (str "tokens created — bind them to shapes with "
+                                         "apply_tokens; values referencing other tokens "
+                                         "(\"{color.blue.500}\") resolve lazily")}
+                       (seq changed) (assoc :changed changed :note changed-note))))))))))
 
 (defn create-token-set
   [{:keys [name]}]
@@ -274,26 +215,10 @@
                            "read_design.")})))))
 
 (defn sets-and-themes
-  "The library's sets (with active flag) and themes — `read_design` flattens
-  tokens into active sets only, so without this the agent cannot see that an
-  inactive `modes/dark` exists at all."
+  "The library's sets (with active flag) and themes; see
+  `app.common.agent.read/sets-and-themes`."
   [state]
-  (let [lib (atc/tokens-lib state)]
-    (when lib
-      (let [active (ctob/get-active-themes-set-names lib)
-            themes (->> (ctob/get-themes lib)
-                        (remove #(= ctob/hidden-theme-name (ctob/get-name %)))
-                        (mapv (fn [t] (cond-> {:name (ctob/get-name t)
-                                               :sets (vec (:sets t))}
-                                        (ctob/theme-active? lib (ctob/get-id t))
-                                        (assoc :active true)))))
-            sets   (->> (ctob/get-sets lib)
-                        (mapv (fn [s] (cond-> {:name (ctob/get-name s)}
-                                        (contains? active (ctob/get-name s))
-                                        (assoc :active true)))))]
-        (cond-> {}
-          (seq sets)   (assoc :sets sets)
-          (seq themes) (assoc :themes themes))))))
+  (car/sets-and-themes (dsh/lookup-file-data state)))
 
 ;; --- Token application
 ;;
@@ -301,74 +226,11 @@
 ;; `cto/all-keys` — the color-only ceiling was entirely this file's own helper,
 ;; which mapped every request onto :fill or :stroke-color.
 
-(def ^:private attr-alias
-  "The plugin API's semantic names for Penpot's positional attr keys, copied
-  deliberately from `app.plugins.tokens`. This is the one place where taking the
-  plugin's naming is right: we take its translation layer with it, and the skills
-  already speak these names (`applyToken(t, [\"columnGap\"])`). `:p1` means
-  nothing without this table."
-  {:r1 :border-radius-top-left
-   :r2 :border-radius-top-right
-   :r3 :border-radius-bottom-right
-   :r4 :border-radius-bottom-left
-   :p1 :padding-top
-   :p2 :padding-right
-   :p3 :padding-bottom
-   :p4 :padding-left
-   :m1 :margin-top
-   :m2 :margin-right
-   :m3 :margin-bottom
-   :m4 :margin-left})
-
-(def token-attr-universe
-  "Every shape attribute a token can bind to (`cto/all-keys`)."
-  cto/all-keys)
-
-(defn public-attr-name
-  "The camelCase name the agent uses for an internal attr keyword."
-  [k]
-  (str/camel (name (get attr-alias k k))))
-
-(def ^:private public->attr
-  (into {"stroke" :stroke-color} ;; legacy: the shipped spec offers "stroke"
-        (map (fn [k] [(public-attr-name k) k]))
-        token-attr-universe))
-
-(defn token-attr
-  "The internal attr keyword for a public name, or nil."
-  [name]
-  (get public->attr name))
-
-(defn- type-attrs
-  "The attrs a token of this type may bind to — the same source `toggle-token`
-  itself consults (`dwta/token-properties`), so anything we accept, it accepts."
-  [token-type]
-  (let [{:keys [attributes all-attributes]} (get dwta/token-properties token-type)]
-    (or all-attributes attributes)))
-
-(defn application-problem
-  "Why this token cannot bind to these properties, or nil. Pure."
-  [token properties]
-  (let [valid (type-attrs (:type token))]
-    (some (fn [p]
-            (if-let [k (token-attr p)]
-              (when (and (seq valid) (not (contains? valid k)))
-                (dm/str "apply_tokens: token \"" (:name token) "\" is a "
-                        (some-> (:type token) name) " token and cannot bind to "
-                        p " — it can bind to: "
-                        (str/join ", " (sort (map public-attr-name valid)))))
-              (dm/str "apply_tokens: \"" p "\" is not a property a token can bind"
-                      " to — \"" (:name token) "\" can bind to: "
-                      (str/join ", " (sort (map public-attr-name valid))))))
-          properties)))
-
-(defn attr-set
-  "The internal attrs for the requested public property names, defaulting to the
-  token's own default (fill for a color) when none are given."
-  [token properties]
-  (if (seq properties)
-    (into #{} (keep token-attr) properties)
-    (or (some-> (get dwta/token-properties (:type token)) :attributes) #{:fill})))
+(def token-attr-universe cato/token-attr-universe)
+(def public-attr-name cato/public-attr-name)
+(def token-attr cato/token-attr)
+(def application-problem cato/application-problem)
+(def attr-set cato/attr-set)
 
 (defn apply-tokens
   [{:keys [applications]}]

@@ -19,6 +19,7 @@
    [app.main.data.agent-access :as agent-access]
    [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent :as agent]
+   [app.main.data.workspace.agent-remote :as agent-remote]
    [app.main.data.workspace.ai-panel :as ai-panel]
    [app.main.data.workspace.session-review :as srev]
    [app.main.data.workspace.skill-gen :as sg]
@@ -36,7 +37,7 @@
 (def ^:private settings {:provider "anthropic" :model "claude-haiku-4-5-20251001"})
 
 (def ^:private model-commands
-  #{:ai-agent-round :app.util.sse/ai-agent-round-stream})
+  #{:ai-agent-round :agent-helper-round :app.util.sse/agent-service-turn})
 
 (defn- with-agent-flag
   [f]
@@ -170,8 +171,10 @@
                        :side-turn        #(agent/run-side-turn
                                            {:model "m" :system "s" :user-text "u"
                                             :tools nil :max-rounds 1})
-                       :turn-round       #(#'agent/stream-round
-                                           settings
+                       :helper-round     #(agent/detect-round settings "system" "hi")
+                       :service-turn     #(agent-remote/run-turn
+                                           (assoc settings :service {:session-id (uuid/next)
+                                                                     :file-id file-id})
                                            [{:role :user :text "hi"}]
                                            "system")}]
         (doseq [[name make] transport]
@@ -206,13 +209,13 @@
                 (rx/sub! (ptk/watch (ai-panel/send-message settings "design a page" nil)
                                     on stream)
                          (fn [_]) (fn [_]))
-                (t/is (= [:ai-agent-round] @calls) "the playbook match went out")
+                (t/is (= [:agent-helper-round] @calls) "the playbook match went out")
                 (when off-during?
                   (reset! st/state off))
                 ;; the match fails: the turn goes on without a playbook
                 (rx/error! pending (ex-info "late" {}))))
             (t/is (= (if off-during?
-                       [:ai-agent-round]
-                       [:ai-agent-round :app.util.sse/ai-agent-round-stream])
-                     @calls)
+                       [:agent-helper-round]
+                       [:agent-helper-round :app.util.sse/agent-service-turn])
+                     (filterv model-commands @calls))
                   (str "switched off during the match: " off-during?))))))))

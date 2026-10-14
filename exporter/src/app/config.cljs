@@ -111,6 +111,11 @@
 (def flags
   (parse-flags config))
 
+(def instance-flags
+  "The flags with the instance defaults applied, as the frontend and the
+  backend read them. `flags` holds only what was set for the exporter."
+  (flags/parse flags/default (:flags config)))
+
 (defn get
   "A configuration getter."
   ([key]

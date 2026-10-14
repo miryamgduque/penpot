@@ -11,6 +11,7 @@
    [app.common.data.macros :as dm]
    [app.common.schema :as sm]
    [app.common.time :as ct]
+   [app.common.uuid :as uuid]
    [app.config :as cf]
    [app.main.broadcast :as mbc]
    [app.main.data.agent-access :as agent-access]
@@ -27,6 +28,7 @@
    [app.main.ui.ds.buttons.icon-button :refer [icon-button*]]
    [app.main.ui.ds.controls.checkbox :refer [checkbox*]]
    [app.main.ui.ds.controls.input :refer [input*]]
+   [app.main.ui.ds.controls.select :refer [select*]]
    [app.main.ui.ds.controls.switch :refer [switch*]]
    [app.main.ui.ds.foundations.assets.icon :as i :refer [icon*]]
    [app.main.ui.ds.foundations.typography :as t]
@@ -598,16 +600,21 @@
 ;; cards form the single pool that populates the chat's model picker.
 
 (def ^:private ai-provider-defs
-  [{:id "anthropic" :label "Anthropic"   :models-hint "Claude models"}
-   {:id "openai"    :label "OpenAI"      :models-hint "GPT models"}
-   {:id "zhipu"     :label "Zhipu AI"    :models-hint "GLM models"}
-   {:id "moonshot"  :label "Moonshot AI" :models-hint "Kimi models"}])
+  (into [{:id "anthropic" :label "Anthropic"   :models-hint "Claude models"}
+         {:id "openai"    :label "OpenAI"      :models-hint "GPT models"}
+         {:id "zhipu"     :label "Zhipu AI"    :models-hint "GLM models"}
+         {:id "moonshot"  :label "Moonshot AI" :models-hint "Kimi models"}]
+        ;; offered once each has passed the provider verification check on
+        ;; this instance; until then behind the same flag as on the server
+        (when (contains? cf/flags :design-agent-preview-providers)
+          [{:id "google"   :label "Google"    :models-hint "Gemini models"}
+           {:id "xai"      :label "xAI"       :models-hint "Grok models"}
+           {:id "mistral"  :label "Mistral"   :models-hint "Mistral models"}
+           {:id "deepseek" :label "DeepSeek"  :models-hint "DeepSeek models"}])))
 
-;; Curated, hand-maintained catalog: a small subset of each provider's
-;; latest models with their context window (in tokens). Not a live fetch —
-;; edit this list as providers ship new models.
-;; The catalog now lives in app.main.data.ai-providers — the agent reads
-;; `:vision` to decide how to encode a turn, so it cannot live in a UI ns.
+;; What each model can do comes from the provider layer's catalog, held in
+;; app.main.data.ai-providers: the agent reads it to decide how to encode a
+;; turn, so it cannot live in a UI ns.
 
 (defn- format-context
   "Human-friendly context-window size, e.g. 200000 → \"200K\", 1000000 → \"1M\"."
@@ -618,9 +625,13 @@
     (>= n 1000)     (dm/str (quot n 1000) "K")
     :else           (dm/str n)))
 
+;; What stands in for a key on an endpoint that asks for none: the server
+;; keeps one value per connection, and the endpoint ignores it.
+(def ^:private no-key "not-needed")
+
 (mf/defc ai-provider-card*
   {::mf/private true}
-  [{:keys [provider label models-hint status]}]
+  [{:keys [provider label models-hint status keyless]}]
   (let [connected?  (:connected status)
         enabled     (:enabled-models status)
         enabled-set (set enabled)
@@ -644,12 +655,16 @@
 
         ;; the curated catalog, plus any enabled model no longer in it
         ;; (kept visible so the user can toggle it back off)
-        catalog     (get dai/ai-provider-models provider [])
+        catalog     (->> (get (mf/deref refs/ai-model-catalog) provider [])
+                         (mapv (fn [{:keys [id name contextLimit vision tools]}]
+                                 {:id id :label name :context contextLimit :vision (true? vision)
+                                  :no-tools (false? tools)})))
         catalog-ids (set (map :id catalog))
         rows        (concat catalog
                             (for [m enabled
                                   :when (not (contains? catalog-ids m))]
-                              {:id m :label m :context nil :vision false}))
+                              ;; what it can do is not known: it may be tried, and is sent no images
+                              {:id m :label m :context nil :vision false :unknown true}))
 
         save-key
         (mf/use-fn
@@ -749,33 +764,44 @@
           [:> text* {:as "span"
                      :typography t/body-small
                      :class (stl/css :provider-connected-tag)}
-           (tr "integrations.ai-provider.status.saved" (:key-hint status))]
+           (if keyless
+             (tr "integrations.ai-endpoint.status.in-use")
+             (tr "integrations.ai-provider.status.saved" (:key-hint status)))]
           [:> icon-button* {:variant "ghost"
                             :icon-size "s"
                             :aria-label (tr "integrations.ai-provider.disconnect")
                             :icon i/delete
                             :on-click on-disconnect}]])]]
 
-     ;; the key is autosaved on blur — no explicit connect action
-     [:div {:class (stl/css :provider-key-form)}
-      [:div {:class (stl/css :provider-key-row)}
-       [:> input* {:type "text"
-                   :value api-key
-                   :aria-label (tr "integrations.ai-provider.key.label")
-                   :placeholder (if connected?
-                                  (tr "integrations.ai-provider.key.placeholder-rotate")
-                                  (tr "integrations.ai-provider.key.placeholder"))
-                   :on-change on-key-change
-                   :on-blur on-key-blur
-                   :on-key-down on-key-down}]]
+     ;; an endpoint that asks for no key is switched on with one click
+     (when (and keyless (not connected?))
+       [:div {:class (stl/css :provider-key-form)}
+        [:> button* {:variant "secondary"
+                     :disabled pending?
+                     :on-click #(save-key no-key)}
+         (tr "integrations.ai-endpoint.use")]])
 
-      (when (or pending? saved?)
-        [:> text* {:as "div"
-                   :typography t/body-small
-                   :class (stl/css :provider-key-status)}
-         (if pending?
-           (tr "integrations.ai-provider.saving")
-           (tr "integrations.ai-provider.saved"))])]
+     ;; the key is autosaved on blur — no explicit connect action
+     (when-not keyless
+       [:div {:class (stl/css :provider-key-form)}
+        [:div {:class (stl/css :provider-key-row)}
+         [:> input* {:type "text"
+                     :value api-key
+                     :aria-label (tr "integrations.ai-provider.key.label")
+                     :placeholder (if connected?
+                                    (tr "integrations.ai-provider.key.placeholder-rotate")
+                                    (tr "integrations.ai-provider.key.placeholder"))
+                     :on-change on-key-change
+                     :on-blur on-key-blur
+                     :on-key-down on-key-down}]]
+
+        (when (or pending? saved?)
+          [:> text* {:as "div"
+                     :typography t/body-small
+                     :class (stl/css :provider-key-status)}
+           (if pending?
+             (tr "integrations.ai-provider.saving")
+             (tr "integrations.ai-provider.saved"))])])
 
      [:div {:class (stl/css :provider-models)}
       [:> text* {:as "h4"
@@ -804,12 +830,13 @@
 
        (when models-open?
          [:ul {:class (stl/css :provider-models-menu)}
-          (for [{:keys [id label context vision]} rows]
+          (for [{:keys [id label context vision no-tools unknown]} rows]
             [:li {:key id :class (stl/css :provider-models-item)}
              [:> checkbox* {:id (dm/str "ai-model-" provider "-" id)
                             :label label
-                            :checked (contains? enabled-set id)
-                            :disabled (not connected?)
+                            :checked (and (contains? enabled-set id) (not no-tools))
+                            ;; the agent is its tools: a model without them cannot be chosen
+                            :disabled (or (not connected?) no-tools)
                             :data-model id
                             :on-change on-toggle-model}]
              (when-let [ctx (format-context context)]
@@ -821,7 +848,223 @@
              (when vision
                [:span {:class (stl/css :provider-models-vision)
                        :title (tr "integrations.ai-provider.models.vision-hint")}
-                (tr "integrations.ai-provider.models.vision")])])])]]]))
+                (tr "integrations.ai-provider.models.vision")])
+             (when no-tools
+               [:span {:class (stl/css :provider-models-vision)
+                       :title (tr "integrations.ai-provider.models.no-tools-hint")}
+                (tr "integrations.ai-provider.models.no-tools")])
+             (when unknown
+               [:span {:class (stl/css :provider-models-vision)
+                       :title (tr "integrations.ai-provider.models.unknown-hint")}
+                (tr "integrations.ai-provider.models.unknown")])])])]]]))
+
+(def ^:private same-as-main "same")
+
+(mf/defc ai-helper-model*
+  "The model for the agent's side jobs, chosen among the models the user
+  enabled; by default the one they build with."
+  {::mf/private true}
+  [{:keys [statuses]}]
+  (let [catalog (mf/deref refs/ai-model-catalog)
+        pool    (mf/with-memo [statuses catalog]
+                  (vec (for [[_ {:keys [provider enabled-models]}] statuses
+                             model enabled-models
+                             :when (dai/selectable? provider model)]
+                         {:provider provider :model model})))
+        chosen  (some (fn [[_ {:keys [provider helper-model]}]]
+                        (when (string? helper-model) (dm/str provider "/" helper-model)))
+                      statuses)
+        options (mf/with-memo [pool]
+                  (into [{:id same-as-main :label (tr "integrations.ai-provider.helper.same")}]
+                        (map (fn [{:keys [provider model]}]
+                               {:id (dm/str provider "/" model)
+                                :label (dm/str (or (:name (dai/model provider model)) model)
+                                               " · " provider)}))
+                        pool))
+        on-change
+        (mf/use-fn
+         (fn [id]
+           (if (= same-as-main id)
+             (st/emit! (dai/set-ai-helper-model {}))
+             (let [[provider model] (str/split id "/" 2)]
+               (st/emit! (dai/set-ai-helper-model {:provider provider :model model}))))))]
+    (when (seq pool)
+      [:div {:class (stl/css :ai-helper-model)}
+       [:> heading* {:level 3
+                     :typography t/headline-small
+                     :class (stl/css :color-primary)}
+        (tr "integrations.ai-provider.helper.title")]
+       [:> text* {:as "div"
+                  :typography t/body-medium
+                  :class (stl/css :color-secondary)}
+        (tr "integrations.ai-provider.helper.description")]
+       ;; keyed by what is chosen: the select reads its value once
+       [:> select* {:key (or chosen same-as-main)
+                    :aria-label (tr "integrations.ai-provider.helper.title")
+                    :options options
+                    :default-selected (or chosen same-as-main)
+                    :on-change on-change}]])))
+
+(def ^:private ai-endpoint-error-keys
+  {:ai-endpoint-address-invalid "integrations.ai-endpoint.error.address"
+   :ai-endpoint-name-taken      "integrations.ai-endpoint.error.name"
+   :ai-endpoint-models-repeated "integrations.ai-endpoint.error.models"
+   :ai-endpoints-limit-reached  "integrations.ai-endpoint.error.limit"})
+
+(def ^:private empty-model
+  {:id "" :tools true :vision false :context ""})
+
+(mf/defc ai-endpoints-admin*
+  "Where an instance admin registers the model endpoints of the organisation:
+  an address, and the models it serves with what each can do. Users only
+  ever see the name."
+  {::mf/private true}
+  [{:keys [endpoints]}]
+  (let [form*   (mf/use-state {:name "" :base-uri "" :requires-key false :models [empty-model]})
+        form    (deref form*)
+        error*  (mf/use-state nil)
+        error   (deref error*)
+        ready?  (and (not (str/blank? (:name form)))
+                     (not (str/blank? (:base-uri form)))
+                     (some #(not (str/blank? (:id %))) (:models form)))
+
+        on-field
+        (mf/use-fn
+         (fn [event]
+           (let [node  (dom/get-target event)
+                 field (keyword (dom/get-data node "field"))]
+             (reset! error* nil)
+             (swap! form* assoc field (if (= :requires-key field)
+                                        (dom/checked? node)
+                                        (dom/get-value node))))))
+
+        on-model
+        (mf/use-fn
+         (fn [event]
+           (let [node  (dom/get-target event)
+                 index (d/parse-integer (dom/get-data node "index"))
+                 field (keyword (dom/get-data node "field"))]
+             (swap! form* assoc-in [:models index field]
+                    (if (contains? #{:tools :vision} field)
+                      (dom/checked? node)
+                      (dom/get-value node))))))
+
+        on-add-model
+        (mf/use-fn #(swap! form* update :models conj empty-model))
+
+        on-save
+        (mf/use-fn
+         (mf/deps form)
+         (fn []
+           (let [models (->> (:models form)
+                             (remove #(str/blank? (:id %)))
+                             (mapv (fn [{:keys [id tools vision context]}]
+                                     (cond-> {:id (str/trim id) :tools tools :vision vision}
+                                       (some? (d/parse-integer context))
+                                       (assoc :context-limit (d/parse-integer context))))))]
+             (st/emit!
+              (dai/set-ai-endpoint
+               (with-meta {:name (str/trim (:name form))
+                           :base-uri (str/trim (:base-uri form))
+                           :requires-key (:requires-key form)
+                           :models models}
+                 {:on-success
+                  (fn [_]
+                    (reset! form* {:name "" :base-uri "" :requires-key false :models [empty-model]}))
+                  :on-error
+                  (fn [cause]
+                    (reset! error* (tr (get ai-endpoint-error-keys (:code (ex-data cause))
+                                            "integrations.ai-endpoint.error.generic")))
+                    (rx/empty))}))))))
+
+        on-delete
+        (mf/use-fn
+         (fn [event]
+           (let [id (dom/get-data (dom/get-current-target event) "id")]
+             (st/emit! (dai/delete-ai-endpoint {:id (uuid/parse id)})))))]
+
+    [:div {:class (stl/css :ai-endpoints-admin)
+           :data-testid "ai-endpoints-admin"}
+     [:> heading* {:level 3
+                   :typography t/headline-small
+                   :class (stl/css :color-primary)}
+      (tr "integrations.ai-endpoint.admin.title")]
+     [:> text* {:as "div"
+                :typography t/body-medium
+                :class (stl/css :color-secondary)}
+      (tr "integrations.ai-endpoint.admin.description")]
+
+     (for [{:keys [id name base-uri models]} endpoints]
+       [:div {:key (dm/str id) :class (stl/css :ai-endpoint-row)}
+        [:div {:class (stl/css :ai-endpoint-row-text)}
+         [:> text* {:as "span" :typography t/body-medium :class (stl/css :color-primary)} name]
+         [:> text* {:as "span" :typography t/body-small :class (stl/css :color-secondary)}
+          (dm/str base-uri " · " (str/join ", " (map :id models)))]]
+        [:> icon-button* {:variant "ghost"
+                          :icon-size "s"
+                          :aria-label (tr "integrations.ai-endpoint.admin.remove" name)
+                          :icon i/delete
+                          :data-id (dm/str id)
+                          :on-click on-delete}]])
+
+     [:div {:class (stl/css :ai-endpoint-form)}
+      [:> input* {:type "text"
+                  :value (:name form)
+                  :data-field "name"
+                  :aria-label (tr "integrations.ai-endpoint.admin.name")
+                  :placeholder (tr "integrations.ai-endpoint.admin.name")
+                  :on-change on-field}]
+      [:> input* {:type "text"
+                  :value (:base-uri form)
+                  :data-field "base-uri"
+                  :aria-label (tr "integrations.ai-endpoint.admin.address")
+                  :placeholder (tr "integrations.ai-endpoint.admin.address-placeholder")
+                  :on-change on-field}]
+      [:> checkbox* {:id "ai-endpoint-requires-key"
+                     :label (tr "integrations.ai-endpoint.admin.requires-key")
+                     :checked (:requires-key form)
+                     :data-field "requires-key"
+                     :on-change on-field}]
+
+      [:> text* {:as "div" :typography t/body-small :class (stl/css :color-secondary)}
+       (tr "integrations.ai-endpoint.admin.models-hint")]
+      (for [[index model] (map-indexed vector (:models form))]
+        [:div {:key index :class (stl/css :ai-endpoint-model)}
+         [:> input* {:type "text"
+                     :value (:id model)
+                     :data-index index
+                     :data-field "id"
+                     :aria-label (tr "integrations.ai-endpoint.admin.model-id")
+                     :placeholder (tr "integrations.ai-endpoint.admin.model-id")
+                     :on-change on-model}]
+         [:> input* {:type "text"
+                     :value (:context model)
+                     :data-index index
+                     :data-field "context"
+                     :aria-label (tr "integrations.ai-endpoint.admin.context")
+                     :placeholder (tr "integrations.ai-endpoint.admin.context")
+                     :on-change on-model}]
+         [:> checkbox* {:id (dm/str "ai-endpoint-model-tools-" index)
+                        :label (tr "integrations.ai-endpoint.admin.tools")
+                        :checked (:tools model)
+                        :data-index index
+                        :data-field "tools"
+                        :on-change on-model}]
+         [:> checkbox* {:id (dm/str "ai-endpoint-model-vision-" index)
+                        :label (tr "integrations.ai-provider.models.vision")
+                        :checked (:vision model)
+                        :data-index index
+                        :data-field "vision"
+                        :on-change on-model}]])
+
+      (when (some? error)
+        [:> text* {:as "div" :typography t/body-small :class (stl/css :ai-endpoint-error)} error])
+
+      [:div {:class (stl/css :ai-endpoint-actions)}
+       [:> button* {:variant "ghost" :on-click on-add-model}
+        (tr "integrations.ai-endpoint.admin.add-model")]
+       [:> button* {:variant "primary" :disabled (not ready?) :on-click on-save}
+        (tr "integrations.ai-endpoint.admin.save")]]]]))
 
 (mf/defc agent-enabled-files*
   "While the account switch is off, the files where the user turned the
@@ -890,7 +1133,8 @@
 (mf/defc ai-providers-section*
   {::mf/private true}
   []
-  (let [statuses (mf/deref refs/ai-providers)]
+  (let [statuses  (mf/deref refs/ai-providers)
+        endpoints (mf/deref refs/ai-endpoints)]
 
     (mf/with-effect []
       (st/emit! (dai/fetch-ai-providers)))
@@ -919,7 +1163,194 @@
                               :provider id
                               :label label
                               :models-hint models-hint
-                              :status (get statuses id)}])]))
+                              :status (get statuses id)}])
+
+     ;; the models this organisation runs itself, registered by an admin
+     (for [{:keys [provider name requires-key]} (:endpoints endpoints)]
+       [:> ai-provider-card* {:key provider
+                              :provider provider
+                              :label name
+                              :models-hint (tr "integrations.ai-endpoint.hint")
+                              :keyless (not requires-key)
+                              :status (get statuses provider)}])
+
+     (when (:can-manage endpoints)
+       [:> ai-endpoints-admin* {:endpoints (:endpoints endpoints)}])
+
+     [:> ai-helper-model* {:statuses statuses}]]))
+
+(def ^:private agent-mcp-error-keys
+  {:mcp-server-name-invalid   "integrations.agent-mcp.error.name"
+   :mcp-server-url-not-https  "integrations.agent-mcp.error.https"
+   :ssrf-blocked-target       "integrations.agent-mcp.error.private"
+   :mcp-servers-limit-reached "integrations.agent-mcp.error.limit"})
+
+(mf/defc agent-mcp-server-tools*
+  "What a connected server offers, one switch per tool: a tool switched off is
+  never offered to the agent."
+  {::mf/private true}
+  [{:keys [server answer]}]
+  (let [{:keys [tools error loading]} answer]
+    [:div {:class (stl/css :agent-mcp-tools)
+           :data-testid (dm/str "agent-mcp-tools-" (:name server))}
+     (cond
+       ^boolean loading
+       [:> text* {:as "span" :typography t/body-small :class (stl/css :color-secondary)}
+        (tr "integrations.agent-mcp.tools.loading")]
+
+       (some? error)
+       [:> text* {:as "span" :typography t/body-small :class (stl/css :color-secondary)}
+        (tr "integrations.agent-mcp.tools.error" error)]
+
+       (empty? tools)
+       [:> text* {:as "span" :typography t/body-small :class (stl/css :color-secondary)}
+        (tr "integrations.agent-mcp.tools.none")]
+
+       :else
+       (for [{:keys [name description is-enabled]} tools]
+         [:div {:key name :class (stl/css :agent-mcp-tool)}
+          [:div {:class (stl/css :agent-mcp-tool-text)}
+           [:> text* {:as "span" :typography t/body-medium :class (stl/css :color-primary)}
+            name]
+           (when-not (str/blank? description)
+             [:> text* {:as "span"
+                        :typography t/body-small
+                        :class (stl/css :color-secondary :agent-mcp-tool-description)}
+              description])]
+          [:> switch* {:aria-label (tr "integrations.agent-mcp.tools.enabled" name)
+                       :default-checked is-enabled
+                       :on-change (fn [checked]
+                                    (st/emit! (dai/set-agent-mcp-server-tool server name (boolean checked))))}]]))]))
+
+(mf/defc agent-mcp-servers-section*
+  "The external MCP servers this user connected to the agent: a list, and a
+  short form to add one. A server's token is typed here and never shown again."
+  {::mf/private true}
+  []
+  (let [servers (mf/deref refs/agent-mcp-servers)
+        listed  (mf/deref refs/agent-mcp-server-tools)
+        name*   (mf/use-state "")
+        url*    (mf/use-state "")
+        token*  (mf/use-state "")
+        name    (deref name*)
+        url     (deref url*)
+        token   (deref token*)
+        ready?  (and (not (str/blank? name)) (not (str/blank? url)))
+
+        on-add
+        (mf/use-fn
+         (mf/deps name url token)
+         (fn [event]
+           (dom/prevent-default event)
+           (let [params (cond-> {:name (str/trim name) :url (str/trim url)}
+                          (not (str/blank? token)) (assoc :token (str/trim token)))]
+             (st/emit!
+              (dai/set-agent-mcp-server
+               (with-meta params
+                 {:on-success
+                  (fn [_]
+                    (reset! name* "")
+                    (reset! url* "")
+                    (reset! token* "")
+                    (st/emit! (ntf/success (tr "integrations.agent-mcp.notification.connected" (:name params)))))
+                  :on-error
+                  (fn [cause]
+                    (let [code (:code (ex-data cause))]
+                      (st/emit! (ntf/error (tr (get agent-mcp-error-keys code "integrations.agent-mcp.error.generic")))))
+                    (rx/empty))}))))))]
+
+    (mf/with-effect []
+      (st/emit! (dai/fetch-agent-mcp-servers)))
+
+    [:section {:class (stl/css :ai-provider-section)
+               :data-testid "agent-mcp-servers"}
+     [:div
+      [:div {:class (stl/css :title)}
+       [:> heading* {:level 2
+                     :typography t/title-medium
+                     :class (stl/css :color-primary :ai-provider-title)}
+        (tr "integrations.agent-mcp.title")]
+       [:> text* {:as "span"
+                  :typography t/body-small
+                  :class (stl/css :beta)}
+        (tr "integrations.mcp-server.title.beta")]]
+
+      [:> text* {:as "div"
+                 :typography t/body-medium
+                 :class (stl/css :color-secondary :ai-provider-description)}
+       (tr "integrations.agent-mcp.description")]]
+
+     (for [{:keys [name url has-token is-enabled] :as server} servers]
+       [:div {:key name
+              :class (stl/css :provider-card)
+              :data-testid (dm/str "agent-mcp-server-" name)}
+        [:div {:class (stl/css :provider-card-header)}
+         [:div {:class (stl/css :provider-card-title)}
+          [:div {:class (stl/css :provider-card-name)}
+           [:> text* {:as "h3"
+                      :typography t/headline-small
+                      :class (stl/css :color-primary)}
+            name]
+           [:> text* {:as "span"
+                      :typography t/body-small
+                      :class (stl/css :color-secondary :provider-models-hint)}
+            url]]
+          [:div {:class (stl/css :provider-connected)}
+           (when ^boolean has-token
+             [:> text* {:as "span"
+                        :typography t/body-small
+                        :class (stl/css :provider-connected-tag)}
+              (tr "integrations.agent-mcp.token-saved")])
+           [:> switch* {:label (tr "integrations.agent-mcp.enabled")
+                        :default-checked is-enabled
+                        :on-change (fn [checked]
+                                     (st/emit! (dai/set-agent-mcp-server
+                                                {:name name :url url :is-enabled (boolean checked)})))}]
+           [:> icon-button* {:variant "ghost"
+                             :icon-size "s"
+                             :aria-label (tr "integrations.agent-mcp.remove")
+                             :icon i/delete
+                             :on-click (fn [_] (st/emit! (dai/delete-agent-mcp-server {:name name})))}]]]]
+        (let [answer (get listed name)]
+          [:*
+           [:> button* {:variant "secondary"
+                        :type "button"
+                        :data-testid (dm/str "agent-mcp-show-tools-" name)
+                        :on-click (fn [_]
+                                    (st/emit! (if (some? answer)
+                                                (dai/hide-agent-mcp-server-tools name)
+                                                (dai/fetch-agent-mcp-server-tools name))))}
+            (if (some? answer)
+              (tr "integrations.agent-mcp.tools.hide")
+              (tr "integrations.agent-mcp.tools.show"))]
+           (when (some? answer)
+             [:> agent-mcp-server-tools* {:server server :answer answer}])])])
+
+     [:form {:class (stl/css :provider-card)
+             :on-submit on-add}
+      [:div {:class (stl/css :provider-key-form)}
+       [:div {:class (stl/css :provider-key-row)}
+        [:> input* {:type "text"
+                    :value name
+                    :aria-label (tr "integrations.agent-mcp.name.label")
+                    :placeholder (tr "integrations.agent-mcp.name.placeholder")
+                    :on-change #(reset! name* (dom/get-target-val %))}]]
+       [:div {:class (stl/css :provider-key-row)}
+        [:> input* {:type "text"
+                    :value url
+                    :aria-label (tr "integrations.agent-mcp.url.label")
+                    :placeholder (tr "integrations.agent-mcp.url.placeholder")
+                    :on-change #(reset! url* (dom/get-target-val %))}]]
+       [:div {:class (stl/css :provider-key-row)}
+        [:> input* {:type "password"
+                    :value token
+                    :aria-label (tr "integrations.agent-mcp.token.label")
+                    :placeholder (tr "integrations.agent-mcp.token.placeholder")
+                    :on-change #(reset! token* (dom/get-target-val %))}]]
+       [:> button* {:variant "primary"
+                    :type "submit"
+                    :disabled (not ready?)}
+        (tr "integrations.agent-mcp.connect")]]]]))
 
 (mf/defc access-tokens-section*
   {::mf/private true}
@@ -985,7 +1416,10 @@
         ;; instance scope: provider keys stay manageable, and the agent can
         ;; be switched back on here, while it is off for the user
         agent-available?
-        (agent-access/instance-enabled?)]
+        (agent-access/instance-enabled?)
+
+        agent-mcp-enabled?
+        (and agent-available? (contains? cf/flags :design-agent-mcp))]
 
     (mf/with-effect []
       (dom/set-html-title (tr "title.settings.integrations"))
@@ -1007,6 +1441,12 @@
 
      (when ^boolean agent-available?
        [:> ai-providers-section* {}])
+
+     (when ^boolean agent-mcp-enabled?
+       [:hr {:class (stl/css :separator)}])
+
+     (when ^boolean agent-mcp-enabled?
+       [:> agent-mcp-servers-section* {}])
 
      (when (and ^boolean agent-available? ^boolean access-tokens-enabled?)
        [:hr {:class (stl/css :separator)}])

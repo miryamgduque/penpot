@@ -367,7 +367,9 @@
           'app.rpc.commands.access-token
           'app.rpc.commands.agent-chats
           'app.rpc.commands.agent-state
+          'app.rpc.commands.agent-tools
           'app.rpc.commands.agent-web
+          'app.rpc.commands.ai-endpoints
           'app.rpc.commands.ai-providers
           'app.rpc.commands.audit
           'app.rpc.commands.auth
@@ -396,6 +398,7 @@
           'app.rpc.commands.projects
           'app.rpc.commands.search
           'app.rpc.commands.skill-state
+          'app.rpc.commands.team-recipes
           'app.rpc.commands.team-skills
           'app.rpc.commands.teams
           'app.rpc.commands.teams-invitations

@@ -62,7 +62,7 @@
                                        (swap! calls conj cmd)
                                        (rx/empty)))]
       (f))
-    (filterv #{:ai-agent-round :app.util.sse/ai-agent-round-stream}
+    (filterv #{:ai-agent-round :agent-helper-round :app.util.sse/agent-service-turn}
              @calls)))
 
 ;; --- Resolver
@@ -199,7 +199,8 @@
   (with-agent-flag
     (fn []
       (let [on (with-history (state-with :off true))]
-        (t/is (= [:ai-agent-round]
+        ;; the summary is a side job: it runs as a helper round
+        (t/is (= [:agent-helper-round]
                  (model-calls #(emitted (ai-panel/summarize-into-new-chat) on))))))))
 
 (t/deftest no-skill-generation-while-off
@@ -260,7 +261,7 @@
         (t/testing "a panel left open in a file turned off sends no tick"
           (t/is (some? model))
           (t/is (empty? (tick (connect open-off))))
-          (t/is (= [:ai-agent-round] (tick (connect open-on)))))))))
+          (t/is (= [:agent-helper-round] (tick (connect open-on)))))))))
 
 (t/deftest switching-off-stops-a-running-turn
   (with-agent-flag

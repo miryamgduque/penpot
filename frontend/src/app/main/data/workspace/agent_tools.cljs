@@ -11,6 +11,8 @@
   family namespaces (common / read / structure / layout / components /
   document / tokens / media / agentic / compose)."
   (:require
+   [app.common.agent.recipes :as cars]
+   [app.common.agent.recipes.profiles :as profiles]
    [app.common.data.macros :as dm]
    [app.main.data.workspace.agent-tools.agentic :as atg]
    [app.main.data.workspace.agent-tools.common :as atc]
@@ -22,7 +24,8 @@
    [app.main.data.workspace.agent-tools.read :as atr]
    [app.main.data.workspace.agent-tools.structure :as ats]
    [app.main.data.workspace.agent-tools.tokens :as att]
-   [beicon.v2.core :as rx]))
+   [beicon.v2.core :as rx]
+   [cuerdas.core :as str]))
 
 ;; Re-exports for the production consumers (agent.cljs, ai_panel.cljs,
 ;; agent_chats.cljs) that predate the family split — they keep requiring
@@ -522,8 +525,7 @@
     :description
     (str "Deletes shapes and their children. The counterpart to create_shape — "
          "use it to clean up your own mistakes rather than leaving them in the "
-         "file, and to remove what the user asks you to remove. Undoable by the "
-         "user with ⌘Z as a single step.")
+         "file, and to remove what the user asks you to remove.")
     :input-schema {:type "object"
                    :properties {:shapeIds {:type "array" :items {:type "string"}}}
                    :required ["shapeIds"]}}
@@ -577,13 +579,281 @@
          "(type image), fill (hex), layout (set_layout fields, boards only), "
          "layoutChild (set_layout_child fields), tokens ([{name, properties}] "
          "as in apply_tokens), font ({family, variant}, text only), children "
-         "(boards only)}. Returns ids keyed by node name. On an error you get "
+         "(boards only)}. COMPONENTS in the same call: mark a board "
+         "`component: true` (it needs a name) and it becomes a main "
+         "component once built; every later node {type: \"instance\", of: "
+         "\"<that name>\", name, texts: {layer: words}, layoutChild} places "
+         "an instance of it with its own words — build what repeats ONCE "
+         "and place it N times (`componentId` for a component the file "
+         "already has). Returns ids keyed by node name, and `components` "
+         "(name → componentId). On an error you get "
          "a PARTIAL result naming what exists — repair with targeted calls, "
-         "never re-send the tree. Asynchronous: verify with render_board.")
+         "never re-send the tree. Asynchronous: verify with render_board. "
+         "In a file with a design system, a value you write that is exactly "
+         "what a role token is worth (the surface's color, a spacing step, a "
+         "radius, a type size) is bound to that role, so it follows the "
+         "theme; `keepLiterals: true` leaves every value as written, for "
+         "content that must not follow it — a mock-up shown inside a canvas, "
+         "a photo's frame, a brand's fixed color. What a call draws that way "
+         "stays that way: later edits of it, and children added to it, are "
+         "not bound either.")
     :input-schema {:type "object"
                    :properties {:parentId {:type "string" :description "existing board to build into (optional)"}
-                                :tree {:type "object" :description "the root node"}}
+                                :tree {:type "object" :description "the root node"}
+                                :keepLiterals {:type "boolean"
+                                               :description "true: do not bind written values to role tokens"}}
                    :required ["tree"]}}
+
+   {:name "find_recipes"
+    :description
+    (str "Looks in the recipe catalog for what you are about to build. Call "
+         "it BEFORE building any common piece of UI — a control, a card, a "
+         "navigation bar, a section of a page. Answers the recipes that fit, "
+         "best first, each with its purpose, params, variants, slots and the "
+         "recipes it uses: what build_recipe needs. No match means build by "
+         "hand.")
+    :input-schema {:type "object"
+                   :properties {:query {:type "string" :description "a few words for the piece, e.g. \"sign up form\", \"navbar\", \"pricing\""}
+                                :category {:type "string" :enum ["screen" "section" "navigation" "container" "control"]
+                                           :description "list a whole category instead of, or as well as, searching"}}}}
+
+   {:name "build_recipe"
+    :description
+    (str "Builds a common piece of UI from a recipe in ONE call, as Penpot "
+         "means it to be built: auto-layout, values bound to tokens, real "
+         "components with variants. The catalog is in your instructions; "
+         "find_recipes answers a recipe's params, variants and slots. "
+         "A recipe is structure, not style: every color, spacing, radius and "
+         "type size is a role (color.primary, spacing.md…) bound to the file's "
+         "token of that name, or to the token you name in `roles`, or to a new "
+         "token with a default value — restyle by editing tokens. A recipe "
+         "that is a component is built once per file as a main (a variant set "
+         "when it has variants), and what you get placed is an instance of "
+         "it, with the words from `params`; later calls reuse the main. "
+         "Pass the content in the SAME call: `texts` maps a layer to its "
+         "words, keyed as find_recipes lists them with a number in place of "
+         "{index} — {\"Heading\": \"Plans\", \"Plan 2 / Price\": \"$12\", "
+         "\"Plan 2 / Choose\": \"Choose Team\"} — never one set_text per "
+         "text afterwards. Returns the placed root `id`, `ids` by layer name, "
+         "`slots` (boards left for you to fill), `placeholders` (boxes "
+         "standing for icons and pictures: replace the icons with ONE "
+         "set_icons call, or say which you left), `mains` and "
+         "`tokensCreated`. What repeats inside a recipe (plans, rows, nav "
+         "items) is placed as instances of a component, the current one as "
+         "a variant. On an error you "
+         "get a PARTIAL result naming what exists — repair with targeted "
+         "calls, never build the recipe again. Asynchronous: verify with "
+         "render_board.")
+    :input-schema {:type "object"
+                   :properties {:recipe {:type "string"
+                                         :description (str "its name: one of the built-in ones ("
+                                                           (str/join ", " (sort (keys cars/builtin)))
+                                                           ") or one of the team's own")}
+                                :params {:type "object" :description "param → value; what is left out takes its default"}
+                                :variant {:type "object" :description "axis → value, e.g. {\"Kind\": \"Secondary\"}"}
+                                :texts {:type "object" :description "layer → its words, set as part of the build; a key that names no text comes back in textsNotSet"}
+                                :parentId {:type "string" :description "board to place it into, at the end of its flow (optional)"}
+                                :x {:type "number" :description "where on the page, when there is no parentId (optional)"}
+                                :y {:type "number"}
+                                :profile {:type "string"
+                                          :enum (vec (sort (keys profiles/builtin)))
+                                          :description (str "the platform it is for, when the user names one: "
+                                                            (str/join "; " (map #(str (:name %) " — " (:purpose %))
+                                                                                (sort-by :name profiles/all)))
+                                                            ". It adjusts sizes and spacing and picks variants; leave it out otherwise")}
+                                :roles {:type "object"
+                                        :description "role → the name of the file's token to bind it to, e.g. {\"color.primary\": \"brand.500\"}"}}
+                   :required ["recipe"]}}
+
+   {:name "list_token_packs"
+    :description
+    (str "The starter design systems — token packs: neutral, bold, soft — each "
+         "with what it is for and the values that give it its look in its "
+         "light and dark themes, and what THIS file has to build on already "
+         "(`file.hasSystem`: tokens or a linked library). Call it once before "
+         "you build in a file you have not looked at: with no system, propose "
+         "one before the first shape.")
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "generate_token_pack"
+    :description
+    (str "Makes a whole token pack for THIS project from a few choices: the "
+         "brand color, the fonts, the corners, the density, the shadows. The "
+         "greys, the dark theme, the status colors and the scales follow from "
+         "them, and every pair of text and ground is moved until it can be "
+         "read. Use it when a starter does not fit — a brief, a foundation or "
+         "an imported brand says what the project is. It changes NOTHING: it "
+         "answers the pack and a summary to show the user; once they agree, "
+         "call apply_token_pack with `choices`: this same input.")
+    :input-schema {:type "object"
+                   :properties {:name {:type "string" :description "kebab-case id, e.g. relay"}
+                                :title {:type "string"}
+                                :purpose {:type "string"
+                                          :description "what the system should feel like and for whom, in a sentence"}
+                                :primary {:type "string" :description "the brand color, #rrggbb"}
+                                :bodyFont {:type "string" :description "a font family, e.g. Inter (search_fonts tells which exist)"}
+                                :headingFont {:type "string" :description "defaults to bodyFont"}
+                                :corners {:type "string" :enum ["sharp" "soft" "round"]}
+                                :density {:type "string" :enum ["compact" "regular" "roomy"]}
+                                :typeScale {:type "string" :enum ["regular" "large"]
+                                            :description "large: bigger headings"}
+                                :shadow {:type "string" :enum ["none" "soft" "hard"]
+                                         :description "hard: offset, no blur, thicker borders"}
+                                :neutral {:type "string"
+                                          :description "where the greys lean: plain, cool, warm, brand, or a #rrggbb"}}
+                   :required ["name" "title" "purpose" "primary" "bodyFont"]}}
+
+   {:name "apply_token_pack"
+    :description
+    (str "Gives the file a design system: the pack's token sets and themes, "
+         "with one theme on. `pack` is a starter's name (neutral, bold, soft); "
+         "for a generated one pass `choices` instead — the same input you gave "
+         "generate_token_pack, which makes the same pack; for the tokens of a "
+         "library LINKED to this file pass `library`, its fileId, and the file "
+         "takes that library's sets and themes as its own, so what you build "
+         "here and the library's components share values and themes. Every recipe "
+         "then takes its look from these tokens, and what is already bound to "
+         "a token of the same name follows. A file that HAS tokens is not "
+         "touched: the answer says so, and you ask the user whether to merge "
+         "(theirs stay, the pack wins where both name a token), replace "
+         "(only the pack is left) or cancel, then call again with "
+         "`onExisting` — never choose for them. `theme` picks which theme is "
+         "on (the pack's default otherwise); activate_theme switches later.")
+    :input-schema {:type "object"
+                   :properties {:pack {:type "string" :description "a starter's name: neutral, bold or soft"}
+                                :choices {:type "object"
+                                          :description "instead of pack: the input of generate_token_pack (name, title, purpose, primary, bodyFont, …)"}
+                                :library {:type "string"
+                                          :description "instead of pack: the fileId of a linked library whose tokens the file takes"}
+                                :theme {:type "string" :description "e.g. Dark"}
+                                :onExisting {:type "string" :enum ["merge" "replace" "cancel"]
+                                             :description "only after the user chose, in a file that has tokens"}}
+                   :required []}}
+
+   {:name "reapply_tokens"
+    :description
+    (str "Gives every shape bound to a token the value the token has now, on "
+         "every page. Token changes and theme switches already do this for "
+         "what they change; use this when values have drifted from their "
+         "tokens — above all after a library update, which writes the "
+         "library's values back on the copies of its components.")
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "list_shared_libraries"
+    :description
+    (str "The shared libraries of this file's team: each with its name, "
+         "whether it is linked to this file already, its components by name "
+         "and how many tokens, colors and typographies it has. A team's "
+         "library is the design system it already chose: look here before "
+         "proposing a token pack. It changes nothing.")
+    :input-schema {:type "object" :properties {}}}
+
+   {:name "link_library"
+    :description
+    (str "Links a shared library of the team to this file, so its components "
+         "can be placed (create_instance with its fileId) and stay in sync "
+         "with it. It changes what the file depends on, so the USER decides: "
+         "propose the library by name, say what it offers, wait for their "
+         "yes, and only then call this with userAgreed: true. Without it "
+         "nothing is linked. Never set userAgreed on your own, and not "
+         "because they asked for a design: they have to agree to THIS link.")
+    :input-schema {:type "object"
+                   :properties {:fileId {:type "string" :description "a library from list_shared_libraries"}
+                                :userAgreed {:type "boolean"
+                                             :description "true only when the user said yes to linking this library"}}
+                   :required ["fileId"]}}
+
+   {:name "critique_design"
+    :description
+    (str "Shows a render of a board to a critic who did not build it and "
+         "answers what is weakest about it: a verdict with a score, the "
+         "three points that would most improve it, each with one concrete "
+         "change, and what to keep. You judge your own work kindly; the "
+         "critic is asked not to. Call it ONCE per screen, at the FIRST "
+         "whole render — every part there, before any polish — so there is "
+         "room to act on what it says; not as a last step, and not again "
+         "after your changes. `brief` is what the screen is for, who uses it "
+         "and the direction you aimed for: the critic judges against it. "
+         "Pass two names to compare a before and an after. Its points are "
+         "work: do point 1, render, then the others; when you present, "
+         "answer each point as done or not done and why.")
+    :input-schema {:type "object"
+                   :properties {:names {:type "array" :items {:type "string"}
+                                        :description "the board to judge, by name or id; at most two"}
+                                :brief {:type "string"
+                                        :description "what it is for, who uses it, and the direction: mood, palette, type, density"}}
+                   :required ["names" "brief"]}}
+
+   {:name "set_icons"
+    :description
+    (str "Puts real icons where placeholders are — MANY in one call. Use it "
+         "for every icon placeholder a recipe result lists, in place of "
+         "insert_icon. Each entry names a placeholder: `shapeId` alone, or "
+         "`shapeId` of an instance plus `layer`, the placeholder's layer "
+         "name inside it (a placeholder key \"Item 2 / Icon\" is shapeId = "
+         "ids[\"Item 2\"], layer = \"Icon\"). A plain box is replaced in "
+         "its place; an instance is swapped for the icon's own component, "
+         "made once per file — so icons end up as components too. The icon "
+         "takes the placeholder's size and its color token. Find ids with "
+         "search_icons.")
+    :input-schema {:type "object"
+                   :properties {:icons {:type "array"
+                                        :items {:type "object"
+                                                :properties {:shapeId {:type "string"}
+                                                             :layer {:type "string" :description "the placeholder's layer name under shapeId"}
+                                                             :icon {:type "string" :description "prefix:name, e.g. lucide:house"}
+                                                             :size {:type "number" :description "px, default 20"}}
+                                                :required ["shapeId" "icon"]}}}
+                   :required ["icons"]}}
+
+   {:name "set_texts"
+    :description
+    (str "Sets the words of MANY texts in one call — use it in place of "
+         "repeated set_text whenever more than one text changes: filling a "
+         "table, a list, the plans of a pricing section. All or nothing: if "
+         "one entry is not a text, none changes and you are told which.")
+    :input-schema {:type "object"
+                   :properties {:texts {:type "array"
+                                        :items {:type "object"
+                                                :properties {:shapeId {:type "string"}
+                                                             :text {:type "string" :description "the words"}}
+                                                :required ["shapeId" "text"]}}}
+                   :required ["texts"]}}
+
+   {:name "save_recipe"
+    :description
+    (str "Saves a board of this file as a recipe for the whole team: the "
+         "reverse of build_recipe. Use it when the user asks to keep "
+         "something they built so the agent can build it again. It keeps "
+         "structure — layers and names, each board's layout, the words, and "
+         "the tokens named as roles (color.primary, spacing.md…) — and "
+         "leaves out colors and values written on the shapes. Every board "
+         "with layers needs a layout first. You name it and say what it is "
+         "for; `params` marks what whoever builds it may set: a text layer "
+         "whose words can be given, or (type boolean) a layer that can be "
+         "left out. `slots` marks boards to be filled after a build. A "
+         "recipe of the name of a built-in one replaces it for this team. "
+         "Tell the user what was saved and what was left out.")
+    :input-schema {:type "object"
+                   :properties {:shapeId {:type "string" :description "the board to save; the selected one when left out"}
+                                :name {:type "string" :description "its id, kebab-case, e.g. \"news-card\""}
+                                :title {:type "string" :description "its name as shown; the board's name when left out"}
+                                :purpose {:type "string" :description "what it is for, in a sentence — this is how it is found"}
+                                :category {:type "string" :enum ["control" "container" "navigation" "section" "screen"]}
+                                :keywords {:type "array" :items {:type "string"} :description "more words to find it by"}
+                                :params {:type "array"
+                                         :items {:type "object"
+                                                 :properties {:name {:type "string" :description "letters and digits, starting in lower case"}
+                                                              :layer {:type "string" :description "the name of the layer it sets"}
+                                                              :type {:type "string" :enum ["text" "boolean"]}
+                                                              :description {:type "string"}}
+                                                 :required ["name" "layer"]}}
+                                :slots {:type "array"
+                                        :items {:type "object"
+                                                :properties {:name {:type "string"}
+                                                             :layer {:type "string" :description "the name of the board to fill"}}
+                                                :required ["name" "layer"]}}}
+                   :required ["name" "purpose" "category"]}}
 
    {:name "set_layout"
     :description
@@ -891,7 +1161,11 @@
          "that repeats — a spacing token on a layout's gap is as much a token as "
          "a color on a fill. A value may reference another token, e.g. "
          "\"{color.blue.500}\". For a scale or a palette use create_tokens "
-         "(plural) — one call instead of one per token.")
+         "(plural) — one call instead of one per token. A name the set has "
+         "already CHANGES that token: it takes the new value, and every shape "
+         "bound to it or to a token that refers to it follows, in components "
+         "and their copies alike. That is how a file is restyled — do not "
+         "re-apply the token or repaint the shapes.")
     :input-schema {:type "object"
                    :properties {:type {:type "string" :enum att/token-type-names
                                        :description "e.g. color, spacing, borderRadius"}
@@ -908,7 +1182,10 @@
          "case). Entries validate together, including that each target set "
          "exists (create_token_set first on a fresh file); nothing is created "
          "unless everything passes. Values may reference other tokens, even "
-         "ones earlier in the same batch, e.g. \"{color.blue.500}\".")
+         "ones earlier in the same batch, e.g. \"{color.blue.500}\". A name "
+         "a set has already CHANGES that token, and every shape bound to it "
+         "follows (see create_token): restyle a file by sending its tokens "
+         "again with their new values.")
     :input-schema {:type "object"
                    :properties {:set {:type "string"
                                       :description "default target set for entries without their own"}
@@ -1071,6 +1348,12 @@
          "duplicate_shape"    (ats/duplicate-shape input)
          "clone_shape"        (atx/clone-shape-tool input)
          "build_tree"         (atx/build-tree-tool input)
+         ;; server only: there is no second implementation in the workspace
+         ("build_recipe" "find_recipes" "save_recipe" "set_texts" "set_icons" "critique_design"
+                         "list_token_packs" "generate_token_pack" "apply_token_pack"
+                         "list_shared_libraries" "link_library" "reapply_tokens")
+         (rx/of {:error (str name " runs on the server, and the server could not "
+                             "run it here. Build with build_tree instead.")})
          "group_shapes"       (ats/group-shapes input)
          "ungroup_shapes"     (ats/ungroup-shapes input)
          "set_layout"         (atl/set-layout input)

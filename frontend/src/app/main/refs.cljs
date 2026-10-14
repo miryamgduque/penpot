@@ -421,6 +421,14 @@
                  (dm/get-in state [:ai-panel file-id :checkpoint])))
              st/state))
 
+(def ai-panel-revert
+  "The offer to revert the agent's last turn in the current file's chat, when
+  that turn changed the file (`{:turn-id :count :state}`)."
+  (l/derived (fn [state]
+               (when-let [file-id (:current-file-id state)]
+                 (dm/get-in state [:ai-panel file-id :revert])))
+             st/state))
+
 (def ai-panel-violations
   "Live auto-fix violations for the current file: the deterministic scan
   plus the semantic tick's verdicts (tagged `:semantic`), deduped by
@@ -871,6 +879,18 @@
 
 (def ai-providers
   (l/derived :ai-providers st/state))
+
+(def ai-model-catalog
+  (l/derived :ai-model-catalog st/state))
+
+(def ai-endpoints
+  (l/derived :ai-endpoints st/state))
+
+(def agent-mcp-servers
+  (l/derived :agent-mcp-servers st/state))
+
+(def agent-mcp-server-tools
+  (l/derived :agent-mcp-server-tools st/state))
 
 (def resolved-skills-enabled
   "Map of skill-name → effective on/off for the current file, resolving the user's

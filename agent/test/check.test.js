@@ -115,3 +115,24 @@ test("the probe image is a PNG of the color asked for", () => {
   assert.equal(png.readUInt32BE(16), 8);
   assert.equal(png.readUInt32BE(20), 8);
 });
+
+test("a check keeps none of its conversations", async () => {
+  const sessions = await mkdtemp(join(tmpdir(), "agent-check-sessions-"));
+  const fake = await startFakeAnthropic(model());
+  const harness = await createHarness({
+    providers: { anthropic: { baseURL: fake.baseURL } },
+    sessionsRoot: sessions,
+    capabilities: (provider, id) => ({ ...describe(provider, { id, type: "chat" }), vision: false }),
+  });
+  try {
+    const result = await checkModel(harness, { provider: "anthropic", model: "claude-sonnet-4-5", apiKey: "key-one", profileId: "p1" });
+    assert.equal(result.pass, true);
+    assert.equal(harness.conversations.size, 0);
+    const { readdir } = await import("node:fs/promises");
+    assert.deepEqual(await readdir(join(sessions, "_no-cwd")).catch(() => []), []);
+  } finally {
+    await harness.dispose();
+    await fake.close();
+    await rm(sessions, { recursive: true, force: true });
+  }
+});

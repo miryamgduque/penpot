@@ -29,6 +29,41 @@ import { runScoutTool, scoutTools } from "./scout.js";
 const MAX_BODY_BYTES = 6 * 1024 * 1024;
 const HEARTBEAT_MS = 2000;
 
+// How many conversations' current page is remembered, for conversations run
+// with no workspace. The oldest is forgotten first; it goes back to the
+// file's first page.
+const MAX_REMEMBERED_PAGES = 1000;
+
+// Past this share of a model's context, taken by what is sent before the
+// user's message, the user is told that long work may not fit.
+const TIGHT_CONTEXT_SHARE = 0.5;
+
+/**
+ * The warning a turn starts with when what is sent before the user's words
+ * takes much of the model's context, or undefined. Tokens are estimated at
+ * four characters each.
+ */
+export function contextWarning(record, { system, tools, skills }) {
+  const limit = record?.contextLimit;
+  if (!Number.isInteger(limit) || limit <= 0) return undefined;
+  const chars = String(system ?? "").length + JSON.stringify(tools ?? []).length + JSON.stringify(skills ?? []).length;
+  const tokens = Math.round(chars / 4);
+  if (tokens < limit * TIGHT_CONTEXT_SHARE) return undefined;
+  const k = (n) => `${Math.round(n / 1000)}k`;
+  return (
+    `What is sent to ${record.name} before your message — the agent's instructions and ${(tools ?? []).length} tool ` +
+    `descriptions — takes about ${k(tokens)} of its ${k(limit)}-token context. Long work may not fit and can stop ` +
+    "part-way; a model with a larger context would hold more."
+  );
+}
+
+/** `map` with `key` set to `value`, as the newest entry, holding at most `max`. */
+export function remember(map, key, value, max) {
+  map.delete(key);
+  map.set(key, value);
+  while (map.size > max) map.delete(map.keys().next().value);
+}
+
 class HttpError extends Error {
   constructor(status, message) {
     super(message);
@@ -263,6 +298,9 @@ export async function createAgentServer(options = {}) {
       if (!res.writableEnded && !res.destroyed) res.write(`${JSON.stringify(event)}\n`);
     };
     emit({ type: "turn", turnId });
+    // told before the turn, not discovered when it stops part-way
+    const warning = contextWarning(harness.capabilities?.(provider, model), { system, tools, skills });
+    if (warning !== undefined) emit({ type: "warning", message: warning });
     // said once, so the panel can show which connected services are in play
     if (mcp.servers.length > 0 || mcp.refused.length > 0) {
       emit({ type: "mcp", servers: mcp.servers.map((server) => server.name), refused: mcp.refused });
@@ -329,7 +367,7 @@ export async function createAgentServer(options = {}) {
       let result = checked;
       if (!checked.isError) {
         const page = JSON.parse(checked.content);
-        pages.set(pageKey, page.pageId);
+        remember(pages, pageKey, page.pageId, options.maxRememberedPages ?? MAX_REMEMBERED_PAGES);
         result = {
           content: JSON.stringify({
             pageId: page.pageId,

@@ -550,3 +550,76 @@ test("an image reaches a provider that is not Anthropic, in that provider's own 
   await rm(home, { recursive: true, force: true });
 });
 
+
+test("a turn on another model reopens the conversation on that model, with its history and its key", async () => {
+  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { startFakeOpenAI } = await import("./fake-openai.js");
+  const root = await mkdtemp(join(tmpdir(), "agent-sessions-"));
+  const fake = await startFakeAnthropic(() => ({ text: "ok" }));
+  const local = await startFakeOpenAI(() => ({ text: "ok, locally" }));
+  const harness = await createHarness({ providers: { anthropic: { baseURL: fake.baseURL } }, sessionsRoot: root });
+  const io = { emit: () => {}, callTool: async () => ({}) };
+  try {
+    await harness.runTurn(turn({ text: "remember the word heliotrope" }), io);
+    // same provider, another model: the model asked for is the one used
+    await harness.runTurn(turn({ model: "claude-haiku-4-5", text: "and now?" }), io);
+    assert.equal(fake.requests[1].body.model, "claude-haiku-4-5");
+    assert.match(JSON.stringify(fake.requests[1].body.messages), /heliotrope/);
+    // another provider altogether: called with that provider's key
+    await harness.registerEndpoint({ provider: "endpoint:lab", name: "Lab", baseUrl: local.baseURL, models: [{ id: "qwen-local", tools: true }] });
+    await harness.runTurn(turn({ provider: "endpoint:lab", model: "qwen-local", apiKey: "lab-key", text: "which word?" }), io);
+    assert.equal(local.requests.length, 1);
+    assert.equal(local.requests[0].key, "lab-key");
+    assert.equal(local.requests[0].body.model, "qwen-local");
+    assert.match(JSON.stringify(local.requests[0].body.messages), /heliotrope/);
+    // and a briefing that changed is the one the model is given
+    await harness.runTurn(turn({ system: "A new briefing: be brief.", text: "go on" }), io);
+    assert.match(JSON.stringify(fake.requests.at(-1).body.system), /A new briefing/);
+  } finally {
+    await harness.dispose();
+    await fake.close();
+    await local.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the same model and briefing keep the conversation open", async () => {
+  const t = await setup(() => ({ text: "ok" }));
+  try {
+    const io = { emit: () => {}, callTool: async () => ({}) };
+    await t.harness.runTurn(turn({ text: "first" }), io);
+    const open = t.harness.conversations.get("penpot-p1-s1");
+    await t.harness.runTurn(turn({ text: "second" }), io);
+    assert.equal(t.harness.conversations.get("penpot-p1-s1"), open);
+  } finally {
+    await t.close();
+  }
+});
+
+test("a side job leaves nothing stored behind", async () => {
+  const { mkdtemp, readdir, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const root = await mkdtemp(join(tmpdir(), "agent-sessions-"));
+  const fake = await startFakeAnthropic(() => ({ text: "a digest" }));
+  const harness = await createHarness({ providers: { anthropic: { baseURL: fake.baseURL } }, sessionsRoot: root });
+  try {
+    const answer = await harness.runSideTurn(
+      { profileId: "p1", provider: "anthropic", apiKey: "key-one", model: MODEL, system: "s", text: "q", tools: [] },
+      { serverTools: new Set(), callServerTool: async () => ({ content: "", isError: true }) },
+    );
+    assert.equal(answer, "a digest");
+    assert.equal(harness.conversations.size, 0);
+    const left = await readdir(join(root, "_no-cwd")).catch(() => []);
+    assert.deepEqual(left, []);
+    // a conversation of the user's is kept
+    await harness.runTurn(turn(), { emit: () => {}, callTool: async () => ({}) });
+    await harness.dispose();
+    assert.equal((await readdir(join(root, "_no-cwd"))).length, 1);
+  } finally {
+    await fake.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

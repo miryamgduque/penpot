@@ -14,6 +14,7 @@
    [app.common.agent.recipes :as cars]
    [app.common.agent.recipes.profiles :as profiles]
    [app.common.data.macros :as dm]
+   [app.main.data.changes :as dch]
    [app.main.data.workspace.agent-tools.agentic :as atg]
    [app.main.data.workspace.agent-tools.common :as atc]
    [app.main.data.workspace.agent-tools.components :as atcp]
@@ -24,6 +25,7 @@
    [app.main.data.workspace.agent-tools.read :as atr]
    [app.main.data.workspace.agent-tools.structure :as ats]
    [app.main.data.workspace.agent-tools.tokens :as att]
+   [app.main.store :as st]
    [beicon.v2.core :as rx]
    [cuerdas.core :as str]))
 
@@ -1313,9 +1315,41 @@
                        "get_design_skills with its name and follow the method."))))
     result))
 
+;; --- Dropped changes
+;;
+;; A workspace that cannot commit (the person may view the file but not edit
+;; it, or is previewing an older version) still lets a tool emit its changes;
+;; `commit-changes` then drops them without an error, and the tool would go on
+;; to report what it "created". So a tool that changes the file is refused
+;; before it runs, with a message that says nothing happened.
+
+(def no-commit-tools
+  "The tools that never commit a change to the file. Every other tool is
+  taken to change it, so one added without a place here is refused rather
+  than allowed to report a change that was dropped."
+  #{"read_design" "find_shapes" "render_board" "audit_file" "generate_code"
+    "get_design_skills" "explore_design" "ask_user" "switch_page"
+    "fetch_page" "get_page_meta" "screenshot_page" "search_icons" "search_fonts"
+    ;; comments are not file changes, and the backend lets readers comment
+    "leave_comment" "list_comments"})
+
+(defn commit-refusal
+  "Why the tool `name` must not run in a workspace with `state`, or nil when
+  it may."
+  [name state]
+  (when-not (or (contains? no-commit-tools name)
+                (dch/can-commit? state))
+    (if (dm/get-in state [:workspace-global :preview-id])
+      (str name " did not run, so nothing in the file changed: the file is open "
+           "on an older version (a version history preview), where nothing can be "
+           "changed. Do not retry; ask the user to go back to the current version.")
+      (str name " did not run, so nothing in the file changed: this person can "
+           "view the file but not edit it. Do not retry and do not say it was "
+           "done; tell them what you would change instead."))))
+
 ;; --- Dispatch
 
-(defn execute-tool
+(defn- dispatch-tool
   [name input]
   (when (and (= name "get_design_skills") (:name input))
     (reset! playbook-fetched* true))
@@ -1386,3 +1420,9 @@
          "apply_tokens"       (att/apply-tokens input)
          (rx/throw (ex-info (dm/str "Unknown tool: " name) {})))
        (rx/map #(with-playbook-nudge name %))))
+
+(defn execute-tool
+  [name input]
+  (if-let [refusal (commit-refusal name @st/state)]
+    (rx/throw (ex-info refusal {:type :agent-tool :code :file-not-editable}))
+    (dispatch-tool name input)))

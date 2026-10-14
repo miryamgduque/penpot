@@ -10974,3 +10974,23 @@ msgstr "Recording in progress"
 #: src/app/main/ui/workspace/session_recorder.cljs
 msgid "workspace.session-recorder.stop-short"
 msgstr "Stop"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.read-only.badge"
+msgstr "Read only"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.read-only.notice"
+msgstr "You have view access to this file. The agent can read, review and explain it, but not change it."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.read-only.suggestion.accessibility"
+msgstr "Review this page for accessibility problems"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.read-only.suggestion.explain"
+msgstr "Explain how this page is built"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.read-only.suggestion.tokens"
+msgstr "Find colors and text styles that do not use design tokens"

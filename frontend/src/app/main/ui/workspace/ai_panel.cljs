@@ -1001,6 +1001,9 @@
         pending-fix (mf/deref refs/ai-panel-pending-fix)
         pending-form (mf/deref refs/ai-panel-pending-form)
         composer-seed (mf/deref refs/ai-panel-composer-seed)
+        can-write?    (mf/deref refs/agent-can-write?)
+        ;; what a viewer can ask and see through: each one only reads
+        on-suggest    (mf/use-fn #(st/emit! (dwaip/seed-composer %)))
 
         pool      (mf/with-memo [providers] (provider-pool providers))
 
@@ -1292,6 +1295,9 @@
                                       (chat-context page selected objects)))))
 
     [:div {:class (stl/css :chat-tab)}
+     (when-not can-write?
+       [:p {:class (stl/css :read-only-notice)} (tr "workspace.agent.read-only.notice")])
+
      ;; Current-file context surfaced to the agent: page + selection.
      [:div {:class (stl/css :context-chip)}
       [:span {:class (stl/css :context-page)} (:name page)]
@@ -1347,7 +1353,18 @@
        [:div {:class (stl/css :transcript-empty)}
         [:> i/icon* {:icon-id i/bot-message-square
                      :size "m"
-                     :class (stl/css :bot-icon)}]])
+                     :class (stl/css :bot-icon)}]
+        ;; prefilled, not sent: the person still presses send
+        (when-not can-write?
+          [:div {:class (stl/css :read-only-suggestions)}
+           (for [text [(tr "workspace.agent.read-only.suggestion.explain")
+                       (tr "workspace.agent.read-only.suggestion.accessibility")
+                       (tr "workspace.agent.read-only.suggestion.tokens")]]
+             [:button {:key text
+                       :type "button"
+                       :class (stl/css :read-only-suggestion)
+                       :on-click #(on-suggest text)}
+              text])])])
 
      ;; Spend meter + clear, shown once there is a conversation to act on.
      (when (or (seq messages) (some-> usage :requests pos?))
@@ -2634,6 +2651,9 @@
   [_props]
   (let [view*       (mf/use-state :chat)
         view        (deref view*)
+        ;; someone who may only view the file: the chat says the agent is
+        ;; read-only, in the header and in one line (#152)
+        can-write?  (mf/deref refs/agent-can-write?)
         skills?     (= view :skills)
         foundations? (= view :foundations)
 
@@ -2810,7 +2830,10 @@
             promoting    (tr "workspace.agent.skill.promote")
             skill        (tr "workspace.agent.header.skill-info")
             :else        (tr "workspace.agent.skills.title"))]]
-        [:span {:class (stl/css :title)} (tr "workspace.agent.title")])
+        [:div {:class (stl/css :header-lead)}
+         [:span {:class (stl/css :title)} (tr "workspace.agent.title")]
+         (when-not can-write?
+           [:span {:class (stl/css :read-only-badge)} (tr "workspace.agent.read-only.badge")])])
       (cond
         ;; Skills' list: Filters (own dropdown, state owned here and handed
         ;; to skills-tab*) + Create, both icon-buttons, same line as the title.

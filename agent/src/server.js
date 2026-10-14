@@ -19,7 +19,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { PROVIDER_ROUTES, createHarness } from "./harness.js";
+import { PROVIDER_ROUTES, createHarness, sessionIdOf } from "./harness.js";
 import { listMcpTools, turnMcpServers } from "./mcp.js";
 import { catalog } from "./catalog.js";
 import { checkModel } from "./check.js";
@@ -46,7 +46,10 @@ const TIGHT_CONTEXT_SHARE = 0.5;
 export function contextWarning(record, { system, tools, skills }) {
   const limit = record?.contextLimit;
   if (!Number.isInteger(limit) || limit <= 0) return undefined;
-  const chars = String(system ?? "").length + JSON.stringify(tools ?? []).length + JSON.stringify(skills ?? []).length;
+  // the model is first shown each skill by its name and description; the
+  // body is read only when it is used
+  const listed = (skills ?? []).map((skill) => [skill?.name, skill?.description]);
+  const chars = String(system ?? "").length + JSON.stringify(tools ?? []).length + JSON.stringify(listed).length;
   const tokens = Math.round(chars / 4);
   if (tokens < limit * TIGHT_CONTEXT_SHARE) return undefined;
   const k = (n) => `${Math.round(n / 1000)}k`;
@@ -298,8 +301,10 @@ export async function createAgentServer(options = {}) {
       if (!res.writableEnded && !res.destroyed) res.write(`${JSON.stringify(event)}\n`);
     };
     emit({ type: "turn", turnId });
-    // told before the turn, not discovered when it stops part-way
-    const warning = contextWarning(harness.capabilities?.(provider, model), { system, tools, skills });
+    // told before the first turn of a conversation, not discovered when it
+    // stops part-way; once is enough
+    const open = harness.conversations?.has(sessionIdOf(profileId, sessionId)) === true;
+    const warning = open ? undefined : contextWarning(harness.capabilities?.(provider, model), { system, tools, skills });
     if (warning !== undefined) emit({ type: "warning", message: warning });
     // said once, so the panel can show which connected services are in play
     if (mcp.servers.length > 0 || mcp.refused.length > 0) {
@@ -352,6 +357,8 @@ export async function createAgentServer(options = {}) {
         // not JSON: no context
       }
       const pageId = pages.get(pageKey);
+      // in use: the newest again, so it is not the one forgotten
+      if (pageId !== undefined) remember(pages, pageKey, pageId, options.maxRememberedPages ?? MAX_REMEMBERED_PAGES);
       return JSON.stringify(pageId === undefined ? context : { ...context, pageId });
     };
     const syncWorkspace = (signal) => {

@@ -623,3 +623,55 @@ test("a side job leaves nothing stored behind", async () => {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a skill turned on or off reopens the conversation, on its own", async () => {
+  const t = await setup(() => ({ text: "ok" }));
+  try {
+    const io = { emit: () => {}, callTool: async () => ({}) };
+    await t.harness.runTurn(turn({ text: "first" }), io);
+    const before = t.harness.conversations.get("penpot-p1-s1");
+    await t.harness.runTurn(turn({ text: "second", skills: [{ name: "penpot-build-screen", description: "Build a screen", body: "STEP" }] }), io);
+    assert.notEqual(t.harness.conversations.get("penpot-p1-s1"), before);
+  } finally {
+    await t.close();
+  }
+});
+
+test("an endpoint whose model's capabilities changed is reopened with what it can do now", async () => {
+  const { startFakeOpenAI } = await import("./fake-openai.js");
+  const local = await startFakeOpenAI(() => ({ text: "ok" }));
+  const fake = await startFakeAnthropic(() => ({ text: "ok" }));
+  const harness = await createHarness({ providers: { anthropic: { baseURL: fake.baseURL } } });
+  const endpoint = (vision) => ({ provider: "endpoint:lab", name: "Lab", baseUrl: local.baseURL, models: [{ id: "qwen-local", tools: true, vision }] });
+  const io = { emit: () => {}, callTool: async () => ({}) };
+  const lab = (text) => turn({ provider: "endpoint:lab", model: "qwen-local", apiKey: "lab-key", text });
+  try {
+    await harness.registerEndpoint(endpoint(false));
+    await harness.runTurn(lab("first"), io);
+    const before = harness.conversations.get("penpot-p1-s1");
+    assert.match(JSON.stringify(local.requests[0].body.messages), /You cannot see images/);
+    // the admin says it reads images now
+    await harness.registerEndpoint(endpoint(true));
+    await harness.runTurn(lab("second"), io);
+    assert.notEqual(harness.conversations.get("penpot-p1-s1"), before);
+    assert.doesNotMatch(JSON.stringify(local.requests.at(-1).body.messages.slice(0, 1)), /You cannot see images/);
+  } finally {
+    await harness.dispose();
+    await fake.close();
+    await local.close();
+  }
+});
+
+test("two turns started at once in one conversation: the second is refused, not run beside the first", async () => {
+  const t = await setup(() => ({ text: "ok" }));
+  try {
+    const io = { emit: () => {}, callTool: async () => ({}) };
+    const first = t.harness.runTurn(turn({ text: "first" }), io);
+    // the first is still opening the conversation
+    await assert.rejects(t.harness.runTurn(turn({ text: "second" }), io), (error) => error.status === 409);
+    await first;
+    assert.equal(t.fake.requests.length, 1);
+  } finally {
+    await t.close();
+  }
+});

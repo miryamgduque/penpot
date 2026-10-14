@@ -61,13 +61,12 @@
   (true? (:vision (model provider model-id))))
 
 (defn price
-  "The catalog's price of the model with this id, whoever its provider:
-  `{:input :output :cacheRead :cacheWrite}` in dollars per million tokens, or
-  nil when the catalog does not have the model or states no price."
-  [model-id]
-  (some (fn [[_ records]]
-          (some #(when (= model-id (:id %)) (:price %)) records))
-        @catalog*))
+  "The catalog's price of a provider's model: `{:input :output :cacheRead
+  :cacheWrite}` in dollars per million tokens, or nil when the catalog does
+  not have the model or states no price. By provider: two providers may
+  serve models of the same id at different prices."
+  [provider model-id]
+  (:price (model provider model-id)))
 
 (defn selectable?
   "Whether `model` may run the agent: everything but a model KNOWN not to

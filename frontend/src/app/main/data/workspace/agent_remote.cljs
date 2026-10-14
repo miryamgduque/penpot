@@ -250,7 +250,15 @@
   "→ observable of turn events. `history` ends in the user message to send;
   what came before it is already in the service's session."
   [settings history system]
-  (let [user-msg (peek (vec history))
+  (let [prior    (vec (butlast history))
+        ;; A fresh chat that carries a summary of the one before starts with
+        ;; it alone. The model has not seen it: the conversation it knows is
+        ;; the service's, new for this chat. So it rides with the first
+        ;; message, ahead of the user's words.
+        seed     (when (and (= 1 (count prior)) (:compacted? (first prior)))
+                   (:text (first prior)))
+        user-msg (cond-> (peek (vec history))
+                   (some? seed) (update :text #(dm/str seed "\n\n" %)))
         turn-id* (atom nil)
         text*    (atom "")]
     (->> (agent-access/guard-model-call

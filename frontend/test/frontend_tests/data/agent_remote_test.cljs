@@ -8,6 +8,7 @@
   (:require
    [app.common.uuid :as uuid]
    [app.config :as cf]
+   [app.main.data.workspace.agent :as agent]
    [app.main.data.workspace.agent-remote :as ar]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.repo :as rp]
@@ -126,3 +127,34 @@
                                            {:type "done" :reason "completed"}]))]
     (t/is (= #{"anthropic:claude-sonnet-5"} (set (keys (:by-model (:usage main))))))
     (t/is (= #{"anthropic:claude-haiku-5-5"} (set (keys (:by-model (:usage side))))))))
+
+(t/deftest a-fresh-chat-hands-its-summary-to-the-model-with-the-first-message
+  (let [sent (atom nil)
+        seed (first (agent/handoff-seed "We built the Relay dashboard."))]
+    (with-redefs [cf/flags (conj cf/flags :design-agent)
+                  rp/cmd!  (mock/stub (fn [_ params] (reset! sent params) (rx/empty)))]
+      (opt-out/with-store-state
+        {:profile {:id (uuid/next) :props {}} :current-file-id file-id
+         :agent-file-state {file-id true}}
+        #(rx/sub! (ar/run-turn {:provider "anthropic" :model "claude-sonnet-5"
+                                :service {:session-id (uuid/next) :file-id file-id}}
+                               [seed {:role :user :text "go on with the table"}]
+                               "SYSTEM")
+                  (fn [_]))))
+    (let [text (:text (js->clj (js/JSON.parse (:payload @sent)) :keywordize-keys true))]
+      (t/is (re-find #"We built the Relay dashboard" text))
+      (t/is (re-find #"go on with the table$" text)))
+    (t/testing "later turns do not carry it again"
+      (with-redefs [cf/flags (conj cf/flags :design-agent)
+                    rp/cmd!  (mock/stub (fn [_ params] (reset! sent params) (rx/empty)))]
+        (opt-out/with-store-state
+          {:profile {:id (uuid/next) :props {}} :current-file-id file-id
+           :agent-file-state {file-id true}}
+          #(rx/sub! (ar/run-turn {:provider "anthropic" :model "claude-sonnet-5"
+                                  :service {:session-id (uuid/next) :file-id file-id}}
+                                 [seed {:role :user :text "go on"} {:role :assistant :text "ok"}
+                                  {:role :user :text "and the chart"}]
+                                 "SYSTEM")
+                    (fn [_]))))
+      (t/is (not (re-find #"Relay dashboard"
+                          (:text (js->clj (js/JSON.parse (:payload @sent)) :keywordize-keys true))))))))

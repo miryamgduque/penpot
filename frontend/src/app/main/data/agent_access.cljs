@@ -75,6 +75,21 @@
               (= :account override) (account-enabled? state)
               :else                 false))))))
 
+(defn can-write?
+  "True when the current user can change the file open in the workspace.
+
+  A different question from `agent-enabled?`, and independent of it: a
+  person who may only view a file still has the agent. Every agent surface
+  that offers a change asks this.
+
+  It reads the edit capability the backend grants (`:can-edit` in the
+  permissions loaded with the team), never a role name, so a later way in
+  that only lets someone view answers false here without a change. A
+  preview of an older version does not change it: that person can still
+  write to the file, and a tool that cannot commit there says so itself."
+  [state]
+  (true? (get-in state [:permissions :can-edit])))
+
 (defn route-allowed?
   "False for an agent-only route while the agent is off for the user."
   [state route-name]

@@ -141,3 +141,54 @@
 (t/deftest switching-off-without-panels-leaves-state-alone
   (let [off (ptk/update (agent-switch/apply-account-setting true) user-state)]
     (t/is (nil? (:ai-panel off)))))
+
+;; --- Write capability (#150)
+;;
+;; Whether the person can change the file, asked by every agent surface that
+;; offers a change. The permission maps are shaped as the backend sends them
+;; with the team (`app.rpc.permissions/assign-role-flags`).
+
+(def ^:private viewer-permissions {:is-owner false :is-admin false :can-edit false :can-read true})
+(def ^:private editor-permissions {:is-owner false :is-admin false :can-edit true :can-read true})
+(def ^:private admin-permissions  {:is-owner false :is-admin true :can-edit true :can-read true})
+(def ^:private owner-permissions  {:is-owner true :is-admin true :can-edit true :can-read true})
+
+(defn- as-member
+  [permissions]
+  (assoc user-state :permissions permissions))
+
+(t/deftest a-viewer-cannot-write
+  (t/is (false? (agent-access/can-write? (as-member viewer-permissions)))))
+
+(t/deftest editors-admins-and-owners-can-write
+  (doseq [permissions [editor-permissions admin-permissions owner-permissions]]
+    (t/is (true? (agent-access/can-write? (as-member permissions))) (pr-str permissions))))
+
+(t/deftest nothing-loaded-means-no-write
+  (t/is (false? (agent-access/can-write? user-state)))
+  (t/is (false? (agent-access/can-write? {}))))
+
+(t/deftest write-capability-is-the-capability-not-a-role
+  ;; a way in that only lets someone view, whatever else it carries: it
+  ;; answers false without the check knowing its name
+  (t/is (false? (agent-access/can-write? (as-member {:can-edit false :can-read true}))))
+  (t/is (false? (agent-access/can-write? (as-member {:role :share-link :can-edit false :can-read true}))))
+  ;; and an unexpected value is not taken for permission
+  (t/is (false? (agent-access/can-write? (as-member {:can-edit "yes"})))))
+
+(t/deftest write-capability-and-the-agent-switch-are-independent
+  (with-flag true
+    (fn []
+      (let [viewer (as-member viewer-permissions)]
+        (t/is (true? (agent-access/agent-enabled? viewer file-id)) "a viewer still has the agent")
+        (t/is (false? (agent-access/can-write? viewer))))))
+  (with-flag false
+    (fn []
+      (let [editor (as-member editor-permissions)]
+        (t/is (false? (agent-access/agent-enabled? editor file-id)))
+        (t/is (true? (agent-access/can-write? editor)) "the agent being off says nothing about writing")))))
+
+(t/deftest a-preview-does-not-take-write-away
+  (t/is (true? (agent-access/can-write?
+                (-> (as-member editor-permissions)
+                    (assoc :workspace-global {:read-only? true :preview-id (uuid/next)}))))))

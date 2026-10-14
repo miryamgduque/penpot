@@ -14,6 +14,9 @@ none of it. Resolver: `app.main.data.agent-access/agent-enabled?`
   `agent-access/guard-model-call`. It checks again when the request goes
   out, so a chain that began while the agent was on cannot send its next
   request after the switch-off.
+- A surface that offers a change to the file also asks
+  `agent-access/can-write?` (ref `refs/agent-can-write?`). It is not part
+  of `agent-enabled?`: a viewer keeps the agent. Never test a role name.
 - Add the row here and a case in `frontend-tests.data.agent-opt-out-test`.
 - Tests prove browser gates only. Do not call them a server check.
 

@@ -323,6 +323,11 @@
   [file-id]
   (l/derived #(agent-access/agent-enabled? % file-id) st/state))
 
+(def agent-can-write?
+  "Whether the current user can change the file open in the workspace. See
+  `app.main.data.agent-access/can-write?`."
+  (l/derived agent-access/can-write? st/state))
+
 (def agent-enabled-file-count
   "How many files, still open to the user, they turned the agent on in as
   an exception to their account setting. Nil until loaded."

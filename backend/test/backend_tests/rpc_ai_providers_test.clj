@@ -503,7 +503,19 @@
       (t/testing "and the helper chosen on it no longer does the side jobs: the main model does"
         (let [out (cmd! :agent-helper-round :provider "anthropic" :model "claude-sonnet-5-5" :system "s" :text "t")]
           (t/is (= "anthropic" (-> out :result :provider)))
-          (t/is (= "anthropic" (get-in (last @asked) [:headers "x-penpot-provider"]))))))))
+          (t/is (= "anthropic" (get-in (last @asked) [:headers "x-penpot-provider"])))))
+
+      (t/testing "nor can it be named as the main model of a side job"
+        (let [before (count @asked)]
+          (t/is (th/ex-of-code? (:error (cmd! :agent-helper-round :provider "google" :model "gemini-3-flash"
+                                              :system "s" :text "t"))
+                                :ai-provider-not-offered))
+          (t/is (= before (count @asked)))))
+
+      (t/testing "and it is not listed, so no client offers its models"
+        (t/is (= ["anthropic"] (mapv :provider (:result (cmd! :get-ai-providers)))))
+        (with-redefs [cf/flags (conj cf/flags :design-agent-preview-providers)]
+          (t/is (= ["anthropic" "google"] (mapv :provider (:result (cmd! :get-ai-providers))))))))))
 
 (t/deftest an-admin-is-known-whatever-the-case-of-the-address
   (let [admin (th/create-profile* 1 {:is-active true})]

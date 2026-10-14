@@ -362,6 +362,10 @@
    ::sm/params schema:get-ai-providers}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id]}]
   (->> (db/query pool :profile-ai-provider {:profile-id profile-id})
+       ;; a provider this instance does not offer (any more) is not listed:
+       ;; nothing in the client offers its models, as a main model or as
+       ;; helper. Its stored key stays, for when it is offered again.
+       (filter #(usable? cfg (:provider %)))
        (map (comp (partial row->status cfg) decode-row))
        (sort-by :provider)
        (vec)))
@@ -587,6 +591,9 @@
   (if-let [row (helper-row cfg profile-id)]
     {:provider (:provider row) :model (:helper-model row) :api-key (:api-key row)}
     (when (and (string? provider) (string? model))
+      ;; the main model named by the caller is held to the same rule as
+      ;; any provider: offered here, or a registered endpoint
+      (check-provider! cfg provider)
       {:provider provider :model model
        :api-key (:api-key (connected-provider-row cfg profile-id provider))})))
 

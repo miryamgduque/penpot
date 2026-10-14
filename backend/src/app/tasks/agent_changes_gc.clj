@@ -16,8 +16,15 @@
    [app.db :as db]
    [integrant.core :as ig]))
 
+;; By turn, not by row: a turn whose last commit is old goes whole. Cutting
+;; it by row could keep half a turn, and reverting half a turn is not
+;; taking it back.
 (def ^:private sql:delete-old-agent-changes
-  "DELETE FROM file_agent_change WHERE created_at < now() - ?::interval")
+  "DELETE FROM file_agent_change
+    WHERE turn_id IN (SELECT turn_id
+                        FROM file_agent_change
+                       GROUP BY turn_id
+                      HAVING max(created_at) < now() - ?::interval)")
 
 (def default-max-age
   "How long a commit of the agent is kept, unless the instance says."

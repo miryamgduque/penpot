@@ -383,7 +383,7 @@
 ;; it happens only when the call says the user agreed.
 
 (def ^:private sql:shared-files
-  "SELECT f.id, f.name
+  "SELECT f.id, f.name, f.revn
      FROM file AS f
      JOIN project AS p ON (p.id = f.project_id)
     WHERE f.is_shared = true
@@ -394,9 +394,30 @@
 
 (def ^:private max-component-names 40)
 
+;; What a library offers is read from the whole file, which is costly for a
+;; large one, and the agent asks about every shared library of the team at
+;; once. It changes only when the file does, so it is kept by revision.
+(def ^:private max-cached-libraries 256)
+
+(defonce ^:private library-contents-cache (atom {}))
+
+(declare library-contents*)
+
 (defn- library-contents
   "What a shared library offers: its components by name, and how many
-  tokens, colors and typographies it has."
+  tokens, colors and typographies it has. Read once per revision of the
+  library."
+  [cfg id revn]
+  (let [k [id revn]]
+    (if-let [found (get @library-contents-cache k)]
+      found
+      (let [contents (library-contents* cfg id)]
+        (swap! library-contents-cache
+               (fn [cache]
+                 (assoc (if (>= (count cache) max-cached-libraries) {} cache) k contents)))
+        contents))))
+
+(defn- library-contents*
   [cfg id]
   (when-let [data (:data (load-whole-file cfg id))]
     (let [names (->> (ctkl/components-seq data)
@@ -423,9 +444,9 @@
         _       (teams/check-read-permissions! cfg profile-id team-id)
         found   (->> (db/exec! cfg [sql:shared-files team-id])
                      (remove #(= file-id (:id %)))
-                     (mapv (fn [{:keys [id name]}]
+                     (mapv (fn [{:keys [id name revn]}]
                              (merge {:fileId (str id) :name name :linked (contains? linked id)}
-                                    (library-contents cfg id)))))]
+                                    (library-contents cfg id revn)))))]
     {:libraries found
      :note (cond
              (empty? found)
@@ -800,7 +821,7 @@
   [cfg {:keys [token revn vern tool changes undo-changes]}]
   (let [{:keys [profile-id file-id turn-id conversation-id]} (verify-turn-token cfg token)]
     (db/tx-run! cfg
-                (fn [cfg]
+                (fn [{:keys [::db/conn] :as cfg}]
                   (@update-file-fn cfg {::rpc/profile-id profile-id
                                         :id file-id
                                         ;; a session of its own, so every open
@@ -809,25 +830,28 @@
                                         :revn revn
                                         :vern vern
                                         :features cfeat/supported-features
-                                        :changes changes})))
-    ;; the revision the file is at now, so a workspace can tell when it has
-    ;; caught up with this commit
-    (let [revn (:revn (bfc/get-file cfg file-id :read-only? true :load-data? false))]
-      ;; and the record of it: an edit the agent made, in which turn of which
-      ;; conversation, with which tool
-      (when (and (uuid? turn-id) (string? conversation-id))
-        (db/insert! cfg :file-agent-change
+                                        :changes changes})
+                  ;; the revision this commit made, read in its transaction:
+                  ;; the file row is held until it ends, so an edit somebody
+                  ;; commits meanwhile comes after and is not taken for this
+                  ;; one. A workspace tells by it when it has caught up.
+                  (let [revn (:revn (db/get conn :file {:id file-id} {:columns [:revn]}))]
+                    ;; and the record of it, with the commit or not at all: an
+                    ;; edit the agent made, in which turn of which
+                    ;; conversation, with which tool
+                    (when (and (uuid? turn-id) (string? conversation-id))
+                      (db/insert! conn :file-agent-change
+                                  {:file-id file-id
+                                   :profile-id profile-id
+                                   :conversation-id conversation-id
+                                   :turn-id turn-id
+                                   :tool (or tool "unknown")
+                                   :revn revn
+                                   :changes (blob/encode changes)
+                                   :undo-changes (some-> undo-changes blob/encode)}
+                                  {::db/return-keys false}))
                     {:file-id file-id
-                     :profile-id profile-id
-                     :conversation-id conversation-id
-                     :turn-id turn-id
-                     :tool (or tool "unknown")
-                     :revn revn
-                     :changes (blob/encode changes)
-                     :undo-changes (some-> undo-changes blob/encode)}
-                    {::db/return-keys false}))
-      {:file-id file-id
-       :revn revn})))
+                     :revn revn})))))
 
 ;; --- What the agent changed
 
@@ -975,14 +999,36 @@
                 revert-turn (uuid/next)]
             (try
               (db/tx-run! cfg
-                          (fn [cfg]
+                          (fn [{:keys [::db/conn] :as cfg}]
                             (@update-file-fn cfg {::rpc/profile-id profile-id
                                                   :id file-id
                                                   :session-id (uuid/next)
                                                   :revn (:revn file)
                                                   :vern (:vern file)
                                                   :features cfeat/supported-features
-                                                  :changes undo})))
+                                                  :changes undo})
+                            ;; recorded in the same transaction as the revert,
+                            ;; at the revision it made: both or neither
+                            (let [revn (:revn (db/get conn :file {:id file-id} {:columns [:revn]}))]
+                              (db/update! conn :file-agent-change
+                                          {:reverted-at (ct/now)}
+                                          {:file-id file-id :turn-id turn-id}
+                                          {::db/return-keys false})
+                              ;; the revert is a change like the others: recorded,
+                              ;; and with what undoes it, which is the turn itself
+                              (db/insert! conn :file-agent-change
+                                          {:file-id file-id
+                                           :profile-id profile-id
+                                           :conversation-id (:conversation-id (first rows))
+                                           :turn-id revert-turn
+                                           :tool "revert_turn"
+                                           :revn revn
+                                           :changes (blob/encode undo)
+                                           :undo-changes (blob/encode redo)}
+                                          {::db/return-keys false})
+                              {:reverted (count rows)
+                               :turn-id revert-turn
+                               :revn revn})))
               (catch clojure.lang.ExceptionInfo cause
                 (if (= :validation (:type (ex-data cause)))
                   (ex/raise :type :validation
@@ -990,24 +1036,4 @@
                             :hint (str "the file has changed too much since for this turn to be "
                                        "taken back cleanly; restore a version from the history instead")
                             :cause cause)
-                  (throw cause))))
-            (let [revn (:revn (bfc/get-file cfg file-id :read-only? true :load-data? false))]
-              (db/update! cfg :file-agent-change
-                          {:reverted-at (ct/now)}
-                          {:file-id file-id :turn-id turn-id}
-                          {::db/return-keys false})
-              ;; the revert is a change like the others: recorded, and with
-              ;; what undoes it, which is the turn itself
-              (db/insert! cfg :file-agent-change
-                          {:file-id file-id
-                           :profile-id profile-id
-                           :conversation-id (:conversation-id (first rows))
-                           :turn-id revert-turn
-                           :tool "revert_turn"
-                           :revn revn
-                           :changes (blob/encode undo)
-                           :undo-changes (blob/encode redo)}
-                          {::db/return-keys false})
-              {:reverted (count rows)
-               :turn-id revert-turn
-               :revn revn})))))))
+                  (throw cause))))))))))

@@ -11,11 +11,14 @@
   (:require
    [app.common.features :as cfeat]
    [app.common.json :as json]
+   [app.common.time :as ct]
    [app.common.types.shape :as cts]
    [app.common.uuid :as uuid]
+   [app.db :as db]
    [app.rpc :as-alias rpc]
    [app.rpc.commands.agent-tools :as agent-tools]
    [app.storage :as sto]
+   [app.util.blob :as blob]
    [backend-tests.helpers :as th]
    [clojure.test :as t]))
 
@@ -570,3 +573,72 @@
         (t/is (= [(:id library)] (mapv :library-file-id (rels))))
         (t/is (= [true] (mapv :linked (:libraries (listed)))))
         (t/is (true? (:already (content (run-tool! token "link_library" :input {:fileId (str (:id library)) :userAgreed true})))))))))
+
+(t/deftest a-shared-library-is-read-once-per-revision
+  (let [{:keys [owner token]} (setup)
+        library (th/create-file* 2 {:profile-id (:id owner)
+                                    :project-id (:default-project-id owner)
+                                    :is-shared true})
+        loads   (atom 0)
+        load    @#'agent-tools/load-whole-file
+        listed  (fn [] (content (run-tool! token "list_shared_libraries")))]
+    ;; the test files' ids repeat from test to test
+    (reset! @#'agent-tools/library-contents-cache {})
+    (with-redefs [agent-tools/load-whole-file (fn [cfg id]
+                                                (when (= id (:id library)) (swap! loads inc))
+                                                (load cfg id))]
+      (t/testing "asked twice, the library is read once"
+        (listed)
+        (listed)
+        (t/is (= 1 @loads)))
+      (t/testing "once it changes, it is read again"
+        (db/update! th/*pool* :file {:revn 7} {:id (:id library)})
+        (t/is (= [(str (:id library))] (mapv :fileId (:libraries (listed)))))
+        (t/is (= 2 @loads))))))
+
+(t/deftest an-old-record-of-the-agents-changes-is-removed
+  (let [{:keys [file]} (setup)
+        record! (fn [days-ago]
+                  (db/insert! th/*pool* :file-agent-change
+                              {:file-id (:id file)
+                               :conversation-id "c1"
+                               :turn-id (uuid/next)
+                               :tool "create_shape"
+                               :revn 1
+                               :changes (blob/encode [])
+                               :created-at (ct/in-past {:days days-ago})}))
+        count!  (fn [] (count (th/db-query :file-agent-change {:file-id (:id file)})))]
+    (record! 40)
+    (record! 2)
+    (t/is (= 2 (count!)))
+    (t/testing "past the default 30 days a record goes; a recent one stays"
+      (t/is (= 1 (th/run-task! :agent-changes-gc {})))
+      (t/is (= 1 (count!))))
+    (t/testing "the age is the instance's to set"
+      (t/is (= 1 (th/run-task! :agent-changes-gc {:max-age (ct/duration {:days 1})})))
+      (t/is (= 0 (count!))))))
+
+(t/deftest a-commit-is-recorded-at-the-revision-it-made
+  (let [profile (th/create-profile* 1 {:is-active true})
+        file    (th/create-file* 1 {:profile-id (:id profile)
+                                    :project-id (:default-project-id profile)
+                                    :is-shared false})
+        page-id (first (get-in file [:data :pages]))
+        turn-id (uuid/random)
+        token   (agent-tools/turn-token th/*system* (:id profile) (:id file)
+                                        {:turn-id turn-id :conversation-id "chat-1"})
+        page    (:result (th/command! {::th/type :get-agent-tool-page :token token}))
+        out     (th/command! {::th/type :commit-agent-tool-changes
+                              :token token
+                              :revn (:revn page)
+                              :vern (:vern page)
+                              :tool "create_shape"
+                              :changes [(rect-change page-id (uuid/random) "from-the-agent")]})
+        made    (-> out :result :revn)]
+    (t/is (nil? (:error out)))
+    (t/is (= (inc (:revn page)) made))
+    ;; somebody edits the file afterwards
+    (add-rect! profile file "theirs")
+    (let [rows (:result (th/command! {::th/type :get-agent-changes ::rpc/profile-id (:id profile)
+                                      :file-id (:id file) :turn-id turn-id}))]
+      (t/is (= [made] (mapv :revn rows))))))

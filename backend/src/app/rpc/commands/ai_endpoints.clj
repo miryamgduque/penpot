@@ -97,8 +97,10 @@
 (defn instance-admin?
   "Whether the profile is one of the instance's admins (PENPOT_ADMINS)."
   [{:keys [::db/pool]} profile-id]
-  (let [profile (db/get* pool :profile {:id profile-id})]
-    (contains? (set (cf/get :admins)) (:email profile))))
+  (let [email (some-> (db/get* pool :profile {:id profile-id}) :email str/lower)]
+    ;; an address is one whatever its case: PENPOT_ADMINS is typed by hand
+    (and (some? email)
+         (contains? (into #{} (map str/lower) (cf/get :admins)) email))))
 
 (defn- check-admin!
   [cfg profile-id]

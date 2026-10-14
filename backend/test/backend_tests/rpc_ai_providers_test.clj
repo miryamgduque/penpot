@@ -470,3 +470,43 @@
             (t/is (nil? (:error (key! provider))) provider))
           (t/is (= #{:anthropic :google :xai :mistral :deepseek} (catalog)))))
       (reset! @#'ai-providers/catalog-cache nil))))
+
+(t/deftest a-provider-no-longer-offered-is-reached-by-no-path
+  ;; connected and chosen as helper while the flag was on, then the flag is off
+  (let [profile (th/create-profile* 1 {:is-active true})
+        asked   (atom [])
+        cmd!    (fn [type & {:as params}]
+                  (th/command! (merge {::th/type type ::rpc/profile-id (:id profile)} params)))]
+    (with-redefs [ai-providers/agent-service-req!
+                  (fn [_ path headers _ _]
+                    (swap! asked conj {:path path :headers headers})
+                    {:status 200 :body (json/encode {:text "ok" :usage {:requests 1}})})]
+      (connect! profile "anthropic" ["claude-sonnet-5-5"])
+      (with-redefs [cf/flags (conj cf/flags :design-agent-preview-providers)]
+        (t/is (nil? (:error (cmd! :set-ai-provider-key :provider "google" :api-key "key-0123456789"))))
+        (t/is (nil? (:error (cmd! :set-ai-provider-models :provider "google" :models ["gemini-3-flash"]))))
+        (t/is (nil? (:error (cmd! :set-ai-helper-model :provider "google" :model "gemini-3-flash"))))
+        (t/is (= "google" (-> (cmd! :agent-helper-round :provider "anthropic" :model "claude-sonnet-5-5"
+                                    :system "s" :text "t")
+                              :result :provider))))
+
+      (t/testing "without the flag, no command reaches it"
+        (doseq [[type params] [[:connect-ai-provider {:api-key "key-0123456789"}]
+                               [:set-ai-provider-models {:models ["gemini-3-flash"]}]
+                               [:get-ai-provider-models {}]
+                               [:ai-agent-round {:payload "{}"}]
+                               [:set-ai-helper-model {:model "gemini-3-flash"}]]]
+          (t/is (th/ex-of-code? (:error (apply cmd! type (mapcat identity (assoc params :provider "google"))))
+                                :ai-provider-not-offered)
+                (name type))))
+
+      (t/testing "and the helper chosen on it no longer does the side jobs: the main model does"
+        (let [out (cmd! :agent-helper-round :provider "anthropic" :model "claude-sonnet-5-5" :system "s" :text "t")]
+          (t/is (= "anthropic" (-> out :result :provider)))
+          (t/is (= "anthropic" (get-in (last @asked) [:headers "x-penpot-provider"]))))))))
+
+(t/deftest an-admin-is-known-whatever-the-case-of-the-address
+  (let [admin (th/create-profile* 1 {:is-active true})]
+    (with-redefs [cf/config (assoc cf/config :admins #{(str/upper (:email admin))})]
+      (t/is (true? (-> (th/command! {::th/type :get-ai-endpoints ::rpc/profile-id (:id admin)})
+                       :result :can-manage))))))

@@ -147,6 +147,14 @@
     :else
     (do (registered-endpoint cfg provider) nil)))
 
+(defn- usable?
+  "Whether `provider` may be called here: built in and offered, or a
+  registered endpoint."
+  [cfg provider]
+  (or (offered? provider)
+      (and (endpoints/endpoint-provider? provider)
+           (some? (endpoints/get-endpoint cfg provider)))))
+
 (defn- endpoints-header
   "The header that hands the agent service the endpoints `provider-ids`
   name, or nil when none of them is an endpoint."
@@ -368,6 +376,7 @@
   {::doc/added "2.20"
    ::sm/params schema:get-ai-provider-models}
   [cfg {:keys [::rpc/profile-id provider]}]
+  (check-provider! cfg provider)
   (let [row (get-provider-row cfg profile-id provider)]
     (when-not row
       (ex/raise :type :validation
@@ -442,6 +451,7 @@
   {::doc/added "2.20"
    ::sm/params schema:connect-ai-provider}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider api-key]}]
+  (check-provider! cfg provider)
   ;; validation doubles as the model fetch: an invalid key stores nothing
   (let [models (fetch-models! cfg provider api-key)
         row    (get-provider-row cfg profile-id provider)
@@ -469,6 +479,7 @@
   {::doc/added "2.20"
    ::sm/params schema:set-ai-provider-models}
   [{:keys [::db/pool] :as cfg} {:keys [::rpc/profile-id provider models]}]
+  (check-provider! cfg provider)
   (let [row (get-provider-row cfg profile-id provider)]
     (when-not row
       (ex/raise :type :validation
@@ -535,6 +546,7 @@
               :code :ai-provider-not-supported
               :hint "this command reaches the built-in providers only"
               :provider provider))
+  (check-provider! cfg provider)
   (let [row      (connected-provider-row cfg profile-id provider)
         request  (round-request (get providers provider) (:api-key row) payload)
         response (provider-req! cfg request provider)]
@@ -555,8 +567,16 @@
   [{:keys [::db/pool] :as cfg} profile-id]
   (when-let [row (->> (db/query pool :profile-ai-provider {:profile-id profile-id})
                       (map decode-row)
-                      (filter (fn [{:keys [helper-model enabled-models]}]
-                                (and (string? helper-model) (some #{helper-model} enabled-models))))
+                      (filter (fn [{:keys [provider helper-model enabled-models]}]
+                                (and (string? helper-model)
+                                     (some #{helper-model} enabled-models)
+                                     ;; not one this instance stopped offering, or an
+                                     ;; endpoint since removed or changed: the main
+                                     ;; model does the side jobs then
+                                     (usable? cfg provider)
+                                     (or (not (endpoints/endpoint-provider? provider))
+                                         (some #(= helper-model (:id %))
+                                               (:models (endpoints/get-endpoint cfg provider)))))))
                       (first))]
     (assoc row :api-key (decrypt-key cfg (:provider row) (:api-key row)))))
 
@@ -583,6 +603,7 @@
    ::db/transaction true}
   [{:keys [::db/conn] :as cfg} {:keys [::rpc/profile-id provider model]}]
   (when (and (some? provider) (some? model))
+    (check-provider! (assoc cfg ::db/pool conn) provider)
     (let [row (connected-provider-row (assoc cfg ::db/pool conn) profile-id provider)]
       (when-not (some #{model} (:enabled-models row))
         (ex/raise :type :validation

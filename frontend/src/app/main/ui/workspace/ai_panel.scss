@@ -1100,13 +1100,63 @@
 
   flex: 1;
   display: flex;
+  flex-direction: column;
+  gap: var(--sp-m);
 
-  // Sit the bot just above the composer, on the left.
-  align-items: flex-end;
-  justify-content: flex-start;
+  // Sit the bot just above the composer, on the left, and what a viewer can
+  // ask below it.
+  align-items: flex-start;
+  justify-content: flex-end;
   padding: var(--sp-l);
   text-align: center;
   color: var(--color-foreground-secondary);
+}
+
+// Someone who may only view the file (#152): the badge beside the title, the
+// one-line notice at the top of the chat, and what they can ask.
+.read-only-badge {
+  @include scaled-body-small;
+
+  flex-shrink: 0;
+  padding: 0 $sz-6;
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
+  color: var(--color-foreground-secondary);
+  white-space: nowrap;
+}
+
+.read-only-notice {
+  @include scaled-body-small;
+
+  margin: 0;
+  padding: var(--sp-s) var(--sp-m);
+  border-block-end: $b-1 solid var(--color-background-tertiary);
+  color: var(--color-foreground-secondary);
+}
+
+.read-only-suggestions {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  gap: var(--sp-xs);
+}
+
+// Same card idiom as `.foundation-card`: a sentence to ask, not a command.
+.read-only-suggestion {
+  @include scaled-body-small;
+
+  width: 100%;
+  padding: var(--sp-s) var(--sp-m);
+  border: $b-1 solid var(--color-background-quaternary);
+  border-radius: $br-8;
+  background-color: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--color-accent-primary);
+  }
 }
 
 // A little greeting wave on the empty-chat bot, in the muted primary colour

@@ -96,10 +96,12 @@ export function sessionIdOf(profileId, conversationId) {
  * and given. A turn that brings another — the user switched model, turned a
  * skill on, connected a service — reopens the conversation with it.
  */
-export function conversationShape({ provider, model, system, tools = [], skills = [], mcpServers = [] }) {
+export function conversationShape({ provider, model, system, tools = [], skills = [], mcpServers = [] }, record) {
   return JSON.stringify({
     provider,
     model,
+    // what the model can do, as known now: an endpoint's admin may change it
+    record,
     system,
     tools: tools.map((tool) => [tool?.name, tool?.description, tool?.inputSchema]),
     skills: skills.map((skill) => [skill?.name, skill?.description, skill?.body]),
@@ -281,6 +283,8 @@ export async function createHarness(options = {}) {
 
   /** sessionId → conversation */
   const conversations = new Map();
+  /** the conversations a turn is being started in, before it has one */
+  const starting = new Set();
 
   function toolDefinition(conversation, spec) {
     return {
@@ -367,7 +371,7 @@ export async function createHarness(options = {}) {
       provider,
       model,
       record,
-      shape: conversationShape({ provider, model, system, tools, skills, mcpServers }),
+      shape: conversationShape({ provider, model, system, tools, skills, mcpServers }, record),
       turn: undefined,
       idleTimer: undefined,
     };
@@ -503,7 +507,8 @@ export async function createHarness(options = {}) {
 
   async function closeConversation(conversation) {
     clearTimeout(conversation.idleTimer);
-    conversations.delete(conversation.id);
+    // only this one: another may have been opened under the id since
+    if (conversations.get(conversation.id) === conversation) conversations.delete(conversation.id);
     await conversation.handle.dispose();
     for (const release of conversation.releases ?? []) release();
   }
@@ -547,18 +552,27 @@ export async function createHarness(options = {}) {
 
     const id = sessionIdOf(profileId, sessionId);
     let conversation = conversations.get(id);
-    if (conversation !== undefined && conversation.turn !== undefined) {
+    // One turn at a time per conversation, counted from before anything is
+    // awaited: opening or reopening a conversation takes a while, and a
+    // second turn must not slip in meanwhile.
+    if (starting.has(id) || (conversation !== undefined && conversation.turn !== undefined)) {
       throw Object.assign(new Error("a turn is already running in this conversation"), { status: 409 });
     }
-    // A conversation is set up once, with the model and briefing of the turn
-    // that opened it. A turn that comes with another model, or another
-    // briefing, reopens it: the history is read back from the store and goes
-    // on with what this turn brought.
-    if (conversation !== undefined && conversation.shape !== conversationShape(request)) {
-      await closeConversation(conversation);
-      conversation = undefined;
+    starting.add(id);
+    try {
+      // A conversation is set up once, with the model and briefing of the
+      // turn that opened it. A turn that comes with another model, another
+      // briefing, or a model whose capabilities changed, reopens it: the
+      // history is read back from the store and goes on with what this turn
+      // brought.
+      if (conversation !== undefined && conversation.shape !== conversationShape(request, record)) {
+        await closeConversation(conversation);
+        conversation = undefined;
+      }
+      conversation ??= await openConversation(id, request);
+    } finally {
+      starting.delete(id);
     }
-    conversation ??= await openConversation(id, request);
     clearTimeout(conversation.idleTimer);
 
     ctx.credentials.setKeys(id, { [keyRef(provider)]: apiKey });

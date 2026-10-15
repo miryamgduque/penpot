@@ -10994,3 +10994,7 @@ msgstr "Explain how this page is built"
 #: src/app/main/ui/workspace/ai_panel.cljs
 msgid "workspace.agent.read-only.suggestion.tokens"
 msgstr "Find colors and text styles that do not use design tokens"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skills.read-only-hidden"
+msgstr "Skills that change the file are hidden while you have view access."

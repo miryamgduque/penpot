@@ -602,6 +602,57 @@
   gap: var(--sp-s);
 }
 
+// A comment offered to someone who may only view the file (#154): the
+// finding, then the exact text and who it posts as. Same card as the
+// checkpoint, since it also waits on the person.
+.comment-offer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-s);
+  padding: var(--sp-s);
+  border: $b-1 dashed var(--color-background-quaternary);
+  border-radius: $br-4;
+  background-color: var(--color-background-secondary);
+}
+
+.comment-offer-title {
+  @include scaled-body-small;
+
+  color: var(--color-foreground-secondary);
+}
+
+.comment-offer-text {
+  @include scaled-body-small;
+
+  margin: 0;
+  color: var(--color-foreground-primary);
+  white-space: pre-wrap;
+}
+
+// the exact text that will be posted
+.comment-offer-quote {
+  @include scaled-body-small;
+
+  margin: 0;
+  padding-inline-start: var(--sp-s);
+  border-inline-start: $b-2 solid var(--color-accent-primary);
+  color: var(--color-foreground-primary);
+  white-space: pre-wrap;
+}
+
+.comment-offer-note {
+  @include scaled-body-small;
+
+  margin: 0;
+  color: var(--color-foreground-secondary);
+}
+
+.comment-offer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-s);
+}
+
 // Arrival notice (US #52): a team skill promoted since this member last
 // acknowledged one. The whole card opens the skill's detail view (US #8's
 // existing toggle lives there — no Disable here, on purpose); only the close button

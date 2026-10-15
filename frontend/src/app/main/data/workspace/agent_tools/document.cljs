@@ -12,6 +12,7 @@
    [app.common.data.macros :as dm]
    [app.common.geom.point :as gpt]
    [app.common.uuid :as uuid]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.comments :as dc]
    [app.main.data.common :as dcm]
    [app.main.data.helpers :as dsh]
@@ -23,7 +24,8 @@
    [app.main.store :as st]
    [app.util.code-gen :as cg]
    [beicon.v2.core :as rx]
-   [cuerdas.core :as str]))
+   [cuerdas.core :as str]
+   [potok.v2.core :as ptk]))
 
 ;; --- Undo / redo
 ;;
@@ -150,26 +152,105 @@
 ;; is in the description: make authorship explicit, and only leave comments when
 ;; the user asked for a review left ON THE FILE.
 
+(def ^:private posted-note
+  (str "— it is written as the current user and notifies collaborators. Make "
+       "sure the content says it is from the design agent. Verify in the "
+       "Comments panel."))
+
+(defn- post-comment!
+  [state content position]
+  (atc/interrupt!)
+  ;; fire-and-report: the thread is created via the backend async. identity
+  ;; + false = don't pop the comment editor open in the user's face.
+  (st/emit! (dc/create-thread-on-workspace
+             {:page-id (:current-page-id state)
+              :file-id (:current-file-id state)
+              :position position
+              :content content}
+             identity false)))
+
+;; Someone who may only view the file (#154): a comment is the one write they
+;; hold, and it posts as them. So for them the agent only offers it: the panel
+;; shows the finding with "Post as comment" and "Copy", then the exact text
+;; and who it posts as, and it posts only when they confirm. The resolver is
+;; process state, as for ask_user; app-db holds what the panel renders, and a
+;; cancelled turn clears both.
+
+(defonce ^:private pending-comment-resolve* (atom nil))
+
+(defn- set-pending-comment
+  "Publishes (or, with nil, clears) the comment offered to the person, under
+  [:ai-panel <file-id> :pending-comment]."
+  [offer]
+  (ptk/reify ::set-pending-comment
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (if (some? offer)
+          (assoc-in state [:ai-panel file-id :pending-comment] offer)
+          (update-in state [:ai-panel file-id] dissoc :pending-comment))
+        state))))
+
+(defn decide-pending-comment!
+  "Settles the offered comment with the person's `decision`: :post, :copy
+  or :cancel. Called by the panel; a no-op when nothing is offered."
+  [decision]
+  (when-let [resolve @pending-comment-resolve*]
+    (reset! pending-comment-resolve* nil)
+    (resolve decision)))
+
+(defn- offer-comment
+  [state content position shape]
+  (rx/create
+   (fn [subs]
+     (reset! pending-comment-resolve*
+             (fn [decision]
+               (rx/push! subs
+                         (case decision
+                           :post (do (post-comment! state content position)
+                                     {:posted true
+                                      :note (str "the person confirmed, and the comment was posted "
+                                                 posted-note)})
+                           :copy {:posted false
+                                  :note (str "the person copied the text instead of posting it. "
+                                             "Nothing was posted; move on.")}
+                           {:posted false
+                            :note (str "the person chose not to post it. Nothing was posted; "
+                                       "do not offer it again.")}))
+               (rx/end! subs)))
+     (st/emit! (set-pending-comment {:content content :shape-name (:name shape)}))
+     (fn []
+       (reset! pending-comment-resolve* nil)
+       (st/emit! (set-pending-comment nil))))))
+
 (defn leave-comment
-  [{:keys [content x y]}]
-  (let [state   @st/state
-        clean   (str/trim (str content))]
-    (if (str/blank? clean)
+  [{:keys [content x y shapeId]}]
+  (let [state    @st/state
+        clean    (str/trim (str content))
+        shape-id (some-> shapeId uuid/parse*)
+        shape    (when shape-id (get (dsh/lookup-page-objects state) shape-id))
+        ;; pinned at the shape the comment is about, else where it was asked
+        position (if-let [selrect (:selrect shape)]
+                   (gpt/point (:x selrect) (:y selrect))
+                   (gpt/point (or x 0) (or y 0)))]
+    (cond
+      (str/blank? clean)
       (rx/throw (ex-info "leave_comment: content is required" {}))
-      (do
-        (atc/interrupt!)
-        ;; fire-and-report: the thread is created via the backend async. identity
-        ;; + false = don't pop the comment editor open in the user's face.
-        (st/emit! (dc/create-thread-on-workspace
-                   {:page-id (:current-page-id state)
-                    :file-id (:current-file-id state)
-                    :position (gpt/point (or x 0) (or y 0))
-                    :content clean}
-                   identity false))
-        (rx/of {:note (str "comment posted at (" (or x 0) ", " (or y 0) ") — it is written "
-                           "as the current user and notifies collaborators. Make sure the "
-                           "content says it is from the design agent. Verify in the Comments "
-                           "panel.")})))))
+
+      (and (some? shapeId) (nil? shape))
+      (rx/throw (ex-info (str "leave_comment: there is no shape " shapeId " on this page") {}))
+
+      (agent-access/can-write? state)
+      (do (post-comment! state clean position)
+          (rx/of {:note (str "comment posted at (" (:x position) ", " (:y position) ") "
+                             posted-note)}))
+
+      ;; one offer at a time: the person answers each before the next
+      (some? @pending-comment-resolve*)
+      (rx/throw (ex-info "leave_comment: a comment is already waiting for the person's answer" {}))
+
+      :else
+      (offer-comment state clean position shape))))
 
 (defn list-comments
   [_]

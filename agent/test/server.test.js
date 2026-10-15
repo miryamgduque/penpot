@@ -680,6 +680,26 @@ test("with the tools on the server, the workspace is only asked for what only it
   }
 });
 
+test("a viewer's comment goes to their workspace, which asks them first", async () => {
+  // the backend leaves leave_comment out of the server tools for someone who
+  // may only view the file: their workspace shows the comment and posts it
+  // only once they confirm
+  const exporter = await fakeJsonServer(() => ({ content: "{}", isError: false }));
+  const t = await setup(
+    (_req, n) =>
+      n === 0 ? { tool: { name: "leave_comment", input: { content: "[agent] raw hex", shapeId: "s1" } } } : { text: "Done." },
+    { exporterUri: exporter.uri },
+  );
+  try {
+    const asked = await drive(t.base, { ...BODY, tools: [tool("leave_comment")] }, ENGINE_HEADERS);
+    assert.deepEqual(asked, [{ workspace: "leave_comment", input: { content: "[agent] raw hex", shapeId: "s1" } }]);
+    assert.equal(exporter.seen.length, 0, "nothing reached the engine");
+  } finally {
+    await t.close();
+    await exporter.close();
+  }
+});
+
 test("with no workspace, switching page changes which page the conversation's tools act on", async () => {
   const { createServer } = await import("node:http");
   const seen = [];

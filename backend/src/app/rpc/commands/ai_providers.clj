@@ -996,7 +996,7 @@
 
                                        (contains? cf/flags :design-agent-server-tools)
                                        (assoc "x-penpot-turn-token" (agent-tools/turn-token cfg profile-id file-id turn)
-                                              "x-penpot-server-tools" (str/join "," (sort agent-tools/server-tools))
+                                              "x-penpot-server-tools" (str/join "," (sort (agent-tools/turn-server-tools cfg profile-id file-id)))
                                               "x-penpot-engine-tools" (str/join "," (sort agent-tools/engine-tools))))
                                      payload
                                      {:response-type :input-stream})]

@@ -54,6 +54,7 @@
    [app.main.ui.ds.tooltip :refer [tooltip*]]
    [app.main.ui.hooks :as hooks]
    [app.main.ui.workspace.session-recorder :as session-recorder]
+   [app.util.clipboard :as clipboard]
    [app.util.dom :as dom]
    [app.util.i18n :as i18n :refer [tr]]
    [app.util.keyboard :as kbd]
@@ -547,6 +548,58 @@
         [:span {:class (stl/css :eform-pending-hint)}
          (tr "workspace.agent.form.answer-required")])]]))
 
+(mf/defc comment-offer*
+  "A comment the agent offers to post for someone who may only view the file
+  (#154). First the finding, with Post as comment, Copy and Not now; posting
+  then shows the exact text and that it posts as them, and nothing is posted
+  until they confirm."
+  {::mf/private true}
+  [{:keys [offer]}]
+  (let [{:keys [content shape-name]} offer
+        confirming* (mf/use-state false)
+        confirming? (deref confirming*)
+        decide      (mf/use-fn
+                     (fn [decision summary]
+                       (st/emit! (dwaip/decide-comment decision summary))))
+        on-post     (mf/use-fn #(reset! confirming* true))
+        on-confirm  (mf/use-fn
+                     (mf/deps decide)
+                     #(decide :post (tr "workspace.agent.comment.posted")))
+        on-cancel   (mf/use-fn
+                     (mf/deps decide)
+                     #(decide :cancel (tr "workspace.agent.comment.not-posted")))
+        on-copy     (mf/use-fn
+                     (mf/deps decide content)
+                     (fn []
+                       ;; a refused clipboard still settles the offer: the
+                       ;; text stays readable in the note
+                       (.catch (clipboard/to-clipboard content) (constantly nil))
+                       (decide :copy (tr "workspace.agent.comment.copied"))))]
+    [:div {:class (stl/css :comment-offer)}
+     (if confirming?
+       [:*
+        [:div {:class (stl/css :comment-offer-title)} (tr "workspace.agent.comment.confirm-title")]
+        [:blockquote {:class (stl/css :comment-offer-quote)} content]
+        [:p {:class (stl/css :comment-offer-note)} (tr "workspace.agent.comment.confirm-note")]
+        [:div {:class (stl/css :comment-offer-actions)}
+         [:> button* {:variant "primary" :class (stl/css :compact-label) :on-click on-confirm}
+          (tr "workspace.agent.comment.confirm")]
+         [:> button* {:variant "secondary" :class (stl/css :compact-label) :on-click on-cancel}
+          (tr "labels.cancel")]]]
+       [:*
+        [:div {:class (stl/css :comment-offer-title)}
+         (if shape-name
+           (tr "workspace.agent.comment.offer-on" shape-name)
+           (tr "workspace.agent.comment.offer"))]
+        [:p {:class (stl/css :comment-offer-text)} content]
+        [:div {:class (stl/css :comment-offer-actions)}
+         [:> button* {:variant "primary" :class (stl/css :compact-label) :on-click on-post}
+          (tr "workspace.agent.comment.post")]
+         [:> button* {:variant "secondary" :class (stl/css :compact-label) :on-click on-copy}
+          (tr "workspace.agent.comment.copy")]
+         [:> button* {:variant "ghost" :class (stl/css :compact-label) :on-click on-cancel}
+          (tr "workspace.agent.comment.not-now")]]])]))
+
 (mf/defc transcript*
   "The message list, split out so it can own its scroll ref.
 
@@ -560,7 +613,7 @@
   never pin to the latest — and once the content outgrows the panel the
   sentinel is never seen, leaving it wrongly detached forever."
   {::mf/private true}
-  [{:keys [messages busy? form checkpoint revert]}]
+  [{:keys [messages busy? form comment checkpoint revert]}]
   (let [;; consecutive tool calls collapse into one row; `partition-by` on the
         ;; role category yields alternating runs of tools / thinking rows /
         ;; everything else
@@ -681,6 +734,8 @@
       ;; a "Thinking…" bubble under the form would be a lie
       (when (some? form)
         [:> elicitation-form* {:key (hash form) :form form}])
+      (when (some? comment)
+        [:> comment-offer* {:key (hash comment) :offer comment}])
       ;; the runaway brake: the turn crossed its round/spend allowance and is
       ;; paused, resumable as-is — the user decides whether it keeps going
       (when (some? checkpoint)
@@ -1005,6 +1060,7 @@
         handoff-hint-id (mf/use-id)
         pending-fix (mf/deref refs/ai-panel-pending-fix)
         pending-form (mf/deref refs/ai-panel-pending-form)
+        pending-comment (mf/deref refs/ai-panel-pending-comment)
         composer-seed (mf/deref refs/ai-panel-composer-seed)
         can-write?    (mf/deref refs/agent-can-write?)
         ;; what a viewer can ask and see through: each one only reads
@@ -1352,8 +1408,9 @@
                             :on-key-down dom/stop-propagation
                             :icon i/close}]]))
 
-     (if (or (seq messages) (some? pending-form))
+     (if (or (seq messages) (some? pending-form) (some? pending-comment))
        [:> transcript* {:messages messages :busy? busy? :form pending-form
+                        :comment pending-comment
                         :checkpoint checkpoint :revert revert}]
        [:div {:class (stl/css :transcript-empty)}
         [:> i/icon* {:icon-id i/bot-message-square

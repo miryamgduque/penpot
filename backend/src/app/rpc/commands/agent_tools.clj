@@ -59,6 +59,16 @@
     "leave_comment" "list_comments" "save_version" "save_recipe"
     "list_shared_libraries" "link_library"})
 
+(defn turn-server-tools
+  "The tools the backend runs in a turn of `profile-id` on `file-id`. Someone
+  who may only view the file confirms each comment in the workspace before it
+  posts (#154), so for them `leave_comment` is not one: the agent service
+  hands it to their workspace instead."
+  [cfg profile-id file-id]
+  (if (files/has-edit-permissions? cfg profile-id file-id)
+    server-tools
+    (disj server-tools "leave_comment")))
+
 (def ^:private fileless-tools
   #{"get_page_meta" "fetch_web_page" "turn_profile"})
 
@@ -340,12 +350,26 @@
   (delay (command-fn 'app.rpc.commands.files-snapshot "create-file-snapshot")))
 
 (defmethod run-tool "leave_comment"
-  [_ {:keys [file-id page-id data]} {:keys [content x y]} {:keys [::cfg ::profile-id]}]
+  [_ {:keys [file-id page-id data]} {:keys [content x y shapeId]} {:keys [::cfg ::profile-id]}]
   (let [clean (str/trim (str content))]
     (when (str/blank? clean)
       (ex/raise :type :agent-tool :hint "leave_comment: content is required"))
-    (let [position (gpt/point (or x 0) (or y 0))
-          objects  (get-in data [:pages-index page-id :objects])]
+    ;; someone who may only view the file posts a comment only after they
+    ;; confirm it in their workspace; this tool cannot ask them
+    (when-not (files/has-edit-permissions? cfg profile-id file-id)
+      (ex/raise :type :agent-tool
+                :hint (str "leave_comment: this person can view the file but not edit it, so a "
+                           "comment is posted from their workspace once they confirm it. Nothing "
+                           "was posted.")))
+    (let [objects  (get-in data [:pages-index page-id :objects])
+          shape    (some->> shapeId str parse-uuid (get objects))
+          _        (when (and (some? shapeId) (nil? shape))
+                     (ex/raise :type :agent-tool
+                               :hint (str "leave_comment: there is no shape " shapeId " on this page")))
+          ;; pinned at the shape the comment is about, else where it was asked
+          position (if-let [selrect (:selrect shape)]
+                     (gpt/point (:x selrect) (:y selrect))
+                     (gpt/point (or x 0) (or y 0)))]
       (@create-comment-thread-fn cfg {::rpc/profile-id profile-id
                                       ::rpc/request-at (ct/now)
                                       :file-id file-id
@@ -357,7 +381,7 @@
                                       :frame-id (ctst/get-frame-id-by-position
                                                  objects position {:validator (constantly true)})
                                       :content clean})
-      {:note (str "comment posted at (" (or x 0) ", " (or y 0) ") — it is written "
+      {:note (str "comment posted at (" (:x position) ", " (:y position) ") — it is written "
                   "as the current user and notifies collaborators. Make sure the "
                   "content says it is from the design agent. Verify in the Comments "
                   "panel.")})))

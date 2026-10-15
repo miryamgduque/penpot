@@ -674,3 +674,13 @@
                        (filter :images)
                        (count))]
       (t/is (= 2 renders) "only the last 2 turns keep their renders"))))
+
+;; --- Read-only (#148, #154): someone who may only view the file
+
+(t/deftest a-viewers-prompt-says-the-agent-cannot-change-the-file
+  (let [viewer (agent/build-system-prompt {:permissions {:can-edit false :can-read true}})
+        editor (agent/build-system-prompt {:permissions {:can-edit true}})]
+    (t/is (str/includes? viewer "## Read-only"))
+    (t/is (str/includes? viewer "cannot apply the fixes"))
+    (t/is (str/includes? viewer "leave_comment"))
+    (t/is (not (str/includes? editor "## Read-only")))))

@@ -107,7 +107,10 @@ const WORKSPACE_UNDO_TOOLS = new Set(["undo_change", "redo_change"]);
 // looking at and does what only a workspace can: ask the user, move their
 // view, and render with the engine they are looking at. Nothing else is sent
 // to it, except a call the server answered it cannot handle yet.
-const WORKSPACE_TOOLS = new Set(["ask_user", "switch_page", "render_board"]);
+// leave_comment as well: the backend runs it, except for someone who may only
+// view the file, whose workspace shows each comment and posts it only once
+// they confirm (the backend then leaves it out of the server tools)
+const WORKSPACE_TOOLS = new Set(["ask_user", "switch_page", "render_board", "leave_comment"]);
 
 /**
  * Runs a tool on the Penpot backend for the turn the token names. The token

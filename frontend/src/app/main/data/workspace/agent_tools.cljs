@@ -36,6 +36,7 @@
 (def audit-violations atg/audit-violations)
 (def register-side-turn-runner! atg/register-side-turn-runner!)
 (def submit-pending-form! atg/submit-pending-form!)
+(def decide-pending-comment! atd/decide-pending-comment!)
 
 ;; --- Tool declarations (provider-agnostic; encoded per provider in agent.cljs)
 
@@ -1005,10 +1006,14 @@
          "is written as the current user and notifies collaborators, so only use "
          "it when the user asked for a review left ON the file, and make the "
          "content say it is from the design agent (e.g. \"[agent] this fill is a "
-         "raw hex; token color.brand.primary exists\"). Position it at the "
-         "problem — pass the shape's x/y.")
+         "raw hex; token color.brand.primary exists\"). Pin it at the problem: "
+         "pass the shape's shapeId (or a point as x/y). Someone who can only view "
+         "the file sees each comment first and it posts only if they confirm; "
+         "the result says whether it was posted.")
     :input-schema {:type "object"
                    :properties {:content {:type "string"}
+                                :shapeId {:type "string"
+                                          :description "the shape the comment is about; it is pinned there"}
                                 :x {:type "number"} :y {:type "number"}}
                    :required ["content"]}}
 

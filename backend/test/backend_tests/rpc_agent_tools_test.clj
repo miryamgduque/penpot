@@ -259,6 +259,41 @@
                       (keep :label)
                       (filter #(re-find #"^agent:" %)))))))))
 
+(t/deftest a-comment-is-pinned-at-the-shape-it-is-about
+  (let [{:keys [owner file token]} (setup)
+        shape-id (add-rect! owner file "hero-card" :x 40 :y 60 :width 10 :height 10)]
+    (t/testing "a shapeId pins the thread at that shape"
+      (let [out (run-tool! token "leave_comment" :input {:content "[agent] raw hex" :shapeId (str shape-id)})]
+        (t/is (false? (get-in out [:result :is-error])))
+        (t/is (= [[40 60]]
+                 (->> (:comments (content (run-tool! token "list_comments")))
+                      (mapv (fn [c] (mapv int [(:x c) (:y c)]))))))))
+    (t/testing "an unknown shape is named, and nothing is posted"
+      (let [out (run-tool! token "leave_comment" :input {:content "[agent] x" :shapeId (str (uuid/random))})]
+        (t/is (true? (get-in out [:result :is-error])))
+        (t/is (re-find #"no shape" (get-in out [:result :content])))
+        (t/is (= 1 (count (th/db-query :comment-thread {:file-id (:id file)}))))))))
+
+(t/deftest a-viewers-comment-is-not-posted-by-the-backend
+  ;; someone who may only view the file confirms each comment in their
+  ;; workspace before it posts; the backend cannot ask them
+  (let [{:keys [owner file]} (setup)
+        viewer (th/create-profile* 2 {:is-active true})
+        _      (th/create-team-role* {:team-id (:default-team-id owner)
+                                      :profile-id (:id viewer)
+                                      :role :viewer})
+        token  (agent-tools/turn-token th/*system* (:id viewer) (:id file))]
+
+    (t/testing "it is not one of the tools the backend runs in a viewer's turn"
+      (t/is (contains? (agent-tools/turn-server-tools th/*system* (:id owner) (:id file)) "leave_comment"))
+      (t/is (not (contains? (agent-tools/turn-server-tools th/*system* (:id viewer) (:id file)) "leave_comment"))))
+
+    (t/testing "and asked anyway, it posts nothing"
+      (let [out (run-tool! token "leave_comment" :input {:content "[agent] raw hex" :x 1 :y 1})]
+        (t/is (true? (get-in out [:result :is-error])))
+        (t/is (re-find #"view the file but not edit it" (get-in out [:result :content])))
+        (t/is (empty? (th/db-query :comment-thread {:file-id (:id file)})))))))
+
 (t/deftest audit-file-checks-the-rules-the-workspace-says-are-active
   (let [profile (th/create-profile* 1 {:is-active true})
         file    (th/create-file* 1 {:profile-id (:id profile)

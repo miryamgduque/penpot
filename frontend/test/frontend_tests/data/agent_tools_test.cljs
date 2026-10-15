@@ -19,6 +19,8 @@
   (:require
    [app.common.uuid :as uuid]
    [app.main.data.changes :as dch]
+   [app.main.data.comments :as dc]
+   [app.main.data.helpers :as dsh]
    [app.main.data.workspace.agent-skills :as ask]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.data.workspace.agent-tools.agentic :as atg]
@@ -35,7 +37,8 @@
    [app.main.store :as st]
    [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
-   [cuerdas.core :as str]))
+   [cuerdas.core :as str]
+   [frontend-tests.helpers.mock :as mock]))
 
 ;; ---------------------------------------------------------------------------
 ;; fixtures
@@ -2349,3 +2352,82 @@
     (with-redefs [atd/list-comments (fn [_] (reset! ran true) (rx/of {:threads []}))]
       (t/is (= {:threads []} (tool-value "list_comments" {})))
       (t/is (true? @ran)))))
+
+;; ---------------------------------------------------------------------------
+;; leave_comment (#154) — a comment is the one write a viewer holds, and it
+;; posts as them, so for them it is offered and posted only once they confirm
+;; ---------------------------------------------------------------------------
+
+(def ^:private comment-shape (uuid/custom 5 5))
+
+(defn- with-comment-capture
+  "Runs `f` with comment posting recorded instead of sent; `f` gets the atom."
+  [f]
+  (let [posted (atom [])]
+    ;; stubs, not plain fns: the compiled calls go straight to an arity
+    (with-redefs [dc/create-thread-on-workspace (mock/stub (fn [params & _] (swap! posted conj params) ::posted))
+                  st/emit! (mock/stub (fn [& _] nil))
+                  dsh/lookup-page-objects
+                  (mock/stub (fn [& _] {comment-shape {:id comment-shape :name "Hero"
+                                                       :selrect {:x 40 :y 60 :width 10 :height 10}}}))]
+      (f posted))))
+
+(defn- offered
+  "Starts a viewer's leave_comment → [result-atom subscription]."
+  [input]
+  (swap! st/state assoc :permissions (:permissions viewer))
+  (let [result (atom ::pending)
+        sub    (rx/subs! #(reset! result %) #(reset! result {:error (ex-message %)}) (constantly nil)
+                         (at/execute-tool "leave_comment" input))]
+    [result sub]))
+
+(t/deftest an-editors-comment-posts-at-the-shape
+  (with-comment-capture
+    (fn [posted]
+      (t/is (some? (:note (tool-value "leave_comment" {:content "[agent] raw hex"
+                                                       :shapeId (str comment-shape)}))))
+      (t/is (= 1 (count @posted)))
+      (t/is (= [40 60] [(:x (:position (first @posted))) (:y (:position (first @posted)))])))))
+
+(t/deftest a-viewers-comment-waits-for-them-and-cancel-posts-nothing
+  (with-comment-capture
+    (fn [posted]
+      (let [[result _] (offered {:content "[agent] raw hex" :shapeId (str comment-shape)})]
+        (t/is (= ::pending @result) "the turn waits for the person")
+        (t/is (empty? @posted) "nothing is posted before they answer")
+        (at/decide-pending-comment! :cancel)
+        (t/is (false? (:posted @result)))
+        (t/is (empty? @posted))))))
+
+(t/deftest a-viewer-who-confirms-posts-it-at-the-shape
+  (with-comment-capture
+    (fn [posted]
+      (let [[result _] (offered {:content "[agent] raw hex" :shapeId (str comment-shape)})]
+        (at/decide-pending-comment! :post)
+        (t/is (true? (:posted @result)))
+        (t/is (= ["[agent] raw hex"] (mapv :content @posted)))
+        (t/is (= [40 60] [(:x (:position (first @posted))) (:y (:position (first @posted)))]))))))
+
+(t/deftest a-viewer-who-copies-posts-nothing
+  (with-comment-capture
+    (fn [posted]
+      (let [[result _] (offered {:content "[agent] raw hex"})]
+        (at/decide-pending-comment! :copy)
+        (t/is (false? (:posted @result)))
+        (t/is (str/includes? (:note @result) "copied"))
+        (t/is (empty? @posted))))))
+
+(t/deftest a-stopped-turn-leaves-no-comment-to-post
+  (with-comment-capture
+    (fn [posted]
+      (let [[_ sub] (offered {:content "[agent] raw hex"})]
+        (rx/dispose! sub)
+        (at/decide-pending-comment! :post)
+        (t/is (empty? @posted) "an answer after the turn ended posts nothing")))))
+
+(t/deftest a-comment-on-a-shape-that-is-not-there-is-refused
+  (with-comment-capture
+    (fn [posted]
+      (t/is (str/includes? (tool-error "leave_comment" {:content "[agent] x" :shapeId (str (uuid/custom 9 9))})
+                           "no shape"))
+      (t/is (empty? @posted)))))

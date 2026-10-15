@@ -642,6 +642,24 @@
   []
   (ptk/reify ::cancel-turn))
 
+(defn decide-comment
+  "Settles the comment the agent offered someone who may only view the file
+  (#154): `decision` is :post, :copy or :cancel. Leaves `summary`, what
+  became of it, in the transcript as a note. The offer itself is cleared by
+  the tool observable's own completion path."
+  [decision summary]
+  (ptk/reify ::decide-comment
+    ptk/UpdateEvent
+    (update [_ state]
+      (if-let [file-id (:current-file-id state)]
+        (update-in state [:ai-panel file-id :messages]
+                   (fnil conj []) {:role "note" :content summary})
+        state))
+
+    ptk/EffectEvent
+    (effect [_ _ _]
+      (at/decide-pending-comment! decision))))
+
 (defn submit-form
   "Resolves the open ask_user form with `payload` — the full tool result the
   form UI assembled ({:answers …}, plus :attachments/:images/:note when

@@ -6213,6 +6213,50 @@ msgid "webhooks.last-delivery.success"
 msgstr "El último envío fue correcto."
 
 #: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.confirm"
+msgstr "Publicar"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.confirm-note"
+msgstr "Se publica con tu nombre y avisa a las personas de este archivo."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.confirm-title"
+msgstr "¿Publicar este comentario?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.copied"
+msgstr "Copiado, sin publicar."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.copy"
+msgstr "Copiar"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.not-now"
+msgstr "Ahora no"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.not-posted"
+msgstr "No se ha publicado."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.offer"
+msgstr "¿Dejar este hallazgo en el archivo como comentario?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.offer-on"
+msgstr "¿Dejar esto en %s como comentario?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.post"
+msgstr "Publicar como comentario"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.posted"
+msgstr "Publicado como comentario."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
 msgid "workspace.agent.read-only.badge"
 msgstr "Solo lectura"
 

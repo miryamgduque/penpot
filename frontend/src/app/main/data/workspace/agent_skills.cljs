@@ -26,6 +26,7 @@
   (:require
    [app.common.agent.recipe-build :as carb]
    [app.common.agent.recipes :as cars]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.workspace.aikit-bodies :as ab]
    [app.main.data.workspace.aikit-refs :as ar]
    [app.main.data.workspace.skill-state :as skst]
@@ -468,19 +469,43 @@
   [state]
   (into (user-skills state) (team-skills state)))
 
+(def viewer-skills
+  "The skills someone who may only view the file can run: built-in ones that
+  read and report and change nothing. Every other skill is hidden from them,
+  the person's own and the team's included, since nothing says those only
+  read. The routing index is not a catalog skill and stays."
+  #{"penpot-audit-accessibility" "penpot-audit-tokens" "penpot-design-to-code-review"})
+
+(defn- viewer-catalog
+  [groups]
+  (into []
+        (keep (fn [group]
+                (let [skills (filterv #(contains? viewer-skills (:name %)) (:skills group))]
+                  (when (seq skills)
+                    (assoc group :skills skills)))))
+        groups))
+
 (defn full-catalog
   "The built-in `catalog` with the user's created + team-promoted skills merged
   into their category — a new group is appended for any category the built-ins
-  don't have."
+  don't have.
+
+  For someone who may only view the file it holds `viewer-skills` alone, and
+  everything built on it follows: the Skills tab, the `/` menu, the agent's
+  index, the skills handed to the agent service and the rules the observer
+  watches. A hidden skill cannot be started by any of those routes."
   [state]
   (let [by-cat    (group-by :category (extra-skills state))
-        base-cats (into #{} (map :category) catalog)]
-    (concat
-     (for [{:keys [category skills]} catalog]
-       {:category category :skills (into (vec skills) (get by-cat category))})
-     (for [[category skills] by-cat
-           :when (not (contains? base-cats category))]
-       {:category category :skills (vec skills)}))))
+        base-cats (into #{} (map :category) catalog)
+        groups    (concat
+                   (for [{:keys [category skills]} catalog]
+                     {:category category :skills (into (vec skills) (get by-cat category))})
+                   (for [[category skills] by-cat
+                         :when (not (contains? base-cats category))]
+                     {:category category :skills (vec skills)}))]
+    (if (agent-access/can-write? state)
+      groups
+      (viewer-catalog groups))))
 
 (defn skill-body
   "The playbook text for `name` served by `get_design_skills` on demand — never

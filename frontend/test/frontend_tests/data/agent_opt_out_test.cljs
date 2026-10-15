@@ -62,6 +62,9 @@
   shape and a connected provider for the observer's model."
   [state]
   (let [with-panel (-> state
+                       ;; an editor: someone who may only view the file has
+                       ;; no observer skill the semantic tick runs
+                       (assoc :permissions {:can-edit true})
                        (assoc-in [:ai-panel file-id :open?] true)
                        (assoc-in [:ai-panel file-id :dirty-ids] #{shape-id})
                        (assoc-in [:ai-panel file-id :history]

@@ -21,7 +21,12 @@
    :body "# Tone of voice checker\n\nFlag copy that doesn't match."
    :enabled true})
 
-(def state {:user-skills [a-user-skill]})
+;; The catalog depends on who is looking: someone who may only view the file
+;; is listed only the skills that read (see `ask/viewer-skills`). These tests
+;; are about an editor's catalog.
+(def ^:private editor {:permissions {:can-edit true}})
+
+(def state {:permissions {:can-edit true} :user-skills [a-user-skill]})
 
 (deftest merges-into-full-catalog
   (testing "the user skill lands in its category group alongside built-ins"
@@ -32,7 +37,7 @@
 
   (testing "an unknown category becomes its own appended group"
     (let [odd   {:name "x" :label "X" :category "Zzz" :mode "suggest" :body "b" :enabled true}
-          cats  (map :category (ask/full-catalog {:user-skills [odd]}))]
+          cats  (map :category (ask/full-catalog (assoc editor :user-skills [odd])))]
       (is (some #{"Zzz"} cats)))))
 
 (deftest flows-through-router-and-resolution
@@ -44,8 +49,9 @@
     (is (contains? (set (map :name (ask/catalog-manifest state))) "tone-of-voice-checker")))
 
   (testing "a US #8 per-account 'off' override drops it from the router"
-    (let [off {:user-skills [a-user-skill]
-               :skill-state {:account {"tone-of-voice-checker" false}}}]
+    (let [off (assoc editor
+                     :user-skills [a-user-skill]
+                     :skill-state {:account {"tone-of-voice-checker" false}})]
       (is (not (contains? (set (map :name (ask/enabled-skills off))) "tone-of-voice-checker"))))))
 
 (deftest body-and-detail
@@ -70,14 +76,14 @@
 ;; built-in like vibes — body served verbatim, listed in the router.
 
 (deftest import-brand-is-a-native-setup-skill
-  (let [entry (ask/find-skill {} "penpot-import-brand")]
+  (let [entry (ask/find-skill editor "penpot-import-brand")]
     (is (= "Setup" (:category entry)))
     (is (= "on-demand" (:reactive entry)))
     (is (true? (:enabled entry)))))
 
 (deftest import-brand-body-is-served-verbatim
   (testing "native-born: no aikit 'written for another surface' preamble"
-    (let [b (ask/skill-body {} "penpot-import-brand")]
+    (let [b (ask/skill-body editor "penpot-import-brand")]
       (is (string? b))
       (is (not (re-find #"How to read this playbook" b)))
       (is (re-find #"THE STOP IS HARD" b))
@@ -86,7 +92,7 @@
       (is (re-find #"insert_image" b)))))
 
 (deftest import-brand-flows-through-the-router
-  (is (contains? (set (map :name (ask/catalog-manifest {})))
+  (is (contains? (set (map :name (ask/catalog-manifest editor)))
                  "penpot-import-brand")))
 
 ;; --- References (second disclosure level, 2026-07-16 re-import)
@@ -114,6 +120,6 @@
 
 (deftest the-manifest-lists-references
   (testing "a named fetch names its references so the second fetch is not a guess"
-    (let [entry (ask/catalog-manifest {} "penpot-build-screen")]
+    (let [entry (ask/catalog-manifest editor "penpot-build-screen")]
       (is (some #{"03-layout-composition"} (:references entry)))
       (is (some #{"ui-element-taxonomy"} (:references entry))))))

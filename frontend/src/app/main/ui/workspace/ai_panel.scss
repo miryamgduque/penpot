@@ -2252,6 +2252,16 @@
   text-align: center;
 }
 
+// Above the list for someone who may only view the file: the skills that
+// change it are hidden (#153).
+.skills-hidden-note {
+  @include scaled-body-small;
+
+  margin: 0;
+  padding: var(--sp-s) var(--sp-s) 0;
+  color: var(--color-foreground-secondary);
+}
+
 // Filter + "Create skill" on one row at the top of the Skills list.
 // Filters sits immediately left of Create skill — both icon-buttons grouped
 // together at the trailing edge, not spread across the row.

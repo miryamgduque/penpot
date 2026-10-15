@@ -233,6 +233,8 @@
     (fn []
       (let [shape-id (uuid/next)
             open-off (-> (state-with :on false)
+                         ;; an editor: a viewer has no observer skill to tick
+                         (assoc :permissions {:can-edit true})
                          (assoc-in [:ai-panel file-id :open?] true)
                          (assoc-in [:ai-panel file-id :dirty-ids] #{shape-id}))
             open-on  (assoc-in open-off [:agent-file-state file-id] :account)

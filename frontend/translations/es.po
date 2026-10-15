@@ -6234,6 +6234,12 @@ msgstr "Explica cómo está construida esta página"
 msgid "workspace.agent.read-only.suggestion.tokens"
 msgstr "Encuentra colores y estilos de texto que no usan tokens de diseño"
 
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.skills.read-only-hidden"
+msgstr ""
+"Las habilidades que cambian el archivo están ocultas mientras tengas acceso "
+"de lectura."
+
 #: src/app/main/ui/workspace/sidebar/options/menus/align.cljs:71
 msgid "workspace.align.hcenter"
 msgstr "Alinear al centro (%s)"

@@ -828,9 +828,10 @@
   it is ONE line — eye + headline + count — with only a close button (dismiss); the row
   itself toggles. Expanded it adds the per-rule groups (rows jump to the layer
   on canvas) and the Dismiss / Fix all footer. `on-fix` takes the violations to
-  fix; `on-dismiss` waves this card off."
+  fix; `on-dismiss` waves this card off. Without `can-fix?` (someone who may
+  only view the file) the findings show and the fix actions do not."
   {::mf/private true}
-  [{:keys [card on-fix on-dismiss on-shape-click]}]
+  [{:keys [card can-fix? on-fix on-dismiss on-shape-click]}]
   (let [{:keys [label shapes groups summary]} card
         expanded*   (mf/use-state false)
         expanded?   (deref expanded*)
@@ -867,16 +868,17 @@
              [:div {:class (stl/css :observer-group-head)}
               [:span {:class (stl/css :observer-group-label)} label]
               [:span {:class (stl/css :observer-group-count)} (dm/str "· " n)]
-              [:> tooltip* {:id fix-hint-id
-                            :class (stl/css :observer-group-fix-tip)
-                            :content (tr "workspace.agent.observer.fix-group-title" label)}
-               [:> button* {:variant "ghost"
-                            :class (stl/css :compact-label)
-                            :aria-describedby fix-hint-id
-                            ;; render-time closure, deliberately: hooks cannot live
-                            ;; inside `for`, and the group list is tiny
-                            :on-click (fn [_] (on-fix g-shapes))}
-                (tr "workspace.agent.observer.fix")]]]
+              (when can-fix?
+                [:> tooltip* {:id fix-hint-id
+                              :class (stl/css :observer-group-fix-tip)
+                              :content (tr "workspace.agent.observer.fix-group-title" label)}
+                 [:> button* {:variant "ghost"
+                              :class (stl/css :compact-label)
+                              :aria-describedby fix-hint-id
+                              ;; render-time closure, deliberately: hooks cannot live
+                              ;; inside `for`, and the group list is tiny
+                              :on-click (fn [_] (on-fix g-shapes))}
+                  (tr "workspace.agent.observer.fix")]])]
              [:ul {:class (stl/css :observer-rows)}
               (for [[ri v] (map-indexed vector shown)]
                 (let [hex     (parse-swatch (:reason v))
@@ -920,13 +922,14 @@
                      :class (stl/css :compact-label)
                      :on-click on-dismiss}
          (tr "workspace.agent.dismiss")]
-        [:> tooltip* {:id fix-all-hint-id
-                      :content (tr "workspace.agent.observer.fix-all-title")}
-         [:> button* {:variant "primary"
-                      :class (stl/css :compact-label)
-                      :aria-describedby fix-all-hint-id
-                      :on-click (fn [_] (on-fix shapes))}
-          (tr "workspace.agent.observer.fix-all")]]])]))
+        (when can-fix?
+          [:> tooltip* {:id fix-all-hint-id
+                        :content (tr "workspace.agent.observer.fix-all-title")}
+           [:> button* {:variant "primary"
+                        :class (stl/css :compact-label)
+                        :aria-describedby fix-all-hint-id
+                        :on-click (fn [_] (on-fix shapes))}
+            (tr "workspace.agent.observer.fix-all")]])])]))
 
 (mf/defc observer-notifications*
   "The Observer notification stack (issue #37): one calm card per affected
@@ -936,6 +939,7 @@
   [{:keys [on-fix]}]
   (let [violations (mf/deref refs/ai-panel-violations)
         dismissed  (mf/deref refs/ai-panel-observer-dismissed)
+        can-write? (mf/deref refs/agent-can-write?)
         ;; click a layer row → select + zoom on canvas; the card stays open so
         ;; the user can walk through the flagged layers one after another
         on-shape-click
@@ -953,6 +957,7 @@
        (for [c cards]
          [:> observer-card* {:key (:name c)
                              :card c
+                             :can-fix? can-write?
                              :on-fix on-fix
                              :on-shape-click on-shape-click
                              :on-dismiss (fn [_] (st/emit! (dwaip/dismiss-observer (:name c) (:signature c))))}])])))
@@ -2220,6 +2225,9 @@
   {::mf/private true}
   [{:keys [selected on-select on-promote reactive-filter* source-filter*]}]
   (let [catalog          (mf/deref refs/skills-catalog)
+        ;; someone who may only view the file is listed the skills that only
+        ;; read (see agent-skills/viewer-skills), and told the rest are hidden
+        can-write?       (mf/deref refs/agent-can-write?)
         skill            (when selected
                            (some (fn [{:keys [category skills]}]
                                    (some #(when (= selected (:name %)) (assoc % :category category)) skills))
@@ -2252,6 +2260,8 @@
                            :on-close #(on-select nil)
                            :on-promote #(on-promote skill)}])
       [:div {:class (stl/css :skills-tab)}
+       (when-not can-write?
+         [:p {:class (stl/css :skills-hidden-note)} (tr "workspace.agent.skills.read-only-hidden")])
        (if (seq groups)
          (for [[category rows] groups]
            [:div {:key category :class (stl/css :catalog-group)}
@@ -2879,10 +2889,12 @@
                (when (contains? source-filter k)
                  [:span {:class (stl/css :skills-filter-item-icon)}
                   [:> i/icon* {:icon-id i/tick}]])])]]]
-         [:> icon-button* {:variant "ghost"
-                           :icon i/add
-                           :aria-label (tr "workspace.agent.create.action")
-                           :on-click open-create}]]
+         ;; a viewer's new skill would be hidden from them in this file
+         (when can-write?
+           [:> icon-button* {:variant "ghost"
+                             :icon i/add
+                             :aria-label (tr "workspace.agent.create.action")
+                             :on-click open-create}])]
 
         ;; Foundations' list: a single Create icon-button, same line as the
         ;; title, replacing the old full-width "+ Add a foundation" button.

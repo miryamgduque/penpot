@@ -684,3 +684,14 @@
     (t/is (str/includes? viewer "cannot apply the fixes"))
     (t/is (str/includes? viewer "leave_comment"))
     (t/is (not (str/includes? editor "## Read-only")))))
+
+(t/deftest a-viewers-change-request-is-redirected-not-refused
+  ;; #155: one line saying why, the nearest things it can do, no tool names
+  (let [viewer (agent/build-system-prompt {:permissions {:can-edit false :can-read true}})]
+    (t/is (str/includes? viewer "do not refuse and stop"))
+    (t/is (str/includes? viewer "because they have view access"))
+    (t/is (str/includes? viewer "describe the change precisely so an editor can make it"))
+    (t/is (str/includes? viewer "leave it on the file as a comment"))
+    (t/is (str/includes? viewer "show the current spec"))
+    (t/is (str/includes? viewer "Never name a tool"))
+    (t/is (str/includes? viewer "the conversation goes on"))))

@@ -12,6 +12,7 @@
    [app.main.data.workspace.agent-remote :as ar]
    [app.main.data.workspace.agent-tools :as at]
    [app.main.repo :as rp]
+   [app.main.store :as st]
    [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
    [frontend-tests.helpers.agent-opt-out :as opt-out]
@@ -169,3 +170,22 @@
                     (fn [_]))))
       (t/is (not (re-find #"Relay dashboard"
                           (:text (js->clj (js/JSON.parse (:payload @sent)) :keywordize-keys true))))))))
+
+(t/deftest a-viewers-stray-change-is-an-answer-the-turn-goes-on-from
+  ;; #155: a write tool named by a viewer's model comes back as an ordinary
+  ;; error result for the service to hand back, not a failed stream, so the
+  ;; turn carries on to the model's redirect and the composer is free after it
+  (let [prior   (:permissions @st/state)
+        outcome (atom nil)
+        failed  (atom nil)]
+    (swap! st/state assoc :permissions {:can-edit false :can-read true})
+    (try
+      (rx/subs! #(reset! outcome %) #(reset! failed %) (constantly nil)
+                (#'ar/run-tool {:provider "anthropic" :model "m"}
+                               {:id "c1" :name "create_shape" :input {:type "rect"}}))
+      (t/is (nil? @failed))
+      (t/is (true? (:error? @outcome)))
+      (t/is (= :error (:status @outcome)))
+      (t/is (re-find #"view access" (:content @outcome)))
+      (finally
+        (swap! st/state assoc :permissions prior)))))

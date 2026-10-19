@@ -688,7 +688,12 @@
 (t/deftest a-viewers-change-request-is-redirected-not-refused
   ;; #155: one line saying why, the nearest things it can do, no tool names
   (let [viewer (agent/build-system-prompt {:permissions {:can-edit false :can-read true}})]
-    (t/is (str/includes? viewer "do not refuse and stop"))
+    (t/is (str/includes? viewer "Do not refuse and stop"))
+    ;; a live Haiku turn opened with "I'll help you make the button blue"
+    ;; and looked things up before saying it could not
+    (t/is (str/includes? viewer "your first sentence says you cannot make it"))
+    (t/is (str/includes? viewer "before you look anything up"))
+    (t/is (str/includes? viewer "never open with an offer"))
     (t/is (str/includes? viewer "because they have view access"))
     (t/is (str/includes? viewer "describe the change precisely so an editor can make it"))
     (t/is (str/includes? viewer "leave it on the file as a comment"))

@@ -2334,7 +2334,10 @@
   (doseq [name (remove at/viewer-tools tool-names)]
     (let [msg (at/viewer-refusal name viewer)]
       (t/is (str/starts-with? (str msg) (str name " is not available")) name)
-      (t/is (str/includes? (str msg) "Nothing ran") name)))
+      (t/is (str/includes? (str msg) "Nothing ran") name)
+      ;; #155: the reply it steers names no tool and offers what can be done
+      (t/is (str/includes? (str msg) "Do not name this tool") name)
+      (t/is (str/includes? (str msg) "leave it as a comment") name)))
   (doseq [name tool-names]
     (t/is (nil? (at/viewer-refusal name editor)) name)))
 

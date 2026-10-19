@@ -1383,9 +1383,12 @@
   [name state]
   (when-not (or (agent-access/can-write? state)
                 (contains? viewer-tools name))
+    ;; for the model, not the person: the reply it steers names no tool
     (str name " is not available: this person can view the file but not edit "
-         "it, so the agent can read, review and explain it and leave comments, "
-         "nothing more. Nothing ran. Tell them what you would do instead.")))
+         "it. Nothing ran. Do not name this tool to them. Say in one line that "
+         "you cannot make the change because they have view access, then offer "
+         "what you can do: describe the change for an editor, leave it as a "
+         "comment, or show the current spec.")))
 
 ;; --- Dispatch
 

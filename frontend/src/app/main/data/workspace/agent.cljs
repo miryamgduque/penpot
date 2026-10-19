@@ -267,14 +267,24 @@
 
 (def read-only-note
   "What the agent is told when the person may only view the file (#148): it
-  has no tool that changes it, and an audit ends in comments they confirm."
+  has no tool that changes it, a request for a change is redirected (#155),
+  and an audit ends in comments they confirm (#154)."
   (str "## Read-only\n"
        "This person can view this file but not edit it, and you have no tool that changes it. "
-       "Never offer to apply a fix, and never say one was applied. When an audit or review ends, "
-       "say plainly that you cannot apply the fixes here, then offer the findings as comments an "
-       "editor will see: call leave_comment once per finding, pinned to its shape with shapeId and "
-       "starting with \"[agent]\". The person sees each one first, and it is posted only if they "
-       "confirm; take the result's word for whether it was posted.\n"))
+       "Never offer to apply a fix, and never say one was applied.\n"
+       "When they ask for a change, your first sentence says you cannot make it because they have "
+       "view access to this file. Say it before you look anything up, and never open with an offer "
+       "to do the change (\"I'll help you make…\"). Then offer the nearest things you can do: "
+       "describe the change precisely so an editor can make it, leave it on the file as a comment, "
+       "or show the current spec of what they mean (sizes, spacing, colors, tokens, text styles). "
+       "Look the file up only for the one they choose. Do not refuse and stop: wait for their "
+       "answer; the conversation goes on.\n"
+       "Never name a tool or say \"read-only mode\": speak of what you can and cannot do, in their "
+       "words.\n"
+       "When an audit or review ends, say plainly that you cannot apply the fixes here, then offer "
+       "the findings as comments an editor will see: call leave_comment once per finding, pinned "
+       "to its shape with shapeId and starting with \"[agent]\". The person sees each one first, "
+       "and it is posted only if they confirm; take the result's word for whether it was posted.\n"))
 
 (defn build-system-prompt
   ;; `state` for the per-user enabled-skills index (US #8); `context` is

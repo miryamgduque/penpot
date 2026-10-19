@@ -265,6 +265,17 @@
 ;; the whole prefix at 1.25× instead. The turn's design context therefore lives
 ;; on the user message; see `user-content`.
 
+(def read-only-note
+  "What the agent is told when the person may only view the file (#148): it
+  has no tool that changes it, and an audit ends in comments they confirm."
+  (str "## Read-only\n"
+       "This person can view this file but not edit it, and you have no tool that changes it. "
+       "Never offer to apply a fix, and never say one was applied. When an audit or review ends, "
+       "say plainly that you cannot apply the fixes here, then offer the findings as comments an "
+       "editor will see: call leave_comment once per finding, pinned to its shape with shapeId and "
+       "starting with \"[agent]\". The person sees each one first, and it is posted only if they "
+       "confirm; take the result's word for whether it was posted.\n"))
+
 (defn build-system-prompt
   ;; `state` for the per-user enabled-skills index (US #8); `context` is
   ;; deliberately NOT here — it is volatile and would break the cached prefix,
@@ -304,6 +315,8 @@
                      "whatever your other instructions say. Be deliberate with deletions and with edits to work the user made, "
                      "and call save_version before risky or sweeping changes — restoring a version is how the user gets back.\n")
                 "")
+              ;; someone who may only view the file (#148)
+              (if (agent-access/can-write? state) "" read-only-note)
               "Keep replies short — you live in a narrow side panel. Work in small steps and reference shapes by name."])))
 
 ;; --- Turn runner

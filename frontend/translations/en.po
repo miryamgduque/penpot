@@ -10998,3 +10998,47 @@ msgstr "Find colors and text styles that do not use design tokens"
 #: src/app/main/ui/workspace/ai_panel.cljs
 msgid "workspace.agent.skills.read-only-hidden"
 msgstr "Skills that change the file are hidden while you have view access."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.confirm"
+msgstr "Post"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.confirm-note"
+msgstr "It posts as you and notifies people on this file."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.confirm-title"
+msgstr "Post this comment?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.copied"
+msgstr "Copied, not posted."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.copy"
+msgstr "Copy"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.not-now"
+msgstr "Not now"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.not-posted"
+msgstr "Not posted."
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.offer"
+msgstr "Leave this finding on the file as a comment?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.offer-on"
+msgstr "Leave this on %s as a comment?"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.post"
+msgstr "Post as comment"
+
+#: src/app/main/ui/workspace/ai_panel.cljs
+msgid "workspace.agent.comment.posted"
+msgstr "Posted as a comment."

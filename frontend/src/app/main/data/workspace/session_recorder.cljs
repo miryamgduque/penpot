@@ -44,6 +44,7 @@
   has not already captured."
   (:require
    [app.common.uuid :as uuid]
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.changes :as dch]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.notifications :as dwn]
@@ -223,12 +224,15 @@
 
 (defn start-recording
   "Begin recording the current file. A no-op with no file open — a recording is
-  meaningless without one."
+  meaningless without one — and for someone who may only view the file: they
+  make no design changes to record, and the server refuses to store theirs, so
+  it would only end in save errors (#166)."
   []
   (ptk/reify ::start-recording
     ptk/UpdateEvent
     (update [_ state]
-      (if-let [file-id (:current-file-id state)]
+      (if-let [file-id (when (agent-access/can-write? state)
+                         (:current-file-id state))]
         (assoc-in state [:session-recorder file-id]
                   {:id (uuid/next)
                    :file-id file-id

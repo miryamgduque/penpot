@@ -47,6 +47,7 @@
   NOTE: nothing calls into this namespace yet — the recorder is not in the
   `:main` build until phase 08 wires the record control (see phase 04's notes)."
   (:require
+   [app.main.data.agent-access :as agent-access]
    [app.main.data.changes :as dch]
    [app.main.data.workspace :as dw]
    [app.main.data.workspace.notifications :as dwn]
@@ -311,7 +312,10 @@
     ptk/WatchEvent
     (watch [_ state _]
       (let [file-id (:current-file-id state)]
-        (when-let [row-id (some-> file-id active-session-id)]
+        ;; someone who may only view the file cannot save a recording, so a
+        ;; recording left from when they could edit stays where it is (#166)
+        (when-let [row-id (when (agent-access/can-write? state)
+                            (some-> file-id active-session-id))]
           (->> (rp/cmd! :get-design-session {:id row-id})
                (rx/mapcat (fn [row]
                             (if-let [events (resume-events row)]

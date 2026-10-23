@@ -25,8 +25,10 @@
 (def ^:private group-2 (uuid "00000000-0000-0000-0000-0000000000b2"))
 
 (def ^:private base-state
+  ;; an editor: someone who may only view the file records nothing (#166)
   {:current-file-id file-id
-   :current-page-id page-id})
+   :current-page-id page-id
+   :permissions {:can-edit true}})
 
 (defn- commit
   [& {:as overrides}]
@@ -68,6 +70,12 @@
 (t/deftest starting-without-a-file-records-nothing
   (t/testing "a recording is meaningless with no file open"
     (let [state (ptk/update (sr/start-recording) {})]
+      (t/is (not (sr/recording? state))))))
+
+(t/deftest a-viewer-records-nothing
+  (t/testing "someone who may only view the file makes no design changes to
+              record and cannot save a recording (#166)"
+    (let [state (start (assoc base-state :permissions {:can-edit false :can-read true}))]
       (t/is (not (sr/recording? state))))))
 
 ;; --- capture

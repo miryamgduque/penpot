@@ -18,7 +18,10 @@
   (:require
    [app.main.data.workspace.session-persist :as sp]
    [app.main.data.workspace.session-recorder :as sr]
+   [app.main.repo :as rp]
+   [beicon.v2.core :as rx]
    [cljs.test :as t :include-macros true]
+   [frontend-tests.helpers.mock :as mock]
    [potok.v2.core :as ptk]))
 
 (def ^:private file-id (uuid "00000000-0000-0000-0000-0000000000f1"))
@@ -26,8 +29,10 @@
 (def ^:private shape-id (uuid "00000000-0000-0000-0000-000000000001"))
 
 (def ^:private base-state
+  ;; an editor: someone who may only view the file records nothing (#166)
   {:current-file-id file-id
-   :current-page-id page-id})
+   :current-page-id page-id
+   :permissions {:can-edit true}})
 
 (defn- commit
   [& {:as overrides}]
@@ -234,3 +239,16 @@
                  :stop-reason "manual"}
           state (ptk/update (sp/seed-resumed-session row) base-state)]
       (t/is (nil? (sr/session state))))))
+
+(t/deftest a-viewer-does-not-resume-a-recording
+  ;; #166: someone who may only view the file cannot save a recording, so one
+  ;; left from when they could edit is not picked up
+  (let [calls (atom [])]
+    (with-redefs [sp/active-session-id (mock/stub (fn [_] (random-uuid)))
+                  rp/cmd! (mock/stub (fn [cmd & _] (swap! calls conj cmd) (rx/empty)))]
+      (t/is (nil? (ptk/watch (sp/resume-recording)
+                             (assoc base-state :permissions {:can-edit false :can-read true})
+                             (rx/empty))))
+      (t/is (empty? @calls))
+      (rx/sub! (ptk/watch (sp/resume-recording) base-state (rx/empty)) (fn [_]))
+      (t/is (= [:get-design-session] @calls) "an editor's is picked up"))))

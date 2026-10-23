@@ -226,6 +226,9 @@
   (let [session    (mf/deref refs/session-recorder)
         sessions   (mf/deref refs/design-sessions)
         recording? (true? (:active? session))
+        ;; someone who may only view the file has nothing to record and cannot
+        ;; save a recording; they can still browse and review sessions (#166)
+        can-write? (mf/deref refs/agent-can-write?)
 
         open*      (mf/use-state false)
         open?      (deref open*)
@@ -328,11 +331,12 @@
      ;; record affordance is a circle styled as a red dot — the universal one.
      ;; While recording the elapsed time and stop live in `recording-timer*` at
      ;; the top of the panel body, not here.
-     [:> icon-button* {:variant "ghost"
-                       :class (stl/css-case :rec-button true :rec-button-live recording?)
-                       :aria-label (if recording? (tr "workspace.session-recorder.stop") (tr "workspace.session-recorder.record"))
-                       :on-click on-toggle-rec
-                       :icon i/stroke-circle}]
+     (when (or can-write? recording?)
+       [:> icon-button* {:variant "ghost"
+                         :class (stl/css-case :rec-button true :rec-button-live recording?)
+                         :aria-label (if recording? (tr "workspace.session-recorder.stop") (tr "workspace.session-recorder.record"))
+                         :on-click on-toggle-rec
+                         :icon i/stroke-circle}])
 
      ;; `clock` rather than `history`: the chat's own History button sits right
      ;; beside this one and two identical glyphs are indistinguishable.

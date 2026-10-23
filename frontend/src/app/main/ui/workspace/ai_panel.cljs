@@ -3001,7 +3001,9 @@
             ;; A labelled entry, not just the header dot: an unlabelled icon for
             ;; something as consequential as "start recording everyone's edits"
             ;; is not discoverable, and it was not found in practice.
-            (when (contains? cf/flags :design-session-recording)
+            ;; not for someone who may only view the file (#166)
+            (when (and (contains? cf/flags :design-session-recording)
+                       (or can-write? recording-session?))
               [:button {:type "button"
                         :class (stl/css :more-option)
                         :on-click #(do (close-more)

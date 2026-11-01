@@ -10,6 +10,7 @@
   (:require
    #?(:cljs [app.common.fonts :as cfnt])
    [app.common.agent.media :as cam]
+   [app.common.agent.token-status :as tst]
    [app.common.agent.write :as caw]
    [app.common.data :as d]
    [app.common.data.macros :as dm]
@@ -227,16 +228,13 @@
       (cb/with-library-data data)))
 
 (defn- add-first-set
-  "A library with no set gets one, enabled by the hidden theme, so a token
-  authored into it is live. → `[changes set-id]`."
+  "A library with no set gets one, and it is on, so a token authored into
+  it is live. → `[changes set-id]`."
   [changes]
-  (let [token-set (ctob/make-token-set :name "Global")
-        theme     (-> (ctob/make-hidden-theme)
-                      (ctob/enable-set "Global"))]
+  (let [token-set (ctob/make-token-set :name "Global")]
     [(-> changes
          (cb/set-token-set (ctob/get-id token-set) token-set)
-         (cb/set-token-theme (ctob/get-id theme) theme)
-         (cb/set-active-token-themes #{ctob/hidden-theme-path}))
+         (cb/set-tokens-status (tst/only-sets #{(ctob/get-id token-set)})))
      (ctob/get-id token-set)]))
 
 (defn stored-value
@@ -442,15 +440,24 @@
   [k]
   (str/camel (name (get attr-alias k k))))
 
-(def ^:private public->attr
-  (into {"stroke" :stroke-color} ;; legacy: the shipped spec offers "stroke"
-        (map (fn [k] [(public-attr-name k) k]))
+(def ^:private public->attrs
+  "Public name → the attrs it binds. One each, but for a stroke's width: it
+  is one per side now, and \"strokeWidth\" binds all four."
+  (into {"stroke"      #{:stroke-color} ;; legacy: the shipped spec offers "stroke"
+         "strokeWidth" cto/per-side-stroke-width-keys}
+        (map (fn [k] [(public-attr-name k) #{k}]))
         token-attr-universe))
 
-(defn token-attr
-  "The internal attr keyword for a public name, or nil."
+(defn token-attrs
+  "The internal attr keywords for a public name, or nil."
   [name]
-  (get public->attr name))
+  (get public->attrs name))
+
+(defn token-attr
+  "Whether a public name is a property a token binds to: the first of its
+  attrs, or nil."
+  [name]
+  (first (token-attrs name)))
 
 (defn- type-attrs
   [token-type]
@@ -462,8 +469,8 @@
   [token properties]
   (let [valid (type-attrs (:type token))]
     (some (fn [p]
-            (if-let [k (token-attr p)]
-              (when (and (seq valid) (not (contains? valid k)))
+            (if-let [ks (token-attrs p)]
+              (when (and (seq valid) (not-every? #(contains? valid %) ks))
                 (dm/str "apply_tokens: token \"" (:name token) "\" is a "
                         (some-> (:type token) name) " token and cannot bind to "
                         p " — it can bind to: "
@@ -478,7 +485,7 @@
   token's own default (fill for a color) when none are given."
   [token properties]
   (if (seq properties)
-    (into #{} (keep token-attr) properties)
+    (into #{} (mapcat token-attrs) properties)
     (or (some-> (get token-type-attrs (:type token)) :attributes) #{:fill})))
 
 ;; --- What a token is worth
@@ -663,12 +670,17 @@
                     quiet))
 
 (defn- set-stroke-width
-  [changes ids value]
+  "The sides `sides` of each shape's first stroke get `value`, as the
+  workspace does it: the other sides keep their width, every side is
+  written out, and `:stroke-width` stays the top's."
+  [changes ids sides value]
   (cb/update-shapes changes ids
                     (fn [shape]
-                      (if (seq (:strokes shape))
-                        (assoc-in shape [:strokes 0 :stroke-width] value)
-                        (assoc shape :strokes [(assoc ctss/default-stroke :stroke-width value)])))
+                      (let [stroke (ctss/materialize-stroke-side-widths
+                                    (first (:strokes shape)) sides (max 0 value))]
+                        (if (seq (:strokes shape))
+                          (update shape :strokes #(into [stroke] (rest %)))
+                          (assoc shape :strokes [stroke]))))
                     quiet))
 
 (defn- set-geometry
@@ -851,8 +863,8 @@
       (and color (:stroke-color attrs))
       (set-stroke-color ids color)
 
-      (and number (:stroke-width attrs))
-      (set-stroke-width ids number)
+      (and number (seq (set/intersection attrs cto/per-side-stroke-width-keys)))
+      (set-stroke-width ids (set/intersection attrs cto/per-side-stroke-width-keys) number)
 
       (and number (:opacity attrs) (<= 0 number 1))
       (cb/update-shapes ids #(assoc % :opacity number) quiet)
@@ -969,7 +981,7 @@
     {:problem "apply_tokens: no applications given"}
     (let [lib    (:tokens-lib data)
           all    (some-> lib ctob/get-all-tokens-map)
-          active (some-> lib ctob/get-tokens-in-active-sets)
+          active (tst/active-tokens data)
           engine (assoc engine :fonts fonts)
           {:keys [resolved pending]} (worth active engine)]
       (if (some? pending)
@@ -1078,9 +1090,9 @@
   `{:pending}`, or `{:fallback}`. With `names`, only what is bound to those
   tokens or to a token that refers to one."
   [data made names engine]
-  (let [before (some-> (:tokens-lib data) ctob/get-tokens-in-active-sets)
+  (let [before (tst/active-tokens data)
         data   (cfc/process-changes data made false)
-        active (ctob/get-tokens-in-active-sets (:tokens-lib data))
+        active (or (tst/active-tokens data) {})
         ;; a token worth what it was worth before changes nothing on a shape:
         ;; a switch of theme that keeps the type sizes measures no text again
         same?  (fn [token-name]
@@ -1121,7 +1133,7 @@
   whatever they held → `{:changes}`, `{:pending}`, `{:fallback}`, or nil
   when none of them is bound to a token the file has."
   [data page-id objects ids engine]
-  (let [active (some-> (:tokens-lib data) ctob/get-tokens-in-active-sets)
+  (let [active (tst/active-tokens data)
         ids    (into #{}
                      (filter (fn [id] (some #(contains? active %) (vals (:applied-tokens (get objects id))))))
                      ids)]
@@ -1140,7 +1152,7 @@
   a library update wrote the library's values back on its copies."
   [{:keys [data fonts]} _ engine]
   (let [engine (assoc engine :fonts fonts)
-        active (some-> (:tokens-lib data) ctob/get-tokens-in-active-sets)]
+        active (tst/active-tokens data)]
     (if (empty? active)
       {:problem "reapply_tokens: this file has no tokens that are on"}
       (let [{:keys [resolved pending]} (worth active engine)]
@@ -1199,7 +1211,7 @@
                                   (str/join ", " (map ctob/get-name themes))))
                         " (create one with create_token_theme)")}
       (let [toggle (-> (library-changes data)
-                       (clt/generate-toggle-token-theme lib (ctob/get-id match))
+                       (clt/generate-toggle-theme (tst/status data) lib (ctob/get-id match))
                        (caw/redo))
             out    (rebind-pages data toggle nil (assoc engine :fonts fonts))]
         (if (contains? out :changes)

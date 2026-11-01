@@ -2489,7 +2489,6 @@ msgstr[1] "You turned the agent on in %s files."
 msgid "integrations.ai-provider.enabled-files.action"
 msgstr "Turn it off in those files"
 
-
 msgid "integrations.ai-provider.status"
 msgstr "Status"
 
@@ -2507,7 +2506,6 @@ msgstr "Penpot Agent enabled"
 
 msgid "integrations.ai-provider.notification.agent-disabled"
 msgstr "Penpot Agent disabled"
-
 
 msgid "integrations.ai-provider.title"
 msgstr "Penpot Agent"

@@ -14,9 +14,11 @@
    [app.common.agent.pack-make :as cakm]
    [app.common.agent.packs :as caks]
    [app.common.agent.recipe :as car]
+   [app.common.agent.token-status :as tst]
    [app.common.agent.tokens :as cato]
    [app.common.agent.write :as caw]
    [app.common.data.macros :as dm]
+   [app.common.files.changes :as cfc]
    [app.common.files.changes-builder :as cb]
    [app.common.json :as json]
    [app.common.types.tokens-lib :as ctob]
@@ -110,10 +112,10 @@
                     (mapv (fn [theme] {:name (ctob/get-name theme)
                                        :group (:group theme)
                                        :sets (vec (:sets theme))
-                                       :on (ctob/theme-active? lib (ctob/get-id theme))})))
+                                       :on (tst/theme-active? (:data library) (ctob/get-id theme))})))
         themes (if (seq themes)
                  themes
-                 [{:name "Default" :group "" :sets (vec (ctob/get-active-themes-set-names lib)) :on true}])]
+                 [{:name "Default" :group "" :sets (vec (tst/active-set-names (:data library))) :on true}])]
     {:name (:name library)
      :from-library true
      :sets sets
@@ -238,16 +240,16 @@
 
 (defn- add-themes
   "The pack's themes, each with `kept`, the sets that stay on whatever the
-  theme. → `[changes path-of-the-theme-to-turn-on]`."
+  theme. → `[changes id-of-the-theme-to-turn-on]`."
   [changes lib pack kept on]
   (reduce
-   (fn [[changes path] {:keys [name group sets]}]
+   (fn [[changes on-id] {:keys [name group sets]}]
      (let [group (or group "")
            found (some #(when (and (= name (ctob/get-name %)) (= group (:group %))) %) (some-> lib ctob/get-themes))
            theme (ctob/make-token-theme (cond-> {:name name :group group :sets (into (set kept) sets)}
                                           (some? found) (assoc :id (ctob/get-id found))))]
        [(cb/set-token-theme changes (ctob/get-id theme) theme)
-        (if (= name on) (ctob/get-theme-path theme) path)]))
+        (if (= name on) (ctob/get-id theme) on-id)]))
    [changes nil]
    (:themes pack)))
 
@@ -300,14 +302,17 @@
             ;; merging: what is on now stays on under every theme of the pack
             ;; (but not a set the pack has too: its themes say when that one is on)
             kept     (if (and lib' (pos? (:tokens state)))
-                       (apply disj (set (ctob/get-active-themes-set-names lib')) (map :name (:sets pack)))
+                       (apply disj (tst/active-set-names data) (map :name (:sets pack)))
                        #{})
-            [changes path]
+            [changes on-id]
             (-> (cato/library-changes data)
                 (cond-> (and replace? (some? lib)) (remove-all lib))
                 (add-sets lib' pack)
                 (add-themes lib' pack kept on))
-            made     (-> changes (cb/set-active-token-themes #{path}) (caw/redo))
+            ;; the theme turned on alone, with its sets, in the library as
+            ;; the changes leave it
+            lib-now  (:tokens-lib (cfc/process-changes data (:redo-changes changes) false))
+            made     (-> changes (cb/set-tokens-status (tst/only-theme lib-now on-id)) (caw/redo))
             out      (cato/rebind-pages data made nil (assoc engine :fonts fonts))]
         (if-not (contains? out :changes)
           out

@@ -18,6 +18,7 @@
   value is exactly equal, and only on what the call itself made or changed."
   (:require
    [app.common.agent.recipe :as car]
+   [app.common.agent.token-status :as tst]
    [app.common.agent.tokens :as cato]
    [app.common.agent.write :as caw]
    [app.common.data :as d]
@@ -27,7 +28,6 @@
    [app.common.types.component :as ctc]
    [app.common.types.shape.layout :as ctl]
    [app.common.types.text :as txt]
-   [app.common.types.tokens-lib :as ctob]
    [cuerdas.core :as str]))
 
 ;; Where several roles are worth the same — white is the surface, the
@@ -52,8 +52,8 @@
 (defn- role-worth
   "Role name → what it is worth in the file now, for the roles the file has a
   plain value for."
-  [lib]
-  (let [active (some-> lib ctob/get-tokens-in-active-sets)]
+  [data]
+  (let [active (tst/active-tokens data)]
     (into {}
           (keep (fn [[token-name token]]
                   (when (contains? car/roles token-name)
@@ -210,7 +210,7 @@
   equal. The answer is as it was when the file has no roles, or nothing
   matches."
   [{:keys [data page-id]} answer]
-  (let [worth (role-worth (:tokens-lib data))]
+  (let [worth (role-worth data)]
     (if (or (empty? worth) (empty? (:changes answer)))
       answer
       (let [after   (cfc/process-changes data (:changes answer) false)

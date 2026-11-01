@@ -62,7 +62,7 @@
                                        (swap! calls conj cmd)
                                        (rx/empty)))]
       (f))
-    (filterv #{:ai-agent-round :app.util.sse/ai-agent-round-stream}
+    (filterv #{:ai-agent-round :agent-helper-round :app.util.sse/agent-service-turn}
              @calls)))
 
 ;; --- Resolver

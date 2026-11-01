@@ -535,9 +535,6 @@
    {:name "0157-add-audit-log-pending-table"
     :fn (mg/resource "app/migrations/sql/0157-add-audit-log-pending-table.sql")}
 
-   {:name "0152-add-design-skill-tables"
-    :fn (mg/resource "app/migrations/sql/0152-add-design-skill-tables.sql")}
-
    {:name "0155-add-design-skill-tables"
     :fn (mg/resource "app/migrations/sql/0155-add-design-skill-tables.sql")}
 

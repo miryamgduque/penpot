@@ -17,7 +17,9 @@
   (:require
    [app.db :as db]
    [app.main :as main]
+   [app.metrics :as mtx]
    [app.migrations :as mg]
+   [backend-tests.helpers :as th]
    [clojure.test :as t]
    [integrant.core :as ig]))
 
@@ -31,28 +33,25 @@
 
 (t/deftest sessions-pool-accepts-an-unconfigured-options-map
   (t/testing "assert-key must not reject the absent-config case, or the system
-              would fail to init instead of degrading"
-    (t/is (nil? (ig/assert-key ::main/sessions-pool {})))
-    (t/is (nil? (ig/assert-key ::main/sessions-pool {::db/name :sessions})))))
+              would fail to init instead of degrading. The system map always
+              passes the metrics, which `::db/pool` requires."
+    (let [metrics (th/metrics-stub)]
+      (t/is (nil? (ig/assert-key ::main/sessions-pool
+                                 {::mtx/metrics metrics})))
+      (t/is (nil? (ig/assert-key ::main/sessions-pool
+                                 {::db/name     :sessions
+                                  ::mtx/metrics metrics}))))))
 
-(t/deftest assert-key-validation-is-decorative-in-this-build
-  (t/testing "Penpot runs with *assert* false, so every `ig/assert-key` body in
-              the backend — including the pre-existing `::db/pool` one — is
-              compiled out and validates NOTHING at runtime.
-
-              Recorded because it is easy to assume otherwise and then rely on
-              it: a typo'd sessions URI is NOT caught by the schema. What
-              actually catches it is pool creation failing to connect, which
-              surfaces as a boot error rather than a silently disabled recorder.
-              The session-recorder keys follow the same convention as the rest of
-              the backend on purpose — being the one namespace that validated
-              differently would be worse than being consistently decorative."
-    (t/is (false? *assert*)
-          "if this ever fails, assertions were enabled and the assert-key
-           methods became real — revisit the claim above")
-    (t/is (nil? (ig/assert-key ::main/sessions-pool {::db/uri "not-a-uri"
-                                                     ::db/max-size "eight"}))
-          "malformed options pass, because the assert is not compiled in")))
+(t/deftest sessions-pool-rejects-malformed-options
+  (t/testing "with backend asserts on, `::db/pool`'s schema checks the sessions
+              pool options too, so a malformed size stops boot instead of
+              passing unseen"
+    (t/is (true? *assert*)
+          "run the suite with PENPOT_FLAGS=\"enable-backend-asserts\"")
+    (t/is (thrown? Exception
+                   (ig/assert-key ::main/sessions-pool
+                                  {::db/max-size  "eight"
+                                   ::mtx/metrics (th/metrics-stub)})))))
 
 (t/deftest halting-an-absent-pool-is-safe
   (t/testing "shutdown runs on the degraded path too"
@@ -67,10 +66,14 @@
 
 (t/deftest session-migrations-assert-accepts-nil-pool
   (t/testing "a nil pool must pass the assertion — it is the supported degraded
-              state, not a misconfiguration. (The malformed-pool case is not
-              asserted here: see
-              `assert-key-validation-is-decorative-in-this-build`.)"
+              state, not a misconfiguration"
     (t/is (nil? (ig/assert-key ::mg/session-migrations {::db/pool nil})))))
+
+(t/deftest session-migrations-assert-rejects-a-non-pool
+  (t/testing "anything other than nil or a pool is a misconfiguration"
+    (t/is (thrown? AssertionError
+                   (ig/assert-key ::mg/session-migrations
+                                  {::db/pool :not-a-pool})))))
 
 ;; --- the migration set itself
 
